@@ -20,8 +20,9 @@
    - 6.5 Guild Base Themes
    - 6.6 Theme JSON Format
    - 6.7 Sharing Themes
-7. [AI Features](#7-ai-features)
-8. [Backlog](#8-backlog)
+7. [Settings](#7-settings)
+8. [AI Features](#8-ai-features)
+9. [Backlog](#9-backlog)
 
 ---
 
@@ -121,7 +122,32 @@ A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
 | `debug` | Hidden by default | Raw incoming data, for troubleshooting |
 
-### 2.7 Main Text Panel — Scroll Behavior
+### 2.7 User-Created Panels
+
+Players and Lich scripts can create named panels on the fly — not just the built-in catalog, but arbitrary panels defined at runtime.
+
+**From the UI:**
+- Panel Manager → "New Panel" → give it a name and an ID
+- The panel appears in the layout immediately, ready to receive text
+- It behaves like any built-in panel: dockable, floatable, tabbable, closeable
+
+**From Lich scripts:**
+- Scripts can open a named panel by sending a command through the client's Lich bridge
+- Text redirected to that panel's ID appears there instead of in the main stream
+- If the panel doesn't exist yet, the client creates it automatically and places it in a default position
+- This matches the behavior Genie players expect — scripts that open custom windows should just work
+
+**Panel persistence:**
+- User-created panels are saved in the layout profile like any other panel
+- If a layout is loaded that references a user panel that no longer exists, the client creates a placeholder rather than crashing
+- Panels with no source (no script redirecting to them) show as empty with a subtle "waiting for content" message
+
+**Use cases this enables:**
+- Custom exp trackers, wound trackers, or loot loggers from Lich scripts
+- Player-built overlays for crafting, combat rotations, or guild-specific tools
+- Any script that today creates a Genie window and redirects text to it
+
+### 2.8 Main Text Panel — Scroll Behavior
 
 The main text window has one job: never lose game text, never lose your place.
 
@@ -232,7 +258,47 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
 - Bar colors are user-configurable; the color picker warns when a selected combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
 - In large print mode, bars are taller and labels are larger
 
-### 4.4 Room Panel
+### 4.4 RT and Cast Time Bars in the Command Bar
+
+Roundtime and cast time can be displayed as **thin progress bars embedded in the command bar**, draining left-to-right as time expires. This keeps timing information visible at the point of focus without requiring a glance up to the status strip.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ████████████████████░░░░░░░░░░  RT      [amber, 2.1s]  │  ← RT bar
+│  ██████░░░░░░░░░░░░░░░░░░░░░░░░  Cast    [blue,  4.8s]  │  ← Cast bar
+│ >  _                                              [Send] │  ← Command input
+└──────────────────────────────────────────────────────────┘
+```
+
+- RT bar: amber/orange — drains as roundtime expires
+- Cast time bar: blue/purple — drains as spell cast time expires
+- Each bar shows a numeric countdown label on the right
+- When inactive (no RT, no cast), the bars are hidden — no wasted space
+- Colors are theme-aware and user-configurable
+- Respects Epilepsy Safe mode — no pulsing, just a static draining bar
+
+This is an **option**, not the default. Players can choose to show RT/cast in the command bar, in the status strip, or both.
+
+### 4.5 Status Bar Strip Position
+
+By default the status bar strip sits at the top of the window. Players can move it to **just above the command bar** — the layout StormFront uses, which many veterans are accustomed to:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│   MAIN TEXT                        ROOM / THOUGHTS       │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│  Health ████░░  Mana ████░░  Conc ██░░  Fat ███░░  Spr  │  ← bars here
+│  [Standing]  [RT: 2.1s]  [Fire Ball]                    │
+├──────────────────────────────────────────────────────────┤
+│ >  _                                              [Send] │
+└──────────────────────────────────────────────────────────┘
+```
+
+This is a single setting toggle: **Status bars position — Top / Bottom**. The layout profiles (Combat, Crafting, etc.) can each have their own preference.
+
+### 4.6 Room Panel
 
 The room panel is **structured output**, not a text dump. Each component arrives as a separate XML element and is rendered independently.
 
@@ -250,7 +316,7 @@ The room panel is **structured output**, not a text dump. Each component arrives
 
 Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[north]` sends `north` to the game. This is what the StormFront protocol was designed for — the server already marks exits as interactive.
 
-### 4.5 Experience Panel
+### 4.7 Experience Panel
 
 The exp panel is a live skill tracker driven entirely by `<component id='exp SkillName'>` XML events. No text parsing. No scripting required.
 
@@ -513,7 +579,46 @@ Players can export any custom theme as a `.json` file and share it — on Discor
 
 ---
 
-## 7. AI Features
+## 7. Settings
+
+### 7.1 Settings Search
+
+Settings has a **search box at the top** that filters across every option in every section — no matter how deep it is. Type "font" and every font-related setting surfaces immediately. Type "RT" and roundtime bar position, RT color, and RT sound alert all appear together.
+
+```
+┌─ Settings ──────────────────────────────────────┐
+│  🔍  Search settings...                          │
+├──────────────────────────────────────────────────┤
+│  Display & Accessibility                         │
+│  Theme                                           │
+│  Panels & Layout                                 │
+│  Command Bar                                     │
+│  Connection                                      │
+│  AI                                              │
+└──────────────────────────────────────────────────┘
+```
+
+When a search is active, the category list is replaced by a flat results list. Each result shows its name, a one-line description, and which section it lives in. Clicking a result navigates directly to that setting and highlights it.
+
+This is the fix for "I know this setting exists but I can't find it." Settings should never require hunting.
+
+### 7.2 Settings Organization
+
+Settings are grouped into broad sections — not deep submenus. Every section is one level down from the top, never more.
+
+| Section | Contains |
+|---|---|
+| **Display & Accessibility** | Font, large print, high contrast, epilepsy safe, colorblind picker |
+| **Theme** | Theme picker, theme editor, My Themes, import/export |
+| **Panels & Layout** | Status bar position, RT bars in command bar, panel defaults |
+| **Command Bar** | RT display, cast time display, command history size |
+| **Highlights** | Highlight rules, groups, import/export |
+| **Connection** | Default credentials, Lich paths, SGE fallback settings |
+| **AI** | OpenAI API key, AI feature toggles |
+
+---
+
+## 8. AI Features
 
 AI features use the OpenAI API (key stored locally, never transmitted anywhere else).
 
@@ -546,7 +651,7 @@ Reason: This creature name appears frequently in your combat logs.
 
 ---
 
-## 8. Backlog
+## 9. Backlog
 
 Items are roughly priority-ordered within each phase. This list evolves.
 
@@ -575,6 +680,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Panel Manager UI
 - [ ] Layout save / load / profiles
 - [ ] Panel catalog — Familiar, Spells, Inventory, Debug
+- [ ] User-created panels (named, on-the-fly, from UI or Lich script)
 - [ ] Highlight rules editor
 - [ ] Highlight groups (named, toggleable sets of rules)
 - [ ] Debug panel (raw stream)
@@ -586,11 +692,14 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
 - [ ] Font configuration (family, size, line height, per-theme overrides)
 - [ ] General base themes (Dark, Darker, Slate, Parchment, Terminal)
-- [ ] Guild base themes (all 11 guilds with tuned palettes and presets)
+- [ ] Guild base themes (all 12 guilds including Commoner, with tuned palettes and presets)
 - [ ] Theme picker UI (General / Guild tabs, live preview swatches)
 - [ ] Theme editor (all color fields, live preview, colorblind-aware pickers)
 - [ ] My Themes — save, name, duplicate, delete, reset to base
 - [ ] Theme export / import (JSON)
+- [ ] Status bar position toggle (top vs. above command bar)
+- [ ] RT and cast time bars in command bar (optional, color-coded, draining)
+- [ ] Settings panel with search and flat single-level organization
 - [ ] Full keyboard navigation & configurable bindings
 - [ ] Screen reader / ARIA live regions (main, room, thoughts panels)
 - [ ] ARIA landmark navigation (all panels labeled, Tab order logical)
