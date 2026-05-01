@@ -451,6 +451,7 @@ Guild themes are base themes with palettes designed around each guild's identity
 
 | Guild | Palette Feel | Background | Text | Accent |
 |---|---|---|---|---|
+| **Commoner** | Plain cloth, road dust, humble origins | `#141210` | `#c8b89a` | `#7a6a50` |
 | **Barbarian** | Blood and ash, primal warrior | `#1a0f0a` | `#d4b896` | `#8b1a1a` |
 | **Bard** | Theatrical gold, warm parchment | `#1a1020` | `#e8d5a0` | `#c08030` |
 | **Cleric** | Cathedral light, holy gold | `#0d1020` | `#e8eaf0` | `#c8a840` |
@@ -462,6 +463,8 @@ Guild themes are base themes with palettes designed around each guild's identity
 | **Thief** | Deep shadow, tarnished coin | `#111118` | `#a8a8b8` | `#a87830` |
 | **Trader** | Merchant brown, rich gold | `#180e05` | `#e8d090` | `#c89020` |
 | **Warrior Mage** | Arcane storm, elemental fire | `#0f0f1a` | `#e0d8f8` | `#c86020` |
+
+Commoner is the unguilded starting state for all new characters — included here because every player begins as one, and some maintain the status intentionally for roleplay. Its theme is intentionally plain: warm earth tones, nothing dramatic.
 
 Each guild theme also ships with matching preset colors (speech, whisper, thought, etc.) tuned to complement its palette.
 
