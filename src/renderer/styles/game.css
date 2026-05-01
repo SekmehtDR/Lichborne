@@ -75,12 +75,44 @@
   display: flex;
 }
 
+.text-window-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .text-window {
   flex: 1;
   overflow-y: auto;
   padding: 8px 12px;
   cursor: text;
-  min-width: 0;
+}
+
+.scroll-anchor-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(18, 16, 10, 0.93);
+  border: 1px solid #5a4a10;
+  color: #c8a840;
+  font-size: 0.75rem;
+  padding: 5px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  z-index: 10;
+  user-select: none;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.scroll-anchor-badge:hover {
+  background: rgba(40, 32, 8, 0.97);
+  border-color: #8b6914;
+  color: #e8c850;
 }
 
 .text-line {

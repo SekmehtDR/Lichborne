@@ -751,8 +751,8 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Active Spells panel — replaces on each server refresh, routed from percWindow stream
 - [x] PanelFrame — tabbed container with tabs-at-bottom, `+` to add any panel, `×` to close, scrollable tab bar, full panel names
 - [x] Text preset styling — speech, whisper, thought, roomname, roomdesc, bold, expiry, store (via `data-preset` CSS, themeable in Phase 4)
-- [ ] Smart scroll anchor — "▼ N new lines" badge, auto-scroll pause on scroll-up
-- [ ] Virtualized text list — only visible lines in the DOM, batched updates
+- [x] Smart scroll anchor — "▼ N new lines" badge, auto-scroll pauses on scroll-up, click or End to resume
+- [ ] Virtualized text list — only visible lines in the DOM, batched updates (deferred — not needed at current scale)
 
 ### Phase 3 — Panel System
 - [ ] Dockable panel framework (drag, snap, resize)

@@ -69,6 +69,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [leftHand, setLeftHand] = useState('Empty')
   const [exits, setExits] = useState<string[]>([])
 
+  const [newLineCount, setNewLineCount] = useState(0)
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -150,8 +152,10 @@ export default function GameWindow({ onDisconnect }: Props) {
         }
       }
 
-      if (newMain.length > 0)
+      if (newMain.length > 0) {
         setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+        if (!pinnedRef.current) setNewLineCount(prev => prev + newMain.length)
+      }
 
       if (Object.keys(newStream).length > 0 || clearedStreams.size > 0) {
         setStreamLines(prev => {
@@ -196,15 +200,35 @@ export default function GameWindow({ onDisconnect }: Props) {
     return () => { unsubEvents(); unsubStatus() }
   }, [onDisconnect])
 
+  function scrollToBottom() {
+    pinnedRef.current = true
+    setNewLineCount(0)
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    inputRef.current?.focus()
+  }
+
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (atBottom && !pinnedRef.current) setNewLineCount(0)
+    pinnedRef.current = atBottom
   }
 
   useEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'End' && document.activeElement !== inputRef.current) {
+        e.preventDefault()
+        scrollToBottom()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   function handleCommand(e: React.FormEvent) {
     e.preventDefault()
@@ -269,18 +293,25 @@ export default function GameWindow({ onDisconnect }: Props) {
       />
 
       <div className="game-main">
-        <div
-          className="text-window"
-          ref={scrollRef}
-          onScroll={handleScroll}
-          onClick={() => inputRef.current?.focus()}
-        >
-          {lines.map(line => (
-            <div key={line.id} className="text-line">
-              {line.segments.map((seg, i) => renderSegment(seg, i))}
+        <div className="text-window-wrap">
+          <div
+            className="text-window"
+            ref={scrollRef}
+            onScroll={handleScroll}
+            onClick={() => inputRef.current?.focus()}
+          >
+            {lines.map(line => (
+              <div key={line.id} className="text-line">
+                {line.segments.map((seg, i) => renderSegment(seg, i))}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+          {newLineCount > 0 && (
+            <div className="scroll-anchor-badge" onClick={scrollToBottom}>
+              ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
             </div>
-          ))}
-          <div ref={bottomRef} />
+          )}
         </div>
 
         <PanelFrame
