@@ -13,6 +13,13 @@
 4. [Status Bar System & Live Panels](#4-status-bar-system--live-panels)
 5. [Display & Accessibility](#5-display--accessibility)
 6. [Theming](#6-theming)
+   - 6.1 Architecture
+   - 6.2 Theme Picker Flow
+   - 6.3 Theme Editor
+   - 6.4 General Base Themes
+   - 6.5 Guild Base Themes
+   - 6.6 Theme JSON Format
+   - 6.7 Sharing Themes
 7. [AI Features](#7-ai-features)
 8. [Backlog](#8-backlog)
 
@@ -358,47 +365,148 @@ The macro system is in the backlog. When we build it, sip-and-puff usability sho
 
 ## 6. Theming
 
-### 6.1 Built-in Themes
+### 6.1 Architecture
+
+Themes work in two layers:
+
+```
+Base Themes  (built-in, read-only starting points)
+  ├── General:  Dark, Darker, Slate, Parchment, Terminal
+  └── Guild:    Barbarian, Bard, Cleric, Empath, Moon Mage,
+                Necromancer, Paladin, Ranger, Thief, Trader, Warrior Mage
+
+My Themes  (player-owned copies, fully editable)
+  ├── "My Moon Mage tweaks"     basedOn: Moon Mage
+  ├── "Combat layout"           basedOn: Dark
+  └── "Imported from Thrak"     basedOn: (external)
+```
+
+Base themes are never modified. Editing a base automatically creates a personal copy. Players can have as many custom themes as they want, each derived from any base.
+
+### 6.2 Theme Picker Flow
+
+1. **Settings → Theme** — a grid of theme cards, each showing a small live preview swatch (background, text, accent, a sample vital bar)
+2. Two tabs at the top: **General** | **Guild**
+3. Click any theme card → applies immediately as a live preview — no confirmation step
+4. A **My Themes** section sits above the base grid and shows the player's saved custom themes
+5. At the bottom of each theme card: **"Customize..."** button
+6. Navigating away from Settings keeps whatever is currently applied
+
+### 6.3 Theme Editor
+
+Opened via **"Customize..."** on any theme card. Shows the full set of editable fields with color pickers and a live preview panel on the right showing actual game text in the current color state.
+
+**Editable fields:**
+
+| Field | Description |
+|---|---|
+| Background | Main window background |
+| Text | Default game text color |
+| Accent | Buttons, highlights, active states |
+| Panel border | Border between panels |
+| Panel header | Panel title bar background |
+| Health bar | Vital bar fill color |
+| Mana bar | Vital bar fill color |
+| Concentration bar | Vital bar fill color |
+| Fatigue bar | Vital bar fill color |
+| Spirit bar | Vital bar fill color |
+| Speech | In-room speech color + italic toggle |
+| Whisper | Whispered speech color + italic toggle |
+| Thought | Thought channel color |
+| Room name | Room title color + bold toggle |
+| Room desc | Room description prose color |
+| Bold | Emphasis text color |
+| Expiry | Expiring effect warning color |
+| Store | Commerce text color |
+| Font family | Per-theme font override (optional) |
+| Font size | Per-theme size override (optional) |
+
+Every color field opens the colorblind-aware color picker — the player sees simulation swatches and contrast warnings inline as they pick.
+
+**On first edit of a base theme:**
+- A prompt appears: *"Give your theme a name"*
+- A named copy is created in My Themes and becomes the active theme
+- The original base is never touched
+
+**Additional controls:**
+- **Reset to base** — reverts all fields to the original base theme values
+- **Duplicate** — create another copy of this theme to experiment from
+- **Delete** — remove a custom theme (with confirmation)
+- **Export JSON** — download the theme as a shareable `.json` file
+- **Import JSON** — load a theme file shared by another player; lands in My Themes
+
+### 6.4 General Base Themes
 
 | Theme | Description |
 |---|---|
-| **Dark (default)** | Dark background, warm text — current look |
-| **Darker** | Pure black, maximum contrast |
-| **Slate** | Cool blue-grey tones |
-| **Parchment** | Light background, dark text — easier for some users |
-| **Terminal** | Pure green on black, retro feel |
+| **Dark** *(default)* | Dark background, warm off-white text — the default look |
+| **Darker** | Pure black background, maximum contrast |
+| **Slate** | Cool blue-grey tones, softer than Dark |
+| **Parchment** | Light background, dark text — better for bright environments |
+| **Terminal** | Green on black, monospace CRT aesthetic |
 
-### 6.2 Custom Themes
+### 6.5 Guild Base Themes
 
-Players can define custom themes as JSON files:
+Guild themes are base themes with palettes designed around each guild's identity. Any player can use any guild theme — there's no restriction. A Barbarian player might love the Moon Mage aesthetic.
+
+| Guild | Palette Feel | Background | Text | Accent |
+|---|---|---|---|---|
+| **Barbarian** | Blood and ash, primal warrior | `#1a0f0a` | `#d4b896` | `#8b1a1a` |
+| **Bard** | Theatrical gold, warm parchment | `#1a1020` | `#e8d5a0` | `#c08030` |
+| **Cleric** | Cathedral light, holy gold | `#0d1020` | `#e8eaf0` | `#c8a840` |
+| **Empath** | Soft greens, healing light | `#0d1a12` | `#d8f0d8` | `#60b870` |
+| **Moon Mage** | Night sky, starlight blue | `#07091a` | `#c8d8f8` | `#7878d8` |
+| **Necromancer** | Pure black, bone and decay | `#0a0a0a` | `#c8c8b0` | `#50a050` |
+| **Paladin** | Steel blue, noble silver | `#0d1220` | `#f0f0f8` | `#8898d8` |
+| **Ranger** | Forest floor, bark and moss | `#0f1a0a` | `#c8d8b0` | `#6a8a40` |
+| **Thief** | Deep shadow, tarnished coin | `#111118` | `#a8a8b8` | `#a87830` |
+| **Trader** | Merchant brown, rich gold | `#180e05` | `#e8d090` | `#c89020` |
+| **Warrior Mage** | Arcane storm, elemental fire | `#0f0f1a` | `#e0d8f8` | `#c86020` |
+
+Each guild theme also ships with matching preset colors (speech, whisper, thought, etc.) tuned to complement its palette.
+
+### 6.6 Theme JSON Format
+
+Themes are stored in `~/.klient67/themes/` as JSON. Base themes are bundled with the app; custom themes live in this directory.
+
 ```json
 {
-  "name": "My Theme",
-  "background": "#0d0d0d",
-  "text": "#d4c9a8",
-  "accent": "#8b6914",
-  "panelBorder": "#2a2a2a",
-  "statusHealth": "#4caf50",
-  "statusMana": "#5c8ac4",
+  "name": "My Moon Mage tweaks",
+  "basedOn": "Moon Mage",
+  "background": "#07091a",
+  "text": "#c8d8f8",
+  "accent": "#9090e8",
+  "panelBorder": "#1a1a3a",
+  "panelHeader": "#0f1128",
+  "status": {
+    "health":        "#e05050",
+    "mana":          "#5080d0",
+    "concentration": "#50b8b8",
+    "fatigue":       "#d07830",
+    "spirit":        "#9858c8"
+  },
   "presets": {
-    "speech": { "color": "#c8a040", "italic": true },
-    "whisper": { "color": "#8a6020", "italic": true }
+    "speech":    { "color": "#d0b040", "italic": true },
+    "whisper":   { "color": "#907830", "italic": true },
+    "thought":   { "color": "#80c8e8" },
+    "roomname":  { "color": "#ffffff", "bold": true },
+    "roomdesc":  { "color": "#a8b8d8" },
+    "bold":      { "color": "#ffffff", "bold": true },
+    "expiry":    { "color": "#e08030" },
+    "store":     { "color": "#60c060" }
+  },
+  "font": {
+    "family": "Cascadia Code",
+    "size": 14,
+    "lineHeight": 1.55,
+    "weight": "normal"
   }
 }
 ```
 
-Themes are stored in `~/.klient67/themes/` and selectable from Settings.
+### 6.7 Sharing Themes
 
-### 6.3 Font Configuration
-
-```json
-{
-  "fontFamily": "Cascadia Code",
-  "fontSize": 14,
-  "lineHeight": 1.55,
-  "fontWeight": "normal"
-}
-```
+Players can export any custom theme as a `.json` file and share it — on Discord, the DR forums, or directly. Another player imports it via Settings → Theme → Import, and it appears in their My Themes section immediately. The `basedOn` field is preserved but not required for imports.
 
 ---
 
@@ -473,9 +581,13 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] High Contrast setting
 - [ ] Epilepsy Safe Mode toggle
 - [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
-- [ ] Font configuration (family, size, line height)
-- [ ] Built-in theme switcher
-- [ ] Custom theme JSON support
+- [ ] Font configuration (family, size, line height, per-theme overrides)
+- [ ] General base themes (Dark, Darker, Slate, Parchment, Terminal)
+- [ ] Guild base themes (all 11 guilds with tuned palettes and presets)
+- [ ] Theme picker UI (General / Guild tabs, live preview swatches)
+- [ ] Theme editor (all color fields, live preview, colorblind-aware pickers)
+- [ ] My Themes — save, name, duplicate, delete, reset to base
+- [ ] Theme export / import (JSON)
 - [ ] Full keyboard navigation & configurable bindings
 - [ ] Screen reader / ARIA live regions (main, room, thoughts panels)
 - [ ] ARIA landmark navigation (all panels labeled, Tab order logical)
