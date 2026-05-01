@@ -334,6 +334,21 @@ The exp panel is a live skill tracker driven entirely by `<component id='exp Ski
 - Bar fill represents mindstate progress from clear → mind lock
 - Updates live as the server pushes new exp components
 
+**expbrief mode:**
+
+DragonRealms has two exp display modes:
+
+| Mode | Format | Used by |
+|---|---|---|
+| Standard | Verbose text output, parsed from prose | Genie (forces this mode on login) |
+| expbrief | Structured XML `<component>` tags | StormFront, Frostbite, Klient67 |
+
+Klient67 is an XML client — expbrief is the natural mode and gives us the structured data the exp panel needs for free. On login, the client sends `expbrief` to ensure the game is in the right state, matching StormFront's behavior.
+
+**Lich mode:** Lich may handle the expbrief toggle itself on login. In Lich mode, the client does not send the `expbrief` command — Lich owns the session setup. The exp panel still works identically either way since the data arrives as the same XML regardless of who toggled the mode.
+
+If a player switches back to a standard exp display in-game for any reason, the exp panel will stop receiving structured updates and show stale data. The panel will display a subtle indicator when no exp updates have been received for an extended period.
+
 ---
 
 ## 5. Display & Accessibility
