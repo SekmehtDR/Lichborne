@@ -156,3 +156,18 @@ export interface UnknownEvent {
   type: 'unknown'
   raw: string
 }
+
+// --- Renderer-shared data shapes ---
+
+export interface TextLine {
+  id: number
+  segments: TextSegment[]
+}
+
+export interface RoomState {
+  title: string
+  desc: string
+  objects: string
+  players: string
+  exits: string[]
+}

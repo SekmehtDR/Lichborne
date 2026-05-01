@@ -1,0 +1,142 @@
+.panel-frame {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #1e1e1e;
+  background: #0f0f0f;
+  overflow: hidden;
+}
+
+.panel-frame-body {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ============================================================
+   Tab bar — Frostbite-inspired, tabs at the bottom
+   ============================================================ */
+
+.panel-frame-tabs {
+  display: flex;
+  align-items: stretch;
+  background: #111;
+  border-top: 1px solid #1e1e1e;
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a2a #111;
+}
+
+.panel-frame-tabs::-webkit-scrollbar {
+  height: 3px;
+}
+
+.panel-frame-tabs::-webkit-scrollbar-track {
+  background: #111;
+}
+
+.panel-frame-tabs::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 2px;
+}
+
+.panel-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  color: #4a4a4a;
+  border-right: 1px solid #1a1a1a;
+  white-space: nowrap;
+  user-select: none;
+  flex-shrink: 0;
+  transition: color 0.12s, background 0.12s;
+  border-top: 2px solid transparent;
+}
+
+.panel-tab:hover {
+  color: #888;
+  background: #161616;
+}
+
+.panel-tab--active {
+  color: #d4c9a8;
+  background: #171717;
+  border-top-color: #8b6914;
+}
+
+.panel-tab-close {
+  font-size: 0.85rem;
+  color: #333;
+  line-height: 1;
+  padding: 0 1px;
+  border-radius: 2px;
+  transition: color 0.12s, background 0.12s;
+}
+
+.panel-tab-close:hover {
+  color: #e06c6c;
+  background: rgba(200, 60, 60, 0.15);
+}
+
+/* ============================================================
+   Add panel (+) button and popover menu
+   ============================================================ */
+
+.panel-tab-add-wrap {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.panel-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 100%;
+  font-size: 1rem;
+  color: #333;
+  background: transparent;
+  border: none;
+  border-left: 1px solid #1a1a1a;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+  transition: color 0.12s, background 0.12s;
+}
+
+.panel-tab-add:hover {
+  color: #888;
+  background: #161616;
+}
+
+.panel-add-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  background: #1c1c1c;
+  border: 1px solid #2e2e2e;
+  border-radius: 4px;
+  min-width: 140px;
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.panel-add-item {
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: #aaa;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.panel-add-item:hover {
+  background: #262626;
+  color: #d4c9a8;
+}

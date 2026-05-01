@@ -744,11 +744,13 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Two-row icon bar HUD — RT/CT/stance/status row + compass/hands/spell row (Section 4.8)
 - [x] Prepared spell display (from `<spell>` element)
 - [x] Command history — Up/Down arrow navigation, 200-command buffer (Section 5.6)
-- [ ] Room panel — structured layout with name, desc, objects, players, clickable exits via `<d>` tags
-- [ ] Experience panel — live mindstate tracker from `<component id='exp ...'>` feed
-- [ ] Thoughts stream panel (stream routing via `<pushStream>`)
-- [ ] Deaths and Arrivals stream panels
-- [ ] Text preset styling — speech, whisper, thought, roomname, roomdesc, bold, expiry, store
+- [x] Room panel — structured layout with name, desc, objects, players, clickable exits (full direction names)
+- [x] Experience panel — live mindstate tracker: rank / pct / mindstate name / X/34, gradient bars by mindstate level, filters clear skills, exp pulse lines suppressed from main stream
+- [x] Thoughts stream panel (stream routing via `<pushStream>`)
+- [x] Deaths and Arrivals stream panels
+- [x] Active Spells panel — replaces on each server refresh, routed from percWindow stream
+- [x] PanelFrame — tabbed container with tabs-at-bottom, `+` to add any panel, `×` to close, scrollable tab bar, full panel names
+- [x] Text preset styling — speech, whisper, thought, roomname, roomdesc, bold, expiry, store (via `data-preset` CSS, themeable in Phase 4)
 - [ ] Smart scroll anchor — "▼ N new lines" badge, auto-scroll pause on scroll-up
 - [ ] Virtualized text list — only visible lines in the DOM, batched updates
 

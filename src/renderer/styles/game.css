@@ -80,6 +80,7 @@
   overflow-y: auto;
   padding: 8px 12px;
   cursor: text;
+  min-width: 0;
 }
 
 .text-line {

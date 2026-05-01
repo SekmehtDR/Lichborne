@@ -31,9 +31,9 @@ const STREAM_MAP: Record<string, StreamTarget> = {
   inv:         'inv',
   // Confirmed duplicate of main — discard
   talk:        'raw',
-  // Genie window targets — route to main until dedicated panels exist (Phase 3)
+  // Genie window targets
   combat:      'main',
-  percWindow:  'main',
+  percWindow:  'spells',
 }
 
 const COMPONENT_STREAM: Record<string, StreamTarget> = {

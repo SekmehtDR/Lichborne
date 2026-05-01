@@ -1,0 +1,195 @@
+/* ============================================================
+   Text preset colors — applied via data-preset attribute
+   Override here or via theme CSS variables in Phase 4.
+   ============================================================ */
+
+[data-preset="speech"]       { color: #d4af37; font-style: italic; }
+[data-preset="whisper"]      { color: #907830; font-style: italic; }
+[data-preset="thought"]      { color: #5bc8c8; }
+[data-preset="roomname"]     { color: #ffffff; font-weight: bold; }
+[data-preset="roomdesc"]     { color: #c8c8c8; }
+[data-preset="bold"]         { color: #ffffff; font-weight: bold; }
+[data-preset="expiry"]       { color: #d97706; }
+[data-preset="store"]        { color: #5cb85c; }
+[data-preset="command-echo"] { color: #6a8a6a; }
+
+/* ============================================================
+   Stream panel — generic scrolling text (Thoughts, Deaths, etc.)
+   ============================================================ */
+
+.stream-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+/* ============================================================
+   Room panel
+   ============================================================ */
+
+.room-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.room-panel--empty {
+  color: #3a3a3a;
+  font-size: 0.78rem;
+  font-style: italic;
+  padding: 12px;
+}
+
+.room-panel-title {
+  color: #e8e8e8;
+  font-weight: bold;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #222;
+  line-height: 1.3;
+}
+
+.room-panel-desc {
+  color: #b8b8b8;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
+.room-panel-exits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.room-exit-btn {
+  background: #0d1a0d;
+  border: 1px solid #1e3a1e;
+  color: #60a840;
+  padding: 3px 9px;
+  font-size: 0.72rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.room-exit-btn:hover {
+  background: #142014;
+  border-color: #366030;
+  color: #90d860;
+}
+
+.room-panel-section-label {
+  color: #383838;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 8px;
+  margin-bottom: 3px;
+}
+
+.room-panel-objects,
+.room-panel-players {
+  color: #8a8a8a;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+/* ============================================================
+   Experience panel
+   ============================================================ */
+
+.exp-panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+.exp-panel--empty {
+  color: #3a3a3a;
+  font-size: 0.78rem;
+  font-style: italic;
+  padding: 12px;
+}
+
+.exp-row {
+  margin-bottom: 7px;
+}
+
+.exp-line {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 3px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.exp-skill {
+  font-size: 0.71rem;
+  color: #aaa;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exp-rank {
+  font-size: 0.68rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.exp-pct {
+  font-size: 0.68rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.exp-mindstate {
+  font-size: 0.68rem;
+  color: #606060;
+  text-transform: capitalize;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exp-rate {
+  font-size: 0.65rem;
+  color: #404040;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.exp-row--locked .exp-skill    { color: #d07030; }
+.exp-row--locked .exp-mindstate { color: #a05020; }
+.exp-row--locked .exp-rate     { color: #7a3a10; }
+
+.exp-bar-wrap {
+  height: 3px;
+  background: #181818;
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.exp-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease, background 0.4s ease;
+  min-width: 1px;
+}
+

@@ -1,25 +1,50 @@
 import { useEffect, useRef, useState } from 'react'
-import type { GameEvent, StreamTextEvent, TextSegment } from '../../shared/types'
+import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
+import { renderSegment } from '../utils/renderSegment'
 import DebugPanel from './DebugPanel'
 import StatusBar from './StatusBar'
 import IconBar from './IconBar'
+import PanelFrame from './PanelFrame'
 import '../styles/game.css'
-
-interface TextLine {
-  id: number
-  segments: TextSegment[]
-}
+import '../styles/panels.css'
 
 interface Props {
   onDisconnect: () => void
 }
 
 let lineId = 0
+
+// Exp pulse lines arrive in the main stream as whisper-preset text duplicating
+// data already handled by exp-component events. Pattern: "SkillName: 1234 56% mindstate"
+const EXP_READOUT = /^[A-Za-z ]+:\s+\d+\s+\d+%\s+\w/
+
+function isExpReadout(segments: TextSegment[]): boolean {
+  return segments.length === 1 && segments[0].preset === 'whisper' && EXP_READOUT.test(segments[0].text)
+}
 const MAX_LINES = 2000
+const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
+
+const STREAM_BUFFERS = ['thoughts', 'arrivals', 'deaths', 'spells'] as const
+type BufferedStream = typeof STREAM_BUFFERS[number]
 
 export default function GameWindow({ onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
+  const [streamLines, setStreamLines] = useState<Record<BufferedStream, TextLine[]>>({
+    thoughts: [],
+    arrivals: [],
+    deaths:   [],
+    spells:   [],
+  })
+  const [roomState, setRoomState] = useState<RoomState>({
+    title:   '',
+    desc:    '',
+    objects: '',
+    players: '',
+    exits:   [],
+  })
+  const [expSkills, setExpSkills] = useState<Record<string, string>>({})
+
   const [command, setCommand] = useState('')
   const historyRef = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
@@ -27,12 +52,13 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [disconnecting, setDisconnecting] = useState(false)
   const [showDebug, setShowDebug] = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
+
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
-    health: { current: 0, max: 0 },
-    mana: { current: 0, max: 0 },
+    health:        { current: 0, max: 0 },
+    mana:          { current: 0, max: 0 },
     concentration: { current: 0, max: 0 },
-    stamina: { current: 0, max: 0 },
-    spirit: { current: 0, max: 0 },
+    stamina:       { current: 0, max: 0 },
+    spirit:        { current: 0, max: 0 },
   })
   const [rtExpires, setRtExpires] = useState(0)
   const [ctExpires, setCtExpires] = useState(0)
@@ -42,6 +68,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [rightHand, setRightHand] = useState('Empty')
   const [leftHand, setLeftHand] = useState('Empty')
   const [exits, setExits] = useState<string[]>([])
+
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -49,7 +76,11 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   useEffect(() => {
     const unsubEvents = window.api.onGameEvent((events: GameEvent[]) => {
-      const newLines: TextLine[] = []
+      const newMain: TextLine[] = []
+      const newStream: Partial<Record<BufferedStream, TextLine[]>> = {}
+      const clearedStreams = new Set<BufferedStream>()
+      const roomUpdates: Partial<RoomState> = {}
+      const expUpdates: Record<string, string> = {}
       const vitalUpdates: Record<string, { current: number; max: number }> = {}
       const indicatorUpdates: Record<string, boolean> = {}
       let newRt: number | null = null
@@ -59,11 +90,23 @@ export default function GameWindow({ onDisconnect }: Props) {
 
       for (const evt of events) {
         switch (evt.type) {
-          case 'stream-text':
-            if ((evt as StreamTextEvent).stream === 'main') {
-              newLines.push({ id: lineId++, segments: (evt as StreamTextEvent).segments })
+          case 'stream-text': {
+            const { stream, segments } = evt as StreamTextEvent
+            if (stream === 'main') {
+              if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
+            } else if ((STREAM_BUFFERS as readonly string[]).includes(stream)) {
+              const key = stream as BufferedStream
+              if (!newStream[key]) newStream[key] = []
+              newStream[key]!.push({ id: lineId++, segments })
+            } else if (stream === 'room') {
+              roomUpdates.desc = segments.map(s => s.text).join('')
+            } else if (stream === 'room-objects') {
+              roomUpdates.objects = segments.map(s => s.text).join('')
+            } else if (stream === 'room-players') {
+              roomUpdates.players = segments.map(s => s.text).join('')
             }
             break
+          }
           case 'vital-update':
             vitalUpdates[evt.id] = { current: evt.current, max: evt.max }
             break
@@ -88,16 +131,52 @@ export default function GameWindow({ onDisconnect }: Props) {
             break
           case 'exits':
             setExits(evt.directions)
+            roomUpdates.exits = evt.directions
+            break
+          case 'room-title':
+            roomUpdates.title = evt.title
+            break
+          case 'exp-component':
+            expUpdates[evt.skill] = evt.text
+            break
+          case 'clear-stream':
+            if (evt.stream === 'room')         roomUpdates.desc    = ''
+            if (evt.stream === 'room-objects') roomUpdates.objects = ''
+            if (evt.stream === 'room-players') roomUpdates.players = ''
+            if (evt.stream === 'room-exits')   roomUpdates.exits   = []
+            if ((STREAM_BUFFERS as readonly string[]).includes(evt.stream))
+              clearedStreams.add(evt.stream as BufferedStream)
             break
         }
       }
 
-      if (newLines.length > 0)
-        setLines(prev => [...prev.slice(-(MAX_LINES - newLines.length)), ...newLines])
+      if (newMain.length > 0)
+        setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+
+      if (Object.keys(newStream).length > 0 || clearedStreams.size > 0) {
+        setStreamLines(prev => {
+          const next = { ...prev }
+          for (const key of clearedStreams) next[key] = []
+          for (const [key, lines] of Object.entries(newStream) as [BufferedStream, TextLine[]][]) {
+            const base = clearedStreams.has(key) ? [] : prev[key]
+            next[key] = [...base.slice(-(MAX_STREAM_LINES - lines.length)), ...lines]
+          }
+          return next
+        })
+      }
+
+      if (Object.keys(roomUpdates).length > 0)
+        setRoomState(prev => ({ ...prev, ...roomUpdates }))
+
+      if (Object.keys(expUpdates).length > 0)
+        setExpSkills(prev => ({ ...prev, ...expUpdates }))
+
       if (Object.keys(vitalUpdates).length > 0)
         setVitals(prev => ({ ...prev, ...vitalUpdates }))
+
       if (Object.keys(indicatorUpdates).length > 0)
         setIndicators(prev => ({ ...prev, ...indicatorUpdates }))
+
       if (newRt !== null) setRtExpires(newRt)
       if (newCt !== null) setCtExpires(newCt)
       if (newStance !== null) setStance(newStance)
@@ -124,9 +203,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   }
 
   useEffect(() => {
-    if (pinnedRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
-    }
+    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines])
 
   function handleCommand(e: React.FormEvent) {
@@ -192,7 +269,12 @@ export default function GameWindow({ onDisconnect }: Props) {
       />
 
       <div className="game-main">
-        <div className="text-window" ref={scrollRef} onScroll={handleScroll} onClick={() => inputRef.current?.focus()}>
+        <div
+          className="text-window"
+          ref={scrollRef}
+          onScroll={handleScroll}
+          onClick={() => inputRef.current?.focus()}
+        >
           {lines.map(line => (
             <div key={line.id} className="text-line">
               {line.segments.map((seg, i) => renderSegment(seg, i))}
@@ -200,13 +282,17 @@ export default function GameWindow({ onDisconnect }: Props) {
           ))}
           <div ref={bottomRef} />
         </div>
+
+        <PanelFrame
+          streamLines={streamLines}
+          roomState={roomState}
+          expSkills={expSkills}
+          onSendCommand={cmd => window.api.sendCommand(cmd)}
+        />
       </div>
 
       {showDebug && (
-        <DebugPanel
-          events={debugEvents}
-          onClear={() => setDebugEvents([])}
-        />
+        <DebugPanel events={debugEvents} onClear={() => setDebugEvents([])} />
       )}
 
       <form className="command-bar" onSubmit={handleCommand}>
@@ -225,28 +311,4 @@ export default function GameWindow({ onDisconnect }: Props) {
       </form>
     </div>
   )
-}
-
-function renderSegment(seg: TextSegment, key: number) {
-  const style: React.CSSProperties = {}
-  if (seg.preset) style.color = PRESET_COLORS[seg.preset] ?? undefined
-
-  if (seg.bold) {
-    return <strong key={key} style={style}>{seg.text}</strong>
-  }
-  if (seg.preset || Object.keys(style).length > 0) {
-    return <span key={key} style={style}>{seg.text}</span>
-  }
-  return seg.text
-}
-
-const PRESET_COLORS: Record<string, string> = {
-  'command-echo': '#6a8a6a',
-  speech:         '#d4af37',
-  whisper:        '#8a8a8a',
-  thought:        '#5bc8c8',
-  roomname:       '#ffffff',
-  roomdesc:       '#c8c8c8',
-  expiry:         '#d97706',
-  store:          '#5cb85c',
 }
