@@ -6,7 +6,7 @@ import { EventEmitter } from 'events'
 const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
 const DEFAULT_HOST = 'localhost'
 const DEFAULT_PORT = 11024
-const LAUNCH_WAIT_MS = 5000
+const DEFAULT_LAUNCH_WAIT_MS = 5000
 
 export class LichConnection extends EventEmitter {
   private socket: net.Socket | null = null
@@ -14,7 +14,7 @@ export class LichConnection extends EventEmitter {
   private buffer = ''
   private connected = false
 
-  async launch(rubyPath: string, lichPath: string, mode = '--stormfront'): Promise<void> {
+  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', waitMs = DEFAULT_LAUNCH_WAIT_MS): Promise<void> {
     return new Promise((resolve, reject) => {
       // Lich is launched via cmd /C so it gets its own console and doesn't
       // block our process. The mode flag tells Lich which client handshake to expect.
@@ -30,7 +30,7 @@ export class LichConnection extends EventEmitter {
       this.lichProcess.unref() // don't hold our process open if Lich outlives us
 
       // Give Lich time to start its proxy listener and authenticate with Simutronics
-      setTimeout(resolve, LAUNCH_WAIT_MS)
+      setTimeout(resolve, waitMs)
     })
   }
 

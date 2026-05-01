@@ -351,20 +351,9 @@ export class StormFrontParser {
         break
 
       case 'prompt': {
-        // DR always sends plain ">" — compute the full state prefix from tracked events.
-        // Order matches Genie: stance S H I W ! J R >; DEAD overrides everything.
-        const inRT = Date.now() < this.rtExpires
-        const prompt = this.isDead
-          ? 'DEAD>'
-          : this.stance
-            + (this.isStunned   ? 'S' : '')
-            + (this.isHidden    ? 'H' : '')
-            + (this.isInvisible ? 'I' : '')
-            + (this.isWebbed    ? 'W' : '')
-            + (this.isBleeding  ? '!' : '')
-            + (this.isJoined    ? 'J' : '')
-            + (inRT             ? 'R' : '')
-            + '>'
+        // With statusprompt enabled DR sends the full state string in the tag text
+        // (e.g. "H>", "HR>", "s>"). Fall back to ">" if the server sends nothing.
+        const prompt = text || '>'
         if (prompt !== this.lastMainText) {
           this.lastMainText = prompt
           this.events.push({

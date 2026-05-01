@@ -19,6 +19,7 @@ export default function LoginScreen({ onConnected }: Props) {
   const [rubyPath, setRubyPath] = useState(DEFAULT_RUBY)
   const [lichPort, setLichPort] = useState(DEFAULT_LICH_PORT)
   const [lichMode, setLichMode] = useState<'--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'>('--stormfront')
+  const [lichDelay, setLichDelay] = useState(5)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [statusLog, setStatusLog] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -56,6 +57,7 @@ export default function LoginScreen({ onConnected }: Props) {
       rubyPath,
       lichPort,
       lichMode,
+      lichDelay,
     }
 
     const result = await window.api.login(creds)
@@ -146,29 +148,42 @@ export default function LoginScreen({ onConnected }: Props) {
                       disabled={connecting}
                     />
                   </label>
-                  <label>
-                    Lich Port
-                    <input
-                      type="number"
-                      value={lichPort}
-                      onChange={e => setLichPort(parseInt(e.target.value, 10))}
-                      disabled={connecting}
-                    />
-                  </label>
-                  <label>
-                    Lich Mode
-                    <select
-                      value={lichMode}
-                      onChange={e => setLichMode(e.target.value as typeof lichMode)}
-                      disabled={connecting}
-                    >
-                      <option value="--stormfront">--stormfront (default)</option>
-                      <option value="--wizard">--wizard</option>
-                      <option value="--avalon">--avalon</option>
-                      <option value="--frostbite">--frostbite</option>
-                      <option value="--genie">--genie</option>
-                    </select>
-                  </label>
+                  <div className="advanced-row">
+                    <label>
+                      Launch Delay (s)
+                      <input
+                        type="number"
+                        value={lichDelay}
+                        min={1}
+                        max={30}
+                        onChange={e => setLichDelay(parseInt(e.target.value, 10))}
+                        disabled={connecting}
+                      />
+                    </label>
+                    <label>
+                      Port
+                      <input
+                        type="number"
+                        value={lichPort}
+                        onChange={e => setLichPort(parseInt(e.target.value, 10))}
+                        disabled={connecting}
+                      />
+                    </label>
+                    <label>
+                      Mode
+                      <select
+                        value={lichMode}
+                        onChange={e => setLichMode(e.target.value as typeof lichMode)}
+                        disabled={connecting}
+                      >
+                        <option value="--stormfront">--stormfront</option>
+                        <option value="--wizard">--wizard</option>
+                        <option value="--avalon">--avalon</option>
+                        <option value="--frostbite">--frostbite</option>
+                        <option value="--genie">--genie</option>
+                      </select>
+                    </label>
+                  </div>
                 </>
               )}
             </div>

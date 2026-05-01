@@ -7,6 +7,7 @@ export interface LoginCredentials {
   rubyPath: string
   lichPort: number
   lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
+  lichDelay: number
 }
 
 export interface CharacterEntry {
