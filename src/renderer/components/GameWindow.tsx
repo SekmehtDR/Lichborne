@@ -61,6 +61,10 @@ export default function GameWindow({ onDisconnect }: Props) {
   function handleCommand(e: React.FormEvent) {
     e.preventDefault()
     if (!command.trim()) return
+    setLines(prev => [...prev.slice(-MAX_LINES), {
+      id: lineId++,
+      segments: [{ text: `>${command}`, preset: 'command-echo' }],
+    }])
     window.api.sendCommand(command)
     setCommand('')
   }
@@ -136,11 +140,12 @@ function renderSegment(seg: TextSegment, key: number) {
 }
 
 const PRESET_COLORS: Record<string, string> = {
-  speech:    '#d4af37',
-  whisper:   '#8a8a8a',
-  thought:   '#5bc8c8',
-  roomname:  '#ffffff',
-  roomdesc:  '#c8c8c8',
-  expiry:    '#d97706',
-  store:     '#5cb85c',
+  'command-echo': '#6a8a6a',
+  speech:         '#d4af37',
+  whisper:        '#8a8a8a',
+  thought:        '#5bc8c8',
+  roomname:       '#ffffff',
+  roomdesc:       '#c8c8c8',
+  expiry:         '#d97706',
+  store:          '#5cb85c',
 }

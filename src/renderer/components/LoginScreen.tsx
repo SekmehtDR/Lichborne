@@ -18,6 +18,7 @@ export default function LoginScreen({ onConnected }: Props) {
   const [lichPath, setLichPath] = useState(DEFAULT_LICH)
   const [rubyPath, setRubyPath] = useState(DEFAULT_RUBY)
   const [lichPort, setLichPort] = useState(DEFAULT_LICH_PORT)
+  const [lichMode, setLichMode] = useState<'--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'>('--stormfront')
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [statusLog, setStatusLog] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -53,7 +54,8 @@ export default function LoginScreen({ onConnected }: Props) {
       useLich,
       lichPath,
       rubyPath,
-      lichPort
+      lichPort,
+      lichMode,
     }
 
     const result = await window.api.login(creds)
@@ -152,6 +154,20 @@ export default function LoginScreen({ onConnected }: Props) {
                       onChange={e => setLichPort(parseInt(e.target.value, 10))}
                       disabled={connecting}
                     />
+                  </label>
+                  <label>
+                    Lich Mode
+                    <select
+                      value={lichMode}
+                      onChange={e => setLichMode(e.target.value as typeof lichMode)}
+                      disabled={connecting}
+                    >
+                      <option value="--stormfront">--stormfront (default)</option>
+                      <option value="--wizard">--wizard</option>
+                      <option value="--avalon">--avalon</option>
+                      <option value="--frostbite">--frostbite</option>
+                      <option value="--genie">--genie</option>
+                    </select>
                   </label>
                 </>
               )}

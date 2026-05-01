@@ -25,7 +25,7 @@ export class ConnectionManager extends EventEmitter {
     this.mode = 'lich'
 
     this.emit('status', 'Launching Lich...')
-    const lichLaunchPromise = this.lich.launch(creds.rubyPath, creds.lichPath)
+    const lichLaunchPromise = this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode)
 
     this.emit('status', 'Connecting to eaccess.play.net:7910...')
     await this.sge.connect()

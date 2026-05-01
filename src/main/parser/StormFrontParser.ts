@@ -73,6 +73,17 @@ export class StormFrontParser {
   private captureCtx: CaptureContext | null = null
   private captureBuf = ''
 
+  // Game state for computing the prompt indicator string — matches Genie's prompt logic
+  private rtExpires = 0                        // ms timestamp; 0 = no roundtime
+  private stance: '' | 's' | 'K' | 'P' = ''  // '' = standing (no prefix)
+  private isHidden    = false
+  private isInvisible = false
+  private isStunned   = false
+  private isWebbed    = false
+  private isBleeding  = false
+  private isJoined    = false
+  private isDead      = false
+
   // Suppress consecutive identical prompts — DR fires <prompt> after every
   // server transaction (room updates, component clears, etc.)
   private lastMainText = ''
@@ -80,6 +91,10 @@ export class StormFrontParser {
   parse(line: string): GameEvent[] {
     this.events = []
     const isBlankLine = !line.replace(/[\r\n]/g, '').trim()
+
+    if (/<prompt/i.test(line)) {
+      this.events.push({ type: 'unknown', raw: `RAW_PROMPT: ${line.replace(/[\r\n]/g, '↵')}` })
+    }
 
     const tokenRe = /(<[^>]*>)|([^<]+)/g
     let m: RegExpExecArray | null
@@ -188,14 +203,29 @@ export class StormFrontParser {
         const raw = attrs.id ?? ''
         const normalized = raw.replace(/^Icon/i, '').toLowerCase()
         if (normalized) {
-          this.events.push({ type: 'indicator', id: normalized, visible: attrs.visible === 'y' })
+          const visible = attrs.visible === 'y'
+          if (normalized === 'standing'  && visible) this.stance = ''
+          if (normalized === 'sitting'   && visible) this.stance = 's'
+          if (normalized === 'kneeling'  && visible) this.stance = 'K'
+          if (normalized === 'prone'     && visible) this.stance = 'P'
+          if (normalized === 'hidden')    this.isHidden    = visible
+          if (normalized === 'invisible') this.isInvisible = visible
+          if (normalized === 'stunned')   this.isStunned   = visible
+          if (normalized === 'webbed')    this.isWebbed    = visible
+          if (normalized === 'bleeding')  this.isBleeding  = visible
+          if (normalized === 'joined')    this.isJoined    = visible
+          if (normalized === 'dead')      this.isDead      = visible
+          this.events.push({ type: 'indicator', id: normalized, visible })
         }
         break
       }
 
-      case 'roundtime':
-        this.events.push({ type: 'roundtime', expires: parseInt(attrs.value ?? '0', 10) * 1000 })
+      case 'roundtime': {
+        const expires = parseInt(attrs.value ?? '0', 10) * 1000
+        this.rtExpires = expires
+        this.events.push({ type: 'roundtime', expires })
         break
+      }
 
       case 'casttime':
         this.events.push({ type: 'casttime', expires: parseInt(attrs.value ?? '0', 10) * 1000 })
@@ -320,19 +350,32 @@ export class StormFrontParser {
         this.events.push({ type: 'hand', hand: 'left', item: text || 'Empty' })
         break
 
-      case 'prompt':
-        // Show the prompt (e.g. ">", "R>") but collapse consecutive identical prompts.
-        // DR fires <prompt> after every server transaction, not just player actions.
-        if (text && text !== this.lastMainText) {
-          this.lastMainText = text
+      case 'prompt': {
+        // DR always sends plain ">" — compute the full state prefix from tracked events.
+        // Order matches Genie: stance S H I W ! J R >; DEAD overrides everything.
+        const inRT = Date.now() < this.rtExpires
+        const prompt = this.isDead
+          ? 'DEAD>'
+          : this.stance
+            + (this.isStunned   ? 'S' : '')
+            + (this.isHidden    ? 'H' : '')
+            + (this.isInvisible ? 'I' : '')
+            + (this.isWebbed    ? 'W' : '')
+            + (this.isBleeding  ? '!' : '')
+            + (this.isJoined    ? 'J' : '')
+            + (inRT             ? 'R' : '')
+            + '>'
+        if (prompt !== this.lastMainText) {
+          this.lastMainText = prompt
           this.events.push({
             type: 'stream-text',
             stream: 'main',
-            segments: [{ text }],
+            segments: [{ text: prompt }],
             timestamp: Date.now(),
           })
         }
         break
+      }
     }
   }
 

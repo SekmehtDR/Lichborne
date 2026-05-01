@@ -8,7 +8,7 @@
 ## Current Status
 
 **Phase 1 — Complete**
-**Phase 2 — Not started**
+**Phase 2 — In progress (2A built, pending test)**
 
 ---
 
@@ -34,11 +34,11 @@ Broken into 5 testable milestones. Build and test each before moving to the next
 ### Milestone 2A — Parser & IPC Foundation
 > Goal: typed events flow through IPC, main text still works, debug panel shows event stream
 
-- [ ] StormFront XML parser (SAX-style: tag_start / text / tag_end callbacks, active tag stack)
-- [ ] Typed GameEvent types (VitalUpdate, RoundtimeEvent, IndicatorEvent, StreamText, RoomComponent, ExpComponent, etc.)
-- [ ] Main process emits typed GameEvent array over IPC instead of raw strings
-- [ ] Renderer handles typed events — main text still renders correctly
-- [ ] Debug panel — shows raw parsed event stream in real time
+- [x] StormFront XML parser (SAX-style: tag_start / text / tag_end callbacks, active tag stack)
+- [x] Typed GameEvent types (VitalUpdate, RoundtimeEvent, IndicatorEvent, StreamText, RoomComponent, ExpComponent, etc.)
+- [x] Main process emits typed GameEvent array over IPC instead of raw strings
+- [x] Renderer handles typed events — main text still renders correctly
+- [x] Debug panel — shows raw parsed event stream in real time (toggle via "Debug" button in toolbar)
 - **Test:** Connect to game → main text works → debug panel shows typed events
 
 #### Parser Implementation Notes (from Lich xmlparser.rb — Binu's recommendation)

@@ -14,12 +14,12 @@ export class LichConnection extends EventEmitter {
   private buffer = ''
   private connected = false
 
-  async launch(rubyPath: string, lichPath: string): Promise<void> {
+  async launch(rubyPath: string, lichPath: string, mode = '--stormfront'): Promise<void> {
     return new Promise((resolve, reject) => {
       // Lich is launched via cmd /C so it gets its own console and doesn't
-      // block our process. --genie tells Lich to expect a Genie-style handshake.
+      // block our process. The mode flag tells Lich which client handshake to expect.
       this.lichProcess = cp.spawn('cmd', [
-        '/C', rubyPath, lichPath, '--genie', '--dragonrealms'
+        '/C', rubyPath, lichPath, mode, '--dragonrealms'
       ], {
         detached: true,
         stdio: 'ignore',
