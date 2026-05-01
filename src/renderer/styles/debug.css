@@ -1,0 +1,89 @@
+.debug-panel {
+  display: flex;
+  flex-direction: column;
+  background: #0d0d0d;
+  border-top: 1px solid #333;
+  height: 220px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+}
+
+.debug-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 8px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.debug-title {
+  color: #888;
+  font-size: 11px;
+}
+
+.debug-clear {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.debug-clear:hover {
+  background: #333;
+  color: #fff;
+}
+
+.debug-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.debug-event {
+  display: flex;
+  gap: 8px;
+  padding: 1px 8px;
+  border-bottom: 1px solid #111;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-event:hover {
+  background: #1a1a1a;
+  white-space: normal;
+  overflow: visible;
+  word-break: break-all;
+}
+
+.debug-type {
+  flex-shrink: 0;
+  min-width: 140px;
+  color: #569cd6;
+  font-weight: bold;
+}
+
+.debug-event--stream-text    .debug-type { color: #9cdcfe; }
+.debug-event--vital-update   .debug-type { color: #4ec9b0; }
+.debug-event--roundtime      .debug-type { color: #ce9178; }
+.debug-event--casttime       .debug-type { color: #ce9178; }
+.debug-event--indicator      .debug-type { color: #dcdcaa; }
+.debug-event--stance         .debug-type { color: #c586c0; }
+.debug-event--spell          .debug-type { color: #b5cea8; }
+.debug-event--hand           .debug-type { color: #b5cea8; }
+.debug-event--room-title     .debug-type { color: #f7c948; }
+.debug-event--exp-component  .debug-type { color: #6a9955; }
+.debug-event--clear-stream   .debug-type { color: #f44747; }
+.debug-event--unknown        .debug-type { color: #888; }
+
+.debug-body {
+  color: #d4d4d4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

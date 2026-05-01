@@ -1,26 +1,30 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import * as path from 'path'
 import { ConnectionManager } from './connection/ConnectionManager'
+import { StormFrontParser } from './parser/StormFrontParser'
 import type { LoginCredentials } from '../shared/types'
 
-// IPC channel names — kept in sync with preload.ts and shared/types.ts
 const CH = {
   LOGIN:             'login',
   SEND_COMMAND:      'send-command',
   DISCONNECT:        'disconnect',
-  GAME_TEXT:         'game-text',
+  GAME_EVENT:        'game-event',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error'
 } as const
 
 let mainWindow: BrowserWindow | null = null
 const connection = new ConnectionManager()
+const parser = new StormFrontParser()
 
 connection.on('status', (msg: string) => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
 })
 connection.on('line', (line: string) => {
-  mainWindow?.webContents.send(CH.GAME_TEXT, line)
+  const events = parser.parse(line)
+  if (events.length > 0) {
+    mainWindow?.webContents.send(CH.GAME_EVENT, events)
+  }
 })
 connection.on('disconnect', () => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected' })
@@ -60,7 +64,6 @@ function createWindow() {
   })
 }
 
-// IPC: Login and connect
 ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
   try {
     if (creds.useLich) {
@@ -75,12 +78,10 @@ ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
   }
 })
 
-// IPC: Send command to game
 ipcMain.on(CH.SEND_COMMAND, (_event, command: string) => {
   connection.send(command)
 })
 
-// IPC: Disconnect — send QUIT and wait for server to close cleanly
 ipcMain.on(CH.DISCONNECT, () => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnecting...' })
   connection.gracefulDisconnect().then(() => {

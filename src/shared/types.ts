@@ -13,20 +13,17 @@ export interface CharacterEntry {
   name: string
 }
 
-export interface StatusBars {
-  health: number
-  mana: number
-  stamina: number
-  spirit: number
-  concentration: number
-}
+// IPC channel names
+export const IPC = {
+  LOGIN:             'login',
+  SEND_COMMAND:      'send-command',
+  DISCONNECT:        'disconnect',
+  GAME_EVENT:        'game-event',
+  CONNECTION_STATUS: 'connection-status',
+  ERROR:             'error',
+} as const
 
-export interface GameTextLine {
-  text: string
-  stream: StreamTarget
-  style?: TextStyle
-  timestamp: number
-}
+// --- Stream routing ---
 
 export type StreamTarget =
   | 'main'
@@ -34,50 +31,120 @@ export type StreamTarget =
   | 'deaths'
   | 'spells'
   | 'familiar'
-  | 'logons'
+  | 'arrivals'
   | 'inv'
   | 'room'
+  | 'room-exits'
+  | 'room-objects'
+  | 'room-players'
+  | 'exp'
   | 'raw'
 
-export interface TextStyle {
-  color?: string
-  bold?: boolean
-  italic?: boolean
+// --- Text segments ---
+
+export interface TextSegment {
+  text: string
   preset?: string
+  bold?: boolean
 }
 
-export interface RoomState {
-  name: string
-  desc: string
-  objs: string
-  players: string
-  exits: string
+// --- Typed game events ---
+
+export type GameEvent =
+  | StreamTextEvent
+  | VitalUpdateEvent
+  | RoundtimeEvent
+  | CastTimeEvent
+  | IndicatorEvent
+  | StanceEvent
+  | SpellEvent
+  | HandEvent
+  | RoomTitleEvent
+  | ExpComponentEvent
+  | StreamPushEvent
+  | StreamPopEvent
+  | ClearStreamEvent
+  | UnknownEvent
+
+export interface StreamTextEvent {
+  type: 'stream-text'
+  stream: StreamTarget
+  segments: TextSegment[]
+  timestamp: number
 }
 
-export interface GameState {
-  connected: boolean
-  characterName: string
-  preparedSpell: string
-  roundtime: number
-  casttime: number
-  stance: string
-  status: string[]
-  statusBars: StatusBars
-  room: RoomState
+// Vitals — current and max both provided by the server text attribute ("72 100")
+export interface VitalUpdateEvent {
+  type: 'vital-update'
+  id: 'health' | 'mana' | 'stamina' | 'spirit' | 'concentration'
+  current: number
+  max: number
 }
 
-// IPC channel names
-export const IPC = {
-  // Renderer → Main
-  LOGIN: 'login',
-  SEND_COMMAND: 'send-command',
-  GET_CHARACTERS: 'get-characters',
-  DISCONNECT: 'disconnect',
+export interface RoundtimeEvent {
+  type: 'roundtime'
+  expires: number  // Unix ms timestamp
+}
 
-  // Main → Renderer
-  GAME_TEXT: 'game-text',
-  GAME_STATE: 'game-state',
-  CONNECTION_STATUS: 'connection-status',
-  CHARACTER_LIST: 'character-list',
-  ERROR: 'error'
-} as const
+export interface CastTimeEvent {
+  type: 'casttime'
+  expires: number  // Unix ms timestamp
+}
+
+// Indicators — id is normalized (Icon prefix stripped, lowercased)
+export interface IndicatorEvent {
+  type: 'indicator'
+  id: string
+  visible: boolean
+}
+
+// Stance — from progressBar id="pbarStance"
+export interface StanceEvent {
+  type: 'stance'
+  text: string   // 'Standing', 'Kneeling', 'Prone', 'Sitting'
+  value: number
+}
+
+export interface SpellEvent {
+  type: 'spell'
+  name: string   // 'None' means nothing prepared
+}
+
+export interface HandEvent {
+  type: 'hand'
+  hand: 'right' | 'left'
+  item: string   // 'Empty' means nothing held
+}
+
+// Room title — from <streamWindow id='main' subtitle='...'> in DR
+export interface RoomTitleEvent {
+  type: 'room-title'
+  title: string
+  roomId?: number
+}
+
+// Exp — from <component id='exp SkillName' text='Evasion: 3 (2%)'>
+export interface ExpComponentEvent {
+  type: 'exp-component'
+  skill: string
+  text: string
+}
+
+export interface StreamPushEvent {
+  type: 'stream-push'
+  stream: StreamTarget
+}
+
+export interface StreamPopEvent {
+  type: 'stream-pop'
+}
+
+export interface ClearStreamEvent {
+  type: 'clear-stream'
+  stream: StreamTarget
+}
+
+export interface UnknownEvent {
+  type: 'unknown'
+  raw: string
+}

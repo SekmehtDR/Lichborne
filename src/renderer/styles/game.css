@@ -29,6 +29,29 @@
   flex: 1;
 }
 
+.btn-debug {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-debug:hover {
+  border-color: #569cd6;
+  color: #9cdcfe;
+}
+
+.btn-debug--active {
+  border-color: #569cd6;
+  color: #9cdcfe;
+  background: #1a2a3a;
+}
+
 .btn-disconnect {
   background: transparent;
   border: 1px solid #444;
@@ -63,9 +86,10 @@
   white-space: pre-wrap;
   word-break: break-word;
   color: #d4c9a8;
-  min-height: 1.5em;
+  min-height: 1.4em;
   font-size: 13.5px;
-  line-height: 1.55;
+  line-height: 1.5;
+  margin-bottom: 0.15em;
 }
 
 .command-bar {

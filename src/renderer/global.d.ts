@@ -1,4 +1,4 @@
-import { LoginCredentials, CharacterEntry } from '../shared/types'
+import type { LoginCredentials, GameEvent } from '../shared/types'
 
 declare global {
   interface Window {
@@ -6,7 +6,7 @@ declare global {
       login: (creds: LoginCredentials) => Promise<{ ok: boolean; error?: string }>
       sendCommand: (command: string) => void
       disconnect: () => void
-      onGameText: (cb: (line: string) => void) => () => void
+      onGameEvent: (cb: (events: GameEvent[]) => void) => () => void
       onConnectionStatus: (cb: (status: { connected: boolean; message: string }) => void) => () => void
       onError: (cb: (message: string) => void) => () => void
     }
