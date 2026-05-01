@@ -92,10 +92,6 @@ export class StormFrontParser {
     this.events = []
     const isBlankLine = !line.replace(/[\r\n]/g, '').trim()
 
-    if (/<prompt/i.test(line)) {
-      this.events.push({ type: 'unknown', raw: `RAW_PROMPT: ${line.replace(/[\r\n]/g, '↵')}` })
-    }
-
     const tokenRe = /(<[^>]*>)|([^<]+)/g
     let m: RegExpExecArray | null
     while ((m = tokenRe.exec(line)) !== null) {

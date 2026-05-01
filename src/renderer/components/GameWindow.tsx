@@ -24,6 +24,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showDebug, setShowDebug] = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const pinnedRef = useRef(true)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -54,8 +56,16 @@ export default function GameWindow({ onDisconnect }: Props) {
     return () => { unsubEvents(); unsubStatus() }
   }, [onDisconnect])
 
+  function handleScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    if (pinnedRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    }
   }, [lines])
 
   function handleCommand(e: React.FormEvent) {
@@ -92,7 +102,7 @@ export default function GameWindow({ onDisconnect }: Props) {
       </div>
 
       <div className="game-main">
-        <div className="text-window" onClick={() => inputRef.current?.focus()}>
+        <div className="text-window" ref={scrollRef} onScroll={handleScroll} onClick={() => inputRef.current?.focus()}>
           {lines.map(line => (
             <div key={line.id} className="text-line">
               {line.segments.map((seg, i) => renderSegment(seg, i))}
