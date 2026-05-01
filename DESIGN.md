@@ -11,7 +11,7 @@
 2. [Panel System](#2-panel-system)
 3. [Stream Inventory](#3-stream-inventory)
 4. [Status Bar System](#4-status-bar-system)
-5. [Accessibility](#5-accessibility)
+5. [Display & Accessibility](#5-display--accessibility)
 6. [Theming](#6-theming)
 7. [AI Features](#7-ai-features)
 8. [Backlog](#8-backlog)
@@ -178,78 +178,70 @@ Displayed alongside or below the vitals:
 | Hidden | Lock icon when hidden |
 | Bleeding | Red dot when bleeding |
 | Webbed | Chain icon when webbed |
-| Stunned | Flash indicator (respects epilepsy mode) |
+| Stunned | Flash indicator (respects Epilepsy Safe mode) |
 | Dead | Skull — hard to miss |
 
-### 4.3 Accessibility Considerations for Vitals
+### 4.3 Vital Bar Display
 
 - Bars always show a **numeric label** (e.g. "92%") in addition to color fill — never color-only
-- In colorblind mode, bars use **patterns** (solid / hatched / dotted) instead of relying on color alone
+- Bar colors are user-configurable; the color picker warns when a selected combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
 - In large print mode, bars are taller and labels are larger
-- Stun indicator uses shape/border change, not flashing, in epilepsy mode
 
 ---
 
-## 5. Accessibility
+## 5. Display & Accessibility
 
-Accessibility is not an afterthought. It is a first-class feature.
+Display and accessibility settings live in **Settings → Display & Accessibility** — the same place as themes, fonts, and layout options. These are normal settings, not a special onboarding track.
 
-### 5.1 Profiles
+### 5.1 Large Print
 
-Profiles are stackable — a player can enable multiple at once.
-
-#### Large Print
 - Base font size: 18px (default is 14px)
 - Taller status bars
 - Wider line spacing (1.8)
 - Minimum panel sizes enforced
 
-#### High Contrast
+### 5.2 High Contrast
+
 - Background: `#000000`
 - Text: `#ffffff`
 - Accent: `#ffff00`
 - Borders: `#ffffff`
 - No transparency or blur effects
 
-#### Colorblind Modes
-Three sub-modes targeting the most common types:
+### 5.3 Colorblind-Aware Color Picker
 
-| Mode | Affects |
-|---|---|
-| **Deuteranopia** (red-green) | Replaces green/red vitals with blue/orange + patterns |
-| **Protanopia** (red weak) | Similar to deuteranopia adjustments |
-| **Tritanopia** (blue-yellow) | Replaces blue/yellow with pink/green + patterns |
+Rather than special colorblind modes, the client helps players make informed color choices wherever a color picker is shown (highlight rules, theme editor, status bar colors):
 
-All colorblind modes supplement color with **texture patterns on bars** and **icon labels on indicators** so no information is conveyed by color alone.
+- Below the selected color, a small row of **simulated swatches** shows how the color appears under deuteranopia, protanopia, and tritanopia
+- If the foreground/background combination would be hard to distinguish under any common colorblind condition, a **warning label** appears: *"This combination may be hard to read for red-green colorblind players"*
+- No color is blocked — the player can ignore the warning if they choose
+- This applies anywhere two colors are configured together (text + background, bar fill + label)
 
-#### Epilepsy Safe
-- All animations disabled (spinner, RT pulse, stun flash, roundtime bar shrink)
+This gives colorblind players control over their own setup without treating everyone else as if they need special modes.
+
+### 5.4 Epilepsy Safe Mode
+
+A clearly labeled toggle: **"Epilepsy Safe Mode"** under Display & Accessibility.
+
+When enabled:
+- All animations disabled (roundtime pulse, stun flash, RT bar shrink, connection spinner)
 - Static indicators only — no blinking or rapid color changes
 - Transitions replaced with instant state changes
-- This mode is offered **prominently at first launch**, not buried in settings
 
-#### Motor / Input Accessibility
-- Full keyboard navigation (Tab through panels, Enter to focus command bar)
-- Command history (Up/Down arrows)
-- Configurable key bindings for all actions
-- Optional large click targets for panel controls
+This toggle exists because real players have asked for it. It is easy to find, clearly named, and off by default. It is not on the first-launch screen — players who need it will look in settings, and it will be there.
 
-### 5.2 Font
+### 5.5 Font
 
 - Default font: monospace system font (Cascadia Code → Consolas → Courier New fallback)
 - Font family, size, and weight are all user-configurable
 - Line height is configurable independently of font size
 
-### 5.3 First Launch
+### 5.6 Keyboard & Motor
 
-On first launch, before anything else, the client shows a **one-page accessibility setup**:
-- "Do you have any of the following? (check all that apply)"
-  - Low vision / need larger text
-  - Color blindness (with sub-type selector)
-  - Epilepsy or sensitivity to flashing
-  - Use a screen reader
-- Selecting any option activates the appropriate profile immediately
-- This screen is skippable and re-accessible from Settings at any time
+- Full keyboard navigation (Tab through panels, Enter to focus command bar)
+- Command history (Up/Down arrows)
+- Configurable key bindings for all actions
+- Optional large click targets for panel controls
 
 ---
 
@@ -315,6 +307,8 @@ The first AI feature. Analyzes recent session logs and the current highlight con
 5. UI shows each suggestion with a preview — player accepts or rejects individually
 6. Accepted rules are written to `highlights.json` and applied immediately
 
+Color suggestions from the AI are shown through the same colorblind-aware color picker, so players can see at a glance if a suggested color works for them.
+
 **Example suggestion:**
 ```
 Pattern: "Fenvaok"  Color: #ff4444  Label: "hostile creature"
@@ -353,15 +347,15 @@ Items are roughly priority-ordered within each phase. This list evolves.
 - [ ] Panel catalog — Deaths, Arrivals, Familiar, Spells, Inventory
 - [ ] Debug panel (raw stream)
 
-### Phase 4 — Accessibility & Theming
-- [ ] First-launch accessibility setup screen
-- [ ] Large Print profile
-- [ ] High Contrast profile
-- [ ] Colorblind modes (deuteranopia / protanopia / tritanopia)
-- [ ] Epilepsy Safe profile (all animations off)
+### Phase 4 — Display, Accessibility & Theming
+- [ ] Large Print setting
+- [ ] High Contrast setting
+- [ ] Epilepsy Safe Mode toggle
+- [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
 - [ ] Font configuration (family, size, line height)
 - [ ] Built-in theme switcher
 - [ ] Custom theme JSON support
+- [ ] Keyboard navigation & configurable bindings
 
 ### Phase 5 — AI Features
 - [ ] Session log writer
