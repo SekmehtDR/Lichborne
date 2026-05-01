@@ -379,9 +379,22 @@ This toggle exists because real players have asked for it. It is easy to find, c
 
 ### 5.5 Font
 
-- Default font: monospace system font (Cascadia Code → Consolas → Courier New fallback)
-- Font family, size, and weight are all user-configurable
-- Line height is configurable independently of font size
+Font settings work at two levels: **global defaults** and **per-panel overrides**.
+
+**Global defaults** (Settings → Display & Accessibility):
+- Font family: monospace system font (Cascadia Code → Consolas → Courier New fallback)
+- Font size, weight, and line height — all configurable
+- These apply everywhere unless a panel overrides them
+
+**Per-panel overrides:**
+Every panel can have its own font family, size, and line height set independently. Right-click a panel header → Panel Settings → Font. Common uses:
+- Larger font in the main text window for easier reading mid-combat
+- Smaller, tighter font in the thoughts or exp panel to fit more content
+- A different font family in the room panel if the player prefers a more stylized look there
+
+Per-panel font settings are saved in the layout profile. Switching layouts restores each panel's font along with its position.
+
+Themes can also specify a font override (see Section 6.6) — if a theme sets a font, it becomes the new global default when that theme is applied, but per-panel overrides still take priority over it.
 
 ### 5.6 Keyboard & Motor
 
