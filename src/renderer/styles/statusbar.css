@@ -1,0 +1,57 @@
+.status-strip {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #181818 0%, #121212 100%);
+  border-bottom: 1px solid #222;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* --- Vitals row --- */
+
+.status-vitals {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vital-bar {
+  flex: 1;
+  position: relative;
+  height: 22px;
+  min-width: 60px;
+}
+
+.vital-track {
+  position: absolute;
+  inset: 0;
+  background: #0e0e0e;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #282828;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
+}
+
+.vital-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease, background 0.5s ease;
+}
+
+/* Health uses dynamic color via inline style — gradient applied in JS via StatusBar */
+
+.vital-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.7);
+  pointer-events: none;
+  white-space: nowrap;
+  letter-spacing: 0.04em;
+}

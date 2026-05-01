@@ -254,8 +254,13 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
 
 ### 4.3 Vital Bar Display
 
-- Bars always show a **numeric label** (e.g. "72") in addition to color fill — the exact value the server sent, never derived from bar width
-- Bar colors are user-configurable; the color picker warns when a selected combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
+- Bars always show a **numeric label** (e.g. "Health 72%") in addition to color fill — the exact value the server sent, never derived from bar width
+- **Health bar uses dynamic color thresholds** — no configuration needed, this is a safety feature:
+  - ≥ 50%: green (`#3a7a3a`)
+  - 25–49%: yellow (`#a87a10`)
+  - < 25%: red (`#8a1a1a`)
+- Other vitals use their static palette color at all values
+- Bar colors are user-configurable via theme; the color picker warns when a combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
 - In large print mode, bars are taller and labels are larger
 
 ### 4.4 RT and Cast Time Bars in the Command Bar
@@ -315,6 +320,48 @@ The room panel is **structured output**, not a text dump. Each component arrives
 ```
 
 Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[north]` sends `north` to the game. This is what the StormFront protocol was designed for — the server already marks exits as interactive.
+
+### 4.8 Icon Bar (HUD Strip)
+
+The icon bar sits between the vital bars and the main text window. It is a fixed-height, two-row strip — never wraps, never reflows when content changes.
+
+**Row 1 — Character State**
+
+```
+RT  [▓▓░░░░]  |  Sitting  |  Dead  Stunned  Bleeding  Webbed  Invis  Hidden  Joined  |  CT  [░░░░░░]
+```
+
+| Widget | Behavior |
+|---|---|
+| **RT countdown** | Filled red bar + numeric seconds. Pulses when active (respects Epilepsy Safe). Shows `—` when idle. |
+| **Stance tile** | Fixed-width pill label. Color-coded: Standing=green, Kneeling=gold, Prone=orange, Sitting=blue. |
+| **Status indicators** | All 7 always rendered. Inactive indicators are dim/unreadable — not hidden. Active ones are brightly colored with a tinted background. |
+| **CT countdown** | Same as RT but blue fill. Pushed to the far right. |
+
+**Row 2 — World State**
+
+```
+[nw][n][ne]  [up]  |  L: a steel longsword  R: a wooden shield  |  Spell: Fire Ball
+[w ][ ][e ]  [dn]
+[sw][s][se]  [out]
+```
+
+| Widget | Behavior |
+|---|---|
+| **Compass** | 3×3 grid + special column (up/dn/out). Active exits are bright green. Inactive cells are near-invisible. Fixed size — never grows. |
+| **Left hand** | Fixed 160px. Truncates with ellipsis. Dim when empty, warm tan when holding something. |
+| **Right hand** | Same as left. |
+| **Spell** | Fixed 150px. Dim when None, purple when a spell is prepared. |
+
+**Design constraints:**
+- All widget widths are fixed. Text never shifts neighboring widgets.
+- The bar is `overflow: hidden` — content that doesn't fit is clipped, not wrapped.
+- At narrow window widths, right-side widgets clip before left-side widgets.
+
+**Accessibility:**
+- Status indicators are never conveyed by color alone — the text label is always visible (dim when inactive, bright when active).
+- RT/CT boxes always show `—` when idle so the fixed layout never shifts.
+- Epilepsy Safe Mode disables the RT pulse animation. The bar still drains; it just doesn't flash.
 
 ### 4.7 Experience Panel
 
@@ -687,12 +734,16 @@ Items are roughly priority-ordered within each phase. This list evolves.
 
 Priority order reflects data availability from the protocol and player-facing value:
 
-- [ ] StormFront XML parser (main process, typed GameEvent IPC — replaces raw string IPC)
-- [ ] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (exact values from `<progressBar>`)
-- [ ] Roundtime countdown — precise timer from `<roundTime>` Unix timestamp
-- [ ] Cast time countdown — from `<castTime>` Unix timestamp
-- [ ] Indicators — stance, bleeding, webbed, stunned, hidden, dead (from `<indicator>` elements)
-- [ ] Prepared spell display (from `<spell>` element)
+- [x] StormFront XML parser (main process, typed GameEvent IPC — replaces raw string IPC)
+- [x] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (exact values from `<progressBar>`)
+- [x] Vital bar health threshold colors — green/yellow/red at 50%/25% (Section 4.3)
+- [x] Roundtime countdown — precise timer from `<roundTime>` Unix timestamp
+- [x] Cast time countdown — from `<castTime>` Unix timestamp
+- [x] RT/CT pulse animation when active — disabled via `data-epilepsy-safe` attribute on root (Section 4.2)
+- [x] Indicators — stance, bleeding, webbed, stunned, hidden, dead (from `<indicator>` elements)
+- [x] Two-row icon bar HUD — RT/CT/stance/status row + compass/hands/spell row (Section 4.8)
+- [x] Prepared spell display (from `<spell>` element)
+- [x] Command history — Up/Down arrow navigation, 200-command buffer (Section 5.6)
 - [ ] Room panel — structured layout with name, desc, objects, players, clickable exits via `<d>` tags
 - [ ] Experience panel — live mindstate tracker from `<component id='exp ...'>` feed
 - [ ] Thoughts stream panel (stream routing via `<pushStream>`)
@@ -716,7 +767,7 @@ Priority order reflects data availability from the protocol and player-facing va
 ### Phase 4 — Display, Accessibility & Theming
 - [ ] Large Print setting
 - [ ] High Contrast setting
-- [ ] Epilepsy Safe Mode toggle
+- [~] Epilepsy Safe Mode toggle — hook in place (`data-epilepsy-safe` on root disables all animations); settings UI not yet built
 - [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
 - [ ] Font configuration (family, size, line height, per-theme overrides)
 - [ ] General base themes (Dark, Darker, Slate, Parchment, Terminal)

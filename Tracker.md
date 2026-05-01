@@ -7,8 +7,8 @@
 
 ## Current Status
 
-**Phase 1 — Complete**
-**Phase 2 — In progress (2A built, pending test)**
+**Phase 1 — Complete ✅**
+**Phase 2 — In progress (2A ✅, 2B ✅, 2C next)**
 
 ---
 
@@ -56,12 +56,13 @@ Model our TypeScript parser the same way: maintain an **active tag stack** and *
 
 | `id` attribute | What it tracks | Text format |
 |---|---|---|
-| `health` | Health | `"current max"` e.g. `"72 100"` — parse both |
-| `mana` | Mana | `"current max"` — parse both |
-| `spirit` | Spirit | `"current max"` — parse both |
-| `stamina` | Fatigue | `"current max"` — parse both |
-| `concentration` | Concentration | `"current max"` — parse both |
+| `health` | Health | `value` is 0-100 percentage. `text` is display string e.g. `"HEALTH 100%"` — use `value` directly |
+| `mana` | Mana | same — `value` is 0-100 percentage |
+| `spirit` | Spirit | same — `value` is 0-100 percentage |
+| `stamina` | Fatigue | same — `value` is 0-100 percentage |
+| `concentration` | Concentration | same — `value` is 0-100 percentage. Tag arrives as `conclevel` |
 | `pbarStance` | Stance | `"Standing 100"` — first word is stance text |
+| `conclevel` | Concentration (alias) | DR sends `conclevel` not `concentration` — normalize to `concentration` on ingest |
 | `encumlevel` | Encumbrance | text is encumbrance label, value is 0-110 |
 | `nextLvlPB` | XP toward next level | value = percent, text = label |
 
@@ -105,16 +106,35 @@ The text attribute is **not** just the current value — it contains `"current m
 
 **Active spells (percWindow stream):** complex text parsing of spell names + durations. Defer to a later milestone — do not attempt in 2A.
 
-### Milestone 2B — Status Bar Strip
+### Milestone 2B — Status Bar Strip ✅
 > Goal: vitals, roundtime, indicators, prepared spell all live and updating
 
-- [ ] Fixed status bar strip at top of layout (CSS grid)
-- [ ] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (from VitalUpdate)
-- [ ] Roundtime countdown — precise timer from Unix timestamp
-- [ ] Cast time countdown — precise timer from Unix timestamp
-- [ ] Indicators — stance, bleeding, webbed, stunned, hidden, dead
-- [ ] Prepared spell display
-- **Test:** Log in → bars appear → take damage → health drops → cast spell → RT counts down
+- [x] Fixed status bar strip at top of layout (flexbox column, between toolbar and main text)
+- [x] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (from VitalUpdate)
+- [x] Vital bar gradient fills + 4-state health thresholds (green/yellow/orange/red at 80/50/30%)
+- [x] Roundtime countdown — precise timer from Unix timestamp, scales to actual RT max
+- [x] Cast time countdown — precise timer from Unix timestamp, scales to actual CT max
+- [x] RT/CT persistent draining strips at bottom of icon bar (idle-dimmed when inactive)
+- [x] Indicators — stance, bleeding, webbed, stunned, hidden, invisible, dead, joined
+- [x] Stance from `<indicator>` tags now correctly emits StanceEvent (bug fix)
+- [x] Prepared spell display
+- [x] Two-row icon bar HUD (Section 4.8): stance/status row + compass/hands/spell row
+- [x] Compass exits from `<component id='room exits'>` — tagEnd mismatch bug fixed
+- [x] Left/right hand items from `<right>` / `<left>` tags
+- [x] Command history — Up/Down arrow, 200-command buffer
+- [x] Login screen status log auto-scrolls to bottom
+- **Test:** ✅ Log in → bars appear → take damage → health drops → cast spell → RT counts down
+
+#### Implementation Notes
+
+- `StatusBar.tsx` + `statusbar.css` — vitals only, gradient fills, threshold colors
+- `IconBar.tsx` + `iconbar.css` — two-row HUD, all character/world state indicators
+- Countdown interval runs at 100ms; `rtMaxRef` captures initial duration on each new timer for correct fill scaling
+- RT/CT strips always rendered; `timer-strip--idle` class dims them when inactive
+- Epilepsy Safe Mode hook in place: `[data-epilepsy-safe="true"]` on `#root` disables all pulse animations
+- `tagEnd()` now guards `if (name !== captureCtx.tag) return` — fixes nested `<d>` tags breaking exits capture
+- Stance indicator tags (`IconSitting`, etc.) now emit both `StanceEvent` and update internal parser state
+- Unknown tags inside capture contexts suppressed from debug panel noise
 
 ### Milestone 2C — Room Panel
 > Goal: structured room panel with clickable exits
@@ -169,3 +189,11 @@ The text attribute is **not** just the current value — it contains `"current m
 | 2026-04-30 | XML parser will be hand-rolled line classifier — StormFront stream is not well-formed XML, libraries don't fit |
 | 2026-04-30 | Phase 2 panels use fixed CSS grid (no dragging) — drag/float/tab added in Phase 3 |
 | 2026-04-30 | Session logging deferred to Phase 2 discussion — not starting in 2A |
+| 2026-05-01 | Status bar uses flexbox not CSS grid — simpler for a fixed two-row strip, grid reserved for the full panel layout |
+| 2026-05-01 | Smart scroll pinning added to both main text window and debug panel — scroll up pauses auto-scroll, within 40px of bottom re-pins |
+| 2026-05-01 | RAW_PROMPT debug noise removed from parser |
+| 2026-05-01 | Icon bar uses two-row layout: stance/status top, compass/hands/spell bottom — keeps each row uncluttered at any window width |
+| 2026-05-01 | RT/CT displayed as persistent thin draining strips at bottom of icon bar — always visible, idle-dimmed; scales to actual timer max not a fixed 10s cap |
+| 2026-05-01 | Inactive indicator contrast: #aaa text / #383838 border — readable at all times; active states distinguished by color+glow, not by being the only visible element |
+| 2026-05-01 | Vital bars use gradient fills; health has 4-state color thresholds (green ≥80%, yellow 50–80%, orange 30–50%, red <30%) matching Frostbite client approach |
+| 2026-05-01 | Status indicators and hand/spell slots use flex:1 to fill full row width at any window size |

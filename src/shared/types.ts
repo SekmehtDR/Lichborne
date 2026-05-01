@@ -66,6 +66,7 @@ export type GameEvent =
   | StreamPushEvent
   | StreamPopEvent
   | ClearStreamEvent
+  | ExitsEvent
   | UnknownEvent
 
 export interface StreamTextEvent {
@@ -144,6 +145,11 @@ export interface StreamPopEvent {
 export interface ClearStreamEvent {
   type: 'clear-stream'
   stream: StreamTarget
+}
+
+export interface ExitsEvent {
+  type: 'exits'
+  directions: string[]  // abbreviated: 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw', 'up', 'dn', 'out'
 }
 
 export interface UnknownEvent {

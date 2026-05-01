@@ -10,9 +10,9 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 6px 14px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #2a2a2a;
+  padding: 5px 14px;
+  background: linear-gradient(180deg, #1e1e1e, #181818);
+  border-bottom: 1px solid #282828;
   flex-shrink: 0;
 }
 
@@ -96,9 +96,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: #1a1a1a;
-  border-top: 1px solid #2a2a2a;
+  padding: 7px 12px;
+  background: linear-gradient(180deg, #181818, #141414);
+  border-top: 1px solid #242424;
   flex-shrink: 0;
 }
 
@@ -111,19 +111,20 @@
 
 .command-input {
   flex: 1;
-  background: #111;
-  border: 1px solid #333;
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
   border-radius: 4px;
-  color: #d4c9a8;
+  color: #d8ccaa;
   font-family: inherit;
   font-size: 0.9rem;
   padding: 6px 10px;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .command-input:focus {
-  border-color: #8b6914;
+  border-color: #6a5010;
+  box-shadow: 0 0 0 2px rgba(139,105,20,0.15), inset 0 1px 3px rgba(0,0,0,0.5);
 }
 
 .btn-send {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
 import '../styles/login.css'
 
@@ -24,6 +24,12 @@ export default function LoginScreen({ onConnected }: Props) {
   const [statusLog, setStatusLog] = useState<string[]>([])
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
+  const statusLogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = statusLogRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [statusLog])
 
   useEffect(() => {
     const unsub = window.api.onConnectionStatus((s) => {
@@ -194,7 +200,7 @@ export default function LoginScreen({ onConnected }: Props) {
           {connecting ? (
             <div className="connecting-state">
               <div className="spinner" />
-              <div className="status-log">
+              <div className="status-log" ref={statusLogRef}>
                 {statusLog.length === 0 && <span className="status-log-line">Starting...</span>}
                 {statusLog.map((line, i) => (
                   <span key={i} className={`status-log-line${line.startsWith('ERROR') ? ' status-log-error' : ''}`}>

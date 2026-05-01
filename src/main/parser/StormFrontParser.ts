@@ -9,6 +9,19 @@ function decodeEntities(text: string): string {
     .replace(/&apos;/g, "'")
 }
 
+const EXIT_DIR_MAP: [RegExp, string][] = [
+  [/\bnorthwest\b/i, 'nw'], [/\bnortheast\b/i, 'ne'],
+  [/\bsouthwest\b/i, 'sw'], [/\bsoutheast\b/i, 'se'],
+  [/\bnorth\b/i,     'n' ], [/\beast\b/i,      'e' ],
+  [/\bsouth\b/i,     's' ], [/\bwest\b/i,       'w' ],
+  [/\bup\b/i,        'up'], [/\bdown\b/i,       'dn'],
+  [/\bout\b/i,       'out'],
+]
+
+function parseExits(text: string): string[] {
+  return EXIT_DIR_MAP.filter(([re]) => re.test(text)).map(([, abbr]) => abbr)
+}
+
 const STREAM_MAP: Record<string, StreamTarget> = {
   thoughts:    'thoughts',
   deaths:      'deaths',
@@ -91,6 +104,10 @@ export class StormFrontParser {
   parse(line: string): GameEvent[] {
     this.events = []
     const isBlankLine = !line.replace(/[\r\n]/g, '').trim()
+
+    if (/<prompt/i.test(line)) {
+      this.events.push({ type: 'unknown', raw: `RAW_PROMPT: ${line.replace(/[\r\n]/g, '↵')}` })
+    }
 
     const tokenRe = /(<[^>]*>)|([^<]+)/g
     let m: RegExpExecArray | null
@@ -181,16 +198,14 @@ export class StormFrontParser {
           const label = text.split(/\s+/)[0] ?? ''
           this.events.push({ type: 'stance', text: label, value })
         } else if (id === 'health' || id === 'mana' || id === 'spirit' ||
-                   id === 'stamina' || id === 'concentration') {
-          const nums = text.match(/-?\d+/g)
-          if (nums && nums.length >= 2) {
-            this.events.push({
-              type: 'vital-update',
-              id: id as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
-              current: parseInt(nums[0], 10),
-              max: parseInt(nums[1], 10),
-            })
-          }
+                   id === 'stamina' || id === 'concentration' || id === 'conclevel') {
+          const normalizedId = id === 'conclevel' ? 'concentration' : id
+          this.events.push({
+            type: 'vital-update',
+            id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
+            current: value,  // value is 0-100 percentage
+            max: 100,
+          })
         }
         break
       }
@@ -200,10 +215,10 @@ export class StormFrontParser {
         const normalized = raw.replace(/^Icon/i, '').toLowerCase()
         if (normalized) {
           const visible = attrs.visible === 'y'
-          if (normalized === 'standing'  && visible) this.stance = ''
-          if (normalized === 'sitting'   && visible) this.stance = 's'
-          if (normalized === 'kneeling'  && visible) this.stance = 'K'
-          if (normalized === 'prone'     && visible) this.stance = 'P'
+          if (normalized === 'standing' && visible) { this.stance = '';  this.events.push({ type: 'stance', text: 'Standing', value: 0 }) }
+          if (normalized === 'sitting'  && visible) { this.stance = 's'; this.events.push({ type: 'stance', text: 'Sitting',  value: 0 }) }
+          if (normalized === 'kneeling' && visible) { this.stance = 'K'; this.events.push({ type: 'stance', text: 'Kneeling', value: 0 }) }
+          if (normalized === 'prone'    && visible) { this.stance = 'P'; this.events.push({ type: 'stance', text: 'Prone',    value: 0 }) }
           if (normalized === 'hidden')    this.isHidden    = visible
           if (normalized === 'invisible') this.isInvisible = visible
           if (normalized === 'stunned')   this.isStunned   = visible
@@ -211,7 +226,9 @@ export class StormFrontParser {
           if (normalized === 'bleeding')  this.isBleeding  = visible
           if (normalized === 'joined')    this.isJoined    = visible
           if (normalized === 'dead')      this.isDead      = visible
-          this.events.push({ type: 'indicator', id: normalized, visible })
+          if (!['standing','sitting','kneeling','prone'].includes(normalized)) {
+            this.events.push({ type: 'indicator', id: normalized, visible })
+          }
         }
         break
       }
@@ -282,6 +299,12 @@ export class StormFrontParser {
         this.captureCtx = { tag: 'prompt' }
         this.captureBuf = ''
         break
+
+      default:
+        if (!this.captureCtx) {
+          this.events.push({ type: 'unknown', raw: `TAG:${name} ${JSON.stringify(attrs)}` })
+        }
+        break
     }
   }
 
@@ -292,6 +315,7 @@ export class StormFrontParser {
     }
 
     if (!this.captureCtx) return
+    if (name !== this.captureCtx.tag) return
 
     const ctx  = this.captureCtx
     const text = this.captureBuf.trim()
@@ -317,6 +341,8 @@ export class StormFrontParser {
         const id = ctx.id ?? ''
         if (id.startsWith('exp ')) {
           this.events.push({ type: 'exp-component', skill: id.slice(4), text })
+        } else if (id === 'room exits') {
+          this.events.push({ type: 'exits', directions: parseExits(text) })
         } else {
           const stream = COMPONENT_STREAM[id]
           if (stream) {
