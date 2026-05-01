@@ -243,6 +243,43 @@ This toggle exists because real players have asked for it. It is easy to find, c
 - Configurable key bindings for all actions
 - Optional large click targets for panel controls
 
+### 5.7 Screen Reader Support
+
+DragonRealms has blind players who rely on screen readers (NVDA, JAWS, VoiceOver). The game is text-based — which is a natural fit — but the client needs to surface that text correctly.
+
+**Game text:**
+- The main text panel is an ARIA live region (`aria-live="polite"`) so new lines are announced automatically as they arrive
+- Critical alerts (low health warnings, incoming attacks) use `aria-live="assertive"` for immediate announcement
+- The room panel and thoughts panel are also live regions with lower priority
+
+**Navigation:**
+- All panels have proper ARIA landmark roles and labels so a screen reader user can jump between them by landmark
+- The command input is always reachable by Tab and has a clear accessible label
+- Status bar values are exposed as text (e.g. "Health 72 percent", "Roundtime 2.1 seconds") — not just as visual bars
+
+**Settings:**
+- All settings controls are fully keyboard-navigable with visible focus indicators
+- No information is conveyed by color alone anywhere in the UI
+
+This is marked as a later-phase feature because it requires deliberate implementation and testing with real screen readers — but the architecture should not make it impossible from the start.
+
+### 5.8 Sip-and-Puff / Switch Access
+
+Some players use breathing straws (sip-and-puff devices) or single-switch scanning to play. DragonRealms' text command model is actually well-suited to this — the whole interface reduces to "type a command, hit Enter."
+
+What the client must do:
+- **Command bar has default focus on launch** — no hunting required
+- **Tab order is logical and complete** — every interactive element is reachable without a mouse
+- **No mouse-only interactions** — all panel controls (close, float, resize) have keyboard equivalents
+- **Large click targets** — panel drag handles and control buttons are large enough to hit intentionally
+
+What will help these players the most (planned for later phases):
+- **Macro system** — pre-set commands bound to a single key, reducing the number of keystrokes per action
+- **Command aliases** — short inputs that expand to longer commands
+- **Saved command sets** — load a profile of common commands for a specific activity (combat, crafting, socializing)
+
+The macro system is in the backlog. When we build it, sip-and-puff usability should be an explicit consideration in its design.
+
 ---
 
 ## 6. Theming
@@ -365,10 +402,11 @@ Items are roughly priority-ordered within each phase. This list evolves.
 
 ### Future / Unscheduled
 - [ ] Multi-monitor floating panel support
-- [ ] Macro system
+- [ ] Macro system (with sip-and-puff usability as an explicit design goal)
 - [ ] Trigger system (regex → action)
 - [ ] Sound alerts
-- [ ] Screen reader / ARIA support
+- [ ] Screen reader / ARIA live regions (game text, room, thoughts panels)
+- [ ] Full ARIA landmark navigation
 - [ ] Lore assistant
 - [ ] Session summary
 - [ ] Packaged installer (electron-builder)
