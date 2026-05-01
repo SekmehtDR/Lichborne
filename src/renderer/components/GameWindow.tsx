@@ -28,6 +28,17 @@ const MAX_DEBUG_EVENTS = 500
 const STREAM_BUFFERS = ['thoughts', 'arrivals', 'deaths', 'spells'] as const
 type BufferedStream = typeof STREAM_BUFFERS[number]
 
+const DEFAULT_PANEL_WIDTH = 280
+const MIN_PANEL_WIDTH = 160
+const MAX_PANEL_WIDTH = 600
+
+function loadPanelWidth(): number {
+  const saved = localStorage.getItem('klient67.panelWidth')
+  if (!saved) return DEFAULT_PANEL_WIDTH
+  const n = parseInt(saved, 10)
+  return isNaN(n) ? DEFAULT_PANEL_WIDTH : Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, n))
+}
+
 export default function GameWindow({ onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<BufferedStream, TextLine[]>>({
@@ -70,11 +81,16 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [exits, setExits] = useState<string[]>([])
 
   const [newLineCount, setNewLineCount] = useState(0)
+  const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
 
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const inputRef = useRef<HTMLInputElement>(null)
+  const panelWidthRef = useRef(panelWidth)
+  const isDraggingRef = useRef(false)
+  const dragStartXRef = useRef(0)
+  const dragStartWidthRef = useRef(0)
 
   useEffect(() => {
     const unsubEvents = window.api.onGameEvent((events: GameEvent[]) => {
@@ -230,6 +246,44 @@ export default function GameWindow({ onDisconnect }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!isDraggingRef.current) return
+      const delta = dragStartXRef.current - e.clientX
+      const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, dragStartWidthRef.current + delta))
+      panelWidthRef.current = next
+      setPanelWidth(next)
+    }
+    function onMouseUp() {
+      if (!isDraggingRef.current) return
+      isDraggingRef.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      localStorage.setItem('klient67.panelWidth', String(panelWidthRef.current))
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
+
+  function handleDividerMouseDown(e: React.MouseEvent) {
+    isDraggingRef.current = true
+    dragStartXRef.current = e.clientX
+    dragStartWidthRef.current = panelWidthRef.current
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    e.preventDefault()
+  }
+
+  function resetLayout() {
+    panelWidthRef.current = DEFAULT_PANEL_WIDTH
+    setPanelWidth(DEFAULT_PANEL_WIDTH)
+    localStorage.setItem('klient67.panelWidth', String(DEFAULT_PANEL_WIDTH))
+  }
+
   function handleCommand(e: React.FormEvent) {
     e.preventDefault()
     if (!command.trim()) return
@@ -275,6 +329,9 @@ export default function GameWindow({ onDisconnect }: Props) {
         >
           Debug
         </button>
+        <button className="btn-reset-layout" onClick={resetLayout} title="Reset panel width to default">
+          Reset Layout
+        </button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
           {disconnecting ? 'Disconnecting...' : 'Disconnect'}
         </button>
@@ -314,12 +371,15 @@ export default function GameWindow({ onDisconnect }: Props) {
           )}
         </div>
 
-        <PanelFrame
-          streamLines={streamLines}
-          roomState={roomState}
-          expSkills={expSkills}
-          onSendCommand={cmd => window.api.sendCommand(cmd)}
-        />
+        <div className="panel-divider" onMouseDown={handleDividerMouseDown} />
+        <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
+          <PanelFrame
+            streamLines={streamLines}
+            roomState={roomState}
+            expSkills={expSkills}
+            onSendCommand={cmd => window.api.sendCommand(cmd)}
+          />
+        </div>
       </div>
 
       {showDebug && (

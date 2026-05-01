@@ -115,6 +115,35 @@
   color: #e8c850;
 }
 
+.panel-divider {
+  width: 4px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+
+.panel-divider:hover {
+  background: #8b6914;
+}
+
+.btn-reset-layout {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-reset-layout:hover {
+  border-color: #8b6914;
+  color: #c8a840;
+}
+
 .text-line {
   white-space: pre-wrap;
   word-break: break-word;
