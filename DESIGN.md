@@ -10,7 +10,7 @@
 1. [Vision](#1-vision)
 2. [Panel System](#2-panel-system)
 3. [Stream Inventory](#3-stream-inventory)
-4. [Status Bar System](#4-status-bar-system)
+4. [Status Bar System & Live Panels](#4-status-bar-system--live-panels)
 5. [Display & Accessibility](#5-display--accessibility)
 6. [Theming](#6-theming)
 7. [AI Features](#7-ai-features)
@@ -57,8 +57,8 @@ Every panel supports:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  HP ████████░░  Mana ████░░░░  Stam ██████░░  Spr █████░░   │
-│  Conc ████░░░░          [Standing]  [RT: 3.0s]  [Fire Ball]  │
+│  Health ████████░░  Mana ████░░░░  Conc ████░░  Fat ████░░   │
+│  Spirit ████░░░░         [Standing]  [RT: 3.0s]  [Fire Ball]  │
 ├──────────────────────────────────┬──────────────────────────┤
 │                                  │ ROOM                     │
 │                                  │ The Crossing, Town Square│
@@ -102,22 +102,34 @@ A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows
 | Panel ID | Default Location | Content |
 |---|---|---|
 | `main` | Center-left | Primary game text stream |
-| `room` | Top-right | Room name, description, objects, players, exits |
-| `thoughts` | Mid-right | Thoughts channel |
+| `room` | Top-right | Room name, desc, objects, players, clickable exits |
+| `exp` | Bottom-right | Live skill mindstate tracker |
+| `thoughts` | Tab with exp | Thoughts channel |
 | `deaths` | Tab with thoughts | Death announcements |
 | `arrivals` | Tab with thoughts | Logon/logoff notices |
 | `familiar` | Closeable tab | Familiar stream |
 | `spells` | Closeable tab | Active spells / spell prep |
 | `inv` | Floatable | Inventory |
-| `statusbars` | Top (fixed) | HP/Mana/Stamina/Spirit/Concentration |
+| `statusbars` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
 | `debug` | Hidden by default | Raw incoming data, for troubleshooting |
+
+### 2.7 Main Text Panel — Scroll Behavior
+
+The main text window has one job: never lose game text, never lose your place.
+
+- **Append-only rendering** — new lines push to the bottom; the DOM above is never rewritten
+- **Virtualized list** — only the visible lines (~60) are in the DOM at any time, regardless of how many lines are in memory. 2000 lines in memory = ~60 nodes rendered. No exceptions.
+- **Smart scroll anchor** — scrolling up pauses auto-scroll silently. A **"▼ N new lines"** badge appears at the bottom edge. Clicking it or pressing End resumes auto-scroll and jumps to the bottom. The player decides when to return; the client never forces them.
+- **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line
 
 ---
 
 ## 3. Stream Inventory
 
-These are the StormFront XML streams the client must handle. Each maps to one or more panels.
+### 3.1 Named Streams
+
+Text streams are routed by the server using `<pushStream id="..."/>` / `<popStream/>` tags. Each maps to one or more panels.
 
 | Stream ID | Description | Default Panel |
 |---|---|---|
@@ -130,7 +142,33 @@ These are the StormFront XML streams the client must handle. Each maps to one or
 | `inv` | Inventory updates | `inv` |
 | `room` | Room description components | `room` |
 
-### 3.1 Text Styles (Presets)
+### 3.2 Structured Data Feeds
+
+Beyond text streams, the server pushes structured XML elements that drive UI components directly. These are not text — they are data. The client must parse them and update the relevant panel state, never displaying them as raw text.
+
+| XML Element | Data Provided | Drives |
+|---|---|---|
+| `<progressBar id="health" value="72" text="72"/>` | Exact numeric value + display string for each vital | Status bars |
+| `<roundTime value="1714512345"/>` | Unix timestamp when RT expires — not a duration | RT countdown |
+| `<castTime value="..."/>` | Unix timestamp when cast time expires | Cast countdown |
+| `<indicator id="stance" visible="y"/>` | Boolean state for each status flag | Indicator icons |
+| `<spell>Fire Ball</spell>` | Name of currently prepared spell | Indicator row |
+| `<component id='exp Evasion' text="Evasion: 3 (2%)">` | Skill name, rank, mindstate per skill trained | Experience panel |
+| `<component id='room name'>...</component>` | Room title string | Room panel |
+| `<component id='room desc'>...</component>` | Room description prose | Room panel |
+| `<component id='room exits'>...<d>north</d>...</component>` | Exit directions, each wrapped in `<d>` | Room panel — clickable buttons |
+| `<component id='room objs'>...</component>` | Objects in the room | Room panel |
+| `<component id='room players'>...</component>` | Players in the room | Room panel |
+
+**The `<d>` tag** marks interactive/directional elements. Exits arrive pre-tagged by the server as `<d>north</d>`, `<d>east</d>`, etc. The room panel renders these as clickable buttons that send the movement command — this is what the protocol was designed for.
+
+**Vital values** are exact integers from the server, not bar-fill approximations. The numeric label on each bar displays the server's own value directly.
+
+**Roundtime** is an absolute Unix timestamp, not a countdown duration. The client calculates remaining time as `expiryTimestamp - Date.now()` and counts down precisely. No estimation required.
+
+**Experience components** are pushed by the server whenever a mindstate changes. The exp panel is a live view of a clean structured data feed — not a text scraper.
+
+### 3.3 Text Styles (Presets)
 
 StormFront `<preset>` tags map to visual styles:
 
@@ -149,43 +187,79 @@ All preset colors are overridable per theme.
 
 ---
 
-## 4. Status Bar System
+## 4. Status Bar System & Live Panels
 
 ### 4.1 Vitals
 
-Five core vitals, each displayed as a labeled progress bar:
+Five core vitals displayed in order, each as a labeled progress bar. Values come directly from `<progressBar>` XML elements — exact integers, not approximations.
 
 | ID | Label | Color (default) |
 |---|---|---|
-| `health` | HP | Green → Yellow → Red (based on %) |
+| `health` | Health | Green → Yellow → Red (based on %) |
 | `mana` | Mana | Blue |
+| `concentration` | Concentration | Teal |
 | `stamina` | Fatigue | Orange |
 | `spirit` | Spirit | Purple |
-| `concentration` | Conc | Teal |
 
 Bar color shifts automatically at thresholds (e.g. health goes yellow at 50%, red at 25%). Thresholds are configurable.
 
 ### 4.2 Indicators
 
-Displayed alongside or below the vitals:
+Displayed alongside or below the vitals. All state comes from `<indicator>` XML elements and `<roundTime>` / `<castTime>` timestamps — no text parsing.
 
-| Indicator | Display |
-|---|---|
-| Stance | Icon + label (Standing / Kneeling / Prone / Sitting) |
-| Roundtime | Countdown timer in seconds, pulses when active |
-| Cast time | Separate countdown for spell casting |
-| Prepared spell | Name of currently prepared spell, or blank |
-| Hidden | Lock icon when hidden |
-| Bleeding | Red dot when bleeding |
-| Webbed | Chain icon when webbed |
-| Stunned | Flash indicator (respects Epilepsy Safe mode) |
-| Dead | Skull — hard to miss |
+| Indicator | Source | Display |
+|---|---|---|
+| Stance | `<indicator id="stance">` | Icon + label (Standing / Kneeling / Prone / Sitting) |
+| Roundtime | `<roundTime value="[unix timestamp]"/>` | Precise countdown to expiry, pulses when active |
+| Cast time | `<castTime value="[unix timestamp]"/>` | Separate precise countdown for spell casting |
+| Prepared spell | `<spell>` element | Name of currently prepared spell, or blank |
+| Hidden | `<indicator id="hidden">` | Lock icon when hidden |
+| Bleeding | `<indicator id="bleeding">` | Red dot when bleeding |
+| Webbed | `<indicator id="webbed">` | Chain icon when webbed |
+| Stunned | `<indicator id="stunned">` | Shape/border change (respects Epilepsy Safe mode — never flashes) |
+| Dead | `<indicator id="dead">` | Skull — hard to miss |
 
 ### 4.3 Vital Bar Display
 
-- Bars always show a **numeric label** (e.g. "92%") in addition to color fill — never color-only
+- Bars always show a **numeric label** (e.g. "72") in addition to color fill — the exact value the server sent, never derived from bar width
 - Bar colors are user-configurable; the color picker warns when a selected combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
 - In large print mode, bars are taller and labels are larger
+
+### 4.4 Room Panel
+
+The room panel is **structured output**, not a text dump. Each component arrives as a separate XML element and is rendered independently.
+
+```
+┌─ The Crossing, Town Square ──────────────┐
+│ You are standing in the heart of the     │
+│ town square...                           │
+│                                          │
+│ Exits:  [north]  [east]  [southwest]     │
+│                                          │
+│ Objects: a silver coin, a broken shield  │
+│ Players: Muse, Thrak                     │
+└──────────────────────────────────────────┘
+```
+
+Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[north]` sends `north` to the game. This is what the StormFront protocol was designed for — the server already marks exits as interactive.
+
+### 4.5 Experience Panel
+
+The exp panel is a live skill tracker driven entirely by `<component id='exp SkillName'>` XML events. No text parsing. No scripting required.
+
+```
+┌─ Experience ─────────────────────────────┐
+│ Evasion        ████████░░  dabbling      │
+│ Targeted Magic ██████████  mind lock  ⚠  │
+│ Skinning       ███░░░░░░░  clear         │
+│ Perception     █████░░░░░  mind lock  ⚠  │
+└──────────────────────────────────────────┘
+```
+
+- Only shows skills trained in the current session (no noise from untrained skills)
+- `⚠` badge on mind-locked skills — player is getting no XP and should switch activities
+- Bar fill represents mindstate progress from clear → mind lock
+- Updates live as the server pushes new exp components
 
 ---
 
@@ -366,14 +440,22 @@ Reason: This creature name appears frequently in your combat logs.
 Items are roughly priority-ordered within each phase. This list evolves.
 
 ### Phase 2 — XML Parsing & Core UI
-- [ ] StormFront XML parser (main process, typed events)
-- [ ] IPC refactor — structured GameEvent instead of raw strings
-- [ ] Status bars (HP / Mana / Stamina / Spirit / Concentration)
-- [ ] Indicators (stance, RT countdown, cast time, prepared spell)
-- [ ] Room panel (name, desc, exits, objects, players)
-- [ ] Thoughts stream panel
-- [ ] Basic text colors (preset styles)
-- [ ] Roundtime countdown timer
+
+Priority order reflects data availability from the protocol and player-facing value:
+
+- [ ] StormFront XML parser (main process, typed GameEvent IPC — replaces raw string IPC)
+- [ ] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (exact values from `<progressBar>`)
+- [ ] Roundtime countdown — precise timer from `<roundTime>` Unix timestamp
+- [ ] Cast time countdown — from `<castTime>` Unix timestamp
+- [ ] Indicators — stance, bleeding, webbed, stunned, hidden, dead (from `<indicator>` elements)
+- [ ] Prepared spell display (from `<spell>` element)
+- [ ] Room panel — structured layout with name, desc, objects, players, clickable exits via `<d>` tags
+- [ ] Experience panel — live mindstate tracker from `<component id='exp ...'>` feed
+- [ ] Thoughts stream panel (stream routing via `<pushStream>`)
+- [ ] Deaths and Arrivals stream panels
+- [ ] Text preset styling — speech, whisper, thought, roomname, roomdesc, bold, expiry, store
+- [ ] Smart scroll anchor — "▼ N new lines" badge, auto-scroll pause on scroll-up
+- [ ] Virtualized text list — only visible lines in the DOM, batched updates
 
 ### Phase 3 — Panel System
 - [ ] Dockable panel framework (drag, snap, resize)
@@ -381,7 +463,9 @@ Items are roughly priority-ordered within each phase. This list evolves.
 - [ ] Tab panels together
 - [ ] Panel Manager UI
 - [ ] Layout save / load / profiles
-- [ ] Panel catalog — Deaths, Arrivals, Familiar, Spells, Inventory
+- [ ] Panel catalog — Familiar, Spells, Inventory, Debug
+- [ ] Highlight rules editor
+- [ ] Highlight groups (named, toggleable sets of rules)
 - [ ] Debug panel (raw stream)
 
 ### Phase 4 — Display, Accessibility & Theming
@@ -392,22 +476,23 @@ Items are roughly priority-ordered within each phase. This list evolves.
 - [ ] Font configuration (family, size, line height)
 - [ ] Built-in theme switcher
 - [ ] Custom theme JSON support
-- [ ] Keyboard navigation & configurable bindings
+- [ ] Full keyboard navigation & configurable bindings
+- [ ] Screen reader / ARIA live regions (main, room, thoughts panels)
+- [ ] ARIA landmark navigation (all panels labeled, Tab order logical)
+- [ ] Status bar values exposed as screen-reader text (not just visual bars)
 
 ### Phase 5 — AI Features
-- [ ] Session log writer
+- [ ] Session log writer (timestamped, structured)
 - [ ] Highlight suggester (OpenAI integration)
-- [ ] Highlights config editor UI
-- [ ] AI suggestions review UI (accept / reject per rule)
+- [ ] AI suggestions review UI (accept / reject per rule, colorblind-aware preview)
 
 ### Future / Unscheduled
 - [ ] Multi-monitor floating panel support
 - [ ] Macro system (with sip-and-puff usability as an explicit design goal)
+- [ ] Command aliases
 - [ ] Trigger system (regex → action)
 - [ ] Sound alerts
-- [ ] Screen reader / ARIA live regions (game text, room, thoughts panels)
-- [ ] Full ARIA landmark navigation
 - [ ] Lore assistant
-- [ ] Session summary
+- [ ] Session summary (end-of-session AI recap: XP gained, ranks, notable events)
 - [ ] Packaged installer (electron-builder)
 - [ ] Auto-update
