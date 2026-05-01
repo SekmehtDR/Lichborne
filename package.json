@@ -1,0 +1,28 @@
+{
+  "name": "klient67",
+  "version": "0.1.0",
+  "description": "DragonRealms game client with Lich support and AI features",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev:renderer": "vite",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "node build-main.mjs",
+    "build:renderer": "vite build",
+    "start": "npm run build:main && npm run build:renderer && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "concurrently": "^8.0.0",
+    "electron": "^31.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  },
+  "dependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  }
+}

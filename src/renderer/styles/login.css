@@ -1,0 +1,249 @@
+.login-bg {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #1e1a2e 0%, #0d0d0d 100%);
+}
+
+.login-card {
+  width: 440px;
+  background: #1c1c24;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #d4c9a8;
+}
+
+.login-logo h1 span {
+  color: #8b6914;
+}
+
+.login-logo p {
+  color: #666;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.login-form input[type="text"],
+.login-form input[type="password"],
+.login-form input[type="number"],
+.login-form select {
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #d4c9a8;
+  font-family: inherit;
+  font-size: 0.95rem;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.login-form input:focus,
+.login-form select:focus {
+  border-color: #8b6914;
+}
+
+.character-list {
+  min-height: 80px;
+  padding: 4px !important;
+}
+
+.character-list option {
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.character-list option:checked {
+  background: #8b6914;
+  color: #fff;
+}
+
+.advanced-toggle {
+  color: #666;
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+}
+
+.advanced-toggle:hover { color: #aaa; }
+
+.advanced-panel {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+  cursor: pointer;
+  font-size: 0.85rem !important;
+  color: #aaa !important;
+}
+
+.connection-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-badge {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.mode-badge.lich {
+  background: #1a2e1a;
+  color: #4caf50;
+  border: 1px solid #2d5a2d;
+}
+
+.mode-badge.direct {
+  background: #1a1e2e;
+  color: #5c8ac4;
+  border: 1px solid #2d3a5a;
+}
+
+.login-error {
+  background: #2e1a1a;
+  border: 1px solid #5a2d2d;
+  color: #e06c6c;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+
+.login-status {
+  color: #888;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.btn-primary {
+  background: #8b6914;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover { background: #a07a1a; }
+
+.btn-secondary {
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 12px 20px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-secondary:hover { background: #333; }
+
+.button-row {
+  display: flex;
+  gap: 10px;
+}
+
+.button-row .btn-primary { flex: 1; }
+
+.connecting-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 0;
+  color: #888;
+}
+
+.status-log {
+  width: 100%;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.status-log-line {
+  font-size: 0.78rem;
+  color: #888;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+}
+
+.status-log-line::before {
+  content: '› ';
+  color: #8b6914;
+}
+
+.status-log-error {
+  color: #e06c6c;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #333;
+  border-top-color: #8b6914;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

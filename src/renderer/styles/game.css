@@ -1,0 +1,120 @@
+.game-layout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0f0f0f;
+}
+
+.game-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-weight: 700;
+  color: #8b6914;
+  letter-spacing: 2px;
+  font-size: 0.85rem;
+}
+
+.toolbar-status {
+  color: #666;
+  font-size: 0.8rem;
+  flex: 1;
+}
+
+.btn-disconnect {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-disconnect:hover {
+  border-color: #c04040;
+  color: #e06c6c;
+}
+
+.game-main {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+}
+
+.text-window {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  cursor: text;
+}
+
+.text-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d4c9a8;
+  min-height: 1.5em;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.command-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border-top: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.prompt-marker {
+  color: #8b6914;
+  font-weight: bold;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.command-input {
+  flex: 1;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #d4c9a8;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.command-input:focus {
+  border-color: #8b6914;
+}
+
+.btn-send {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #aaa;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-send:hover {
+  background: #333;
+  color: #d4c9a8;
+}
