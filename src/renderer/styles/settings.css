@@ -40,6 +40,19 @@
   letter-spacing: 1px;
 }
 
+.sp-reset {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  margin-right: 8px;
+}
+
+.sp-reset:hover { border-color: var(--accent-dim); color: var(--text-secondary); }
+
 .sp-close {
   background: transparent;
   border: none;

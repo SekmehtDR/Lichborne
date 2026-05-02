@@ -479,17 +479,16 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
-        <button className="btn-reset-layout" onClick={resetLayout}>Reset Layout</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
           {disconnecting ? 'Disconnecting…' : 'Disconnect'}
         </button>
       </div>
 
-      {settings.statusBarPosition === 'top' && <>
-        <StatusBar vitals={vitals} />
+      {settings.statusBarPosition === 'top' && <StatusBar vitals={vitals} />}
+      {settings.iconBarPosition === 'top' && (
         <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
-      </>}
+      )}
 
       <div className="game-main">
         <div className="text-window-wrap">
@@ -527,11 +526,11 @@ export default function GameWindow({ onDisconnect }: Props) {
         </div>
       </div>
 
-      {settings.statusBarPosition === 'bottom' && <>
-        <StatusBar vitals={vitals} />
+      {settings.statusBarPosition === 'bottom' && <StatusBar vitals={vitals} />}
+      {settings.iconBarPosition === 'bottom' && (
         <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
-      </>}
+      )}
 
       {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}
 
@@ -543,6 +542,7 @@ export default function GameWindow({ onDisconnect }: Props) {
           onMoveTab={moveTabToZone}
           onRemoveTab={removeTab}
           onAddToZone={addToZone}
+          onResetLayout={resetLayout}
           onClose={() => setShowPanelManager(false)}
         />
       )}

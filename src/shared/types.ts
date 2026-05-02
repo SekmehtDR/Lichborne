@@ -8,6 +8,7 @@ export interface LoginCredentials {
   lichPort: number
   lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
   lichDelay: number
+  hideLichWindow: boolean
 }
 
 export interface CharacterEntry {

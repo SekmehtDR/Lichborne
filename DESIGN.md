@@ -699,7 +699,7 @@ Settings are grouped into broad sections — not deep submenus. Every section is
 |---|---|
 | **Display & Accessibility** | Font, large print, high contrast, epilepsy safe, colorblind picker |
 | **Theme** | Theme picker, theme editor, My Themes, import/export |
-| **Panels & Layout** | Status bar position, RT bars in command bar, panel defaults |
+| **Panels & Layout** | Status bar position, icon bar position, RT bars in command bar, panel defaults |
 | **Command Bar** | RT display, cast time display, command history size |
 | **Highlights** | Highlight rules, groups, import/export |
 | **Connection** | Default credentials, Lich paths, SGE fallback settings |
@@ -797,6 +797,10 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Color Blind mode — Deuteranopia / Protanopia / Tritanopia options (4D)
 - [x] Epilepsy Safe Mode toggle (4D)
 - [x] Status bar position toggle — top vs. above command bar (4D)
+- [x] Icon bar position toggle — independent of status bar position (4D+)
+- [x] Settings reset to defaults button (4D+)
+- [x] Persistent advanced settings on login screen (4D+)
+- [x] Reset Panels moved from toolbar into Panel Manager modal (4D+)
 - [~] Full keyboard navigation & configurable bindings — backlogged
 - [~] Screen reader / ARIA live regions — backlogged
 

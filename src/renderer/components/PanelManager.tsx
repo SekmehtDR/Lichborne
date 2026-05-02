@@ -15,12 +15,13 @@ interface Props {
   onMoveTab: (tab: TabDef, toZone: Zone) => void
   onRemoveTab: (tab: TabDef) => void
   onAddToZone: (typeOrId: string, zone: Zone) => void
+  onResetLayout: () => void
   onClose: () => void
 }
 
 export default function PanelManager({
   topTabs, midTabs, bottomTabs, allTypes, labels,
-  discoveredStreams, onMoveTab, onRemoveTab, onAddToZone, onClose,
+  discoveredStreams, onMoveTab, onRemoveTab, onAddToZone, onResetLayout, onClose,
 }: Props) {
   const allTabs = [...topTabs, ...midTabs, ...bottomTabs]
   const openTypes = new Set(allTabs.filter(t => t.type !== 'custom').map(t => t.type))
@@ -43,6 +44,7 @@ export default function PanelManager({
       <div className="pm-modal">
         <div className="pm-header">
           <span className="pm-title">Panel Manager</span>
+          <button className="pm-reset" onClick={onResetLayout}>Reset Panels</button>
           <button className="pm-close" onClick={onClose}>×</button>
         </div>
 

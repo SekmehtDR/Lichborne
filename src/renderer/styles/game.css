@@ -32,7 +32,7 @@
 .btn-debug,
 .btn-panel-manager,
 .btn-theme,
-.btn-reset-layout,
+.btn-settings,
 .btn-disconnect {
   background: transparent;
   border: 1px solid var(--border);
@@ -48,7 +48,7 @@
 .btn-debug:hover,
 .btn-panel-manager:hover,
 .btn-theme:hover,
-.btn-reset-layout:hover {
+.btn-settings:hover {
   border-color: var(--accent-dim);
   color: var(--accent);
 }

@@ -6,6 +6,40 @@ const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
 const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
 const DEFAULT_LICH_PORT = 11024
 
+const ADV_KEY = 'klient67.advancedSettings'
+
+interface AdvancedSettings {
+  useLich: boolean
+  lichPath: string
+  rubyPath: string
+  lichPort: number
+  lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
+  lichDelay: number
+  hideLichWindow: boolean
+  showAdvanced: boolean
+}
+
+const ADV_DEFAULTS: AdvancedSettings = {
+  useLich: true,
+  lichPath: DEFAULT_LICH,
+  rubyPath: DEFAULT_RUBY,
+  lichPort: DEFAULT_LICH_PORT,
+  lichMode: '--stormfront',
+  lichDelay: 5,
+  hideLichWindow: false,
+  showAdvanced: false,
+}
+
+function loadAdvanced(): AdvancedSettings {
+  try {
+    return { ...ADV_DEFAULTS, ...JSON.parse(localStorage.getItem(ADV_KEY) ?? '{}') }
+  } catch { return { ...ADV_DEFAULTS } }
+}
+
+function saveAdvanced(s: AdvancedSettings) {
+  localStorage.setItem(ADV_KEY, JSON.stringify(s))
+}
+
 interface Props {
   onConnected: () => void
 }
@@ -14,17 +48,18 @@ export default function LoginScreen({ onConnected }: Props) {
   const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [character, setCharacter] = useState('')
-  const [useLich, setUseLich] = useState(true)
-  const [lichPath, setLichPath] = useState(DEFAULT_LICH)
-  const [rubyPath, setRubyPath] = useState(DEFAULT_RUBY)
-  const [lichPort, setLichPort] = useState(DEFAULT_LICH_PORT)
-  const [lichMode, setLichMode] = useState<'--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'>('--stormfront')
-  const [lichDelay, setLichDelay] = useState(5)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
+  const { useLich, lichPath, rubyPath, lichPort, lichMode, lichDelay, hideLichWindow, showAdvanced } = adv
+  function setAdv1<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) {
+    setAdv(prev => ({ ...prev, [key]: value }))
+  }
   const [statusLog, setStatusLog] = useState<string[]>([])
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
   const statusLogRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { saveAdvanced(adv) }, [adv])
 
   useEffect(() => {
     const el = statusLogRef.current
@@ -64,6 +99,7 @@ export default function LoginScreen({ onConnected }: Props) {
       lichPort,
       lichMode,
       lichDelay,
+      hideLichWindow,
     }
 
     const result = await window.api.login(creds)
@@ -119,7 +155,7 @@ export default function LoginScreen({ onConnected }: Props) {
             />
           </label>
 
-          <div className="advanced-toggle" onClick={() => !connecting && setShowAdvanced(v => !v)}>
+          <div className="advanced-toggle" onClick={() => !connecting && setAdv1('showAdvanced', !showAdvanced)}>
             {showAdvanced ? '▾' : '▸'} Advanced / Lich Settings
           </div>
 
@@ -129,7 +165,7 @@ export default function LoginScreen({ onConnected }: Props) {
                 <input
                   type="checkbox"
                   checked={useLich}
-                  onChange={e => setUseLich(e.target.checked)}
+                  onChange={e => setAdv1('useLich', e.target.checked)}
                   disabled={connecting}
                 />
                 Connect via Lich (recommended)
@@ -141,7 +177,7 @@ export default function LoginScreen({ onConnected }: Props) {
                     <input
                       type="text"
                       value={rubyPath}
-                      onChange={e => setRubyPath(e.target.value)}
+                      onChange={e => setAdv1('rubyPath', e.target.value)}
                       disabled={connecting}
                     />
                   </label>
@@ -150,19 +186,19 @@ export default function LoginScreen({ onConnected }: Props) {
                     <input
                       type="text"
                       value={lichPath}
-                      onChange={e => setLichPath(e.target.value)}
+                      onChange={e => setAdv1('lichPath', e.target.value)}
                       disabled={connecting}
                     />
                   </label>
                   <div className="advanced-row">
                     <label>
-                      Launch Delay (s)
+                      Delay (s)
                       <input
                         type="number"
                         value={lichDelay}
                         min={1}
                         max={30}
-                        onChange={e => setLichDelay(parseInt(e.target.value, 10))}
+                        onChange={e => setAdv1('lichDelay', parseInt(e.target.value, 10))}
                         disabled={connecting}
                       />
                     </label>
@@ -171,7 +207,7 @@ export default function LoginScreen({ onConnected }: Props) {
                       <input
                         type="number"
                         value={lichPort}
-                        onChange={e => setLichPort(parseInt(e.target.value, 10))}
+                        onChange={e => setAdv1('lichPort', parseInt(e.target.value, 10))}
                         disabled={connecting}
                       />
                     </label>
@@ -179,7 +215,7 @@ export default function LoginScreen({ onConnected }: Props) {
                       Mode
                       <select
                         value={lichMode}
-                        onChange={e => setLichMode(e.target.value as typeof lichMode)}
+                        onChange={e => setAdv1('lichMode', e.target.value as AdvancedSettings['lichMode'])}
                         disabled={connecting}
                       >
                         <option value="--stormfront">--stormfront</option>
@@ -190,6 +226,15 @@ export default function LoginScreen({ onConnected }: Props) {
                       </select>
                     </label>
                   </div>
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={hideLichWindow}
+                      onChange={e => setAdv1('hideLichWindow', e.target.checked)}
+                      disabled={connecting}
+                    />
+                    Hide Lich window (run as background process)
+                  </label>
                 </>
               )}
             </div>

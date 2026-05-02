@@ -36,6 +36,19 @@
   letter-spacing: 1px;
 }
 
+.pm-reset {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  margin-right: 8px;
+}
+
+.pm-reset:hover { border-color: var(--accent-dim); color: var(--text-secondary); }
+
 .pm-close {
   background: transparent;
   border: none;

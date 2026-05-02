@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { FONT_FAMILIES, FONT_FAMILY_LABELS, type AppSettings } from '../settings'
+import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import '../styles/settings.css'
 
 interface Props {
@@ -60,6 +60,7 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
 
         <div className="sp-header">
           <span className="sp-title">Settings</span>
+          <button className="sp-reset" onClick={() => onChange({ ...DEFAULT_SETTINGS })}>Reset to defaults</button>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
 
@@ -158,8 +159,18 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
             value={settings.statusBarPosition}
             onChange={v => set('statusBarPosition', v)}
             options={[
-              { value: 'top',    label: 'Top',    description: 'Vitals and timers below the toolbar' },
-              { value: 'bottom', label: 'Bottom', description: 'Vitals and timers above the command bar' },
+              { value: 'top',    label: 'Top',    description: 'Vitals below the toolbar' },
+              { value: 'bottom', label: 'Bottom', description: 'Vitals above the command bar' },
+            ]}
+          />
+
+          <RadioGroup
+            label="Icon Bar Position"
+            value={settings.iconBarPosition}
+            onChange={v => set('iconBarPosition', v)}
+            options={[
+              { value: 'top',    label: 'Top',    description: 'Stance, timers, hands, and compass below the toolbar' },
+              { value: 'bottom', label: 'Bottom', description: 'Stance, timers, hands, and compass above the command bar' },
             ]}
           />
 

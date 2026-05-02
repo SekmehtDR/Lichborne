@@ -14,16 +14,14 @@ export class LichConnection extends EventEmitter {
   private buffer = ''
   private connected = false
 
-  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', waitMs = DEFAULT_LAUNCH_WAIT_MS): Promise<void> {
+  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', waitMs = DEFAULT_LAUNCH_WAIT_MS, hideWindow = false): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Lich is launched via cmd /C so it gets its own console and doesn't
-      // block our process. The mode flag tells Lich which client handshake to expect.
-      this.lichProcess = cp.spawn('cmd', [
-        '/C', rubyPath, lichPath, mode, '--dragonrealms'
-      ], {
+      // Spawn ruby.exe directly so windowsHide applies to the ruby process itself.
+      // Using cmd /C would hide cmd.exe but ruby.exe would still create its own window.
+      this.lichProcess = cp.spawn(rubyPath, [lichPath, mode, '--dragonrealms'], {
         detached: true,
         stdio: 'ignore',
-        windowsHide: false  // show Lich's own window so user can see its status
+        windowsHide: hideWindow,
       })
 
       this.lichProcess.on('error', reject)

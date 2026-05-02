@@ -278,6 +278,11 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Status bar position toggle — StatusBar + IconBar render above game-main (top) or between game-main and command-bar (bottom) via conditional rendering
 - [x] Theme overlay ordering: re-apply effect in GameWindow re-applies base theme then settings overlays on every settings/theme change so overlays survive theme switches
 - [x] Settings persisted to localStorage (`klient67.settings`); restored on startup via `initSettings()`
+- [x] Icon bar position toggle — independent of status bar position (top or bottom)
+- [x] Settings reset to defaults button in Settings panel header
+- [x] Login screen advanced settings (Lich paths, port, mode, delay, panel open/closed) persisted to localStorage (`klient67.advancedSettings`)
+- [x] Reset Panels moved from toolbar into Panel Manager header; toolbar cleaned up
+- [x] Settings button now inherits toolbar theme styling (was missing from CSS selectors)
 - [~] Full keyboard navigation — backlogged (see Backlog section)
 - [~] Screen reader / ARIA live regions — backlogged (see Backlog section)
 
@@ -331,3 +336,6 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Large Print scales html.style.fontSize to 16px so all rem values enlarge without touching individual CSS rules |
 | 2026-05-02 | Color Blind mode targets only semantic indicator/health/timer vars (not all colors) — avoids breaking theme aesthetics for non-critical UI |
 | 2026-05-02 | Status bar position conditional render in GameWindow — same StatusBar+IconBar JSX, just placed before or after game-main div |
+| 2026-05-02 | Icon bar position is independent from status bar position — each has its own setting and conditional render |
+| 2026-05-02 | Login advanced settings grouped into AdvancedSettings interface and persisted to klient67.advancedSettings; credentials intentionally excluded |
+| 2026-05-02 | Reset Panels moved from toolbar button into Panel Manager modal header — toolbar now has Debug, Panels, Theme, Settings, Disconnect only |

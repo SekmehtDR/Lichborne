@@ -9,6 +9,7 @@ export interface AppSettings {
   colorBlind: 'none' | 'deuteranopia' | 'protanopia' | 'tritanopia'
   epilepsySafe: boolean
   statusBarPosition: 'top' | 'bottom'
+  iconBarPosition: 'top' | 'bottom'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -20,6 +21,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   colorBlind: 'none',
   epilepsySafe: false,
   statusBarPosition: 'top',
+  iconBarPosition: 'top',
 }
 
 export const FONT_FAMILIES: Record<string, string> = {

@@ -8,21 +8,23 @@
 }
 
 .login-card {
-  width: 440px;
+  width: 380px;
+  max-height: 92vh;
+  overflow-y: auto;
   background: #1c1c24;
   border: 1px solid #333;
   border-radius: 8px;
-  padding: 40px;
+  padding: 24px 28px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
 }
 
 .login-logo {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 20px;
 }
 
 .login-logo h1 {
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   font-weight: 700;
   letter-spacing: 2px;
   color: #d4c9a8;
@@ -34,8 +36,8 @@
 
 .login-logo p {
   color: #666;
-  font-size: 0.85rem;
-  margin-top: 4px;
+  font-size: 0.72rem;
+  margin-top: 3px;
   letter-spacing: 3px;
   text-transform: uppercase;
 }
@@ -43,14 +45,14 @@
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
 }
 
 .login-form label {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 0.8rem;
+  gap: 4px;
+  font-size: 0.72rem;
   color: #888;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -65,8 +67,8 @@
   border-radius: 4px;
   color: #d4c9a8;
   font-family: inherit;
-  font-size: 0.95rem;
-  padding: 10px 12px;
+  font-size: 0.85rem;
+  padding: 6px 10px;
   outline: none;
   transition: border-color 0.2s;
 }
@@ -105,26 +107,26 @@
   background: #111;
   border: 1px solid #2a2a2a;
   border-radius: 4px;
-  padding: 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .advanced-row {
   display: grid;
-  grid-template-columns: 72px 1fr 1.2fr;
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
 .advanced-row label {
   text-transform: uppercase;
   letter-spacing: 1px;
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   color: #888;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -140,7 +142,9 @@
   align-items: center;
   gap: 8px !important;
   cursor: pointer;
-  font-size: 0.85rem !important;
+  font-size: 0.78rem !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
   color: #aaa !important;
 }
 
@@ -190,9 +194,9 @@
   color: #fff;
   border: none;
   border-radius: 4px;
-  padding: 12px;
+  padding: 9px;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   letter-spacing: 1px;
