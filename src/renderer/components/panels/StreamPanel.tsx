@@ -4,9 +4,10 @@ import { renderSegment } from '../../utils/renderSegment'
 
 interface Props {
   lines: TextLine[]
+  emptyMessage?: string
 }
 
-export default function StreamPanel({ lines }: Props) {
+export default function StreamPanel({ lines, emptyMessage }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -23,6 +24,9 @@ export default function StreamPanel({ lines }: Props) {
 
   return (
     <div className="stream-panel" ref={scrollRef} onScroll={handleScroll}>
+      {lines.length === 0 && emptyMessage && (
+        <div className="stream-panel-empty">{emptyMessage}</div>
+      )}
       {lines.map(line => (
         <div key={line.id} className="text-line">
           {line.segments.map((seg, i) => renderSegment(seg, i))}

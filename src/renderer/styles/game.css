@@ -127,6 +127,53 @@
   background: #8b6914;
 }
 
+.panel-column {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.panel-h-divider {
+  height: 4px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  cursor: row-resize;
+  transition: background 0.15s;
+}
+
+.panel-h-divider:hover {
+  background: #8b6914;
+}
+
+.panel-zone {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-zone--bottom {
+  flex: 1;
+}
+
+.btn-panel-manager {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-panel-manager:hover {
+  border-color: #8b6914;
+  color: #c8a840;
+}
+
 .btn-reset-layout {
   background: transparent;
   border: 1px solid #444;

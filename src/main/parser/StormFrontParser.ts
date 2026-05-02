@@ -24,10 +24,12 @@ function parseExits(text: string): string[] {
 
 const STREAM_MAP: Record<string, StreamTarget> = {
   thoughts:    'thoughts',
-  deaths:      'deaths',
+  death:       'deaths',   // server sends "death" (singular)
+  deaths:      'deaths',   // keep alias
+  logons:      'arrivals', // server sends "logons" for arrivals/departures
+  arrivals:    'arrivals', // keep alias
   spells:      'spells',
   familiar:    'familiar',
-  arrivals:    'arrivals',
   inv:         'inv',
   // Confirmed duplicate of main — discard
   talk:        'raw',
@@ -35,6 +37,9 @@ const STREAM_MAP: Record<string, StreamTarget> = {
   combat:      'main',
   percWindow:  'spells',
 }
+
+// Streams that are state displays — each push is a full refresh, not an append
+const REPLACE_ON_PUSH = new Set(['moonwindow'])
 
 const COMPONENT_STREAM: Record<string, StreamTarget> = {
   'room objs':     'room-objects',
@@ -156,11 +161,17 @@ export class StormFrontParser {
       case 'pushstream': {
         this.flushSegments()
         const id = attrs.id ?? ''
-        const target = STREAM_MAP[id]
+        const target = STREAM_MAP[id] ?? id
         this.streamStack.push(this.activeStream)
-        this.activeStream = target ?? 'main'
-        // Emit a marker so the debug panel reveals any new unmapped stream IDs
-        if (!target) this.events.push({ type: 'unknown', raw: `pushStream:${id}` })
+        this.activeStream = target
+        // Streams that are state displays — clear on each push so content replaces rather than appends
+        if (REPLACE_ON_PUSH.has(id.toLowerCase())) {
+          this.events.push({ type: 'clear-stream', stream: target })
+        }
+        // Emit discovery event for streams not in the known map
+        if (!STREAM_MAP[id] && id) {
+          this.events.push({ type: 'unknown', raw: `pushStream:${id}` })
+        }
         break
       }
 

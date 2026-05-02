@@ -1,6 +1,7 @@
 .panel-frame {
   width: 100%;
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid #1e1e1e;
@@ -24,20 +25,31 @@
   background: #111;
   border-top: 1px solid #1e1e1e;
   flex-shrink: 0;
+  /* overflow must stay visible so the add-menu popup isn't clipped */
+  overflow: visible;
+  position: relative;
+}
+
+.panel-tab-list {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
+  overflow-y: visible;
   scrollbar-width: thin;
   scrollbar-color: #2a2a2a #111;
 }
 
-.panel-frame-tabs::-webkit-scrollbar {
+.panel-tab-list::-webkit-scrollbar {
   height: 3px;
 }
 
-.panel-frame-tabs::-webkit-scrollbar-track {
+.panel-tab-list::-webkit-scrollbar-track {
   background: #111;
 }
 
-.panel-frame-tabs::-webkit-scrollbar-thumb {
+.panel-tab-list::-webkit-scrollbar-thumb {
   background: #2a2a2a;
   border-radius: 2px;
 }
@@ -89,7 +101,6 @@
 
 .panel-tab-add-wrap {
   position: relative;
-  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -116,16 +127,27 @@
 }
 
 .panel-add-menu {
-  position: absolute;
-  bottom: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   background: #1c1c1c;
   border: 1px solid #2e2e2e;
   border-radius: 4px;
   min-width: 140px;
   box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.6);
-  z-index: 100;
-  overflow: hidden;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+}
+
+.panel-add-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-add-footer {
+  flex-shrink: 0;
+  border-top: 1px solid #2a2a2a;
 }
 
 .panel-add-item {
@@ -139,4 +161,67 @@
 .panel-add-item:hover {
   background: #262626;
   color: #d4c9a8;
+}
+
+.panel-add-item--custom {
+  color: #8b6914;
+}
+
+.panel-add-item--custom:hover {
+  color: #c8a840;
+}
+
+.panel-add-divider {
+  height: 1px;
+  background: #2a2a2a;
+  margin: 2px 0;
+}
+
+.panel-add-name-row {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  gap: 5px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.panel-add-name-input {
+  flex: 1;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #d4c9a8;
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 4px 6px;
+  outline: none;
+  min-width: 0;
+}
+
+.panel-add-name-input:focus {
+  border-color: #8b6914;
+}
+
+.panel-add-name-ok {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  color: #8b6914;
+  border-radius: 3px;
+  padding: 3px 7px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.panel-add-name-ok:hover {
+  color: #c8a840;
+  border-color: #8b6914;
+}
+
+.stream-panel-empty {
+  padding: 12px;
+  color: #444;
+  font-size: 0.8rem;
+  font-style: italic;
 }

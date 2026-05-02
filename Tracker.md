@@ -8,7 +8,8 @@
 ## Current Status
 
 **Phase 1 — Complete ✅**
-**Phase 2 — In progress (2A ✅, 2B ✅, 2C next)**
+**Phase 2 — Complete ✅**
+**Phase 3 — In progress (3A ✅, 3B ✅, 3C ✅, 3D ✅, 3E ✅, 3F ✅)**
 
 ---
 
@@ -136,39 +137,92 @@ The text attribute is **not** just the current value — it contains `"current m
 - Stance indicator tags (`IconSitting`, etc.) now emit both `StanceEvent` and update internal parser state
 - Unknown tags inside capture contexts suppressed from debug panel noise
 
-### Milestone 2C — Room Panel
-> Goal: structured room panel with clickable exits
+### Milestone 2C — Room Panel, Stream Panels, Experience ✅
+> Goal: structured room panel with clickable exits, all stream panels, exp tracker
 
-- [ ] Fixed right-side room panel (CSS grid)
-- [ ] Room name from `<component id='room name'>`
-- [ ] Room description from `<component id='room desc'>`
-- [ ] Exits as clickable buttons from `<d>` tags — clicking sends the move command
-- [ ] Objects list from `<component id='room objs'>`
-- [ ] Players list from `<component id='room players'>`
-- **Test:** Move around → room panel updates each room → click exit button → character moves
+- [x] PanelFrame — tabbed container, +/× controls, scrollable tab bar
+- [x] Room panel — name, desc, objects, players, clickable exits
+- [x] Thoughts, Arrivals, Deaths, Active Spells stream panels
+- [x] Experience panel — live mindstate tracker with gradient bars, mind-lock badge
+- [x] Text preset styling — speech, whisper, thought, roomname, roomdesc, bold, expiry, store
+- **Test:** ✅
 
-### Milestone 2D — Text Improvements
-> Goal: styled text, smart scrolling, performant rendering
+### Milestone 2D — Smart Scroll Anchor ✅
+> Goal: scroll up pauses auto-scroll, badge shows new line count
 
-- [ ] Preset styling — speech (gold/italic), whisper (muted/italic), thought (cyan), roomname (bold white), roomdesc, bold, expiry (orange), store (green)
-- [ ] Smart scroll anchor — scroll up pauses auto-scroll, "▼ N new lines" badge appears, click to resume
-- [ ] Virtualized text list — only visible lines in DOM, batched updates
-- **Test:** Have a conversation → speech appears gold → scroll up mid-combat → badge shows new line count
-
-### Milestone 2E — Secondary Streams & Experience
-> Goal: all stream panels live, exp tracker updating
-
-- [ ] Thoughts panel (below room, receives pushStream id="thoughts")
-- [ ] Deaths panel (tab with thoughts)
-- [ ] Arrivals panel (tab with thoughts)
-- [ ] Experience panel — live mindstate tracker from `<component id='exp ...'>` feed
-- [ ] Mind-lock badge (⚠) on locked skills
-- **Test:** Someone sends a thought → thoughts panel updates → train a skill → exp panel updates live
+- [x] Smart scroll anchor — "▼ N new lines" badge, click or End to resume
+- **Test:** ✅
 
 ---
 
 ## Phase 3 — Panel System
-*Not started. See DESIGN.md Section 2 for spec.*
+
+### Milestone 3A — Resizable Panel Column ✅
+> Goal: right panel column is draggable to resize; width persists across sessions
+
+- [x] Draggable vertical splitter between main text and panel column
+- [x] Panel column width persisted to localStorage
+- [x] Reset Layout button restores default width
+- **Test:** ✅
+
+### Milestone 3B — Three-Zone Right Column ✅
+> Goal: right column splits into three independent panel zones with two horizontal splitters
+
+- [x] Panel column split into top (Room), mid (Thoughts), and bottom (empty) zones
+- [x] Two horizontal splitters — drag to resize top and mid zones independently
+- [x] Top and mid zone heights persisted to localStorage
+- [x] Bottom zone takes remaining space (flex: 1)
+- [x] Reset Layout resets column width and both zone heights
+- [x] Each PanelFrame zone starts with its own independent default tabs
+- **Test:** Launch → three zones visible → drag both h-splitters → zones resize → restart → sizes restored
+
+### Milestone 3C — Panel Catalog ✅
+> Goal: Familiar, Inventory, and Debug available as panel types in the + menu
+
+- [x] Familiar stream panel (routes `familiar` stream via StreamPanel)
+- [x] Inventory stream panel (routes `inv` stream via StreamPanel)
+- [x] Debug panel (raw event stream, available as panel type in + menu alongside existing overlay)
+- **Test:** ✅ Open + menu → Familiar, Inventory, Debug appear → add Debug → event stream shows live
+
+### Milestone 3D — Panel Manager UI ✅
+> Goal: modal listing all panels, open/closed state, move between zones
+
+- [x] Panel Manager accessible from toolbar ("Panels" button)
+- [x] Tab state lifted to GameWindow — both zones fully controlled
+- [x] Lists all panels with current zone (Top / Bottom / Not Open)
+- [x] Move a panel between zones (↑ Top / ↓ Bottom buttons)
+- [x] Remove a panel from either zone
+- [x] Add closed panels to either zone
+- [x] activeId correctly updated on remove
+- **Test:** ✅ Open Panels → see all zones → move Room to bottom → Room appears in bottom zone
+
+### Milestone 3E — User-Created Panels ✅
+> Goal: players can create named panels on the fly
+
+- [x] "New panel..." option in PanelFrame + menu with inline name input
+- [x] Player types a name → custom panel created with unique stream ID
+- [x] Custom panels render StreamPanel keyed by their ID
+- [x] Empty state shows "Waiting for content on stream X" message
+- [x] Custom panels appear in Panel Manager and can be moved/removed
+- [x] Lich script streams auto-discovered via pushStream — appear in Panel Manager and + menu automatically
+- **Test:** ✅ Click + → New panel... → type name → panel appears with waiting message
+
+### Milestone 3F — Dynamic Stream Discovery & Layout Persistence ✅
+> Goal: unknown pushStream IDs auto-populate the panel manager; layout survives disconnect/reconnect
+
+- [x] Parser emits discovery events for unknown pushStream IDs
+- [x] GameWindow collects discovered stream IDs into `discoveredStreams` state
+- [x] NEVER_DISCOVER filter prevents internal/aliased streams from polluting the list
+- [x] Panel Manager "Available Streams" section shows discovered streams with add buttons
+- [x] `+` menu in each PanelFrame also shows available discovered streams
+- [x] Adding a discovered stream creates a custom tab with the stream ID as key
+- [x] `+` menu rendered via React portal — no longer clipped by overflow:hidden ancestors
+- [x] `+` menu has max-height with scrollable list + fixed "New panel…" footer
+- [x] moonWindow (and similar state-display streams) clear on each push — replace not append
+- [x] Panel tab layout (all three zones + active IDs) persisted to localStorage
+- [x] Reset Layout button resets tabs back to default Room+Thoughts as well as sizes
+- [x] Tab close `×` always visible regardless of tab count
+- **Test:** ✅ Connect → moonWindow/atmospherics/etc. appear in Available Streams → add one → survives disconnect → Reset Layout restores defaults
 
 ---
 
@@ -197,3 +251,9 @@ The text attribute is **not** just the current value — it contains `"current m
 | 2026-05-01 | Inactive indicator contrast: #aaa text / #383838 border — readable at all times; active states distinguished by color+glow, not by being the only visible element |
 | 2026-05-01 | Vital bars use gradient fills; health has 4-state color thresholds (green ≥80%, yellow 50–80%, orange 30–50%, red <30%) matching Frostbite client approach |
 | 2026-05-01 | Status indicators and hand/spell slots use flex:1 to fill full row width at any window size |
+| 2026-05-01 | Upgraded two-zone to three-zone right column — top (Room), mid (Thoughts), bottom (flexible) |
+| 2026-05-01 | Dynamic stream discovery: parser emits unknown pushStream IDs; GameWindow surfaces them in Panel Manager and + menu |
+| 2026-05-01 | NEVER_DISCOVER set filters internal/aliased streams (room sub-streams, logons, percWindow, etc.) from discoverable list |
+| 2026-05-01 | + menu rendered via React portal to escape overflow:hidden clipping; menuRef added so outside-click handler doesn't fire on menu items |
+| 2026-05-01 | moonWindow uses REPLACE_ON_PUSH — each pushStream clears the stream first so only latest state shows |
+| 2026-05-01 | Panel tab layout persisted to localStorage; Reset Layout also resets tabs to Room+Thoughts defaults |

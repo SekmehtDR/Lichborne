@@ -4,7 +4,8 @@ import { renderSegment } from '../utils/renderSegment'
 import DebugPanel from './DebugPanel'
 import StatusBar from './StatusBar'
 import IconBar from './IconBar'
-import PanelFrame from './PanelFrame'
+import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
+import PanelManager from './PanelManager'
 import '../styles/game.css'
 import '../styles/panels.css'
 
@@ -14,93 +15,158 @@ interface Props {
 
 let lineId = 0
 
-// Exp pulse lines arrive in the main stream as whisper-preset text duplicating
-// data already handled by exp-component events. Pattern: "SkillName: 1234 56% mindstate"
 const EXP_READOUT = /^[A-Za-z ]+:\s+\d+\s+\d+%\s+\w/
-
 function isExpReadout(segments: TextSegment[]): boolean {
   return segments.length === 1 && segments[0].preset === 'whisper' && EXP_READOUT.test(segments[0].text)
 }
-const MAX_LINES = 2000
+
+const MAX_LINES       = 2000
 const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
 
-const STREAM_BUFFERS = ['thoughts', 'arrivals', 'deaths', 'spells'] as const
-type BufferedStream = typeof STREAM_BUFFERS[number]
+const ROOM_STREAMS = new Set(['room', 'room-objects', 'room-players', 'room-exits'])
+
+// Stream IDs that should never appear as user-discoverable streams —
+// either handled internally or aliased to a built-in panel type.
+const NEVER_DISCOVER = new Set([
+  'main', 'raw',
+  'room', 'room-objects', 'room-players', 'room-exits',
+  // Aliases the game sends that map to built-in panel types
+  'experience', // → exp panel
+  'thoughts', 'thought',
+  'deaths', 'death',
+  'arrivals', 'logons',
+  'spells', 'percwindow',
+  'familiar',
+  'inv', 'inventory',
+  'exp',
+  'debug',
+])
 
 const DEFAULT_PANEL_WIDTH = 280
-const MIN_PANEL_WIDTH = 160
-const MAX_PANEL_WIDTH = 600
+const MIN_PANEL_WIDTH     = 160
+const MAX_PANEL_WIDTH     = 600
 
-function loadPanelWidth(): number {
-  const saved = localStorage.getItem('klient67.panelWidth')
-  if (!saved) return DEFAULT_PANEL_WIDTH
-  const n = parseInt(saved, 10)
-  return isNaN(n) ? DEFAULT_PANEL_WIDTH : Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, n))
+const DEFAULT_TOP_HEIGHT = 220
+const MIN_TOP_HEIGHT     = 80
+const MAX_TOP_HEIGHT     = 600
+
+const DEFAULT_MID_HEIGHT = 180
+const MIN_MID_HEIGHT     = 80
+const MAX_MID_HEIGHT     = 600
+
+function loadInt(key: string, def: number, min: number, max: number): number {
+  const n = parseInt(localStorage.getItem(key) ?? '', 10)
+  return isNaN(n) ? def : Math.max(min, Math.min(max, n))
+}
+
+function loadTabs(key: string, def: TabDef[]): TabDef[] {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return def
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed) || parsed.length === 0) return def
+    return parsed as TabDef[]
+  } catch { return def }
+}
+
+function loadStr(key: string, def: string): string {
+  return localStorage.getItem(key) ?? def
+}
+
+function removeFromZone(
+  tab: TabDef,
+  tabs: TabDef[], setTabs: React.Dispatch<React.SetStateAction<TabDef[]>>,
+  activeId: string, setActiveId: (id: string) => void,
+) {
+  const idx = tabs.findIndex(t => t.id === tab.id)
+  if (idx === -1) return
+  const next = tabs.filter(t => t.id !== tab.id)
+  setTabs(next)
+  if (activeId === tab.id && next.length > 0) setActiveId(next[Math.max(0, idx - 1)].id)
 }
 
 export default function GameWindow({ onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
-  const [streamLines, setStreamLines] = useState<Record<BufferedStream, TextLine[]>>({
-    thoughts: [],
-    arrivals: [],
-    deaths:   [],
-    spells:   [],
-  })
-  const [roomState, setRoomState] = useState<RoomState>({
-    title:   '',
-    desc:    '',
-    objects: '',
-    players: '',
-    exits:   [],
-  })
+  const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
+  const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', exits: [] })
   const [expSkills, setExpSkills] = useState<Record<string, string>>({})
 
   const [command, setCommand] = useState('')
-  const historyRef = useRef<string[]>([])
+  const historyRef    = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
-  const [status, setStatus] = useState('Connected')
+  const [status, setStatus]           = useState('Connected')
   const [disconnecting, setDisconnecting] = useState(false)
-  const [showDebug, setShowDebug] = useState(false)
+  const [showDebug, setShowDebug]     = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
+  const clearDebugEvents = () => setDebugEvents([])
 
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
-    health:        { current: 0, max: 0 },
-    mana:          { current: 0, max: 0 },
-    concentration: { current: 0, max: 0 },
-    stamina:       { current: 0, max: 0 },
-    spirit:        { current: 0, max: 0 },
+    health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
+    concentration: { current: 0, max: 0 }, stamina: { current: 0, max: 0 }, spirit: { current: 0, max: 0 },
   })
-  const [rtExpires, setRtExpires] = useState(0)
-  const [ctExpires, setCtExpires] = useState(0)
+  const [rtExpires, setRtExpires]   = useState(0)
+  const [ctExpires, setCtExpires]   = useState(0)
   const [indicators, setIndicators] = useState<Record<string, boolean>>({})
-  const [stance, setStance] = useState('')
-  const [spell, setSpell] = useState('')
-  const [rightHand, setRightHand] = useState('Empty')
-  const [leftHand, setLeftHand] = useState('Empty')
-  const [exits, setExits] = useState<string[]>([])
-
+  const [stance, setStance]         = useState('')
+  const [spell, setSpell]           = useState('')
+  const [rightHand, setRightHand]   = useState('Empty')
+  const [leftHand, setLeftHand]     = useState('Empty')
+  const [exits, setExits]           = useState<string[]>([])
   const [newLineCount, setNewLineCount] = useState(0)
-  const [panelWidth, setPanelWidth] = useState(loadPanelWidth)
 
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const panelWidthRef = useRef(panelWidth)
-  const isDraggingRef = useRef(false)
-  const dragStartXRef = useRef(0)
-  const dragStartWidthRef = useRef(0)
+  // Layout sizes
+  const [panelWidth, setPanelWidth]       = useState(() => loadInt('klient67.panelWidth', DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
+  const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt('klient67.topPanelHeight', DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
+  const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt('klient67.midPanelHeight', DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
+
+  // Panel tabs — 3 zones, persisted to localStorage
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('klient67.topTabs',    [makeTab('room')]))
+  const [topActiveId, setTopActiveId]   = useState(() => loadStr('klient67.topActiveId',    'room'))
+  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('klient67.midTabs',    [makeTab('thoughts')]))
+  const [midActiveId, setMidActiveId]   = useState(() => loadStr('klient67.midActiveId',    'thoughts'))
+  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', []))
+  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', ''))
+
+  const [showPanelManager, setShowPanelManager] = useState(false)
+  const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
+
+  // Drag refs
+  const bottomRef        = useRef<HTMLDivElement>(null)
+  const scrollRef        = useRef<HTMLDivElement>(null)
+  const pinnedRef        = useRef(true)
+  const inputRef         = useRef<HTMLInputElement>(null)
+  const panelWidthRef    = useRef(panelWidth)
+  const topHeightRef     = useRef(topPanelHeight)
+  const midHeightRef     = useRef(midPanelHeight)
+  const isDraggingColRef = useRef(false)
+  const colDragStartX    = useRef(0)
+  const colDragStartW    = useRef(0)
+  const draggingRow      = useRef<'top-mid' | 'mid-bot' | null>(null)
+  const rowDragStartY    = useRef(0)
+  const rowDragStartH    = useRef(0)
+
+  // ── Persist panel layout ─────────────────────────────────────────────────
+
+  useEffect(() => { localStorage.setItem('klient67.topTabs',       JSON.stringify(topTabs))      }, [topTabs])
+  useEffect(() => { localStorage.setItem('klient67.topActiveId',   topActiveId)                  }, [topActiveId])
+  useEffect(() => { localStorage.setItem('klient67.midTabs',       JSON.stringify(midTabs))      }, [midTabs])
+  useEffect(() => { localStorage.setItem('klient67.midActiveId',   midActiveId)                  }, [midActiveId])
+  useEffect(() => { localStorage.setItem('klient67.bottomTabs',    JSON.stringify(bottomTabs))   }, [bottomTabs])
+  useEffect(() => { localStorage.setItem('klient67.bottomActiveId', bottomActiveId)              }, [bottomActiveId])
+
+  // ── Event stream ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     const unsubEvents = window.api.onGameEvent((events: GameEvent[]) => {
       const newMain: TextLine[] = []
-      const newStream: Partial<Record<BufferedStream, TextLine[]>> = {}
-      const clearedStreams = new Set<BufferedStream>()
+      const newStream: Record<string, TextLine[]> = {}
+      const clearedStreams = new Set<string>()
       const roomUpdates: Partial<RoomState> = {}
       const expUpdates: Record<string, string> = {}
       const vitalUpdates: Record<string, { current: number; max: number }> = {}
       const indicatorUpdates: Record<string, boolean> = {}
+      const newDiscovered: string[] = []
       let newRt: number | null = null
       let newCt: number | null = null
       let newStance: string | null = null
@@ -112,37 +178,28 @@ export default function GameWindow({ onDisconnect }: Props) {
             const { stream, segments } = evt as StreamTextEvent
             if (stream === 'main') {
               if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
-            } else if ((STREAM_BUFFERS as readonly string[]).includes(stream)) {
-              const key = stream as BufferedStream
-              if (!newStream[key]) newStream[key] = []
-              newStream[key]!.push({ id: lineId++, segments })
+            } else if (stream === 'raw') {
+              // discard
             } else if (stream === 'room') {
               roomUpdates.desc = segments.map(s => s.text).join('')
             } else if (stream === 'room-objects') {
               roomUpdates.objects = segments.map(s => s.text).join('')
             } else if (stream === 'room-players') {
               roomUpdates.players = segments.map(s => s.text).join('')
+            } else {
+              if (!newStream[stream]) newStream[stream] = []
+              newStream[stream].push({ id: lineId++, segments })
             }
             break
           }
           case 'vital-update':
             vitalUpdates[evt.id] = { current: evt.current, max: evt.max }
             break
-          case 'roundtime':
-            newRt = evt.expires
-            break
-          case 'casttime':
-            newCt = evt.expires
-            break
-          case 'indicator':
-            indicatorUpdates[evt.id] = evt.visible
-            break
-          case 'stance':
-            newStance = evt.text
-            break
-          case 'spell':
-            newSpell = evt.name
-            break
+          case 'roundtime':  newRt = evt.expires; break
+          case 'casttime':   newCt = evt.expires; break
+          case 'indicator':  indicatorUpdates[evt.id] = evt.visible; break
+          case 'stance':     newStance = evt.text; break
+          case 'spell':      newSpell = evt.name; break
           case 'hand':
             if (evt.hand === 'right') setRightHand(evt.item || 'Empty')
             else setLeftHand(evt.item || 'Empty')
@@ -151,20 +208,20 @@ export default function GameWindow({ onDisconnect }: Props) {
             setExits(evt.directions)
             roomUpdates.exits = evt.directions
             break
-          case 'room-title':
-            roomUpdates.title = evt.title
-            break
-          case 'exp-component':
-            expUpdates[evt.skill] = evt.text
-            break
+          case 'room-title':    roomUpdates.title = evt.title; break
+          case 'exp-component': expUpdates[evt.skill] = evt.text; break
           case 'clear-stream':
             if (evt.stream === 'room')         roomUpdates.desc    = ''
             if (evt.stream === 'room-objects') roomUpdates.objects = ''
             if (evt.stream === 'room-players') roomUpdates.players = ''
             if (evt.stream === 'room-exits')   roomUpdates.exits   = []
-            if ((STREAM_BUFFERS as readonly string[]).includes(evt.stream))
-              clearedStreams.add(evt.stream as BufferedStream)
+            if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
             break
+          case 'unknown': {
+            const raw = (evt as { type: 'unknown'; raw: string }).raw
+            if (raw.startsWith('pushStream:')) newDiscovered.push(raw.slice(11))
+            break
+          }
         }
       }
 
@@ -177,30 +234,30 @@ export default function GameWindow({ onDisconnect }: Props) {
         setStreamLines(prev => {
           const next = { ...prev }
           for (const key of clearedStreams) next[key] = []
-          for (const [key, lines] of Object.entries(newStream) as [BufferedStream, TextLine[]][]) {
-            const base = clearedStreams.has(key) ? [] : prev[key]
+          for (const [key, lines] of Object.entries(newStream)) {
+            const base = clearedStreams.has(key) ? [] : (prev[key] ?? [])
             next[key] = [...base.slice(-(MAX_STREAM_LINES - lines.length)), ...lines]
           }
           return next
         })
       }
 
-      if (Object.keys(roomUpdates).length > 0)
-        setRoomState(prev => ({ ...prev, ...roomUpdates }))
+      if (newDiscovered.length > 0) {
+        setDiscoveredStreams(prev => {
+          const existing = new Set(prev)
+          const toAdd = newDiscovered.filter(id => !existing.has(id) && !NEVER_DISCOVER.has(id.toLowerCase()))
+          return toAdd.length > 0 ? [...prev, ...toAdd] : prev
+        })
+      }
 
-      if (Object.keys(expUpdates).length > 0)
-        setExpSkills(prev => ({ ...prev, ...expUpdates }))
-
-      if (Object.keys(vitalUpdates).length > 0)
-        setVitals(prev => ({ ...prev, ...vitalUpdates }))
-
-      if (Object.keys(indicatorUpdates).length > 0)
-        setIndicators(prev => ({ ...prev, ...indicatorUpdates }))
-
-      if (newRt !== null) setRtExpires(newRt)
-      if (newCt !== null) setCtExpires(newCt)
+      if (Object.keys(roomUpdates).length > 0)    setRoomState(prev => ({ ...prev, ...roomUpdates }))
+      if (Object.keys(expUpdates).length > 0)     setExpSkills(prev => ({ ...prev, ...expUpdates }))
+      if (Object.keys(vitalUpdates).length > 0)   setVitals(prev => ({ ...prev, ...vitalUpdates }))
+      if (Object.keys(indicatorUpdates).length > 0) setIndicators(prev => ({ ...prev, ...indicatorUpdates }))
+      if (newRt !== null)     setRtExpires(newRt)
+      if (newCt !== null)     setCtExpires(newCt)
       if (newStance !== null) setStance(newStance)
-      if (newSpell !== null) setSpell(newSpell)
+      if (newSpell !== null)  setSpell(newSpell)
 
       setDebugEvents(prev => [...prev.slice(-(MAX_DEBUG_EVENTS - events.length)), ...events])
     })
@@ -212,9 +269,10 @@ export default function GameWindow({ onDisconnect }: Props) {
     })
 
     inputRef.current?.focus()
-
     return () => { unsubEvents(); unsubStatus() }
   }, [onDisconnect])
+
+  // ── Scroll ────────────────────────────────────────────────────────────────
 
   function scrollToBottom() {
     pinnedRef.current = true
@@ -238,77 +296,140 @@ export default function GameWindow({ onDisconnect }: Props) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'End' && document.activeElement !== inputRef.current) {
-        e.preventDefault()
-        scrollToBottom()
+        e.preventDefault(); scrollToBottom()
       }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // ── Drag resize ───────────────────────────────────────────────────────────
+
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
-      if (!isDraggingRef.current) return
-      const delta = dragStartXRef.current - e.clientX
-      const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, dragStartWidthRef.current + delta))
-      panelWidthRef.current = next
-      setPanelWidth(next)
+      if (isDraggingColRef.current) {
+        const next = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, colDragStartW.current + (colDragStartX.current - e.clientX)))
+        panelWidthRef.current = next
+        setPanelWidth(next)
+      }
+      if (draggingRow.current === 'top-mid') {
+        const next = Math.max(MIN_TOP_HEIGHT, Math.min(MAX_TOP_HEIGHT, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
+        topHeightRef.current = next
+        setTopPanelHeight(next)
+      }
+      if (draggingRow.current === 'mid-bot') {
+        const next = Math.max(MIN_MID_HEIGHT, Math.min(MAX_MID_HEIGHT, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
+        midHeightRef.current = next
+        setMidPanelHeight(next)
+      }
     }
     function onMouseUp() {
-      if (!isDraggingRef.current) return
-      isDraggingRef.current = false
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      localStorage.setItem('klient67.panelWidth', String(panelWidthRef.current))
+      if (isDraggingColRef.current) {
+        isDraggingColRef.current = false
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        localStorage.setItem('klient67.panelWidth', String(panelWidthRef.current))
+      }
+      if (draggingRow.current === 'top-mid') {
+        localStorage.setItem('klient67.topPanelHeight', String(topHeightRef.current))
+      }
+      if (draggingRow.current === 'mid-bot') {
+        localStorage.setItem('klient67.midPanelHeight', String(midHeightRef.current))
+      }
+      if (draggingRow.current) {
+        draggingRow.current = null
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
     }
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-    return () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
+    return () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp) }
   }, [])
 
-  function handleDividerMouseDown(e: React.MouseEvent) {
-    isDraggingRef.current = true
-    dragStartXRef.current = e.clientX
-    dragStartWidthRef.current = panelWidthRef.current
+  function handleColDividerDown(e: React.MouseEvent) {
+    isDraggingColRef.current = true
+    colDragStartX.current = e.clientX
+    colDragStartW.current = panelWidthRef.current
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     e.preventDefault()
   }
 
-  function resetLayout() {
-    panelWidthRef.current = DEFAULT_PANEL_WIDTH
-    setPanelWidth(DEFAULT_PANEL_WIDTH)
-    localStorage.setItem('klient67.panelWidth', String(DEFAULT_PANEL_WIDTH))
+  function handleRowDividerDown(which: 'top-mid' | 'mid-bot', e: React.MouseEvent) {
+    draggingRow.current = which
+    rowDragStartY.current = e.clientY
+    rowDragStartH.current = which === 'top-mid' ? topHeightRef.current : midHeightRef.current
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+    e.preventDefault()
   }
+
+  function resetLayout() {
+    panelWidthRef.current = DEFAULT_PANEL_WIDTH; setPanelWidth(DEFAULT_PANEL_WIDTH)
+    topHeightRef.current = DEFAULT_TOP_HEIGHT;   setTopPanelHeight(DEFAULT_TOP_HEIGHT)
+    midHeightRef.current = DEFAULT_MID_HEIGHT;   setMidPanelHeight(DEFAULT_MID_HEIGHT)
+    localStorage.setItem('klient67.panelWidth',    String(DEFAULT_PANEL_WIDTH))
+    localStorage.setItem('klient67.topPanelHeight', String(DEFAULT_TOP_HEIGHT))
+    localStorage.setItem('klient67.midPanelHeight', String(DEFAULT_MID_HEIGHT))
+    const defaultTop = [makeTab('room')]
+    const defaultMid = [makeTab('thoughts')]
+    setTopTabs(defaultTop);    setTopActiveId('room')
+    setMidTabs(defaultMid);    setMidActiveId('thoughts')
+    setBottomTabs([]);         setBottomActiveId('')
+  }
+
+  // ── Panel management ──────────────────────────────────────────────────────
+
+  function moveTabToZone(tab: TabDef, toZone: 'top' | 'mid' | 'bottom') {
+    removeFromZone(tab, topTabs, setTopTabs, topActiveId, setTopActiveId)
+    removeFromZone(tab, midTabs, setMidTabs, midActiveId, setMidActiveId)
+    removeFromZone(tab, bottomTabs, setBottomTabs, bottomActiveId, setBottomActiveId)
+    if (toZone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id) }
+    if (toZone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id) }
+    if (toZone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id) }
+  }
+
+  function removeTab(tab: TabDef) {
+    removeFromZone(tab, topTabs, setTopTabs, topActiveId, setTopActiveId)
+    removeFromZone(tab, midTabs, setMidTabs, midActiveId, setMidActiveId)
+    removeFromZone(tab, bottomTabs, setBottomTabs, bottomActiveId, setBottomActiveId)
+  }
+
+  function addToZone(typeOrId: string, zone: 'top' | 'mid' | 'bottom') {
+    const isBuiltin = ALL_PANEL_TYPES.includes(typeOrId as PanelType)
+    const tab: TabDef = isBuiltin
+      ? makeTab(typeOrId as PanelType)
+      : { id: typeOrId, type: 'custom', label: typeOrId.charAt(0).toUpperCase() + typeOrId.slice(1) }
+    if (zone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id) }
+    if (zone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id) }
+    if (zone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id) }
+  }
+
+  // ── Command bar ───────────────────────────────────────────────────────────
 
   function handleCommand(e: React.FormEvent) {
     e.preventDefault()
     if (!command.trim()) return
     historyRef.current = [command, ...historyRef.current].slice(0, 200)
     historyIdxRef.current = -1
-    setLines(prev => [...prev.slice(-MAX_LINES), {
-      id: lineId++,
-      segments: [{ text: `>${command}`, preset: 'command-echo' }],
-    }])
+    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }] }])
     window.api.sendCommand(command)
     setCommand('')
   }
 
   function handleCommandKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    const history = historyRef.current
+    const h = historyRef.current
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      const next = Math.min(historyIdxRef.current + 1, history.length - 1)
+      const next = Math.min(historyIdxRef.current + 1, h.length - 1)
       historyIdxRef.current = next
-      setCommand(history[next] ?? '')
+      setCommand(h[next] ?? '')
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       const next = historyIdxRef.current - 1
       historyIdxRef.current = next
-      setCommand(next < 0 ? '' : (history[next] ?? ''))
+      setCommand(next < 0 ? '' : (h[next] ?? ''))
     }
   }
 
@@ -318,45 +439,35 @@ export default function GameWindow({ onDisconnect }: Props) {
     window.api.disconnect()
   }
 
+  // ── Shared PanelFrame props ───────────────────────────────────────────────
+
+  const sharedFrameProps = {
+    streamLines, roomState, expSkills,
+    onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
+    debugEvents, onClearDebug: clearDebugEvents,
+    discoveredStreams,
+  }
+
   return (
     <div className="game-layout">
       <div className="game-toolbar">
         <span className="toolbar-title">Klient67</span>
         <span className="toolbar-status">{status}</span>
-        <button
-          className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`}
-          onClick={() => setShowDebug(d => !d)}
-        >
-          Debug
-        </button>
-        <button className="btn-reset-layout" onClick={resetLayout} title="Reset panel width to default">
-          Reset Layout
-        </button>
+        <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
+        <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
+        <button className="btn-reset-layout" onClick={resetLayout}>Reset Layout</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
-          {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+          {disconnecting ? 'Disconnecting…' : 'Disconnect'}
         </button>
       </div>
 
       <StatusBar vitals={vitals} />
-      <IconBar
-        stance={stance}
-        rtExpires={rtExpires}
-        ctExpires={ctExpires}
-        spell={spell}
-        indicators={indicators}
-        rightHand={rightHand}
-        leftHand={leftHand}
-        exits={exits}
-      />
+      <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
+               indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
 
       <div className="game-main">
         <div className="text-window-wrap">
-          <div
-            className="text-window"
-            ref={scrollRef}
-            onScroll={handleScroll}
-            onClick={() => inputRef.current?.focus()}
-          >
+          <div className="text-window" ref={scrollRef} onScroll={handleScroll} onClick={() => inputRef.current?.focus()}>
             {lines.map(line => (
               <div key={line.id} className="text-line">
                 {line.segments.map((seg, i) => renderSegment(seg, i))}
@@ -371,33 +482,44 @@ export default function GameWindow({ onDisconnect }: Props) {
           )}
         </div>
 
-        <div className="panel-divider" onMouseDown={handleDividerMouseDown} />
-        <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}>
-          <PanelFrame
-            streamLines={streamLines}
-            roomState={roomState}
-            expSkills={expSkills}
-            onSendCommand={cmd => window.api.sendCommand(cmd)}
-          />
+        <div className="panel-divider" onMouseDown={handleColDividerDown} />
+        <div className="panel-column" style={{ width: panelWidth }}>
+          <div className="panel-zone" style={{ height: topPanelHeight, flexShrink: 0 }}>
+            <PanelFrame {...sharedFrameProps} tabs={topTabs} activeId={topActiveId}
+              onTabsChange={setTopTabs} onActiveChange={setTopActiveId} />
+          </div>
+          <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('top-mid', e)} />
+          <div className="panel-zone" style={{ height: midPanelHeight, flexShrink: 0 }}>
+            <PanelFrame {...sharedFrameProps} tabs={midTabs} activeId={midActiveId}
+              onTabsChange={setMidTabs} onActiveChange={setMidActiveId} />
+          </div>
+          <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('mid-bot', e)} />
+          <div className="panel-zone panel-zone--bottom">
+            <PanelFrame {...sharedFrameProps} tabs={bottomTabs} activeId={bottomActiveId}
+              onTabsChange={setBottomTabs} onActiveChange={setBottomActiveId} />
+          </div>
         </div>
       </div>
 
-      {showDebug && (
-        <DebugPanel events={debugEvents} onClear={() => setDebugEvents([])} />
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}
+
+      {showPanelManager && (
+        <PanelManager
+          topTabs={topTabs} midTabs={midTabs} bottomTabs={bottomTabs}
+          allTypes={ALL_PANEL_TYPES} labels={PANEL_LABELS}
+          discoveredStreams={discoveredStreams}
+          onMoveTab={moveTabToZone}
+          onRemoveTab={removeTab}
+          onAddToZone={addToZone}
+          onClose={() => setShowPanelManager(false)}
+        />
       )}
 
       <form className="command-bar" onSubmit={handleCommand}>
         <span className="prompt-marker">&gt;</span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={command}
+        <input ref={inputRef} type="text" value={command}
           onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
-          onKeyDown={handleCommandKey}
-          className="command-input"
-          autoComplete="off"
-          spellCheck={false}
-        />
+          onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
         <button type="submit" className="btn-send">Send</button>
       </form>
     </div>

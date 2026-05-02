@@ -26,21 +26,18 @@ export const IPC = {
 } as const
 
 // --- Stream routing ---
-
-export type StreamTarget =
-  | 'main'
-  | 'thoughts'
-  | 'deaths'
-  | 'spells'
-  | 'familiar'
-  | 'arrivals'
-  | 'inv'
-  | 'room'
-  | 'room-exits'
-  | 'room-objects'
-  | 'room-players'
-  | 'exp'
-  | 'raw'
+// Open string type — known values documented below, arbitrary IDs allowed for
+// script-created windows (moonWindow, etc.)
+//   'main'          — primary game text
+//   'thoughts'      — thought channel
+//   'deaths'        — death announcements
+//   'arrivals'      — logon/logoff notices
+//   'spells'        — active spells (percWindow)
+//   'familiar'      — familiar link
+//   'inv'           — inventory
+//   'room[-*]'      — room component sub-streams
+//   'raw'           — discard (never displayed)
+export type StreamTarget = string
 
 // --- Text segments ---
 
