@@ -1,20 +1,19 @@
 /* ============================================================
    Text preset colors — applied via data-preset attribute
-   Override here or via theme CSS variables in Phase 4.
    ============================================================ */
 
-[data-preset="speech"]       { color: #d4af37; font-style: italic; }
-[data-preset="whisper"]      { color: #907830; font-style: italic; }
-[data-preset="thought"]      { color: #5bc8c8; }
-[data-preset="roomname"]     { color: #ffffff; font-weight: bold; }
-[data-preset="roomdesc"]     { color: #c8c8c8; }
-[data-preset="bold"]         { color: #ffffff; font-weight: bold; }
-[data-preset="expiry"]       { color: #d97706; }
-[data-preset="store"]        { color: #5cb85c; }
-[data-preset="command-echo"] { color: #6a8a6a; }
+[data-preset="speech"]       { color: var(--preset-speech); font-style: italic; }
+[data-preset="whisper"]      { color: var(--preset-whisper); font-style: italic; }
+[data-preset="thought"]      { color: var(--preset-thought); }
+[data-preset="roomname"]     { color: var(--preset-roomname); font-weight: bold; }
+[data-preset="roomdesc"]     { color: var(--preset-roomdesc); }
+[data-preset="bold"]         { color: var(--preset-bold); font-weight: bold; }
+[data-preset="expiry"]       { color: var(--preset-expiry); }
+[data-preset="store"]        { color: var(--preset-store); }
+[data-preset="command-echo"] { color: var(--preset-cmd); }
 
 /* ============================================================
-   Stream panel — generic scrolling text (Thoughts, Deaths, etc.)
+   Stream panel — generic scrolling text
    ============================================================ */
 
 .stream-panel {
@@ -36,24 +35,24 @@
 }
 
 .room-panel--empty {
-  color: #3a3a3a;
+  color: var(--text-faint);
   font-size: 0.78rem;
   font-style: italic;
   padding: 12px;
 }
 
 .room-panel-title {
-  color: #e8e8e8;
+  color: var(--room-title-color);
   font-weight: bold;
   font-size: 0.82rem;
   margin-bottom: 6px;
   padding-bottom: 5px;
-  border-bottom: 1px solid #222;
+  border-bottom: 1px solid var(--border-subtle);
   line-height: 1.3;
 }
 
 .room-panel-desc {
-  color: #b8b8b8;
+  color: var(--room-desc-color);
   font-size: 0.78rem;
   line-height: 1.55;
   margin-bottom: 8px;
@@ -67,9 +66,9 @@
 }
 
 .room-exit-btn {
-  background: #0d1a0d;
-  border: 1px solid #1e3a1e;
-  color: #60a840;
+  background: var(--exit-bg);
+  border: 1px solid var(--exit-border);
+  color: var(--exit-text);
   padding: 3px 9px;
   font-size: 0.72rem;
   border-radius: 3px;
@@ -79,13 +78,13 @@
 }
 
 .room-exit-btn:hover {
-  background: #142014;
-  border-color: #366030;
-  color: #90d860;
+  background: var(--exit-bg-hover);
+  border-color: var(--exit-border-hover);
+  color: var(--exit-text-hover);
 }
 
 .room-panel-section-label {
-  color: #383838;
+  color: var(--room-section-color);
   font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -95,7 +94,7 @@
 
 .room-panel-objects,
 .room-panel-players {
-  color: #8a8a8a;
+  color: var(--room-content-color);
   font-size: 0.76rem;
   line-height: 1.45;
 }
@@ -112,15 +111,13 @@
 }
 
 .exp-panel--empty {
-  color: #3a3a3a;
+  color: var(--text-faint);
   font-size: 0.78rem;
   font-style: italic;
   padding: 12px;
 }
 
-.exp-row {
-  margin-bottom: 7px;
-}
+.exp-row { margin-bottom: 7px; }
 
 .exp-line {
   display: flex;
@@ -133,7 +130,7 @@
 
 .exp-skill {
   font-size: 0.71rem;
-  color: #aaa;
+  color: var(--exp-skill-color);
   flex-shrink: 1;
   min-width: 0;
   overflow: hidden;
@@ -143,21 +140,21 @@
 
 .exp-rank {
   font-size: 0.68rem;
-  color: #555;
+  color: var(--exp-rank-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .exp-pct {
   font-size: 0.68rem;
-  color: #555;
+  color: var(--exp-pct-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .exp-mindstate {
   font-size: 0.68rem;
-  color: #606060;
+  color: var(--exp-mindstate-color);
   text-transform: capitalize;
   flex-shrink: 1;
   min-width: 0;
@@ -168,19 +165,19 @@
 
 .exp-rate {
   font-size: 0.65rem;
-  color: #404040;
+  color: var(--exp-rate-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   margin-left: auto;
 }
 
-.exp-row--locked .exp-skill    { color: #d07030; }
-.exp-row--locked .exp-mindstate { color: #a05020; }
-.exp-row--locked .exp-rate     { color: #7a3a10; }
+.exp-row--locked .exp-skill     { color: var(--exp-locked-skill); }
+.exp-row--locked .exp-mindstate { color: var(--exp-locked-mind); }
+.exp-row--locked .exp-rate      { color: var(--exp-locked-rate); }
 
 .exp-bar-wrap {
   height: 3px;
-  background: #181818;
+  background: var(--exp-bar-bg);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 2px;
@@ -192,4 +189,3 @@
   transition: width 0.4s ease, background 0.4s ease;
   min-width: 1px;
 }
-

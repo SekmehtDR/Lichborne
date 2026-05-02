@@ -1,0 +1,177 @@
+/*
+ * Dark theme — default
+ * All color tokens for Klient67. Swap this file's :root block to change themes.
+ */
+
+:root {
+  /* ── Backgrounds ─────────────────────────────────────────────── */
+  --bg-app:      #0f0f0f;   /* outermost game layout */
+  --bg-base:     #1a1a1a;   /* panels, modals, body */
+  --bg-raised:   #1e1e1e;   /* toolbars, panel headers */
+  --bg-sunken:   #111111;   /* tab bars, secondary areas */
+  --bg-input:    #0d0d0d;   /* command input, form fields */
+  --bg-hover:    #222222;   /* hover state backgrounds */
+  --bg-active:   #171717;   /* selected / active state */
+  --bg-btn:      #2a2a2a;   /* button backgrounds */
+
+  /* ── Text ─────────────────────────────────────────────────────── */
+  --text-primary:   #d4c9a8;   /* main game text */
+  --text-secondary: #aaaaaa;   /* labels, secondary info */
+  --text-muted:     #888888;   /* status text, placeholders */
+  --text-dim:       #666666;   /* very secondary */
+  --text-faint:     #444444;   /* empty states, decorative */
+
+  /* ── Borders ──────────────────────────────────────────────────── */
+  --border:        #333333;
+  --border-subtle: #222222;
+  --border-faint:  #1a1a1a;
+
+  /* ── Accent (gold) ────────────────────────────────────────────── */
+  --accent:     #c8a840;
+  --accent-dim: #8b6914;
+  --accent-bg:  #1c1500;
+
+  /* ── Semantic ─────────────────────────────────────────────────── */
+  --color-danger:        #e06c6c;
+  --color-danger-dim:    #c04040;
+  --color-danger-bg:     #2e1a1a;
+  --color-danger-border: #5a2d2d;
+  --color-success:       #5cb85c;
+
+  /* ── Scrollbars ───────────────────────────────────────────────── */
+  --scrollbar-track:       #111111;
+  --scrollbar-thumb:       #444444;
+  --scrollbar-thumb-hover: #666666;
+
+  /* ── Game text presets ────────────────────────────────────────── */
+  --preset-speech:       #d4af37;
+  --preset-whisper:      #b09848;   /* improved from #907830 — better contrast */
+  --preset-thought:      #5bc8c8;
+  --preset-roomname:     #ffffff;
+  --preset-roomdesc:     #c8c8c8;
+  --preset-bold:         #ffffff;
+  --preset-expiry:       #d97706;
+  --preset-store:        #5cb85c;
+  --preset-cmd:          #6a8a6a;
+
+  /* ── Vital bar gradients ──────────────────────────────────────── */
+  --vital-health-ok-start:   #1a5a1a;
+  --vital-health-ok-end:     #3a9a3a;
+  --vital-health-mid-start:  #6a5a00;
+  --vital-health-mid-end:    #c8a820;
+  --vital-health-low-start:  #7a3800;
+  --vital-health-low-end:    #d06820;
+  --vital-health-crit-start: #6a0e0e;
+  --vital-health-crit-end:   #c83030;
+  --vital-mana-start:        #1a2a7a;
+  --vital-mana-end:          #3060c8;
+  --vital-conc-start:        #0a4848;
+  --vital-conc-end:          #2898a0;
+  --vital-stamina-start:     #6a2a00;
+  --vital-stamina-end:       #c06828;
+  --vital-spirit-start:      #3a1068;
+  --vital-spirit-end:        #8848c0;
+
+  /* ── RT / CT timers ───────────────────────────────────────────── */
+  --rt-start: #8a2010;
+  --rt-end:   #d05828;
+  --rt-glow:  rgba(208, 88, 40, 0.7);
+  --ct-start: #102070;
+  --ct-end:   #3878c8;
+  --ct-glow:  rgba(56, 120, 200, 0.7);
+
+  /* ── Stance ───────────────────────────────────────────────────── */
+  --stance-standing-color:  #7eda7e;
+  --stance-standing-border: #2a4a2a;
+  --stance-standing-bg:     #0d1a0d;
+  --stance-kneeling-color:  #f0c040;
+  --stance-kneeling-border: #5a4010;
+  --stance-kneeling-bg:     #1a1400;
+  --stance-prone-color:     #f08848;
+  --stance-prone-border:    #5a3010;
+  --stance-prone-bg:        #1c0e00;
+  --stance-sitting-color:   #70b0f0;
+  --stance-sitting-border:  #1e3a68;
+  --stance-sitting-bg:      #06101e;
+
+  /* ── Status indicators ────────────────────────────────────────── */
+  --ind-inactive-color:  #aaaaaa;
+  --ind-inactive-bg:     #181818;
+  --ind-inactive-border: #383838;
+
+  --ind-dead-color:  #ff7070;
+  --ind-dead-bg:     #280a0a;
+  --ind-dead-border: #601010;
+  --ind-dead-glow:   rgba(255, 80, 80, 0.35);
+
+  --ind-stunned-color:  #f8d848;
+  --ind-stunned-bg:     #1e1800;
+  --ind-stunned-border: #504200;
+  --ind-stunned-glow:   rgba(240, 200, 40, 0.3);
+
+  --ind-bleeding-color:  #ff6060;
+  --ind-bleeding-bg:     #200606;
+  --ind-bleeding-border: #580a0a;
+  --ind-bleeding-glow:   rgba(255, 80, 80, 0.3);
+
+  --ind-webbed-color:  #48e0e0;
+  --ind-webbed-bg:     #001e1e;
+  --ind-webbed-border: #0a4848;
+  --ind-webbed-glow:   rgba(48, 200, 200, 0.3);
+
+  --ind-invisible-color:  #c8a0ff;
+  --ind-invisible-bg:     #100828;
+  --ind-invisible-border: #301860;
+  --ind-invisible-glow:   rgba(180, 128, 255, 0.3);
+
+  --ind-hidden-color:  #68e068;
+  --ind-hidden-bg:     #061a06;
+  --ind-hidden-border: #104010;
+  --ind-hidden-glow:   rgba(80, 210, 80, 0.3);
+
+  --ind-joined-color:  #68b8ff;
+  --ind-joined-bg:     #061428;
+  --ind-joined-border: #103058;
+  --ind-joined-glow:   rgba(80, 160, 255, 0.3);
+
+  /* ── Compass ──────────────────────────────────────────────────── */
+  --compass-active-text:   #70e870;
+  --compass-active-bg:     #0e2a0e;
+  --compass-active-border: #1e5a1e;
+  --compass-active-glow:   rgba(80, 210, 80, 0.35);
+  --compass-inactive-text:   #666666;
+  --compass-inactive-bg:     #181818;
+  --compass-inactive-border: #303030;
+  --compass-center-text:   #383838;
+
+  /* ── Hands / spell ────────────────────────────────────────────── */
+  --hand-label-color:  #555555;
+  --hand-empty-color:  #888888;
+  --hand-held-color:   #e8d898;
+  --spell-empty-color: #888888;
+  --spell-active-color: #d0a8ff;
+  --spell-active-glow:  rgba(190, 140, 255, 0.45);
+
+  /* ── Room panel ───────────────────────────────────────────────── */
+  --room-title-color:    #e8e8e8;
+  --room-desc-color:     #b8b8b8;
+  --room-section-color:  #555555;   /* improved from #383838 */
+  --room-content-color:  #8a8a8a;
+  --exit-bg:            #0d1a0d;
+  --exit-border:        #1e3a1e;
+  --exit-text:          #60a840;
+  --exit-bg-hover:      #142014;
+  --exit-border-hover:  #366030;
+  --exit-text-hover:    #90d860;
+
+  /* ── Experience panel ─────────────────────────────────────────── */
+  --exp-skill-color:     #aaaaaa;
+  --exp-rank-color:      #777777;   /* improved from #555 */
+  --exp-pct-color:       #777777;   /* improved from #555 */
+  --exp-mindstate-color: #777777;   /* improved from #606060 */
+  --exp-rate-color:      #666666;   /* improved from #404040 */
+  --exp-bar-bg:          #181818;
+  --exp-locked-skill:    #d07030;
+  --exp-locked-mind:     #a05020;
+  --exp-locked-rate:     #7a3a10;
+}

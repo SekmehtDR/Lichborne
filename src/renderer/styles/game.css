@@ -3,7 +3,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #0f0f0f;
+  background: var(--bg-app);
 }
 
 .game-toolbar {
@@ -11,28 +11,31 @@
   align-items: center;
   gap: 12px;
   padding: 5px 14px;
-  background: linear-gradient(180deg, #1e1e1e, #181818);
-  border-bottom: 1px solid #282828;
+  background: linear-gradient(180deg, var(--bg-raised), #181818);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .toolbar-title {
   font-weight: 700;
-  color: #8b6914;
+  color: var(--accent-dim);
   letter-spacing: 2px;
   font-size: 0.85rem;
 }
 
 .toolbar-status {
-  color: #666;
+  color: var(--text-dim);
   font-size: 0.8rem;
   flex: 1;
 }
 
-.btn-debug {
+.btn-debug,
+.btn-panel-manager,
+.btn-reset-layout,
+.btn-disconnect {
   background: transparent;
-  border: 1px solid #444;
-  color: #888;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   border-radius: 4px;
   padding: 4px 10px;
   font-family: inherit;
@@ -41,9 +44,11 @@
   transition: all 0.2s;
 }
 
-.btn-debug:hover {
-  border-color: #569cd6;
-  color: #9cdcfe;
+.btn-debug:hover,
+.btn-panel-manager:hover,
+.btn-reset-layout:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 .btn-debug--active {
@@ -52,21 +57,9 @@
   background: #1a2a3a;
 }
 
-.btn-disconnect {
-  background: transparent;
-  border: 1px solid #444;
-  color: #888;
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
 .btn-disconnect:hover {
-  border-color: #c04040;
-  color: #e06c6c;
+  border-color: var(--color-danger-dim);
+  color: var(--color-danger);
 }
 
 .game-main {
@@ -97,8 +90,8 @@
   left: 50%;
   transform: translateX(-50%);
   background: rgba(18, 16, 10, 0.93);
-  border: 1px solid #5a4a10;
-  color: #c8a840;
+  border: 1px solid var(--accent-bg);
+  color: var(--accent);
   font-size: 0.75rem;
   padding: 5px 16px;
   border-radius: 12px;
@@ -111,21 +104,19 @@
 
 .scroll-anchor-badge:hover {
   background: rgba(40, 32, 8, 0.97);
-  border-color: #8b6914;
+  border-color: var(--accent-dim);
   color: #e8c850;
 }
 
 .panel-divider {
   width: 4px;
   flex-shrink: 0;
-  background: #1a1a1a;
+  background: var(--border-faint);
   cursor: col-resize;
   transition: background 0.15s;
 }
 
-.panel-divider:hover {
-  background: #8b6914;
-}
+.panel-divider:hover { background: var(--accent-dim); }
 
 .panel-column {
   display: flex;
@@ -137,14 +128,12 @@
 .panel-h-divider {
   height: 4px;
   flex-shrink: 0;
-  background: #1a1a1a;
+  background: var(--border-faint);
   cursor: row-resize;
   transition: background 0.15s;
 }
 
-.panel-h-divider:hover {
-  background: #8b6914;
-}
+.panel-h-divider:hover { background: var(--accent-dim); }
 
 .panel-zone {
   overflow: hidden;
@@ -153,48 +142,12 @@
   min-height: 0;
 }
 
-.panel-zone--bottom {
-  flex: 1;
-}
-
-.btn-panel-manager {
-  background: transparent;
-  border: 1px solid #444;
-  color: #888;
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-panel-manager:hover {
-  border-color: #8b6914;
-  color: #c8a840;
-}
-
-.btn-reset-layout {
-  background: transparent;
-  border: 1px solid #444;
-  color: #888;
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-family: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-reset-layout:hover {
-  border-color: #8b6914;
-  color: #c8a840;
-}
+.panel-zone--bottom { flex: 1; }
 
 .text-line {
   white-space: pre-wrap;
   word-break: break-word;
-  color: #d4c9a8;
+  color: var(--text-primary);
   min-height: 1.4em;
   font-size: 13.5px;
   line-height: 1.5;
@@ -207,12 +160,12 @@
   gap: 8px;
   padding: 7px 12px;
   background: linear-gradient(180deg, #181818, #141414);
-  border-top: 1px solid #242424;
+  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .prompt-marker {
-  color: #8b6914;
+  color: var(--accent-dim);
   font-weight: bold;
   font-size: 1rem;
   flex-shrink: 0;
@@ -220,10 +173,10 @@
 
 .command-input {
   flex: 1;
-  background: #0d0d0d;
-  border: 1px solid #2a2a2a;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #d8ccaa;
+  color: var(--text-primary);
   font-family: inherit;
   font-size: 0.9rem;
   padding: 6px 10px;
@@ -232,14 +185,14 @@
 }
 
 .command-input:focus {
-  border-color: #6a5010;
-  box-shadow: 0 0 0 2px rgba(139,105,20,0.15), inset 0 1px 3px rgba(0,0,0,0.5);
+  border-color: var(--accent-bg);
+  box-shadow: 0 0 0 2px rgba(139, 105, 20, 0.15), inset 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .btn-send {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  color: #aaa;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   border-radius: 4px;
   padding: 6px 14px;
   font-family: inherit;
@@ -249,6 +202,6 @@
 }
 
 .btn-send:hover {
-  background: #333;
-  color: #d4c9a8;
+  background: var(--border);
+  color: var(--text-primary);
 }

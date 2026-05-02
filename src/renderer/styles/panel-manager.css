@@ -9,8 +9,8 @@
 }
 
 .pm-modal {
-  background: #1a1a1a;
-  border: 1px solid #333;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: 6px;
   width: 380px;
   max-height: 80vh;
@@ -23,15 +23,15 @@
   display: flex;
   align-items: center;
   padding: 10px 14px;
-  background: #222;
-  border-bottom: 1px solid #333;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .pm-title {
   flex: 1;
   font-weight: 600;
-  color: #c8a840;
+  color: var(--accent);
   font-size: 0.85rem;
   letter-spacing: 1px;
 }
@@ -39,28 +39,26 @@
 .pm-close {
   background: transparent;
   border: none;
-  color: #666;
+  color: var(--text-dim);
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
 }
 
-.pm-close:hover { color: #ccc; }
+.pm-close:hover { color: var(--text-secondary); }
 
 .pm-body {
   overflow-y: auto;
   padding: 10px 0;
 }
 
-.pm-section {
-  margin-bottom: 4px;
-}
+.pm-section { margin-bottom: 4px; }
 
 .pm-section-label {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #666;
+  color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 1px;
   padding: 6px 14px 4px;
@@ -73,23 +71,20 @@
   gap: 8px;
 }
 
-.pm-row:hover { background: #222; }
+.pm-row:hover { background: var(--bg-hover); }
 
 .pm-row-label {
   flex: 1;
-  color: #c8b898;
+  color: var(--text-primary);
   font-size: 0.85rem;
 }
 
-.pm-row-actions {
-  display: flex;
-  gap: 6px;
-}
+.pm-row-actions { display: flex; gap: 6px; }
 
 .pm-row-actions button {
-  background: #2a2a2a;
-  border: 1px solid #3a3a3a;
-  color: #999;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
   border-radius: 3px;
   padding: 3px 8px;
   font-family: inherit;
@@ -100,18 +95,18 @@
 }
 
 .pm-row-actions button:hover {
-  border-color: #8b6914;
-  color: #c8a840;
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 .pm-btn-remove:hover {
   border-color: #8a2020 !important;
-  color: #e06060 !important;
+  color: var(--color-danger) !important;
 }
 
 .pm-empty {
   padding: 4px 14px;
-  color: #444;
+  color: var(--text-faint);
   font-size: 0.8rem;
   font-style: italic;
 }

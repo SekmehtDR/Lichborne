@@ -1,8 +1,8 @@
 .debug-panel {
   display: flex;
   flex-direction: column;
-  background: #0d0d0d;
-  border-top: 1px solid #333;
+  background: var(--bg-app);
+  border-top: 1px solid var(--border);
   height: 220px;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 11px;
@@ -13,20 +13,20 @@
   align-items: center;
   justify-content: space-between;
   padding: 3px 8px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #333;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .debug-title {
-  color: #888;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
 .debug-clear {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  color: #aaa;
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
   padding: 1px 8px;
   border-radius: 3px;
   font-size: 11px;
@@ -34,7 +34,7 @@
 }
 
 .debug-clear:hover {
-  background: #333;
+  background: var(--border);
   color: #fff;
 }
 
@@ -48,7 +48,7 @@
   display: flex;
   gap: 8px;
   padding: 1px 8px;
-  border-bottom: 1px solid #111;
+  border-bottom: 1px solid var(--bg-sunken);
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
@@ -56,7 +56,7 @@
 }
 
 .debug-event:hover {
-  background: #1a1a1a;
+  background: var(--bg-base);
   white-space: normal;
   overflow: visible;
   word-break: break-all;
@@ -80,7 +80,7 @@
 .debug-event--room-title     .debug-type { color: #f7c948; }
 .debug-event--exp-component  .debug-type { color: #6a9955; }
 .debug-event--clear-stream   .debug-type { color: #f44747; }
-.debug-event--unknown        .debug-type { color: #888; }
+.debug-event--unknown        .debug-type { color: var(--text-muted); }
 
 .debug-body {
   color: #d4d4d4;
