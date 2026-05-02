@@ -417,7 +417,21 @@ Display and accessibility settings live in **Settings → Display & Accessibilit
 - Borders: `#ffffff`
 - No transparency or blur effects
 
-### 5.3 Colorblind-Aware Color Picker
+### 5.3 Color Blind Mode
+
+Three selectable options under Display & Accessibility — only one can be active at a time (or none):
+
+| Mode | Condition addressed | Approach |
+|---|---|---|
+| **Deuteranopia** | Red-green (green-weak) | Shift reds toward orange/yellow; shift greens toward teal/blue |
+| **Protanopia** | Red-green (red-weak) | Shift reds toward yellow; boost blue channel on green indicators |
+| **Tritanopia** | Blue-yellow | Shift blues toward cyan; shift yellows toward orange |
+
+**Implementation:** a CSS class on `#root` (`data-colorblind="deuteranopia"` etc.) combined with a targeted override block in `theme.css` that recolors the semantic indicators (health bar, RT/CT bar, status indicators, compass exits) using color-safe alternatives. Game text presets are not recolored — players configure those themselves via the theme editor.
+
+**The goal is functional clarity, not perfect simulation.** The overrides ensure that the six status indicators (stunned, bleeding, webbed, hidden, invisible, joined) and the four health thresholds are distinguishable without relying on red/green hue differences.
+
+### 5.4 Colorblind-Aware Color Picker
 
 Rather than special colorblind modes, the client helps players make informed color choices wherever a color picker is shown (highlight rules, theme editor, status bar colors):
 
@@ -428,7 +442,7 @@ Rather than special colorblind modes, the client helps players make informed col
 
 This gives colorblind players control over their own setup without treating everyone else as if they need special modes.
 
-### 5.4 Epilepsy Safe Mode
+### 5.5 Epilepsy Safe Mode
 
 A clearly labeled toggle: **"Epilepsy Safe Mode"** under Display & Accessibility.
 
@@ -439,7 +453,7 @@ When enabled:
 
 This toggle exists because real players have asked for it. It is easy to find, clearly named, and off by default. It is not on the first-launch screen — players who need it will look in settings, and it will be there.
 
-### 5.5 Font
+### 5.6 Font
 
 Font settings work at two levels: **global defaults** and **per-panel overrides**.
 
@@ -458,14 +472,14 @@ Per-panel font settings are saved in the layout profile. Switching layouts resto
 
 Themes can also specify a font override (see Section 6.6) — if a theme sets a font, it becomes the new global default when that theme is applied, but per-panel overrides still take priority over it.
 
-### 5.6 Keyboard & Motor
+### 5.7 Keyboard & Motor
 
 - Full keyboard navigation (Tab through panels, Enter to focus command bar)
 - Command history (Up/Down arrows)
 - Configurable key bindings for all actions
 - Optional large click targets for panel controls
 
-### 5.7 Screen Reader Support
+### 5.8 Screen Reader Support
 
 DragonRealms has blind players who rely on screen readers (NVDA, JAWS, VoiceOver). The game is text-based — which is a natural fit — but the client needs to surface that text correctly.
 
@@ -485,7 +499,7 @@ DragonRealms has blind players who rely on screen readers (NVDA, JAWS, VoiceOver
 
 This is marked as a later-phase feature because it requires deliberate implementation and testing with real screen readers — but the architecture should not make it impossible from the start.
 
-### 5.8 Sip-and-Puff / Switch Access
+### 5.9 Sip-and-Puff / Switch Access
 
 Some players use breathing straws (sip-and-puff devices) or single-switch scanning to play. DragonRealms' text command model is actually well-suited to this — the whole interface reduces to "type a command, hit Enter."
 
@@ -770,24 +784,21 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] CSS custom properties foundation — all colors in `theme.css`, all CSS files use `var(--...)` (4A)
 - [x] Readability fixes — inactive tabs, whisper preset, exp panel secondary text (4A)
 - [x] Vital bar gradients moved to CSS classes — fully themeable (4A)
-- [ ] General base themes (Dark ✅ current, Darker, Slate, Parchment, Terminal)
-- [ ] Guild base themes (all 12 guilds including Commoner, with tuned palettes and presets)
-- [ ] Theme picker UI (General / Guild tabs, live preview swatches)
-- [ ] Theme editor (all color fields, live preview, colorblind-aware pickers)
-- [ ] My Themes — save, name, duplicate, delete, reset to base
-- [ ] Theme export / import (JSON)
-- [ ] Large Print setting
-- [ ] High Contrast setting
-- [~] Epilepsy Safe Mode toggle — hook in place (`data-epilepsy-safe` on root disables all animations); settings UI not yet built
-- [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
-- [ ] Font configuration (family, size, line height, per-theme overrides)
-- [ ] Status bar position toggle (top vs. above command bar)
-- [ ] RT and cast time bars in command bar (optional, color-coded, draining)
-- [ ] Settings panel with search and flat single-level organization
-- [ ] Full keyboard navigation & configurable bindings
-- [ ] Screen reader / ARIA live regions (main, room, thoughts panels)
-- [ ] ARIA landmark navigation (all panels labeled, Tab order logical)
-- [ ] Status bar values exposed as screen-reader text (not just visual bars)
+- [x] General base themes: Dark, Darker, Slate, Parchment, Terminal (4B)
+- [x] Guild base themes: all 12 guilds including Commoner, palettes from §6.5 (4B)
+- [x] Theme picker UI — General / Guild / Custom tabs, live preview swatches (4B, 4C)
+- [x] Theme editor — all ~90 color fields, live preview, 5-tab layout (4C)
+- [x] My Themes — save, name, duplicate, delete; always a copy, never edits base (4C)
+- [x] Theme export / import (JSON) (4C)
+- [ ] Settings panel — flat single-level, Display and Accessibility sections (4D)
+- [ ] Font configuration — family, size, line height; CSS variables (4D)
+- [ ] Large Print mode — bumps font + line height + minimum panel sizes (4D)
+- [ ] High Contrast mode — black/white/yellow CSS override (4D)
+- [ ] Color Blind mode — Deuteranopia / Protanopia / Tritanopia options (4D)
+- [~] Epilepsy Safe Mode toggle — hook wired; settings UI pending (4D)
+- [ ] Status bar position toggle — top vs. above command bar (4D)
+- [~] Full keyboard navigation & configurable bindings — backlogged
+- [~] Screen reader / ARIA live regions — backlogged
 
 ### Phase 5 — AI Features
 - [ ] Session log writer (timestamped, structured)

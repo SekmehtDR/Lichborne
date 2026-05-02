@@ -269,19 +269,31 @@ The text attribute is **not** just the current value — it contains `"current m
 ### Milestone 4D — Settings Panel & Accessibility
 > Goal: settings screen + font config + accessibility toggles
 
-- [ ] Settings panel with search and flat single-level organization
-- [ ] Font config (family, size, line height, per-panel overrides)
-- [ ] Large Print mode
-- [ ] High Contrast mode
-- [ ] Epilepsy Safe Mode settings UI (hook already in place)
-- [ ] Status bar position toggle (top vs. above command bar)
-- [ ] Full keyboard navigation
-- [ ] Screen reader / ARIA live regions
+- [ ] Settings panel — toolbar button, flat single-level layout, sections for Display and Accessibility
+- [ ] Font config — family picker, size, line height; CSS variables applied globally
+- [ ] Large Print mode — bumps base font size + line height + minimum panel sizes
+- [ ] High Contrast mode — CSS class override: black bg, white text, yellow accent, no transparency
+- [ ] Color Blind mode — three options: Deuteranopia, Protanopia, Tritanopia; CSS filter + palette swap on active game indicators
+- [ ] Epilepsy Safe Mode toggle — settings UI (hook already wired: `data-epilepsy-safe` on `#root`)
+- [ ] Status bar position toggle — vitals/icon bar above command bar vs. below toolbar
+- [~] Full keyboard navigation — backlogged (see Backlog section)
+- [~] Screen reader / ARIA live regions — backlogged (see Backlog section)
 
 ---
 
 ## Phase 5 — AI Features
 *Not started. See DESIGN.md Section 7 for spec.*
+
+---
+
+## Backlog
+
+Items removed from active phase scope — too large for current pass, require dedicated planning.
+
+| Item | Notes |
+|---|---|
+| Full keyboard navigation | Tab through panels, Enter to focus command bar, configurable bindings — touches every component |
+| Screen reader / ARIA live regions | Main, room, thoughts panels as live regions; landmark navigation; status bar values as text — requires real screen reader testing (NVDA, JAWS, VoiceOver) |
 
 ---
 
