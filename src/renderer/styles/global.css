@@ -13,7 +13,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  font-family: var(--game-font-family);
   background: var(--bg-base);
   color: var(--text-primary);
   font-size: 14px;

@@ -164,6 +164,11 @@
   --exit-border-hover:  #366030;
   --exit-text-hover:    #90d860;
 
+  /* ── Game text font (overridden by settings) ─────────────────── */
+  --game-font-size:   14px;
+  --game-line-height: 1.5;
+  --game-font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+
   /* ── Experience panel ─────────────────────────────────────────── */
   --exp-skill-color:     #aaaaaa;
   --exp-rank-color:      #777777;   /* improved from #555 */

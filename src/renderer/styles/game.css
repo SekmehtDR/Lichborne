@@ -151,8 +151,8 @@
   word-break: break-word;
   color: var(--text-primary);
   min-height: 1.4em;
-  font-size: 13.5px;
-  line-height: 1.5;
+  font-size: var(--game-font-size);
+  line-height: var(--game-line-height);
   margin-bottom: 0.15em;
 }
 

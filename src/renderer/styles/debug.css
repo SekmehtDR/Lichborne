@@ -4,8 +4,8 @@
   background: var(--bg-app);
   border-top: 1px solid var(--border);
   height: 220px;
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  font-size: 11px;
+  font-family: var(--game-font-family);
+  font-size: 0.79rem;
 }
 
 .debug-toolbar {
@@ -20,7 +20,7 @@
 
 .debug-title {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 0.79rem;
 }
 
 .debug-clear {
@@ -29,7 +29,7 @@
   color: var(--text-secondary);
   padding: 1px 8px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: 0.79rem;
   cursor: pointer;
 }
 

@@ -790,13 +790,13 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Theme editor — all ~90 color fields, live preview, 5-tab layout (4C)
 - [x] My Themes — save, name, duplicate, delete; always a copy, never edits base (4C)
 - [x] Theme export / import (JSON) (4C)
-- [ ] Settings panel — flat single-level, Display and Accessibility sections (4D)
-- [ ] Font configuration — family, size, line height; CSS variables (4D)
-- [ ] Large Print mode — bumps font + line height + minimum panel sizes (4D)
-- [ ] High Contrast mode — black/white/yellow CSS override (4D)
-- [ ] Color Blind mode — Deuteranopia / Protanopia / Tritanopia options (4D)
-- [~] Epilepsy Safe Mode toggle — hook wired; settings UI pending (4D)
-- [ ] Status bar position toggle — top vs. above command bar (4D)
+- [x] Settings panel — flat single-level, Display and Accessibility sections (4D)
+- [x] Font configuration — family, size, line height; CSS variables (4D)
+- [x] Large Print mode — bumps font + line height + minimum panel sizes (4D)
+- [x] High Contrast mode — black/white/yellow CSS override (4D)
+- [x] Color Blind mode — Deuteranopia / Protanopia / Tritanopia options (4D)
+- [x] Epilepsy Safe Mode toggle (4D)
+- [x] Status bar position toggle — top vs. above command bar (4D)
 - [~] Full keyboard navigation & configurable bindings — backlogged
 - [~] Screen reader / ARIA live regions — backlogged
 

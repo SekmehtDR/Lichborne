@@ -228,7 +228,7 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ## Phase 4 — Display, Accessibility & Theming
 
-**Phase 4 — In progress (4A ✅, 4B ✅, 4C ✅)**
+**Phase 4 — In progress (4A ✅, 4B ✅, 4C ✅, 4D ✅)**
 
 ### Milestone 4A — CSS Variables Foundation & Readability ✅
 > Goal: extract all hardcoded colors to CSS custom properties; fix readability problems
@@ -266,16 +266,18 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Custom themes persisted to localStorage; restored on app startup
 - **Test:** Pick Dark → Customize… → change accent to red → Save → Custom tab shows new theme active
 
-### Milestone 4D — Settings Panel & Accessibility
+### Milestone 4D — Settings Panel & Accessibility ✅
 > Goal: settings screen + font config + accessibility toggles
 
-- [ ] Settings panel — toolbar button, flat single-level layout, sections for Display and Accessibility
-- [ ] Font config — family picker, size, line height; CSS variables applied globally
-- [ ] Large Print mode — bumps base font size + line height + minimum panel sizes
-- [ ] High Contrast mode — CSS class override: black bg, white text, yellow accent, no transparency
-- [ ] Color Blind mode — three options: Deuteranopia, Protanopia, Tritanopia; CSS filter + palette swap on active game indicators
-- [ ] Epilepsy Safe Mode toggle — settings UI (hook already wired: `data-epilepsy-safe` on `#root`)
-- [ ] Status bar position toggle — vitals/icon bar above command bar vs. below toolbar
+- [x] Settings panel — toolbar button, flat single-level layout, sections for Display and Accessibility
+- [x] Font config — family picker (Cascadia Code / Fira Code / JetBrains Mono / Source Code Pro / monospace), size +/- control, line height select; CSS vars `--game-font-size/family/line-height` applied globally
+- [x] Large Print mode — bumps game font to 18px, line-height to 1.8, scales `html.style.fontSize` so all `rem` values enlarge proportionally
+- [x] High Contrast mode — black bg, white text, yellow accent; overlaid as inline CSS vars on top of active theme
+- [x] Color Blind mode — Deuteranopia, Protanopia, Tritanopia; targeted semantic var overrides (health/indicator/timer/compass colors)
+- [x] Epilepsy Safe Mode toggle — sets `data-epilepsy-safe="true"` on `<html>`; CSS `[data-epilepsy-safe="true"]` disables pulse animations
+- [x] Status bar position toggle — StatusBar + IconBar render above game-main (top) or between game-main and command-bar (bottom) via conditional rendering
+- [x] Theme overlay ordering: re-apply effect in GameWindow re-applies base theme then settings overlays on every settings/theme change so overlays survive theme switches
+- [x] Settings persisted to localStorage (`klient67.settings`); restored on startup via `initSettings()`
 - [~] Full keyboard navigation — backlogged (see Backlog section)
 - [~] Screen reader / ARIA live regions — backlogged (see Backlog section)
 
@@ -324,3 +326,8 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | 17 themes (5 general + 12 guild) defined in themes.ts as CSS-var override objects; applyTheme/initTheme load on startup |
 | 2026-05-02 | Guild theme palettes sourced from DESIGN.md Section 6.5 (bg/text/accent per guild) |
 | 2026-05-02 | ThemePicker modal: General/Guild tabs, card grid with preview swatches, live apply, portal-rendered |
+| 2026-05-02 | Three-tab ThemePicker (General/Guild/Custom); Customize always copies, never edits originals; ThemeEditor with live preview and per-section field types |
+| 2026-05-02 | Settings stored in AppSettings; applySettingsToDOM composable overlay — applies after base theme so high contrast/colorblind survive theme changes |
+| 2026-05-02 | Large Print scales html.style.fontSize to 16px so all rem values enlarge without touching individual CSS rules |
+| 2026-05-02 | Color Blind mode targets only semantic indicator/health/timer vars (not all colors) — avoids breaking theme aesthetics for non-critical UI |
+| 2026-05-02 | Status bar position conditional render in GameWindow — same StatusBar+IconBar JSX, just placed before or after game-main div |

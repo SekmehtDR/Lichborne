@@ -7,7 +7,10 @@ import IconBar from './IconBar'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
+import SettingsPanel from './SettingsPanel'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
+import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
+import { THEMES, applyTheme, applyCustomTheme } from '../themes'
 import '../styles/game.css'
 import '../styles/panels.css'
 
@@ -132,8 +135,10 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
+  const [showSettings,    setShowSettings]      = useState(false)
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
+  const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
 
   // Drag refs
@@ -150,6 +155,18 @@ export default function GameWindow({ onDisconnect }: Props) {
   const draggingRow      = useRef<'top-mid' | 'mid-bot' | null>(null)
   const rowDragStartY    = useRef(0)
   const rowDragStartH    = useRef(0)
+
+  // ── Re-apply theme then settings overlays whenever either changes ────────
+
+  useEffect(() => {
+    const base = THEMES.find(t => t.id === currentThemeId)
+    if (base) applyTheme(base)
+    else {
+      const custom = myThemes.find(t => t.id === currentThemeId)
+      if (custom) applyCustomTheme(custom.vars)
+    }
+    applySettingsToDOM(settings)
+  }, [currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist panel layout ─────────────────────────────────────────────────
 
@@ -461,15 +478,18 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
+        <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-reset-layout" onClick={resetLayout}>Reset Layout</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
           {disconnecting ? 'Disconnecting…' : 'Disconnect'}
         </button>
       </div>
 
-      <StatusBar vitals={vitals} />
-      <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
-               indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+      {settings.statusBarPosition === 'top' && <>
+        <StatusBar vitals={vitals} />
+        <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+      </>}
 
       <div className="game-main">
         <div className="text-window-wrap">
@@ -507,6 +527,12 @@ export default function GameWindow({ onDisconnect }: Props) {
         </div>
       </div>
 
+      {settings.statusBarPosition === 'bottom' && <>
+        <StatusBar vitals={vitals} />
+        <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+      </>}
+
       {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}
 
       {showPanelManager && (
@@ -528,6 +554,14 @@ export default function GameWindow({ onDisconnect }: Props) {
           onThemeChange={id => setCurrentThemeId(id)}
           onMyThemesChange={themes => { setMyThemes(themes); saveMyThemes(themes) }}
           onClose={() => setShowThemePicker(false)}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsPanel
+          settings={settings}
+          onChange={s => { setSettings(s); saveSettings(s) }}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
