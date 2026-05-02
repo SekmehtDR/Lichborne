@@ -767,17 +767,20 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Debug panel (raw stream)
 
 ### Phase 4 — Display, Accessibility & Theming
-- [ ] Large Print setting
-- [ ] High Contrast setting
-- [~] Epilepsy Safe Mode toggle — hook in place (`data-epilepsy-safe` on root disables all animations); settings UI not yet built
-- [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
-- [ ] Font configuration (family, size, line height, per-theme overrides)
-- [ ] General base themes (Dark, Darker, Slate, Parchment, Terminal)
+- [x] CSS custom properties foundation — all colors in `theme.css`, all CSS files use `var(--...)` (4A)
+- [x] Readability fixes — inactive tabs, whisper preset, exp panel secondary text (4A)
+- [x] Vital bar gradients moved to CSS classes — fully themeable (4A)
+- [ ] General base themes (Dark ✅ current, Darker, Slate, Parchment, Terminal)
 - [ ] Guild base themes (all 12 guilds including Commoner, with tuned palettes and presets)
 - [ ] Theme picker UI (General / Guild tabs, live preview swatches)
 - [ ] Theme editor (all color fields, live preview, colorblind-aware pickers)
 - [ ] My Themes — save, name, duplicate, delete, reset to base
 - [ ] Theme export / import (JSON)
+- [ ] Large Print setting
+- [ ] High Contrast setting
+- [~] Epilepsy Safe Mode toggle — hook in place (`data-epilepsy-safe` on root disables all animations); settings UI not yet built
+- [ ] Colorblind-aware color picker (simulation swatches + contrast warnings)
+- [ ] Font configuration (family, size, line height, per-theme overrides)
 - [ ] Status bar position toggle (top vs. above command bar)
 - [ ] RT and cast time bars in command bar (optional, color-coded, draining)
 - [ ] Settings panel with search and flat single-level organization

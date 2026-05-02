@@ -6,6 +6,7 @@ import StatusBar from './StatusBar'
 import IconBar from './IconBar'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
+import ThemePicker from './ThemePicker'
 import '../styles/game.css'
 import '../styles/panels.css'
 
@@ -129,6 +130,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', ''))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
+  const [showThemePicker, setShowThemePicker]   = useState(false)
+  const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
 
   // Drag refs
@@ -455,6 +458,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <span className="toolbar-status">{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
+        <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-reset-layout" onClick={resetLayout}>Reset Layout</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
           {disconnecting ? 'Disconnecting…' : 'Disconnect'}
@@ -512,6 +516,14 @@ export default function GameWindow({ onDisconnect }: Props) {
           onRemoveTab={removeTab}
           onAddToZone={addToZone}
           onClose={() => setShowPanelManager(false)}
+        />
+      )}
+
+      {showThemePicker && (
+        <ThemePicker
+          currentThemeId={currentThemeId}
+          onThemeChange={id => setCurrentThemeId(id)}
+          onClose={() => setShowThemePicker(false)}
         />
       )}
 
