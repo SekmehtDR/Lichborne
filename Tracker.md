@@ -227,7 +227,48 @@ The text attribute is **not** just the current value — it contains `"current m
 ---
 
 ## Phase 4 — Display, Accessibility & Theming
-*Not started. See DESIGN.md Sections 5 and 6 for spec.*
+
+**Phase 4 — In progress (4A ✅, 4B ✅)**
+
+### Milestone 4A — CSS Variables Foundation & Readability ✅
+> Goal: extract all hardcoded colors to CSS custom properties; fix readability problems
+
+- [x] `theme.css` created with ~100 named color tokens covering every UI surface
+- [x] All CSS files updated to use `var(--...)` throughout — no hardcoded hex colors remain
+- [x] Vital bar gradients moved from inline JS strings to CSS classes (`vital-fill--health-ok`, etc.)
+- [x] Readability fixes: inactive tab text `#4a4a4a` → `#888`, whisper preset brightened, exp panel secondary text improved, room section labels more visible, panel manager row labels upgraded
+- [x] Theme switching now requires only a single `:root` block swap in `theme.css`
+- **Test:** ✅ App looks identical to before but all colors are now variable-driven
+
+### Milestone 4B — Base Themes & Theme Picker ✅
+> Goal: 5 general themes + theme picker UI in settings
+
+- [x] General base themes: Dark (current), Darker, Slate, Parchment, Terminal
+- [x] Theme picker UI — grid of theme cards with live preview swatches, General/Guild tabs
+- [x] Live preview on click — no confirmation needed, persists to localStorage
+- [x] Guild themes (all 12 guilds including Commoner) — palettes from DESIGN.md Section 6.5
+- [x] `themes.ts` — `darkBase` + per-theme overrides, `applyTheme`, `initTheme` loaded at startup
+- [x] "Theme" button in toolbar opens ThemePicker modal (portal)
+- **Test:** Click Theme → pick Parchment → UI goes light → refresh → Parchment still active
+
+### Milestone 4C — Theme Editor & My Themes
+> Goal: players can customize and save their own themes
+
+- [ ] Theme editor — all color fields with live preview
+- [ ] My Themes — save, name, duplicate, delete, reset to base
+- [ ] Export / import themes as JSON
+
+### Milestone 4D — Settings Panel & Accessibility
+> Goal: settings screen + font config + accessibility toggles
+
+- [ ] Settings panel with search and flat single-level organization
+- [ ] Font config (family, size, line height, per-panel overrides)
+- [ ] Large Print mode
+- [ ] High Contrast mode
+- [ ] Epilepsy Safe Mode settings UI (hook already in place)
+- [ ] Status bar position toggle (top vs. above command bar)
+- [ ] Full keyboard navigation
+- [ ] Screen reader / ARIA live regions
 
 ---
 
@@ -257,3 +298,9 @@ The text attribute is **not** just the current value — it contains `"current m
 | 2026-05-01 | + menu rendered via React portal to escape overflow:hidden clipping; menuRef added so outside-click handler doesn't fire on menu items |
 | 2026-05-01 | moonWindow uses REPLACE_ON_PUSH — each pushStream clears the stream first so only latest state shows |
 | 2026-05-01 | Panel tab layout persisted to localStorage; Reset Layout also resets tabs to Room+Thoughts defaults |
+| 2026-05-02 | All colors extracted to CSS custom properties in theme.css — theme swapping is now a single :root block |
+| 2026-05-02 | Vital bar gradients moved from inline JS to CSS classes so they are themeable |
+| 2026-05-02 | Readability fixes: inactive tab text, whisper preset, exp secondary text, room section labels all improved |
+| 2026-05-02 | 17 themes (5 general + 12 guild) defined in themes.ts as CSS-var override objects; applyTheme/initTheme load on startup |
+| 2026-05-02 | Guild theme palettes sourced from DESIGN.md Section 6.5 (bg/text/accent per guild) |
+| 2026-05-02 | ThemePicker modal: General/Guild tabs, card grid with preview swatches, live apply, portal-rendered |
