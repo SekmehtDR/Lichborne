@@ -921,8 +921,21 @@ export function applyTheme(theme: Theme): void {
   localStorage.setItem('klient67.theme', theme.id)
 }
 
+export function applyCustomTheme(vars: ThemeVars, id?: string): void {
+  for (const [key, value] of Object.entries(vars)) {
+    document.documentElement.style.setProperty(key, value)
+  }
+  if (id) localStorage.setItem('klient67.theme', id)
+}
+
 export function initTheme(): void {
   const savedId = localStorage.getItem('klient67.theme') ?? 'dark'
-  const theme = THEMES.find(t => t.id === savedId) ?? THEMES[0]
-  applyTheme(theme)
+  const base = THEMES.find(t => t.id === savedId)
+  if (base) { applyTheme(base); return }
+  try {
+    const customs = JSON.parse(localStorage.getItem('klient67.myThemes') ?? '[]')
+    const custom = customs.find((t: { id: string; vars: ThemeVars }) => t.id === savedId)
+    if (custom) { applyCustomTheme(custom.vars); return }
+  } catch { /* ignore */ }
+  applyTheme(THEMES[0])
 }

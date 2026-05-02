@@ -228,7 +228,7 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ## Phase 4 — Display, Accessibility & Theming
 
-**Phase 4 — In progress (4A ✅, 4B ✅)**
+**Phase 4 — In progress (4A ✅, 4B ✅, 4C ✅)**
 
 ### Milestone 4A — CSS Variables Foundation & Readability ✅
 > Goal: extract all hardcoded colors to CSS custom properties; fix readability problems
@@ -251,12 +251,20 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] "Theme" button in toolbar opens ThemePicker modal (portal)
 - **Test:** Click Theme → pick Parchment → UI goes light → refresh → Parchment still active
 
-### Milestone 4C — Theme Editor & My Themes
+### Milestone 4C — Theme Editor & My Themes ✅
 > Goal: players can customize and save their own themes
 
-- [ ] Theme editor — all color fields with live preview
-- [ ] My Themes — save, name, duplicate, delete, reset to base
-- [ ] Export / import themes as JSON
+- [x] Three-tab ThemePicker: General | Guild | Custom
+- [x] "Customize…" button on every base/guild theme card — always creates a copy, never edits the original
+- [x] Theme Editor modal — 5 tabs (Surfaces / Game Text / Vitals / HUD / Room & Exp), all ~90 CSS vars editable with native color pickers, gradient pairs, and rgba fields
+- [x] Live preview while editing — changes apply to `:root` immediately (game behind modal is the preview)
+- [x] Cancel restores the previously active theme
+- [x] Custom tab — shows all My Themes with Edit / Dup / Export / Delete per card
+- [x] Duplicate, rename, delete custom themes
+- [x] Export theme as JSON file download
+- [x] Import theme from JSON file
+- [x] Custom themes persisted to localStorage; restored on app startup
+- **Test:** Pick Dark → Customize… → change accent to red → Save → Custom tab shows new theme active
 
 ### Milestone 4D — Settings Panel & Accessibility
 > Goal: settings screen + font config + accessibility toggles

@@ -7,6 +7,7 @@ import IconBar from './IconBar'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
+import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import '../styles/game.css'
 import '../styles/panels.css'
 
@@ -132,6 +133,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
+  const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
 
   // Drag refs
@@ -522,7 +524,9 @@ export default function GameWindow({ onDisconnect }: Props) {
       {showThemePicker && (
         <ThemePicker
           currentThemeId={currentThemeId}
+          myThemes={myThemes}
           onThemeChange={id => setCurrentThemeId(id)}
+          onMyThemesChange={themes => { setMyThemes(themes); saveMyThemes(themes) }}
           onClose={() => setShowThemePicker(false)}
         />
       )}
