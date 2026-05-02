@@ -804,18 +804,40 @@ Priority order reflects data availability from the protocol and player-facing va
 - [~] Full keyboard navigation & configurable bindings — backlogged
 - [~] Screen reader / ARIA live regions — backlogged
 
-### Phase 5 — AI Features
-- [ ] Session log writer (timestamped, structured)
-- [ ] Highlight suggester (OpenAI integration)
-- [ ] AI suggestions review UI (accept / reject per rule, colorblind-aware preview)
+### Phase 5 — Quality Pass & Console Polish
+- [x] Panel resize clipping — mid zone drag capped to column height so top zone is never pushed off screen
+- [ ] Text presets verified in all panels — speech, whisper, thought, roomname, roomdesc, bold, expiry, store, command-echo rendering correctly in main stream and all stream panels
+- [ ] Bold text rendering — segments with bold flag display correctly across all themes (correct color, not just font-weight)
+- [ ] Theme preset coverage audit — all 17 base/guild themes define every preset CSS var; no panel shows fallback/wrong colors after a theme switch
+- [ ] Copy/paste in text window — select game text and copy to clipboard; verify paste works in command bar
+- [ ] Right-click context menu in text window — at minimum Copy, Select All
+- [ ] Text selection styling — visible selection highlight that works across themes
+- [ ] Stream panel preset coverage — presets applied to thoughts, arrivals, deaths, spells, familiar, inventory, and user-created panels, not just main stream
+
+### Phase 6 — Highlights, Triggers & Macros
+- [ ] Highlight rules engine — regex pattern → color/label, applied to incoming game text
+- [ ] Highlight editor UI — create, edit, delete, reorder rules; live preview
+- [ ] Highlight groups — named toggleable sets (e.g. "Combat", "Social")
+- [ ] Trigger system — regex → action (send command, play sound, open panel)
+- [ ] Command aliases — short names that expand to full commands
+- [ ] Macro system — key bindings to commands or sequences
+
+### Phase 7 — Packaging & Distribution
+- [ ] Packaged installer (electron-builder)
+- [ ] Auto-update
 
 ### Future / Unscheduled
 - [ ] Multi-monitor floating panel support
-- [ ] Macro system (with sip-and-puff usability as an explicit design goal)
-- [ ] Command aliases
-- [ ] Trigger system (regex → action)
 - [ ] Sound alerts
-- [ ] Lore assistant
-- [ ] Session summary (end-of-session AI recap: XP gained, ranks, notable events)
-- [ ] Packaged installer (electron-builder)
-- [ ] Auto-update
+- [ ] HUD widget system — individual repositionable elements (compass, hands, RT/CT, spell)
+
+### AI Features — Backlogged
+All AI features require the highlight system and session capture to exist first.
+
+- [ ] Session recorder — click Record → click Stop → captures raw game text for that window
+- [ ] Session summarizer — after recording, AI summarizes interactions: who talked to you, notable events, suggested highlight rules for names/keywords that appeared
+- [ ] Highlight suggester — analyzes session logs + current highlight config, proposes new regex rules with colorblind-aware preview; player accepts/rejects individually
+- [ ] Lore assistant — ask questions about DR lore, mechanics, skills
+- [ ] Session summary — end-of-session AI recap: XP gained, ranks, notable events
+- [ ] Config explainer — "what does this highlight rule do?"
+- [ ] API key management UI — store OpenAI key locally, never transmitted elsewhere

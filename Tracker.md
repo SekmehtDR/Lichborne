@@ -9,7 +9,10 @@
 
 **Phase 1 — Complete ✅**
 **Phase 2 — Complete ✅**
-**Phase 3 — In progress (3A ✅, 3B ✅, 3C ✅, 3D ✅, 3E ✅, 3F ✅)**
+**Phase 3 — Complete ✅**
+**Phase 4 — Complete ✅**
+**Phase 5 — In progress (Quality Pass & Console Polish)**
+**Phase 6 — Not started (Highlights, Triggers & Macros)**
 
 ---
 
@@ -288,8 +291,37 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ---
 
-## Phase 5 — AI Features
-*Not started. See DESIGN.md Section 7 for spec.*
+## Phase 5 — Quality Pass & Console Polish
+*In progress. See DESIGN.md Phase 5 for spec.*
+
+- [x] Panel resize clipping — mid zone drag capped to column offsetHeight; top zone no longer pushed off screen
+- [ ] Text presets verified in all panels (speech, whisper, thought, bold, etc.)
+- [ ] Bold text rendering correct across all themes
+- [ ] Theme preset coverage audit — all 17 themes define every preset CSS var
+- [ ] Copy/paste in text window
+- [ ] Right-click context menu (Copy, Select All)
+- [ ] Text selection styling visible across themes
+- [ ] Stream panel preset coverage — presets work in thoughts, arrivals, deaths, spells, familiar, inventory, custom panels
+
+---
+
+## Phase 6 — Highlights, Triggers & Macros
+*Not started. See DESIGN.md Phase 6 for spec.*
+
+- [ ] Highlight rules engine — regex pattern → color/label applied to incoming game text
+- [ ] Highlight editor UI — create, edit, delete, reorder; live preview
+- [ ] Highlight groups — named toggleable sets
+- [ ] Trigger system — regex → action (send command, play sound, open panel)
+- [ ] Command aliases
+- [ ] Macro system — key bindings to commands or sequences
+
+---
+
+## Phase 7 — Packaging & Distribution
+*Not started.*
+
+- [ ] Packaged installer (electron-builder)
+- [ ] Auto-update
 
 ---
 
@@ -301,6 +333,8 @@ Items removed from active phase scope — too large for current pass, require de
 |---|---|
 | Full keyboard navigation | Tab through panels, Enter to focus command bar, configurable bindings — touches every component |
 | Screen reader / ARIA live regions | Main, room, thoughts panels as live regions; landmark navigation; status bar values as text — requires real screen reader testing (NVDA, JAWS, VoiceOver) |
+| HUD widget system | Individual repositionable elements — compass, hands, RT/CT, spell; requires redesign of IconBar/StatusBar |
+| All AI features | Blocked on highlight system (Phase 6) + session capture existing first — see DESIGN.md AI Backlog section |
 
 ---
 

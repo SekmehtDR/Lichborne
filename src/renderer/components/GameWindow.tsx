@@ -146,6 +146,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const scrollRef        = useRef<HTMLDivElement>(null)
   const pinnedRef        = useRef(true)
   const inputRef         = useRef<HTMLInputElement>(null)
+  const panelColumnRef   = useRef<HTMLDivElement>(null)
   const panelWidthRef    = useRef(panelWidth)
   const topHeightRef     = useRef(topPanelHeight)
   const midHeightRef     = useRef(midPanelHeight)
@@ -335,12 +336,16 @@ export default function GameWindow({ onDisconnect }: Props) {
         setPanelWidth(next)
       }
       if (draggingRow.current === 'top-mid') {
-        const next = Math.max(MIN_TOP_HEIGHT, Math.min(MAX_TOP_HEIGHT, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
+        const colHeight = panelColumnRef.current?.offsetHeight ?? Infinity
+        const maxTop = Math.min(MAX_TOP_HEIGHT, colHeight - midHeightRef.current - 8 - MIN_TOP_HEIGHT)
+        const next = Math.max(MIN_TOP_HEIGHT, Math.min(maxTop, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
         topHeightRef.current = next
         setTopPanelHeight(next)
       }
       if (draggingRow.current === 'mid-bot') {
-        const next = Math.max(MIN_MID_HEIGHT, Math.min(MAX_MID_HEIGHT, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
+        const colHeight = panelColumnRef.current?.offsetHeight ?? Infinity
+        const maxMid = Math.min(MAX_MID_HEIGHT, colHeight - topHeightRef.current - 8 - MIN_MID_HEIGHT)
+        const next = Math.max(MIN_MID_HEIGHT, Math.min(maxMid, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
         midHeightRef.current = next
         setMidPanelHeight(next)
       }
@@ -508,7 +513,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         </div>
 
         <div className="panel-divider" onMouseDown={handleColDividerDown} />
-        <div className="panel-column" style={{ width: panelWidth }}>
+        <div className="panel-column" ref={panelColumnRef} style={{ width: panelWidth }}>
           <div className="panel-zone" style={{ height: topPanelHeight, flexShrink: 0 }}>
             <PanelFrame {...sharedFrameProps} tabs={topTabs} activeId={topActiveId}
               onTabsChange={setTopTabs} onActiveChange={setTopActiveId} />
