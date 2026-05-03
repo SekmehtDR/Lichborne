@@ -8,22 +8,23 @@
 ## Table of Contents
 
 1. [Vision](#1-vision)
-2. [Panel System](#2-panel-system)
-3. [Stream Inventory](#3-stream-inventory)
-4. [Status Bar System & Live Panels](#4-status-bar-system--live-panels)
-5. [Display & Accessibility](#5-display--accessibility)
-6. [Theming](#6-theming)
-   - 6.1 Architecture
-   - 6.2 Theme Picker Flow
-   - 6.3 Theme Editor
-   - 6.4 General Base Themes
-   - 6.5 Guild Base Themes
-   - 6.6 Theme JSON Format
-   - 6.7 Sharing Themes
-7. [Settings](#7-settings)
-8. [Character Profiles](#8-character-profiles)
-9. [AI Features](#9-ai-features)
-10. [Backlog](#10-backlog)
+2. [Terminology](#2-terminology)
+3. [Panel System](#3-panel-system)
+4. [Stream Inventory](#4-stream-inventory)
+5. [Status Bar System & Live Panels](#5-status-bar-system--live-panels)
+6. [Display & Accessibility](#6-display--accessibility)
+7. [Theming](#7-theming)
+   - 7.1 Architecture
+   - 7.2 Theme Picker Flow
+   - 7.3 Theme Editor
+   - 7.4 General Base Themes
+   - 7.5 Guild Base Themes
+   - 7.6 Theme JSON Format
+   - 7.7 Sharing Themes
+8. [Settings](#8-settings)
+9. [Character Profiles](#9-character-profiles)
+10. [AI Features](#10-ai-features)
+11. [Backlog](#11-backlog)
 
 ---
 
@@ -40,7 +41,21 @@ Klient67 is a DragonRealms game client built for **real players** — from first
 
 ---
 
-## 2. Panel System
+## 2. Terminology
+
+Three core concepts appear throughout this document and the codebase. Using them consistently matters.
+
+**Panel** — a framed container in the client layout. Panels are the physical windows players see and resize. The default layout has four: the main story panel on the left, and Right-Top, Right-Center, and Right-Bottom on the right column. Each panel has a tab bar so it can hold multiple content sources at once.
+
+**Stream** — a named text feed pushed by the server via `<pushStream id="..."/>`. The client detects streams automatically and makes them available to snap into any panel. Examples: `thoughts`, `arrivals`, `deaths`, `familiar`, `moonWindow`. A stream is content, not a container.
+
+**Structured Panel** — a data-driven content type that lives in a panel tab but is not a stream. **Room** and **Exp** are the two current examples. Their content comes from structured XML elements (`<component>`, `<compass>`, `<progressBar>`, etc.), not from `pushStream`. They look like stream tabs from the player's perspective but are built differently underneath.
+
+> In short: players put **streams** and **structured panels** into **panels**.
+
+---
+
+## 3. Panel System
 
 ### 2.1 Philosophy
 
@@ -159,9 +174,9 @@ The main text window has one job: never lose game text, never lose your place.
 
 ---
 
-## 3. Stream Inventory
+## 4. Stream Inventory
 
-### 3.1 Named Streams
+### 4.1 Named Streams
 
 Text streams are routed by the server using `<pushStream id="..."/>` / `<popStream/>` tags. Each maps to one or more panels.
 
@@ -176,7 +191,7 @@ Text streams are routed by the server using `<pushStream id="..."/>` / `<popStre
 | `inv` | Inventory updates | `inv` |
 | `room` | Room description components | `room` |
 
-### 3.2 Structured Data Feeds
+### 4.2 Structured Data Feeds
 
 Beyond text streams, the server pushes structured XML elements that drive UI components directly. These are not text — they are data. The client must parse them and update the relevant panel state, never displaying them as raw text.
 
@@ -204,7 +219,7 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 
 **Experience components** are pushed by the server whenever a mindstate changes. The exp panel is a live view of a clean structured data feed — not a text scraper.
 
-### 3.3 Text Styles (Presets)
+### 4.3 Text Styles (Presets)
 
 StormFront `<preset>` tags map to visual styles:
 
@@ -223,9 +238,9 @@ Each preset has both a **foreground (text) color** and a **background (highlight
 
 ---
 
-## 4. Status Bar System & Live Panels
+## 5. Status Bar System & Live Panels
 
-### 4.1 Vitals
+### 5.1 Vitals
 
 Five core vitals displayed in order, each as a labeled progress bar. Values come directly from `<progressBar>` XML elements — exact integers, not approximations.
 
@@ -239,7 +254,7 @@ Five core vitals displayed in order, each as a labeled progress bar. Values come
 
 Bar color shifts automatically at thresholds (e.g. health goes yellow at 50%, red at 25%). Thresholds are configurable.
 
-### 4.2 Indicators
+### 5.2 Indicators
 
 Displayed alongside or below the vitals. All state comes from `<indicator>` XML elements and `<roundTime>` / `<castTime>` timestamps — no text parsing.
 
@@ -255,7 +270,7 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
 | Stunned | `<indicator id="stunned">` | Shape/border change (respects Epilepsy Safe mode — never flashes) |
 | Dead | `<indicator id="dead">` | Skull — hard to miss |
 
-### 4.3 Vital Bar Display
+### 5.3 Vital Bar Display
 
 - Bars always show a **numeric label** (e.g. "Health 72%") in addition to color fill — the exact value the server sent, never derived from bar width
 - **Health bar uses dynamic color thresholds** — no configuration needed, this is a safety feature:
@@ -263,10 +278,10 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
   - 25–49%: yellow (`#a87a10`)
   - < 25%: red (`#8a1a1a`)
 - Other vitals use their static palette color at all values
-- Bar colors are user-configurable via theme; the color picker warns when a combination is hard to distinguish (see [Section 5.3](#53-colorblind-aware-color-picker))
+- Bar colors are user-configurable via theme; the color picker warns when a combination is hard to distinguish (see [Section 6.4](#64-colorblind-aware-color-picker))
 - In large print mode, bars are taller and labels are larger
 
-### 4.4 RT and Cast Time Bars in the Command Bar
+### 5.4 RT and Cast Time Bars in the Command Bar
 
 Roundtime and cast time can be displayed as **thin progress bars embedded in the command bar**, draining left-to-right as time expires. This keeps timing information visible at the point of focus without requiring a glance up to the status strip.
 
@@ -287,7 +302,7 @@ Roundtime and cast time can be displayed as **thin progress bars embedded in the
 
 This is an **option**, not the default. Players can choose to show RT/cast in the command bar, in the status strip, or both.
 
-### 4.5 Status Bar Strip Position
+### 5.5 Status Bar Strip Position
 
 By default the status bar strip sits at the top of the window. Players can move it to **just above the command bar** — the layout StormFront uses, which many veterans are accustomed to:
 
@@ -306,7 +321,7 @@ By default the status bar strip sits at the top of the window. Players can move 
 
 This is a single setting toggle: **Status bars position — Top / Bottom**. The layout profiles (Combat, Crafting, etc.) can each have their own preference.
 
-### 4.6 Room Panel
+### 5.6 Room Panel
 
 The room panel is **structured output**, not a text dump. Each component arrives as a separate XML element and is rendered independently.
 
@@ -324,7 +339,7 @@ The room panel is **structured output**, not a text dump. Each component arrives
 
 Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[north]` sends `north` to the game. This is what the StormFront protocol was designed for — the server already marks exits as interactive.
 
-### 4.8 Icon Bar (HUD Strip)
+### 5.7 Icon Bar (HUD Strip)
 
 The icon bar sits between the vital bars and the main text window. It is a fixed-height, two-row strip — never wraps, never reflows when content changes.
 
@@ -366,7 +381,7 @@ RT  [▓▓░░░░]  |  Sitting  |  Dead  Stunned  Bleeding  Webbed  Invis 
 - RT/CT boxes always show `—` when idle so the fixed layout never shifts.
 - Epilepsy Safe Mode disables the RT pulse animation. The bar still drains; it just doesn't flash.
 
-### 4.7 Experience Panel
+### 5.8 Experience Panel
 
 The exp panel is a live skill tracker driven entirely by `<component id='exp SkillName'>` XML events. No text parsing. No scripting required.
 
@@ -401,18 +416,18 @@ If a player switches back to a standard exp display in-game for any reason, the 
 
 ---
 
-## 5. Display & Accessibility
+## 6. Display & Accessibility
 
 Display and accessibility settings live in **Settings → Display & Accessibility** — the same place as themes, fonts, and layout options. These are normal settings, not a special onboarding track.
 
-### 5.1 Large Print
+### 6.1 Large Print
 
 - Base font size: 18px (default is 14px)
 - Taller status bars
 - Wider line spacing (1.8)
 - Minimum panel sizes enforced
 
-### 5.2 High Contrast
+### 6.2 High Contrast
 
 - Background: `#000000`
 - Text: `#ffffff`
@@ -420,7 +435,7 @@ Display and accessibility settings live in **Settings → Display & Accessibilit
 - Borders: `#ffffff`
 - No transparency or blur effects
 
-### 5.3 Color Blind Mode
+### 6.3 Color Blind Mode
 
 Three selectable options under Display & Accessibility — only one can be active at a time (or none):
 
@@ -434,7 +449,7 @@ Three selectable options under Display & Accessibility — only one can be activ
 
 **The goal is functional clarity, not perfect simulation.** The overrides ensure that the six status indicators (stunned, bleeding, webbed, hidden, invisible, joined) and the four health thresholds are distinguishable without relying on red/green hue differences.
 
-### 5.4 Colorblind-Aware Color Picker
+### 6.4 Colorblind-Aware Color Picker
 
 Rather than special colorblind modes, the client helps players make informed color choices wherever a color picker is shown (highlight rules, theme editor, status bar colors):
 
@@ -445,7 +460,7 @@ Rather than special colorblind modes, the client helps players make informed col
 
 This gives colorblind players control over their own setup without treating everyone else as if they need special modes.
 
-### 5.5 Epilepsy Safe Mode
+### 6.5 Epilepsy Safe Mode
 
 A clearly labeled toggle: **"Epilepsy Safe Mode"** under Display & Accessibility.
 
@@ -456,7 +471,7 @@ When enabled:
 
 This toggle exists because real players have asked for it. It is easy to find, clearly named, and off by default. It is not on the first-launch screen — players who need it will look in settings, and it will be there.
 
-### 5.6 Font
+### 6.6 Font
 
 Font settings work at two levels: **global defaults** and **per-panel overrides**.
 
@@ -473,16 +488,16 @@ Every panel can have its own font family, size, and line height set independentl
 
 Per-panel font settings are saved in the layout profile. Switching layouts restores each panel's font along with its position.
 
-Themes can also specify a font override (see Section 6.6) — if a theme sets a font, it becomes the new global default when that theme is applied, but per-panel overrides still take priority over it.
+Themes can also specify a font override (see Section 7.6) — if a theme sets a font, it becomes the new global default when that theme is applied, but per-panel overrides still take priority over it.
 
-### 5.7 Keyboard & Motor
+### 6.7 Keyboard & Motor
 
 - Full keyboard navigation (Tab through panels, Enter to focus command bar)
 - Command history (Up/Down arrows)
 - Configurable key bindings for all actions
 - Optional large click targets for panel controls
 
-### 5.8 Screen Reader Support
+### 6.8 Screen Reader Support
 
 DragonRealms has blind players who rely on screen readers (NVDA, JAWS, VoiceOver). The game is text-based — which is a natural fit — but the client needs to surface that text correctly.
 
@@ -502,7 +517,7 @@ DragonRealms has blind players who rely on screen readers (NVDA, JAWS, VoiceOver
 
 This is marked as a later-phase feature because it requires deliberate implementation and testing with real screen readers — but the architecture should not make it impossible from the start.
 
-### 5.9 Sip-and-Puff / Switch Access
+### 6.9 Sip-and-Puff / Switch Access
 
 Some players use breathing straws (sip-and-puff devices) or single-switch scanning to play. DragonRealms' text command model is actually well-suited to this — the whole interface reduces to "type a command, hit Enter."
 
@@ -521,9 +536,9 @@ The macro system is in the backlog. When we build it, sip-and-puff usability sho
 
 ---
 
-## 6. Theming
+## 7. Theming
 
-### 6.1 Architecture
+### 7.1 Architecture
 
 Themes work in two layers:
 
@@ -541,7 +556,7 @@ My Themes  (player-owned copies, fully editable)
 
 Base themes are never modified. Editing a base automatically creates a personal copy. Players can have as many custom themes as they want, each derived from any base.
 
-### 6.2 Theme Picker Flow
+### 7.2 Theme Picker Flow
 
 1. **Settings → Theme** — a grid of theme cards, each showing a small live preview swatch (background, text, accent, a sample vital bar)
 2. Two tabs at the top: **General** | **Guild**
@@ -550,7 +565,7 @@ Base themes are never modified. Editing a base automatically creates a personal 
 5. At the bottom of each theme card: **"Customize..."** button
 6. Navigating away from Settings keeps whatever is currently applied
 
-### 6.3 Theme Editor
+### 7.3 Theme Editor
 
 Opened via **"Customize..."** on any theme card. Shows the full set of editable fields with color pickers and a live preview panel on the right showing actual game text in the current color state.
 
@@ -595,7 +610,7 @@ Every color field opens the colorblind-aware color picker — the player sees si
 - **Export JSON** — download the theme as a shareable `.json` file
 - **Import JSON** — load a theme file shared by another player; lands in My Themes
 
-### 6.4 General Base Themes
+### 7.4 General Base Themes
 
 | Theme | Description |
 |---|---|
@@ -605,7 +620,7 @@ Every color field opens the colorblind-aware color picker — the player sees si
 | **Parchment** | Light background, dark text — better for bright environments |
 | **Terminal** | Green on black, monospace CRT aesthetic |
 
-### 6.5 Guild Base Themes
+### 7.5 Guild Base Themes
 
 Guild themes are base themes with palettes designed around each guild's identity. Any player can use any guild theme — there's no restriction. A Barbarian player might love the Moon Mage aesthetic.
 
@@ -628,7 +643,7 @@ Commoner is the unguilded starting state for all new characters — included her
 
 Each guild theme also ships with matching preset colors (speech, whisper, thought, etc.) tuned to complement its palette.
 
-### 6.6 Theme JSON Format
+### 7.6 Theme JSON Format
 
 Themes are stored in `~/.klient67/themes/` as JSON. Base themes are bundled with the app; custom themes live in this directory.
 
@@ -667,15 +682,15 @@ Themes are stored in `~/.klient67/themes/` as JSON. Base themes are bundled with
 }
 ```
 
-### 6.7 Sharing Themes
+### 7.7 Sharing Themes
 
 Players can export any custom theme as a `.json` file and share it — on Discord, the DR forums, or directly. Another player imports it via Settings → Theme → Import, and it appears in their My Themes section immediately. The `basedOn` field is preserved but not required for imports.
 
 ---
 
-## 7. Settings
+## 8. Settings
 
-### 7.1 Settings Search
+### 8.1 Settings Search
 
 Settings has a **search box at the top** that filters across every option in every section — no matter how deep it is. Type "font" and every font-related setting surfaces immediately. Type "RT" and roundtime bar position, RT color, and RT sound alert all appear together.
 
@@ -696,7 +711,7 @@ When a search is active, the category list is replaced by a flat results list. E
 
 This is the fix for "I know this setting exists but I can't find it." Settings should never require hunting.
 
-### 7.2 Settings Organization
+### 8.2 Settings Organization
 
 Settings are grouped into broad sections — not deep submenus. Every section is one level down from the top, never more.
 
@@ -712,13 +727,13 @@ Settings are grouped into broad sections — not deep submenus. Every section is
 
 ---
 
-## 8. Character Profiles
+## 9. Character Profiles
 
 > **Status: Planned — requires dedicated design session before implementation.**
 
 Each DragonRealms character is a distinct identity with different playstyles, guilds, and needs. Character profiles let the client automatically switch to a character-specific configuration on login.
 
-### 8.1 What a Profile Contains
+### 9.1 What a Profile Contains
 
 A profile is a named bundle of per-character settings that activates when that character logs in:
 
@@ -732,7 +747,7 @@ A profile is a named bundle of per-character settings that activates when that c
 | **Status bar position** | Top vs. bottom preference per character |
 | **Custom panel set** | Which discovered streams are pinned |
 
-### 8.2 Key Design Questions (to resolve in planning session)
+### 9.2 Key Design Questions (to resolve in planning session)
 
 - **Profile identity** — keyed by character name, account+character, or user-defined label?
 - **Persistence layer** — separate localStorage keys per profile, or a single profiles JSON blob?
@@ -742,17 +757,17 @@ A profile is a named bundle of per-character settings that activates when that c
 - **Profile manager UI** — standalone screen or integrated into Settings?
 - **Import/export** — share a profile with another player (same character class, same playstyle)?
 
-### 8.3 Rough Implementation Approach (to be refined)
+### 9.3 Rough Implementation Approach (to be refined)
 
 On login, the client receives the character name from SGE. It looks up a matching profile and applies it before the game window renders — so the correct theme, layout, and settings are already in place when text starts arriving. If no profile exists, the client offers to save the current settings as a new profile for that character.
 
 ---
 
-## 9. AI Features
+## 10. AI Features
 
 AI features use the OpenAI API (key stored locally, never transmitted anywhere else).
 
-### 7.1 Highlight Suggester (Phase 4)
+### 10.1 Highlight Suggester (Phase 4)
 
 The first AI feature. Analyzes recent session logs and the current highlight config, then suggests new highlight rules:
 
@@ -772,7 +787,7 @@ Pattern: "Fenvaok"  Color: #ff4444  Label: "hostile creature"
 Reason: This creature name appears frequently in your combat logs.
 ```
 
-### 7.2 Future AI Ideas (not committed)
+### 10.2 Future AI Ideas (not committed)
 
 - **Lore assistant** — ask Claude questions about DR lore, mechanics, skills
 - **Session summary** — end-of-session summary of what happened, XP gained, notable events
@@ -781,7 +796,7 @@ Reason: This creature name appears frequently in your combat logs.
 
 ---
 
-## 9. Backlog
+## 11. Backlog
 
 Items are roughly priority-ordered within each phase. This list evolves.
 
@@ -826,7 +841,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Readability fixes — inactive tabs, whisper preset, exp panel secondary text (4A)
 - [x] Vital bar gradients moved to CSS classes — fully themeable (4A)
 - [x] General base themes: Dark, Darker, Slate, Parchment, Terminal (4B)
-- [x] Guild base themes: all 12 guilds including Commoner, palettes from §6.5 (4B)
+- [x] Guild base themes: all 12 guilds including Commoner, palettes from §7.5 (4B)
 - [x] Theme picker UI — General / Guild / Custom tabs, live preview swatches (4B, 4C)
 - [x] Theme editor — all ~90 color fields, live preview, 5-tab layout (4C)
 - [x] My Themes — save, name, duplicate, delete; always a copy, never edits base (4C)
