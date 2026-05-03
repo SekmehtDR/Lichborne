@@ -23,22 +23,22 @@ function parseExits(text: string): string[] {
 }
 
 const STREAM_MAP: Record<string, StreamTarget> = {
-  thoughts:    'thoughts',
-  death:       'deaths',   // server sends "death" (singular)
-  deaths:      'deaths',   // keep alias
-  logons:      'arrivals', // server sends "logons" for arrivals/departures
-  arrivals:    'arrivals', // keep alias
-  spells:      'spells',
-  familiar:    'familiar',
-  inv:         'inv',
-  room:        'room',
-  moonWindow:  'moonWindow',
-  LichScripts: 'raw',      // Lich internal stream — discard
-  // Confirmed duplicate of main — discard
-  talk:        'raw',
-  // Genie window targets
-  combat:      'main',
-  percWindow:  'spells',
+  thoughts:     'thoughts',
+  death:        'deaths',        // server sends "death" (singular)
+  deaths:       'deaths',        // keep alias
+  logons:       'arrivals',      // server sends "logons" for arrivals/departures
+  arrivals:     'arrivals',      // keep alias
+  spells:       'spells',
+  familiar:     'familiar',
+  inv:          'inv',
+  room:         'room',
+  moonWindow:   'moonWindow',
+  LichScripts:  'raw',           // Lich internal stream — discard
+  talk:         'conversations', // in-game speech/yell/whisper channel
+  combat:       'combat',        // combat messages
+  atmospherics: 'atmospherics',  // ambient/weather text
+  group:        'group',         // group channel
+  percWindow:   'spells',        // active spells (alias)
 }
 
 // Streams that are state displays — each push is a full refresh, not an append

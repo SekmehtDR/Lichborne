@@ -42,12 +42,27 @@ const NEVER_DISCOVER = new Set([
   'thoughts', 'thought',
   'deaths', 'death',
   'arrivals', 'logons',
+  'conversations', 'talk',
   'spells', 'percwindow',
   'familiar',
   'inv', 'inventory',
   'exp',
   'debug',
 ])
+
+// Streams that fall back to main when no panel is open for them.
+// Prevents important text from being silently buffered and invisible.
+const STREAM_FALLBACK: Record<string, string> = {
+  conversations: 'main',
+  thoughts:      'main',
+  arrivals:      'main',
+  deaths:        'main',
+  spells:        'main',
+  familiar:      'main',
+  combat:        'main',
+  atmospherics:  'main',
+  group:         'main',
+}
 
 const DEFAULT_PANEL_WIDTH = 280
 const MIN_PANEL_WIDTH     = 160
@@ -130,12 +145,12 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt('klient67.midPanelHeight', DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
 
   // Panel tabs — 3 zones, persisted to localStorage
-  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('klient67.topTabs',    [makeTab('room')]))
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('klient67.topTabs',    [makeTab('room'), makeTab('conversations')]))
   const [topActiveId, setTopActiveId]   = useState(() => loadStr('klient67.topActiveId',    'room'))
-  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('klient67.midTabs',    [makeTab('thoughts')]))
+  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('klient67.midTabs',    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
   const [midActiveId, setMidActiveId]   = useState(() => loadStr('klient67.midActiveId',    'thoughts'))
-  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', []))
-  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', ''))
+  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', [makeTab('exp')]))
+  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', 'exp'))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -160,6 +175,12 @@ export default function GameWindow({ onDisconnect }: Props) {
   const draggingRow      = useRef<'top-mid' | 'mid-bot' | null>(null)
   const rowDragStartY    = useRef(0)
   const rowDragStartH    = useRef(0)
+
+  // Tracks which stream IDs currently have an open panel tab — used for fallback routing.
+  const watchedStreamsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    watchedStreamsRef.current = new Set([...topTabs, ...midTabs, ...bottomTabs].map(t => t.id))
+  }, [topTabs, midTabs, bottomTabs])
 
   // ── On mount: focus command input + wire auto-copy on text selection ───────
 
@@ -233,8 +254,15 @@ export default function GameWindow({ onDisconnect }: Props) {
             } else if (stream === 'room-players') {
               roomUpdates.players = segments.map(s => s.text).join('')
             } else {
-              if (!newStream[stream]) newStream[stream] = []
-              newStream[stream].push({ id: lineId++, segments })
+              const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
+                ? STREAM_FALLBACK[stream]
+                : stream
+              if (target === 'main') {
+                if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
+              } else {
+                if (!newStream[target]) newStream[target] = []
+                newStream[target].push({ id: lineId++, segments })
+              }
             }
             break
           }
@@ -422,11 +450,12 @@ export default function GameWindow({ onDisconnect }: Props) {
     localStorage.setItem('klient67.panelWidth',    String(DEFAULT_PANEL_WIDTH))
     localStorage.setItem('klient67.topPanelHeight', String(DEFAULT_TOP_HEIGHT))
     localStorage.setItem('klient67.midPanelHeight', String(DEFAULT_MID_HEIGHT))
-    const defaultTop = [makeTab('room')]
-    const defaultMid = [makeTab('thoughts')]
+    const defaultTop = [makeTab('room'), makeTab('conversations')]
+    const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
+    const defaultBot = [makeTab('exp')]
     setTopTabs(defaultTop);    setTopActiveId('room')
     setMidTabs(defaultMid);    setMidActiveId('thoughts')
-    setBottomTabs([]);         setBottomActiveId('')
+    setBottomTabs(defaultBot); setBottomActiveId('exp')
   }
 
   // ── Panel management ──────────────────────────────────────────────────────

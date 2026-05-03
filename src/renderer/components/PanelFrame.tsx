@@ -7,7 +7,7 @@ import ExpPanel from './panels/ExpPanel'
 import DebugPanel from './DebugPanel'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'debug' | 'custom'
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'debug' | 'custom'
 
 export interface TabDef {
   id: string
@@ -16,20 +16,21 @@ export interface TabDef {
 }
 
 export const PANEL_LABELS: Record<PanelType, string> = {
-  room:     'Room',
-  thoughts: 'Thoughts',
-  arrivals: 'Arrivals',
-  deaths:   'Deaths',
-  spells:   'Active Spells',
-  exp:      'Experience',
-  familiar: 'Familiar',
-  inv:      'Inventory',
-  debug:    'Debug',
-  custom:   'Custom',
+  room:          'Room',
+  thoughts:      'Thoughts',
+  arrivals:      'Arrivals',
+  conversations: 'Conversations',
+  deaths:        'Deaths',
+  spells:        'Active Spells',
+  exp:           'Experience',
+  familiar:      'Familiar',
+  inv:           'Inventory',
+  debug:         'Debug',
+  custom:        'Custom',
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'debug',
+  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'debug',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -237,8 +238,9 @@ function renderPanel(
   const clr = (id: string) => () => onClearStream(id)
   switch (tab.type) {
     case 'room':     return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
-    case 'thoughts': return <StreamPanel lines={streamLines.thoughts  ?? []} onClear={clr('thoughts')} />
-    case 'arrivals': return <StreamPanel lines={streamLines.arrivals  ?? []} onClear={clr('arrivals')} />
+    case 'thoughts':      return <StreamPanel lines={streamLines.thoughts      ?? []} onClear={clr('thoughts')} />
+    case 'arrivals':      return <StreamPanel lines={streamLines.arrivals      ?? []} onClear={clr('arrivals')} />
+    case 'conversations': return <StreamPanel lines={streamLines.conversations ?? []} onClear={clr('conversations')} />
     case 'deaths':   return <StreamPanel lines={streamLines.deaths    ?? []} onClear={clr('deaths')} />
     case 'spells':   return <StreamPanel lines={streamLines.spells    ?? []} onClear={clr('spells')} />
     case 'exp':      return <ExpPanel skills={expSkills} />

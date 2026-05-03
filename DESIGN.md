@@ -126,13 +126,14 @@ A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows
 | Panel ID | Default Location | Content |
 |---|---|---|
 | `main` | Center-left | Primary game text stream |
-| `room` | Top-right | Room name, desc, objects, players, clickable exits |
+| `room` | Top-right (tab 1) | Room name, desc, objects, players, clickable exits |
+| `conversations` | Top-right (tab 2) | In-game speech, yell, and whisper (server `talk` stream) |
+| `thoughts` | Center-right (tab 1) | Thoughts channel |
+| `arrivals` | Center-right (tab 2) | Logon/logoff notices |
+| `deaths` | Center-right (tab 3) | Death announcements |
+| `spells` | Center-right (tab 4) | Active spells / spell prep |
 | `exp` | Bottom-right | Live skill mindstate tracker |
-| `thoughts` | Tab with exp | Thoughts channel |
-| `deaths` | Tab with thoughts | Death announcements |
-| `arrivals` | Tab with thoughts | Logon/logoff notices |
 | `familiar` | Closeable tab | Familiar stream |
-| `spells` | Closeable tab | Active spells / spell prep |
 | `inv` | Floatable | Inventory |
 | `statusbars` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
@@ -178,18 +179,24 @@ The main text window has one job: never lose game text, never lose your place.
 
 ### 4.1 Named Streams
 
-Text streams are routed by the server using `<pushStream id="..."/>` / `<popStream/>` tags. Each maps to one or more panels.
+Text streams are routed by the server using `<pushStream id="..."/>` / `<popStream/>` tags. Each maps to an internal stream target and a default panel.
 
-| Stream ID | Description | Default Panel |
-|---|---|---|
-| `main` | Primary game output | `main` |
-| `thoughts` | Thought channel messages | `thoughts` |
-| `death` | Death announcements | `deaths` |
-| `logons` | Arrivals and departures | `arrivals` |
-| `familiar` | Familiar link output | `familiar` |
-| `percWindow` | Active spells / buffs | `spells` |
-| `inv` | Inventory updates | `inv` |
-| `room` | Room description components | `room` |
+| Server Stream ID | Internal Target | Description | Default Panel |
+|---|---|---|---|
+| `main` | `main` | Primary game output | `main` |
+| `thoughts` | `thoughts` | Thought channel messages | Center-Right |
+| `death` | `deaths` | Death announcements | Center-Right |
+| `logons` | `arrivals` | Arrivals and departures | Center-Right |
+| `talk` | `conversations` | In-game speech, yell, whisper | Top-Right |
+| `familiar` | `familiar` | Familiar link output | `familiar` |
+| `percWindow` | `spells` | Active spells / buffs | Center-Right |
+| `inv` | `inv` | Inventory updates | `inv` |
+| `room` | `room` | Room description components | `room` |
+| `combat` | `combat` | Combat messages | `main` |
+| `atmospherics` | `atmospherics` | Ambient / weather text | `main` |
+| `group` | `group` | Group channel | `main` |
+
+All named streams use a **fallback to main** when no panel tab is open for them. Once the player opens a panel for that stream, new text routes there instead. This ensures no game text is ever silently lost — the main window is always the safety net.
 
 ### 4.2 Structured Data Feeds
 
@@ -870,6 +877,9 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Stream panel preset coverage — StreamPanel uses renderSegment + panels.css global; presets apply in all stream panels
 - [x] Right-click context menu — "Clear" in main text window and all stream/debug panels; portal-rendered, closes on outside click or Escape
 - [x] Text selection styling — ::selection uses color-mix(accent, transparent) to adapt to every theme automatically
+- [x] Stream mapping expansion — `talk`→`conversations`, `combat`, `atmospherics`, `group` added; `conversations` is a built-in panel type
+- [x] Stream fallback system — streams without an open panel fall back to `main`; `combat`/`atmospherics`/`group` default to main fallback
+- [x] Default panel layout updated — Top-Right: Room + Conversations; Center-Right: Thoughts + Arrivals + Deaths + Active Spells; Bottom-Right: Experience
 
 ### Phase 6 — Highlights, Triggers & Macros
 - [ ] Highlight rules engine — regex pattern → color/label, applied to incoming game text
