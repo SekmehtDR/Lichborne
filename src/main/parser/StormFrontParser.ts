@@ -266,9 +266,10 @@ export class StormFrontParser {
         break
 
       case 'progressbar': {
-        const id    = (attrs.id ?? '').toLowerCase()
-        const text  = attrs.text ?? ''
-        const value = parseInt(attrs.value ?? '0', 10)
+        const id         = (attrs.id ?? '').toLowerCase()
+        const text       = attrs.text ?? ''
+        const value      = parseInt(attrs.value ?? '0', 10)
+        const customText = attrs.customText === 't' || attrs.customtext === 't'
 
         if (id === 'pbarstance') {
           const label = text.split(/\s+/)[0] ?? ''
@@ -276,11 +277,18 @@ export class StormFrontParser {
         } else if (id === 'health' || id === 'mana' || id === 'spirit' ||
                    id === 'stamina' || id === 'concentration' || id === 'conclevel') {
           const normalizedId = id === 'conclevel' ? 'concentration' : id
+          // When the server sends customText='t', extract the label before the trailing number
+          // e.g. "inner fire 59%" → "Inner Fire"
+          const rawLabel = customText ? text.replace(/\s*\d+%?\s*$/, '').trim() : ''
+          const label = rawLabel
+            ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
+            : undefined
           this.events.push({
             type: 'vital-update',
             id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
-            current: value,  // value is 0-100 percentage
+            current: value,
             max: 100,
+            ...(label !== undefined ? { label } : {}),
           })
         }
         break

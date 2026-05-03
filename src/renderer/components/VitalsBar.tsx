@@ -7,6 +7,7 @@ interface VitalState {
 
 interface Props {
   vitals: Record<string, VitalState>
+  labels?: Record<string, string>
 }
 
 const VITAL_ORDER = ['health', 'mana', 'concentration', 'stamina', 'spirit'] as const
@@ -24,20 +25,21 @@ function vitalFillClass(id: string, pct: number): string {
   return `vital-fill vital-fill--${id}`
 }
 
-export default function VitalsBar({ vitals }: Props) {
+export default function VitalsBar({ vitals, labels }: Props) {
   return (
     <div className="vitals-strip">
       <div className="vitals-row">
         {VITAL_ORDER.map(id => {
           const v = vitals[id]
           const pct = v.max > 0 ? (v.current / v.max) * 100 : 0
+          const label = labels?.[id] ?? VITAL_LABELS[id]
           return (
             <div key={id} className="vital-bar">
               <div className="vital-track">
                 <div className={vitalFillClass(id, pct)} style={{ width: `${pct}%` }} />
               </div>
               <span className="vital-text">
-                {VITAL_LABELS[id]}{v.max > 0 ? ` ${v.current}%` : ''}
+                {label}{v.max > 0 ? ` ${v.current}%` : ''}
               </span>
             </div>
           )

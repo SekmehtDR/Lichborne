@@ -110,6 +110,15 @@
   flex-direction: column;
 }
 
+.text-area {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .text-window {
   flex: 1;
   overflow-y: auto;
@@ -195,7 +204,40 @@
   background: linear-gradient(180deg, var(--bg-sunken), var(--bg-base));
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
 }
+
+/* RT / CT timer overlays — thin edge strips inside the command bar */
+.cmd-timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  pointer-events: none;
+  transition: width 0.1s linear;
+}
+
+.cmd-timer--rt {
+  top: 0;
+  background: linear-gradient(90deg, var(--rt-start), var(--rt-end));
+  box-shadow: 0 0 6px var(--rt-glow);
+  animation: cmd-pulse 1.1s ease-in-out infinite;
+}
+
+.cmd-timer--ct {
+  bottom: 0;
+  background: linear-gradient(90deg, var(--ct-start), var(--ct-end));
+  box-shadow: 0 0 6px var(--ct-glow);
+  animation: cmd-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes cmd-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+[data-epilepsy-safe="true"] .cmd-timer { animation: none; }
 
 .prompt-marker {
   color: var(--accent-dim);

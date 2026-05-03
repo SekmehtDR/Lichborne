@@ -1,0 +1,82 @@
+/* ============================================================
+   FLOATING COMPASS — semi-transparent overlay, bottom-right
+   of .text-window-wrap
+   ============================================================ */
+
+.floating-compass {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  padding: 5px 6px;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.fc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 16px);
+  grid-template-rows: repeat(3, 16px);
+  gap: 2px;
+}
+
+.fc-cell {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  font-size: 0.42rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.fc-cell--active {
+  background: var(--compass-active-bg);
+  color: var(--compass-active-text);
+  border: 1px solid var(--compass-active-border);
+  box-shadow: 0 0 4px var(--compass-active-glow);
+}
+
+.fc-cell--inactive {
+  background: transparent;
+  color: var(--compass-inactive-text);
+  border: 1px solid transparent;
+  opacity: 0.35;
+}
+
+.fc-cell--center {
+  background: transparent;
+  border: none;
+  color: var(--compass-center-text);
+  font-size: 0.8rem;
+  opacity: 0.4;
+}
+
+.fc-special {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fc-special-cell {
+  width: 22px;
+  height: 16px;
+  border-radius: 2px;
+  font-size: 0.38rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}

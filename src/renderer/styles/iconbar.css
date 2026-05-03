@@ -1,5 +1,5 @@
 /* ============================================================
-   ICON BAR — two-row HUD
+   ICON BAR — single-row HUD strip
    ============================================================ */
 
 .icon-bar {
@@ -8,224 +8,21 @@
   box-sizing: border-box;
   background: var(--bg-app);
   border-bottom: 1px solid var(--border-faint);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 .icon-row {
   display: flex;
   align-items: center;
+  padding: 4px 12px;
   gap: 0;
-  padding: 5px 12px;
 }
-
-.icon-row--top { border-bottom: 1px solid var(--border-faint); }
 
 .row-sep {
   width: 1px;
-  height: 22px;
+  height: 18px;
   background: var(--border-subtle);
   flex-shrink: 0;
   margin: 0 10px;
-}
-
-/* ============================================================
-   RT / CT timer strips
-   ============================================================ */
-
-.timer-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px 3px;
-}
-
-.timer-strip + .timer-strip { padding-top: 1px; }
-
-.timer-strip__label {
-  font-size: 0.5rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  width: 14px;
-  flex-shrink: 0;
-}
-
-.timer-strip__track {
-  flex: 1;
-  height: 4px;
-  background: var(--border-faint);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.timer-strip__fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.1s linear;
-}
-
-.timer-strip__fill--rt {
-  background: linear-gradient(90deg, var(--rt-start), var(--rt-end));
-  box-shadow: 0 0 4px var(--rt-glow);
-  animation: strip-pulse 1.1s ease-in-out infinite;
-}
-
-.timer-strip__fill--ct {
-  background: linear-gradient(90deg, var(--ct-start), var(--ct-end));
-  box-shadow: 0 0 4px var(--ct-glow);
-  animation: strip-pulse 1.1s ease-in-out infinite;
-}
-
-@keyframes strip-pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; }
-}
-
-[data-epilepsy-safe="true"] .timer-strip__fill { animation: none; }
-
-.timer-strip__value {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: var(--text-secondary);
-  width: 36px;
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.timer-strip--idle .timer-strip__label { color: var(--text-dim); }
-.timer-strip--idle .timer-strip__track { background: var(--border-faint); border: 1px solid var(--border-subtle); }
-.timer-strip--idle .timer-strip__value { color: var(--text-dim); }
-
-/* ============================================================
-   Stance tile
-   ============================================================ */
-
-.icon-tile {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 3px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  line-height: 1.5;
-  flex-shrink: 0;
-  width: 76px;
-  text-align: center;
-  box-sizing: border-box;
-  letter-spacing: 0.04em;
-}
-
-.stance-standing { color: var(--stance-standing-color); border-color: var(--stance-standing-border); background: var(--stance-standing-bg); }
-.stance-kneeling { color: var(--stance-kneeling-color); border-color: var(--stance-kneeling-border); background: var(--stance-kneeling-bg); }
-.stance-prone    { color: var(--stance-prone-color);    border-color: var(--stance-prone-border);    background: var(--stance-prone-bg); }
-.stance-sitting  { color: var(--stance-sitting-color);  border-color: var(--stance-sitting-border);  background: var(--stance-sitting-bg); }
-
-/* ============================================================
-   Status indicators
-   ============================================================ */
-
-.status-box {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-}
-
-.status-icon {
-  flex: 1;
-  font-size: 0.66rem;
-  font-weight: 600;
-  padding: 2px 4px;
-  border-radius: 3px;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-  border: 1px solid transparent;
-  text-align: center;
-}
-
-.ind-inactive  { color: var(--ind-inactive-color);  background: var(--ind-inactive-bg);  border-color: var(--ind-inactive-border); }
-.ind-dead      { color: var(--ind-dead-color);      background: var(--ind-dead-bg);      border-color: var(--ind-dead-border);      box-shadow: 0 0 8px var(--ind-dead-glow); }
-.ind-stunned   { color: var(--ind-stunned-color);   background: var(--ind-stunned-bg);   border-color: var(--ind-stunned-border);   box-shadow: 0 0 8px var(--ind-stunned-glow); }
-.ind-bleeding  { color: var(--ind-bleeding-color);  background: var(--ind-bleeding-bg);  border-color: var(--ind-bleeding-border);  box-shadow: 0 0 8px var(--ind-bleeding-glow); }
-.ind-webbed    { color: var(--ind-webbed-color);    background: var(--ind-webbed-bg);    border-color: var(--ind-webbed-border);    box-shadow: 0 0 8px var(--ind-webbed-glow); }
-.ind-invisible { color: var(--ind-invisible-color); background: var(--ind-invisible-bg); border-color: var(--ind-invisible-border); box-shadow: 0 0 8px var(--ind-invisible-glow); }
-.ind-hidden    { color: var(--ind-hidden-color);    background: var(--ind-hidden-bg);    border-color: var(--ind-hidden-border);    box-shadow: 0 0 8px var(--ind-hidden-glow); }
-.ind-joined    { color: var(--ind-joined-color);    background: var(--ind-joined-bg);    border-color: var(--ind-joined-border);    box-shadow: 0 0 8px var(--ind-joined-glow); }
-
-/* ============================================================
-   Compass
-   ============================================================ */
-
-.compass {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-}
-
-.compass-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 18px);
-  grid-template-rows: repeat(3, 18px);
-  gap: 2px;
-}
-
-.compass-cell {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  font-size: 0.48rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0;
-}
-
-.compass-cell--active {
-  background: var(--compass-active-bg);
-  color: var(--compass-active-text);
-  border: 1px solid var(--compass-active-border);
-  box-shadow: 0 0 6px var(--compass-active-glow);
-}
-
-.compass-cell--inactive {
-  background: var(--compass-inactive-bg);
-  color: var(--compass-inactive-text);
-  border: 1px solid var(--compass-inactive-border);
-}
-
-.compass-cell--center {
-  background: transparent;
-  border: none;
-  color: var(--compass-center-text);
-  font-size: 0.85rem;
-  line-height: 1;
-}
-
-.compass-special {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.compass-special-cell {
-  width: 26px;
-  height: 18px;
-  border-radius: 3px;
-  font-size: 0.44rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-transform: uppercase;
 }
 
 /* ============================================================
@@ -236,7 +33,7 @@
 .spell-slot {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-size: 0.72rem;
   white-space: nowrap;
   flex: 1;
@@ -264,3 +61,45 @@
 
 .spell-empty  { color: var(--spell-empty-color); }
 .spell-active { color: var(--spell-active-color); font-weight: 600; text-shadow: 0 0 10px var(--spell-active-glow); }
+
+/* ============================================================
+   Status bars — 6 fixed-width slots
+   ============================================================ */
+
+.status-bar {
+  width: 72px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  text-align: center;
+  font-size: 0.63rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  margin-right: 4px;
+}
+
+.status-bar:last-child { margin-right: 0; }
+
+.status-bar--empty {
+  border-color: var(--border-faint);
+  color: transparent;
+  background: transparent;
+}
+
+/* Active states — reuse indicator vars */
+.status-bar.stance-standing { color: var(--stance-standing-color); border-color: var(--stance-standing-border); background: var(--stance-standing-bg); }
+.status-bar.stance-kneeling { color: var(--stance-kneeling-color); border-color: var(--stance-kneeling-border); background: var(--stance-kneeling-bg); }
+.status-bar.stance-prone    { color: var(--stance-prone-color);    border-color: var(--stance-prone-border);    background: var(--stance-prone-bg); }
+.status-bar.stance-sitting  { color: var(--stance-sitting-color);  border-color: var(--stance-sitting-border);  background: var(--stance-sitting-bg); }
+
+.status-bar.ind-invisible { color: var(--ind-invisible-color); background: var(--ind-invisible-bg); border-color: var(--ind-invisible-border); box-shadow: 0 0 8px var(--ind-invisible-glow); }
+.status-bar.ind-webbed    { color: var(--ind-webbed-color);    background: var(--ind-webbed-bg);    border-color: var(--ind-webbed-border);    box-shadow: 0 0 8px var(--ind-webbed-glow); }
+.status-bar.ind-joined    { color: var(--ind-joined-color);    background: var(--ind-joined-bg);    border-color: var(--ind-joined-border);    box-shadow: 0 0 8px var(--ind-joined-glow); }
+.status-bar.ind-hidden    { color: var(--ind-hidden-color);    background: var(--ind-hidden-bg);    border-color: var(--ind-hidden-border);    box-shadow: 0 0 8px var(--ind-hidden-glow); }
+.status-bar.ind-bleeding  { color: var(--ind-bleeding-color);  background: var(--ind-bleeding-bg);  border-color: var(--ind-bleeding-border);  box-shadow: 0 0 8px var(--ind-bleeding-glow); }
+.status-bar.ind-stunned   { color: var(--ind-stunned-color);   background: var(--ind-stunned-bg);   border-color: var(--ind-stunned-border);   box-shadow: 0 0 8px var(--ind-stunned-glow); }
+.status-bar.ind-dead      { color: var(--ind-dead-color);      background: var(--ind-dead-bg);      border-color: var(--ind-dead-border);      box-shadow: 0 0 8px var(--ind-dead-glow); }

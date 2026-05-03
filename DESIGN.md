@@ -206,7 +206,8 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 
 | XML Element | Data Provided | Drives |
 |---|---|---|
-| `<progressBar id="health" value="72" text="72"/>` | Exact numeric value + display string for each vital | Status bars |
+| `<progressBar id="health" value="72" text="72"/>` | Exact numeric value + display string for each vital | Vitals bar |
+| `<progressBar id="mana" value="59" text="inner fire 59%" customText="t"/>` | `customText='t'` signals a guild-specific label; the client extracts it from `text` | Vitals bar label override |
 | `<roundTime value="1714512345"/>` | Unix timestamp when RT expires — not a duration | RT countdown |
 | `<castTime value="..."/>` | Unix timestamp when cast time expires | Cast countdown |
 | `<indicator id="stance" visible="y"/>` | Boolean state for each status flag | Indicator icons |
@@ -256,12 +257,14 @@ Five core vitals displayed in order, each as a labeled progress bar. Values come
 | ID | Label | Color (default) |
 |---|---|---|
 | `health` | Health | Green → Yellow → Red (based on %) |
-| `mana` | Mana | Blue |
+| `mana` | Mana (or guild name, e.g. "Inner Fire" for Barbarians) | Blue |
 | `concentration` | Concentration | Teal |
 | `stamina` | Fatigue | Orange |
 | `spirit` | Spirit | Purple |
 
 Bar color shifts automatically at thresholds (e.g. health goes yellow at 50%, red at 25%). Thresholds are configurable.
+
+Some guilds use a custom name for their mana bar. When the server sends `customText='t'` on the `<progressBar>` element, the client uses the label embedded in the `text` attribute (e.g. `text='inner fire 59%'` → displays as "Inner Fire") instead of the default "Mana" label. Other vitals are unaffected.
 
 ### 5.2 Indicators
 
@@ -292,24 +295,21 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
 
 ### 5.4 RT and Cast Time Bars in the Command Bar
 
-Roundtime and cast time can be displayed as **thin progress bars embedded in the command bar**, draining left-to-right as time expires. This keeps timing information visible at the point of focus without requiring a glance up to the status strip.
+Roundtime and cast time are displayed as **thin progress strips embedded in the command bar**, draining as time expires. This keeps timing information visible at the exact point of focus — the place where your eyes already are when you type commands.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  ████████████████████░░░░░░░░░░  RT      [amber, 2.1s]  │  ← RT bar
-│  ██████░░░░░░░░░░░░░░░░░░░░░░░░  Cast    [blue,  4.8s]  │  ← Cast bar
-│ >  _                                              [Send] │  ← Command input
+│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← RT strip (top edge, amber)
+│ >  _                                              [Send] │
+│ ▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← CT strip (bottom edge, blue)
 └──────────────────────────────────────────────────────────┘
 ```
 
-- RT bar: amber/orange — drains as roundtime expires
-- Cast time bar: blue/purple — drains as spell cast time expires
-- Each bar shows a numeric countdown label on the right
-- When inactive (no RT, no cast), the bars are hidden — no wasted space
-- Colors are theme-aware and user-configurable
-- Respects Epilepsy Safe mode — no pulsing, just a static draining bar
-
-This is an **option**, not the default. Players can choose to show RT/cast in the command bar, in the status strip, or both.
+- **RT strip**: amber/orange — 3px strip along the top edge of the command bar
+- **CT strip**: blue/purple — 3px strip along the bottom edge of the command bar
+- Both are completely hidden when inactive — no wasted space, no layout shift
+- Colors are theme-aware (`--rt-start/end/glow`, `--ct-start/end/glow`)
+- Respects Epilepsy Safe mode — pulse animation disabled, bar still drains
 
 ### 5.5 Vitals Bar Position
 
@@ -352,45 +352,47 @@ Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[nor
 
 ### 5.7 Icon Bar (HUD Strip)
 
-The icon bar sits between the vital bars and the main text window. It is a fixed-height, two-row strip — never wraps, never reflows when content changes.
-
-**Row 1 — Character State**
+The icon bar is a single fixed-height row. Layout left to right:
 
 ```
-RT  [▓▓░░░░]  |  Sitting  |  Dead  Stunned  Bleeding  Webbed  Invis  Hidden  Joined  |  CT  [░░░░░░]
+[L: longsword] | [R: shield] | SPELL  Fire Ball  |     [Standing] [        ] [Webbed] [        ] [Hidden] [Bleeding]
 ```
 
-| Widget | Behavior |
+**Left side — item and spell state (left-anchored)**
+
+| Slot | Behavior |
 |---|---|
-| **RT countdown** | Filled red bar + numeric seconds. Pulses when active (respects Epilepsy Safe). Shows `—` when idle. |
-| **Stance tile** | Fixed-width pill label. Color-coded: Standing=green, Kneeling=gold, Prone=orange, Sitting=blue. |
-| **Status indicators** | All 7 always rendered. Inactive indicators are dim/unreadable — not hidden. Active ones are brightly colored with a tinted background. |
-| **CT countdown** | Same as RT but blue fill. Pushed to the far right. |
+| **Left hand** | Label `L`, item name. Dim when empty, warm tan when holding. Truncates with ellipsis. |
+| **Right hand** | Label `R`, same as left. |
+| **Spell** | Always visible. Shows `None` when nothing is prepared (dim); shows the spell name when prepared (purple glow). |
 
-**Row 2 — World State**
+**Right side — 6 status bars (right-anchored)**
 
-```
-[nw][n][ne]  [up]  |  L: a steel longsword  R: a wooden shield  |  Spell: Fire Ball
-[w ][ ][e ]  [dn]
-[sw][s][se]  [out]
-```
+All 6 bars are the same fixed width at all times. Empty bars show a faint border outline — the slot is always present. Text illuminates with the indicator's color when the condition is active.
 
-| Widget | Behavior |
-|---|---|
-| **Compass** | 3×3 grid + special column (up/dn/out). Active exits are bright green. Inactive cells are near-invisible. Fixed size — never grows. |
-| **Left hand** | Fixed 160px. Truncates with ellipsis. Dim when empty, warm tan when holding something. |
-| **Right hand** | Same as left. |
-| **Spell** | Fixed 150px. Dim when None, purple when a spell is prepared. |
+| Bar | Active text | Color |
+|---|---|---|
+| 1 — Stance | Standing / Kneeling / Sitting / Prone | Green / gold / blue / orange |
+| 2 — Invisible | Invisible | Purple |
+| 3 — Webbed | Webbed | Blue |
+| 4 — Grouped | Grouped | Gold |
+| 5 — Hidden | Hidden | Green |
+| 6 — Combat | Bleeding → Stunned → Dead (priority order) | Red / orange / magenta |
 
-**Design constraints:**
-- All widget widths are fixed. Text never shifts neighboring widgets.
-- The bar is `overflow: hidden` — content that doesn't fit is clipped, not wrapped.
-- At narrow window widths, right-side widgets clip before left-side widgets.
+Bar 1 (Stance) is always active. Bars 2–6 are empty when the condition is not present.
+
+**Floating Compass**
+
+The compass is a **semi-transparent overlay** anchored to the **bottom-right corner of the game text area**, floating above the scrolling text. It shows the standard 3×3 directional grid (NW/N/NE/W/·/E/SW/S/SE) plus a special column (up/dn/out). Active exits light up with a colored glow; inactive cells are near-invisible. The compass is non-interactive (`pointer-events: none`) and consumes no layout space.
+
+**RT / CT**
+
+RT and CT are embedded in the command bar — see [Section 5.4](#54-rt-and-cast-time-bars-in-the-command-bar).
 
 **Accessibility:**
-- Status indicators are never conveyed by color alone — the text label is always visible (dim when inactive, bright when active).
-- RT/CT boxes always show `—` when idle so the fixed layout never shifts.
-- Epilepsy Safe Mode disables the RT pulse animation. The bar still drains; it just doesn't flash.
+- Status conditions are never conveyed by color alone — the text label is always present (transparent when inactive, colored when active).
+- All 6 bars maintain consistent size regardless of state — no layout shifts.
+- Epilepsy Safe Mode disables the pulse animation on RT/CT strips.
 
 ### 5.8 Experience Panel
 
@@ -900,7 +902,7 @@ Priority order reflects data availability from the protocol and player-facing va
 ### Future / Unscheduled
 - [ ] Multi-monitor floating panel support
 - [ ] Sound alerts
-- [ ] HUD widget system — individual repositionable elements (compass, hands, RT/CT, spell)
+- [ ] HUD widget system — individual repositionable elements (hands, spell; compass is already a floating overlay; RT/CT are already embedded in the command bar)
 
 ### AI Features — Backlogged
 All AI features require the highlight system and session capture to exist first.

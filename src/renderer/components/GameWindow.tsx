@@ -4,6 +4,7 @@ import { renderSegment } from '../utils/renderSegment'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
 import IconBar from './IconBar'
+import FloatingCompass from './FloatingCompass'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
@@ -12,6 +13,7 @@ import ContextMenu from './ContextMenu'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
+import { useTimers } from '../hooks/useTimers'
 import '../styles/game.css'
 import '../styles/panels.css'
 
@@ -129,6 +131,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
     concentration: { current: 0, max: 0 }, stamina: { current: 0, max: 0 }, spirit: { current: 0, max: 0 },
   })
+  const [vitalLabels, setVitalLabels] = useState<Record<string, string>>({})
   const [rtExpires, setRtExpires]   = useState(0)
   const [ctExpires, setCtExpires]   = useState(0)
   const [indicators, setIndicators] = useState<Record<string, boolean>>({})
@@ -159,6 +162,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
+
+  const { rt, ct, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
 
   // Drag refs
   const bottomRef        = useRef<HTMLDivElement>(null)
@@ -232,6 +237,7 @@ export default function GameWindow({ onDisconnect }: Props) {
       const roomUpdates: Partial<RoomState> = {}
       const expUpdates: Record<string, string> = {}
       const vitalUpdates: Record<string, { current: number; max: number }> = {}
+      const labelUpdates: Record<string, string> = {}
       const indicatorUpdates: Record<string, boolean> = {}
       const newDiscovered: string[] = []
       let newRt: number | null = null
@@ -268,6 +274,7 @@ export default function GameWindow({ onDisconnect }: Props) {
           }
           case 'vital-update':
             vitalUpdates[evt.id] = { current: evt.current, max: evt.max }
+            if (evt.label) labelUpdates[evt.id] = evt.label
             break
           case 'roundtime':  newRt = evt.expires; break
           case 'casttime':   newCt = evt.expires; break
@@ -327,6 +334,7 @@ export default function GameWindow({ onDisconnect }: Props) {
       if (Object.keys(roomUpdates).length > 0)    setRoomState(prev => ({ ...prev, ...roomUpdates }))
       if (Object.keys(expUpdates).length > 0)     setExpSkills(prev => ({ ...prev, ...expUpdates }))
       if (Object.keys(vitalUpdates).length > 0)   setVitals(prev => ({ ...prev, ...vitalUpdates }))
+      if (Object.keys(labelUpdates).length > 0)   setVitalLabels(prev => ({ ...prev, ...labelUpdates }))
       if (Object.keys(indicatorUpdates).length > 0) setIndicators(prev => ({ ...prev, ...indicatorUpdates }))
       if (newRt !== null)     setRtExpires(newRt)
       if (newCt !== null)     setCtExpires(newCt)
@@ -542,31 +550,36 @@ export default function GameWindow({ onDisconnect }: Props) {
         </button>
       </div>
 
-      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} />}
+      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
       {settings.iconBarPosition === 'top' && (
-        <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
-                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+        <IconBar stance={stance} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} />
       )}
 
       <div className="game-main">
         <div className="text-window-wrap">
-          <div className="text-window" ref={scrollRef} onScroll={handleScroll}
-            onClick={() => inputRef.current?.focus()}
-            onContextMenu={e => { e.preventDefault(); setMainCtxMenu({ x: e.clientX, y: e.clientY }) }}>
-            {lines.map(line => (
-              <div key={line.id} className="text-line">
-                {line.segments.map((seg, i) => renderSegment(seg, i))}
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-          {newLineCount > 0 && (
-            <div className="scroll-anchor-badge" onClick={scrollToBottom}>
-              ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
+          <div className="text-area">
+            <div className="text-window" ref={scrollRef} onScroll={handleScroll}
+              onClick={() => inputRef.current?.focus()}
+              onContextMenu={e => { e.preventDefault(); setMainCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+              {lines.map(line => (
+                <div key={line.id} className="text-line">
+                  {line.segments.map((seg, i) => renderSegment(seg, i))}
+                </div>
+              ))}
+              <div ref={bottomRef} />
             </div>
-          )}
-          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} />}
+            {newLineCount > 0 && (
+              <div className="scroll-anchor-badge" onClick={scrollToBottom}>
+                ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
+              </div>
+            )}
+            <FloatingCompass exits={exits} />
+          </div>
+          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
           <form className="command-bar" onSubmit={handleCommand}>
+            {rt > 0 && <div className="cmd-timer cmd-timer--rt" style={{ width: `${rtPct}%` }} />}
+            {ct > 0 && <div className="cmd-timer cmd-timer--ct" style={{ width: `${ctPct}%` }} />}
             <span className="prompt-marker">&gt;</span>
             <input ref={inputRef} type="text" value={command}
               onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
@@ -595,8 +608,8 @@ export default function GameWindow({ onDisconnect }: Props) {
       </div>
 
       {settings.iconBarPosition === 'bottom' && (
-        <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
-                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+        <IconBar stance={stance} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} />
       )}
 
       {mainCtxMenu && (

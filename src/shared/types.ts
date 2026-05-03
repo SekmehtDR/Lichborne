@@ -86,6 +86,7 @@ export interface VitalUpdateEvent {
   id: 'health' | 'mana' | 'stamina' | 'spirit' | 'concentration'
   current: number
   max: number
+  label?: string  // custom name from server when customText='t' (e.g. "Inner Fire" for Barbarians)
 }
 
 export interface RoundtimeEvent {
