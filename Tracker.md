@@ -294,9 +294,21 @@ The text attribute is **not** just the current value — it contains `"current m
 ## Phase 5 — Quality Pass & Console Polish
 *In progress. See DESIGN.md Phase 5 for spec.*
 
+### Phase 5A — Theme & Preset Audit ✅ (in progress)
+
 - [x] Panel resize clipping — mid zone drag capped to column offsetHeight; top zone no longer pushed off screen
-- [ ] Text presets verified in all panels (speech, whisper, thought, bold, etc.)
-- [ ] Bold text rendering correct across all themes
+- [x] Bold text rendering — renderSegment always sets data-preset on bold elements; `[data-preset="bold"]` CSS now matches
+- [x] global.css imports panels.css — preset rules apply across all panels, not just GameWindow
+- [x] `<style>` tag redesigned as push/pop marker (was wrongly capture context) — roomname/roomdesc now render correctly in main stream
+- [x] Preset id normalized to lowercase on ingest — fixes camelCase `roomName`/`roomDesc` not matching CSS selectors
+- [x] `<color fg bg>` inline color tag support — parser stack, TextSegment fg/bg fields, renderSegment inline styles
+- [x] `<compass>/<dir>` structured exit parsing — replaces brittle text regex; value="s" format confirmed from live data
+- [x] Silent tag cleanup — skin, image, radio, link, switchquickbar, endsetup, resource, exposestream all silenced
+- [x] STREAM_MAP additions — room, moonWindow, LichScripts; no more unknown events for known streams
+- [x] Stream discovery moved to typed stream-push event — discovery no longer breaks when stream is added to STREAM_MAP
+- [x] Parser reset() method — clears all carry-over state on reconnect
+- [x] Debug RAW_PROMPT logging removed — was firing an unknown event on every server transaction
+- [x] roomname (white) and roomdesc confirmed working in-game via live XML capture
 - [ ] Theme preset coverage audit — all 17 themes define every preset CSS var
 - [ ] Copy/paste in text window
 - [ ] Right-click context menu (Copy, Select All)
@@ -373,3 +385,9 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Icon bar position is independent from status bar position — each has its own setting and conditional render |
 | 2026-05-02 | Login advanced settings grouped into AdvancedSettings interface and persisted to klient67.advancedSettings; credentials intentionally excluded |
 | 2026-05-02 | Reset Panels moved from toolbar button into Panel Manager modal header — toolbar now has Debug, Panels, Theme, Settings, Disconnect only |
+| 2026-05-02 | `<style>` tags confirmed as self-closing push/pop markers from live protocol data — DR sends `<style id='roomName'/>` not `<style id='roomName'>text</style>`; parser redesigned accordingly |
+| 2026-05-02 | Preset id normalized to lowercase on ingest — server sends `roomName`/`roomDesc` (camelCase), CSS rules use `roomname`/`roomdesc` (lowercase) |
+| 2026-05-02 | Compass XML (`<compass><dir value="n"/>`) adopted as authoritative exit source — `value` uses same abbreviations as our internal format; component text exit parsing dropped |
+| 2026-05-02 | Stream discovery moved from unknown-event hack (`pushStream:id`) to typed `stream-push` GameEvent — adding a stream to STREAM_MAP no longer silently breaks discovery |
+| 2026-05-02 | `<color fg bg>` inline tag support added — parser maintains color stack, segments carry fg/bg hex, renderSegment applies inline style |
+| 2026-05-02 | Large batch of Genie UI chrome tags silenced (skin, image, radio, link, switchquickbar, endsetup, resource, exposestream) — confirmed from live XML capture |
