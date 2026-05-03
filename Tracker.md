@@ -12,7 +12,8 @@
 **Phase 3 — Complete ✅**
 **Phase 4 — Complete ✅**
 **Phase 5 — In progress (Quality Pass & Console Polish)**
-**Phase 6 — Not started (Highlights, Triggers & Macros)**
+**Phase 6 — Not started (Contacts System)**
+**Phase 7 — Not started (Highlights, Triggers & Macros)**
 
 ---
 
@@ -333,38 +334,64 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ---
 
-## Phase 6 — Highlights, Triggers & Macros
+## Phase 6 — Contacts System
+*Not started. Full spec in DESIGN.md Section 15.*
+
+### Phase 6A — Name Detection & Candidate Queue
+- [ ] Parser detects player names from arrivals, tells, room players, group events
+- [ ] Candidate queue — collects detected names with source context
+- [ ] Dismissible add-prompt banner — appears in main text area, shows candidate name + template picker
+- [ ] "Ignore" session-only list — dismissed names don't re-prompt until next session
+
+### Phase 6B — Contacts Roster
+- [ ] Contacts data model + localStorage persistence (`klient67.contacts`)
+- [ ] Contacts roster panel — name, color swatch, last-seen, notes column
+- [ ] Add / edit / delete contacts
+- [ ] Color template picker per contact (Friends, Enemies, Guild, Self, Merchant, custom)
+- [ ] Notes field — freeform text per contact
+
+### Phase 6C — In-Game Integration
+- [ ] Name popover — click a player name in game text → popover shows color, last-seen, notes
+- [ ] Clickable names wired in main text and all stream panels
+- [ ] Contact highlight applied to matching names in game output
+
+---
+
+## Phase 7 — Highlights, Triggers & Macros
 *Not started. Full spec in DESIGN.md Section 14.*
 
-### Phase 6A — Highlights
-- [ ] Rule data model + localStorage persistence (`klient67.highlights`)
-- [ ] Pattern engine — text / begins-with / regex; inline and whole-line scope
-- [ ] Overlap resolution — shortest inline match wins; drag-order for whole-line
-- [ ] FG + BG + bold styling; sound per rule
-- [ ] Panel scope — all panels or specific subset
-- [ ] Global + per-character rule scoping
-- [ ] Group system — named groups, drag-to-reorder, bulk toggle
-- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, live preview
-- [ ] Applied in renderSegment() alongside existing text presets
+### Phase 7A — Highlights
+- [ ] Rule data model + localStorage persistence (`klient67.highlights`, `klient67.highlight-groups`) — `highlights.ts`
+- [ ] Pattern engine — text / begins-with / regex; inline and whole-line scope — `highlightEngine.ts`
+- [ ] Overlap resolution — shortest inline match wins; first whole-line rule in order wins
+- [ ] FG + BG + bold styling per rule
+- [ ] Global + per-character rule scoping field (character field on rule)
+- [ ] Group system — Danger, Alerts, Info, Social; named groups with color swatch, bulk toggle, filter rule list
+- [ ] HighlightsContext — compiled rules passed to all panels via React context
+- [ ] Applied in main text render loop (GameWindow) and all stream panels (StreamPanel)
+- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, edit form, live preview — `HighlightsPanel.tsx`
+- [ ] Highlight Wizard — paste text → keyword analysis → match suggestions → group recommendation (Section 14.0)
 - [ ] Rule import / export (JSON)
+- [ ] Panel scope selector — per-rule panel filtering
 
-### Phase 6B — Triggers
-- [ ] Trigger data model — extends Rule with action + cooldown fields
-- [ ] Action types: command, sound, open-panel, flash-panel, eval
+### Phase 7B — Triggers
+- [ ] Trigger data model — extends Rule with action + destination + cooldown fields
+- [ ] Action types: command, sound, open-panel, flash-panel, log, eval
+- [ ] Trigger destination field — stream name, default "main"; log action routes matched line to named stream; auto-discovers into panel system (Section 14.10a)
 - [ ] Eval trigger engine — safe expression evaluator against live game state
 - [ ] Eval variables: health/mana/stamina/concentration/spirit/rt/ct/stance/bleeding/stunned/dead/hidden/invisible/room/spell
 - [ ] Cooldown enforcement — per-trigger minimum fire interval
 - [ ] Trigger editor UI — tab alongside Highlights in same modal
 - [ ] Trigger persistence (`klient67.triggers`)
 
-### Phase 6C — Macros & Aliases (stretch)
+### Phase 7C — Macros & Aliases (stretch)
 - [ ] Command aliases — short input expands to full command
 - [ ] Macro system — key bindings to commands or sequences
 - [ ] Macro editor UI
 
 ---
 
-## Phase 7 — Packaging & Distribution
+## Phase 8 — Packaging & Distribution
 *Not started.*
 
 - [ ] Packaged installer (electron-builder)

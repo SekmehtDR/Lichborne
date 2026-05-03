@@ -28,6 +28,7 @@
 12. [Layout Designer](#12-layout-designer)
 13. [Multi-Character Support](#13-multi-character-support)
 14. [Highlights & Triggers](#14-highlights--triggers)
+15. [Smart Names / Contacts](#15-smart-names--contacts)
 
 ---
 
@@ -890,11 +891,22 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Stream fallback system — streams without an open panel fall back to `main`; `combat`/`atmospherics`/`group` default to main fallback
 - [x] Default panel layout updated — Top-Right: Room + Conversations; Center-Right: Thoughts + Arrivals + Deaths + Active Spells; Bottom-Right: Experience
 
-### Phase 6 — Highlights, Triggers & Macros
+### Phase 6 — Contacts System
+> Full spec: Section 15
+
+- [ ] Parser-based name detection — arrivals, tells, room players, group events
+- [ ] Candidate queue + dismissible add-prompt banner with template picker
+- [ ] Contacts roster — name, color swatch, last-seen, notes; localStorage persistence
+- [ ] Color templates — Friends, Enemies, Guild, Self, Merchant, custom
+- [ ] In-game name popover — click a name to see contact notes and last-seen
+- [ ] Contact highlights applied to matching names in main text and all stream panels
+
+### Phase 7 — Highlights, Triggers & Macros
 > Full spec: Section 14
 
 - [ ] Highlight rules engine — text / begins-with / regex; inline and whole-line scope; FG + BG + bold; overlap resolution (Section 14.2–14.5)
-- [ ] Highlight groups — named toggleable sets, drag-to-reorder (Section 14.6)
+- [ ] Highlight groups — Danger, Alerts, Info, Social; named toggleable sets (Section 14.6)
+- [ ] Highlight Wizard — paste text → keyword analysis → match suggestions → group recommendation (Section 14.0)
 - [ ] Global + per-character rule scoping (Section 14.8)
 - [ ] Highlight editor UI — toolbar button, group sidebar, rule list, live preview (Section 14.9)
 - [ ] Trigger system — same engine, adds action + cooldown fields (Section 14.10)
@@ -903,7 +915,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Command aliases — short names that expand to full commands
 - [ ] Macro system — key bindings to commands or sequences
 
-### Phase 7 — Packaging & Distribution
+### Phase 8 — Packaging & Distribution
 - [ ] Packaged installer (electron-builder)
 - [ ] Auto-update
 
@@ -1168,13 +1180,103 @@ Each character profile independently remembers:
 - Panel layout (positions, sizes, active tabs)
 - Guild theme (auto-applied on switch)
 - Command history
-- Highlight and trigger rules (Phase 6)
+- Highlight and trigger rules (Phase 7)
 
 ---
 
 ## 14. Highlights & Triggers
 
-> Status: Phase 6 — scheduled. This is the full design spec.
+> Status: Phase 7 — scheduled after Phase 6 (Contacts). This is the full design spec.
+
+### 14.0 Highlight Wizard
+
+> Status: Phase 7 — part of the Highlights build.
+
+The standard rule editor is for power users. The wizard is for everyone else.
+
+#### Flow
+
+**Entry points:**
+- Click **+ New rule ▾** → "Create from text…" option in the picker
+- Right-click any line in the game stream → "Highlight this" *(Phase 2)*
+
+**Step 1 — Paste**
+
+```
+┌─ New Highlight ──────────────────────────────────────────┐
+│  Paste a line from the game you want to highlight:       │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ You are bleeding profusely from a wound on your... │  │
+│  └────────────────────────────────────────────────────┘  │
+│                                          [Analyze ▶]     │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Step 2 — Pick what to match** (auto-generated from the text)
+
+```
+┌─ What should trigger this highlight? ───────────────────────┐
+│                                                              │
+│  ● Whole line when it contains "bleeding"                    │
+│    ████ You are bleeding profusely from a wound...           │
+│                                                              │
+│  ○ Just the word "bleeding" wherever it appears              │
+│    You are [bleeding] profusely from a wound...              │
+│                                                              │
+│  ○ Any line starting with "You are bleeding"                 │
+│    ████ You are bleeding profusely...                        │
+│                                                              │
+│                                   [Back]  [Next ▶]          │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Step 3 — Pick style** (group recommendation shown first)
+
+```
+┌─ Choose a style ────────────────────────────────────────────┐
+│  Suggested:  [● Danger]                                      │
+│                                                              │
+│  Or choose:  [● Alerts]  [● Info]  [● Social]                │
+│                                                              │
+│  Custom color: □ [■]                                         │
+│                                                              │
+│                                   [Back]  [Create ▶]        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Rule is created and immediately visible in the list.
+
+#### Analyzer Logic
+
+Given the pasted line, the analyzer:
+
+1. Strips leading/trailing whitespace
+2. Extracts **candidate keywords** — filters out stop words (you, are, is, a, an, the, from, on, your, of, to, in, with, by, for, at)
+3. Scores remaining words by length and rarity — longer, less common words score higher
+4. Takes the top candidate as the **key phrase**
+5. Generates three options:
+   - **Whole line contains** [key phrase] — scope=whole-line, matchType=text
+   - **Word inline** [key phrase] — scope=inline, matchType=text
+   - **Line starts with** [first 3-4 words] — scope=whole-line, matchType=begins-with
+
+#### Group Recommendation
+
+The analyzer checks the pasted text against known signal words:
+
+| Signal words present | Recommended group |
+|---------------------|-------------------|
+| bleeding, stunned, dead, unconscious, dying | Danger |
+| Roundtime, mana, rested, fades, expires | Alerts |
+| tells you, whispers, [Thought], arrived | Social |
+| gain, ranks, mindstate, improved, grown | Info |
+| (none matched) | user chooses |
+
+#### Implementation Notes
+
+- Wizard is a separate modal/overlay, not embedded in the rule list
+- Right-click entry point requires attaching a context menu to rendered text segments — each segment already has data; needs an `onContextMenu` handler that extracts the full line text
+- Wizard creates a standard `HighlightRule` — no special data model
+- "Analyze" button is optional; wizard can analyze on paste automatically (debounced 300ms)
 
 ### 14.1 Concept
 
@@ -1211,7 +1313,7 @@ Rule {
 }
 ```
 
-Triggers extend Rule with one additional field:
+Triggers extend Rule with additional fields:
 
 ```
 Trigger extends Rule {
@@ -1220,10 +1322,12 @@ Trigger extends Rule {
             | sound               play a sound file
             | open-panel          surface a named panel
             | flash-panel         draw attention to a panel
+            | log                 route matched line to a named stream
             | eval                evaluate a game-state condition
     payload:  string              "pray" | "sounds/alert.wav" | "thoughts" | "health < 30"
   }
-  cooldown: seconds | null        minimum gap between firings; prevents spam
+  destination: string             stream to route matched line to; default "main" (see §14.10a)
+  cooldown:    seconds | null     minimum gap between firings; prevents spam
 }
 ```
 
@@ -1335,9 +1439,38 @@ Left sidebar shows all groups with toggle switches. Selecting a group filters th
 | `sound` | `sounds/alert.wav` | Plays a local sound file |
 | `open-panel` | `thoughts` | Surfaces the named panel if not already visible |
 | `flash-panel` | `main` | Briefly highlights the panel tab to draw attention |
+| `log` | `my-log` | Routes matched line to a named stream (see §14.10a) |
 | `eval` | `health < 30` | Fires only when the game-state expression is true |
 
 **Cooldown** — minimum seconds between firings of the same trigger. Prevents a bleed message that repeats every second from spamming `pray` 50 times. Set to `null` for one-shot triggers (e.g. "open panel when combat starts").
+
+### 14.10a Trigger Log Destination
+
+The `log` action routes the matched line to a named stream instead of (or in addition to) the main text window. This mirrors how Genie routes trigger output to named windows.
+
+**How it works:**
+
+- Each trigger has a `destination` field: default is `main`, or any stream name the player types (e.g. `combat-log`, `healer-log`, `my-alerts`)
+- When a trigger fires, the matched line is copied to the destination stream
+- The destination stream auto-discovers into the panel system exactly like Lich streams — it appears in the Panel Manager "Available Streams" list and can be added as a panel tab
+- Players can create a dedicated panel for `combat-log` to see only combat-related trigger hits without scrolling through main text
+
+**Example use cases:**
+
+| Trigger pattern | Destination | Effect |
+|---|---|---|
+| `You swing .+ at` | `combat-log` | All attack messages routed to a dedicated Combat Log panel |
+| `You are bleeding` | `alerts` | Bleeding messages go to an Alerts panel |
+| `gains? a rank` | `exp-log` | Every rank-up logged to a persistent Exp Log panel |
+| `thinks,` | `thoughts-filtered` | Filtered thoughts stream showing only matched patterns |
+
+The destination field appears in the trigger editor as:
+
+```
+Destination:  [main ▼]   or type a stream name: [____________]
+```
+
+`main` is the default. If the player types a new name, it becomes a discoverable stream automatically on first fire.
 
 ### 14.11 Eval Trigger Variables
 
@@ -1373,3 +1506,95 @@ Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intention
 - Highlights applied in `renderSegment()` — adds inline style or `data-highlight` class alongside existing preset styles
 - Trigger eval expressions parsed with a minimal safe evaluator — no `eval()`, no arbitrary code execution
 - Rules exported/imported as JSON; import merges with existing rules (no full replace)
+
+---
+
+## 15. Smart Names / Contacts
+
+> Status: Phase 6 — next scheduled. Full design spec.
+
+### 15.1 Concept
+
+The Names highlight group works well, but manually entering every player name is tedious and error-prone. The client already sees all game output — it should detect names automatically and offer to add them.
+
+The Names tab evolves from a rule list into a lightweight **contacts system**: a roster of known players, each with a color template, last-seen info, and notes.
+
+### 15.2 Name Detection
+
+The parser watches for name-bearing lines and extracts candidates:
+
+| Source | Example | Extracted name |
+|--------|---------|---------------|
+| Arrivals | `Sekmeht just arrived.` | Sekmeht |
+| Departures | `Sekmeht goes north.` | Sekmeht |
+| Room desc | `Also here: Sekmeht, Muse.` | Sekmeht, Muse |
+| Tells | `Sekmeht tells you, "..."` | Sekmeht |
+| Group | `Sekmeht joins your group.` | Sekmeht |
+| Whispers | `Sekmeht whispers, "..."` | Sekmeht |
+
+Detected names are held in a **candidate queue** — not added to the highlight list automatically.
+
+### 15.3 Add Prompt
+
+When a new name is detected, a subtle dismissible banner appears at the bottom of the main text area:
+
+```
+Sekmeht detected — add to Names?  [Friends ▾]  [Add]  [Ignore]
+```
+
+- The dropdown shows color templates (Friends, Enemies, Guild, Self, Merchant…)
+- Selecting a template pre-fills the color
+- **Add** creates the highlight rule immediately
+- **Ignore** suppresses that name for the session (won't prompt again until restart)
+- Banner auto-dismisses after 8 seconds if not acted on
+
+Multiple detections queue — only one banner shown at a time.
+
+### 15.4 Contacts View
+
+The Names tab gains a richer list view:
+
+| Column | Content |
+|--------|---------|
+| Name | Pattern text in its highlight color |
+| Template | Color template badge (Friends, Enemies, etc.) |
+| Last seen | Relative timestamp of last detection |
+| Notes | Optional free-text field (double-click to edit inline) |
+
+### 15.5 Color Templates
+
+Templates are named color presets stored in `klient67.highlight-templates`. Default set:
+
+- **Friends** — `#a0d080` (soft green)
+- **Enemies** — `#e05050` (red)
+- **Guild** — `#60b8e0` (blue)
+- **Self** — `#e8d070` (gold)
+- **Merchant** — `#c080e0` (purple)
+
+Templates are managed in the Names form: click any pill to apply, type a name + click Save to add a new one, hover + ✕ to delete.
+
+### 15.5b Name Popover (In-Text Interaction)
+
+When a highlighted name appears in game text, clicking it opens a small popover anchored to that word:
+
+```
+┌─ Sekmeht ──────────────────┐
+│ Template: Friends          │
+│ Last seen: 2 min ago       │
+│ Note: Healer, usually AFK  │
+│                            │
+│ [Edit note]  [Remove]      │
+└────────────────────────────┘
+```
+
+- **Edit note** opens an inline textarea in the popover — type and press Enter to save
+- **Remove** deletes the contact (reverts name to unhighlighted)
+- Popover closes on outside click or Escape
+- This is the primary way players write notes — no need to open the Highlights panel
+
+### 15.6 Implementation Notes
+
+- Name extraction uses regex patterns per source type; false positives are low-risk (user can delete)
+- Candidate queue capped at 20 — oldest dropped if not acted on
+- `HighlightTemplate` stored separately from rules so templates survive rule imports/resets
+- "Ignore" list is session-only (memory, not localStorage) — names re-prompt on next session
