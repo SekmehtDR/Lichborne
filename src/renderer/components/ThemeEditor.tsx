@@ -280,31 +280,26 @@ function PresetRow({ field, vars, onChange }: { field: PresetField; vars: ThemeV
     <div className="te-row">
       <span className="te-row-label">{field.label}</span>
       <div className="te-row-inputs te-row-inputs--preset">
-        <input type="color" value={fg} onChange={e => onChange(field.fgKey, e.target.value)} className="te-color-swatch" title="Text color" />
-        <input
-          type="text" value={fg} maxLength={7}
+        <input type="color" value={fg}
+          onChange={e => onChange(field.fgKey, e.target.value)}
+          className="te-color-swatch" title="Text color" />
+        <input type="text" value={fg} maxLength={7}
           onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange(field.fgKey, e.target.value) }}
-          className="te-hex-text"
-        />
+          className="te-hex-text" />
         <span className="te-preset-divider">·</span>
-        <input
-          type="color" value={bgColor}
+        <input type="color" value={bgColor}
           onChange={e => onChange(field.bgKey, e.target.value)}
-          className={`te-color-swatch te-color-swatch--bg${!hasHighlight ? ' te-color-swatch--none' : ''}`}
-          title="Highlight color (background)"
-        />
-        {hasHighlight ? (
-          <>
-            <input
-              type="text" value={bg} maxLength={7}
-              onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange(field.bgKey, e.target.value) }}
-              className="te-hex-text"
-            />
-            <button className="te-preset-clear" onClick={() => onChange(field.bgKey, 'transparent')} title="Remove highlight">✕</button>
-          </>
-        ) : (
-          <span className="te-preset-none">none</span>
-        )}
+          className={`te-color-swatch${!hasHighlight ? ' te-color-swatch--none' : ''}`}
+          title="Highlight color" />
+        <input type="text" value={hasHighlight ? bg : ''} maxLength={7}
+          placeholder="none"
+          onChange={e => {
+            const raw = e.target.value
+            if (raw === '') { onChange(field.bgKey, 'transparent'); return }
+            const v = raw.startsWith('#') ? raw : '#' + raw
+            if (/^#[0-9a-fA-F]{0,6}$/.test(v)) onChange(field.bgKey, v)
+          }}
+          className="te-hex-text" />
       </div>
     </div>
   )

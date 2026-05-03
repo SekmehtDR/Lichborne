@@ -568,14 +568,16 @@ Opened via **"Customize..."** on any theme card. Shows the full set of editable 
 | Concentration bar | Vital bar fill color |
 | Fatigue bar | Vital bar fill color |
 | Spirit bar | Vital bar fill color |
-| Speech | In-room speech color + italic toggle |
-| Whisper | Whispered speech color + italic toggle |
-| Thought | Thought channel color |
-| Room name | Room title color + bold toggle |
-| Room desc | Room description prose color |
-| Bold | Emphasis text color |
-| Expiry | Expiring effect warning color |
-| Store | Commerce text color |
+| Speech | Text color + optional highlight (background) color |
+| Whisper | Text color + optional highlight |
+| Thought | Text color + optional highlight |
+| Room name | Text color + optional highlight |
+| Room desc | Text color + optional highlight |
+| Bold | Text color + optional highlight |
+| Expiry | Text color + optional highlight |
+| Store | Text color + optional highlight |
+
+Each preset row shows two symmetric pairs: **[color swatch] [hex input]** for the text color and **[color swatch] [hex input]** for the highlight. The highlight swatch is dimmed and the hex box shows `none` when no highlight is set. Click the swatch to pick a color via the native picker, or type a hex code directly. Clearing the hex field removes the highlight.
 | Font family | Per-theme font override (optional) |
 | Font size | Per-theme size override (optional) |
 

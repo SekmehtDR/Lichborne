@@ -309,7 +309,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Parser reset() method — clears all carry-over state on reconnect
 - [x] Debug RAW_PROMPT logging removed — was firing an unknown event on every server transaction
 - [x] roomname (white) and roomdesc confirmed working in-game via live XML capture
-- [x] Preset highlight (background) color — `--preset-*-bg` vars added to all themes (transparent default); theme editor Game Text tab shows combined fg+bg row per preset; panels.css applies background-color
+- [x] Preset highlight (background) color — `--preset-*-bg` vars added to all themes (transparent default); theme editor Game Text tab shows symmetric fg+bg rows per preset; panels.css applies background-color; bg hex input always visible, clears to transparent on empty
 - [ ] Theme preset coverage audit — all 17 themes define every preset CSS var
 - [ ] Copy/paste in text window
 - [ ] Right-click context menu (Copy, Select All)
@@ -394,3 +394,4 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Large batch of Genie UI chrome tags silenced (skin, image, radio, link, switchquickbar, endsetup, resource, exposestream) — confirmed from live XML capture |
 | 2026-05-02 | Preset highlight (background) color added — all themes inherit transparent defaults from darkBase; theme editor Game Text tab shows combined fg+bg row; panels.css applies background-color per preset |
 | 2026-05-02 | Character profiles feature added to DESIGN.md Section 8 — planned, requires dedicated design session before implementation |
+| 2026-05-02 | Preset highlight UX finalized — symmetric swatch+hex pairs for fg and bg; bg always shows `none` placeholder; auto-prepends `#` on type; clearing hex reverts to transparent; no ✕ button needed |

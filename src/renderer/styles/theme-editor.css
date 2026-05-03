@@ -197,6 +197,8 @@
 
 .te-hex-text:focus { border-color: var(--border-subtle); color: var(--text-secondary); }
 
+.te-hex-text::placeholder { color: var(--text-faint); font-family: inherit; font-size: 0.72rem; }
+
 .te-arrow {
   color: var(--text-faint);
   font-size: 0.8rem;
@@ -249,25 +251,3 @@
   opacity: 0.3;
 }
 
-.te-preset-none {
-  font-size: 0.68rem;
-  color: var(--text-faint);
-  width: 30px;
-  text-align: left;
-  flex-shrink: 0;
-}
-
-.te-preset-clear {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 0.72rem;
-  padding: 0 2px;
-  line-height: 1;
-  flex-shrink: 0;
-  width: 30px;
-  text-align: left;
-}
-
-.te-preset-clear:hover { color: var(--color-danger); }
