@@ -894,12 +894,18 @@ Priority order reflects data availability from the protocol and player-facing va
 ### Phase 6 — Contacts System
 > Full spec: Section 15
 
-- [ ] Parser-based name detection — arrivals, tells, room players, group events
-- [ ] Candidate queue + dismissible add-prompt banner with template picker
-- [ ] Contacts roster — name, color swatch, last-seen, notes; localStorage persistence
-- [ ] Color templates — Friends, Enemies, Guild, Self, Merchant, custom
-- [ ] In-game name popover — click a name to see contact notes and last-seen
-- [ ] Contact highlights applied to matching names in main text and all stream panels
+- [x] Contact + ContactTemplate data model; localStorage persistence (`klient67.contacts`, `klient67.contact-templates`) (6A)
+- [x] Default templates: Friends (#a0d080) and Enemies (#e05050); full CRUD for templates including bold, tag text, tag color, tag BG color (6A)
+- [x] Contacts panel UI — sidebar roster + detail form (name, template dropdown, guild, circle, notes, last-seen read-only, delete with confirmation) (6A)
+- [x] Templates tab — inline expand-to-edit rows with all color fields; colorPickerValue helper prevents empty color inputs (6A)
+- [x] ContactsContext — provides contacts, templates, compiled nameRegex, onContactClick to all rendering components (6B)
+- [x] renderSegmentWithContacts — splits TextSegments around name matches at render time; tag injected as React span, underlying data never modified (6B)
+- [x] Name highlighting applied in main text and all stream panels (6B)
+- [x] Clickable contact names in all panels — .contact-name--clickable, onContactClick callback via context (6C)
+- [x] ContactPopover — portal-rendered, viewport-clamped, shows tag+name, guild·circle, last seen (always visible, "never" if null), notes, Edit button (6C)
+- [x] Last-seen tracking — watches roomState.players (Also Here component) only; debounced 2s localStorage write (6C)
+- [x] Compass "down" → "dn" normalization in StormFrontParser (bug fix — server sends `<dir value="down"/>` but compass checks for "dn") (6C)
+- [ ] Auto-detection from arrivals/tells/room desc — candidate queue + dismissible banner (6D stretch)
 
 ### Phase 7 — Highlights, Triggers & Macros
 > Full spec: Section 14
@@ -1511,90 +1517,180 @@ Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intention
 
 ## 15. Smart Names / Contacts
 
-> Status: Phase 6 — next scheduled. Full design spec.
+> Status: Phase 6 — complete (6A–6C). 6D auto-detection is stretch/unscheduled.
 
 ### 15.1 Concept
 
-The Names highlight group works well, but manually entering every player name is tedious and error-prone. The client already sees all game output — it should detect names automatically and offer to add them.
+A lightweight contacts system that turns player names into living dossiers. When you add someone as a contact, their name lights up in game text with a color and optional tag prefix. Click any occurrence of their name to see their card — guild, circle, last seen, notes.
 
-The Names tab evolves from a rule list into a lightweight **contacts system**: a roster of known players, each with a color template, last-seen info, and notes.
+Built in four milestones:
+- **6A** — Data model, templates, Contacts panel UI
+- **6B** — Name highlighting + inline tag injection in game text
+- **6C** — Clickable popover + last-seen auto-tracking
+- **6D (stretch)** — Auto-detection from arrivals/tells/room desc
 
-### 15.2 Name Detection
+### 15.2 Data Model
 
-The parser watches for name-bearing lines and extracts candidates:
+```typescript
+ContactTemplate {
+  id:        string    // uuid
+  name:      string    // "Enemy", "Friends", "Guild"…
+  textColor: string    // hex — the name's color in game text
+  bgColor:   string    // hex | 'transparent'
+  tagText:   string    // optional prefix e.g. "[Enemy]" — empty string = no tag
+  tagColor:  string    // hex — defaults to textColor
+}
 
-| Source | Example | Extracted name |
-|--------|---------|---------------|
-| Arrivals | `Sekmeht just arrived.` | Sekmeht |
-| Departures | `Sekmeht goes north.` | Sekmeht |
-| Room desc | `Also here: Sekmeht, Muse.` | Sekmeht, Muse |
-| Tells | `Sekmeht tells you, "..."` | Sekmeht |
-| Group | `Sekmeht joins your group.` | Sekmeht |
-| Whispers | `Sekmeht whispers, "..."` | Sekmeht |
+Contact {
+  id:        string    // uuid
+  name:      string    // exact player name, case-insensitive match
+  templateId: string | null
+  guild:     string    // guild name or "Unknown"
+  circle:    string    // freeform e.g. "~50", "100", ""
+  notes:     string    // freeform
+  lastSeen:  number | null   // unix timestamp
+  lastRoom:  string | null   // room name at last detection
+}
+```
 
-Detected names are held in a **candidate queue** — not added to the highlight list automatically.
+Stored in localStorage:
+- `klient67.contacts` — `Contact[]`
+- `klient67.contact-templates` — `ContactTemplate[]`
 
-### 15.3 Add Prompt
+### 15.3 Contact Templates
 
-When a new name is detected, a subtle dismissible banner appears at the bottom of the main text area:
+Default templates shipped with the client:
+
+| Name | Text Color | Tag | Notes |
+|------|-----------|-----|-------|
+| Friends | `#a0d080` (soft green) | _(none)_ | |
+| Enemies | `#e05050` (red) | `[Enemy]` | |
+| Guild | `#60b8e0` (blue) | _(none)_ | |
+| Self | `#e8d070` (gold) | _(none)_ | For alt characters |
+| Merchant | `#c080e0` (purple) | _(none)_ | |
+
+Players can add, edit, and delete custom templates. Default templates cannot be deleted but can be edited.
+
+### 15.4 Contacts Panel UI
+
+Toolbar button "Contacts" opens a modal with two views: **Contacts** (default) and **Templates**.
 
 ```
-Sekmeht detected — add to Names?  [Friends ▾]  [Add]  [Ignore]
+┌─ Contacts ──────────────────────────────────────────────────┐
+│  [+ New Contact]                      [Contacts] [Templates]│
+├─────────────────┬───────────────────────────────────────────┤
+│ [Enemy] Sekmeht │  Name:     Sekmeht                        │
+│ [Friend] Muse   │  Template: [Enemy ▾]                      │
+│ Arianiss        │  Guild:    [Warrior Mage ▾]               │
+│                 │  Circle:   50                             │
+│                 │  Last seen: 3 days ago                    │
+│                 │  Location:  N. Gate, The Crossing         │
+│                 │                                           │
+│                 │  Notes:                                   │
+│                 │  ┌─────────────────────────────────────┐  │
+│                 │  │ One bad dude. Don't fight alone.    │  │
+│                 │  └─────────────────────────────────────┘  │
+│                 │                        [Save]  [Delete]   │
+└─────────────────┴───────────────────────────────────────────┘
 ```
 
-- The dropdown shows color templates (Friends, Enemies, Guild, Self, Merchant…)
-- Selecting a template pre-fills the color
-- **Add** creates the highlight rule immediately
-- **Ignore** suppresses that name for the session (won't prompt again until restart)
-- Banner auto-dismisses after 8 seconds if not acted on
+- Left sidebar: all contacts, each displayed as `[Tag] Name` in their template text color
+- Clicking a contact loads their form on the right
+- "+ New Contact" creates a blank form; name field auto-focused
+- **Guild dropdown**: all 13 DR guilds + "Unknown"
+- **Circle**: free text input (e.g. "~50", "100+")
+- **Last seen / Location**: read-only, auto-populated (Phase 6C)
+- **Save** persists; **Delete** removes with confirmation
 
-Multiple detections queue — only one banner shown at a time.
-
-### 15.4 Contacts View
-
-The Names tab gains a richer list view:
-
-| Column | Content |
-|--------|---------|
-| Name | Pattern text in its highlight color |
-| Template | Color template badge (Friends, Enemies, etc.) |
-| Last seen | Relative timestamp of last detection |
-| Notes | Optional free-text field (double-click to edit inline) |
-
-### 15.5 Color Templates
-
-Templates are named color presets stored in `klient67.highlight-templates`. Default set:
-
-- **Friends** — `#a0d080` (soft green)
-- **Enemies** — `#e05050` (red)
-- **Guild** — `#60b8e0` (blue)
-- **Self** — `#e8d070` (gold)
-- **Merchant** — `#c080e0` (purple)
-
-Templates are managed in the Names form: click any pill to apply, type a name + click Save to add a new one, hover + ✕ to delete.
-
-### 15.5b Name Popover (In-Text Interaction)
-
-When a highlighted name appears in game text, clicking it opens a small popover anchored to that word:
+### 15.5 Templates View
 
 ```
-┌─ Sekmeht ──────────────────┐
-│ Template: Friends          │
-│ Last seen: 2 min ago       │
-│ Note: Healer, usually AFK  │
+┌─ Contacts ──────────────────────────────────────────────────┐
+│                                       [Contacts] [Templates]│
+├─────────────────────────────────────────────────────────────┤
+│  [+ New Template]                                           │
+│                                                             │
+│  ● Friends      ■ #a0d080   □ transparent   tag: (none)    │
+│  ● Enemies      ■ #e05050   □ transparent   tag: [Enemy]   │
+│  ● Guild        ■ #60b8e0   □ transparent   tag: (none)    │
+│  ● Self         ■ #e8d070   □ transparent   tag: (none)    │
+│  ● Merchant     ■ #c080e0   □ transparent   tag: (none)    │
+│                                                             │
+│  Click a template row to edit inline.                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Each row expands inline to edit: template name, text color picker, bg color picker, tag text field, tag color picker.
+
+### 15.6 In-Game Name Rendering (Phase 6B)
+
+When a contact exists for a name, every occurrence of that name in game text and stream panels is rendered with their template styling. The tag (if set) is injected as a prefix, visually distinct from the game server's text.
+
+```
+[Enemy] Sekmeht just arrived.
+Sekmeht says, "Hello there."
+```
+
+- Tag rendered in `tagColor`, name rendered in `textColor`, background in `bgColor`
+- Name match is **case-insensitive, whole-word** — "Sekmeht" matches but "Sekmehts" does not
+- Tag injection is client-only — the server text is never modified; it only affects rendering
+- Contacts name matching runs before general preset styling and after XML parsing
+
+### 15.7 In-Game Popover (Phase 6C)
+
+Clicking a contact's name anywhere in game text opens a popover anchored to that word:
+
+```
+┌─ [Enemy] Sekmeht ──────────┐
+│ Warrior Mage · Circle ~50  │
+│ Last seen: 3 days ago      │
+│ N. Gate, The Crossing      │
+│ ─────────────────────────  │
+│ One bad dude. Don't fight  │
+│ alone.                     │
 │                            │
-│ [Edit note]  [Remove]      │
+│     [Edit]        [✕]      │
 └────────────────────────────┘
 ```
 
-- **Edit note** opens an inline textarea in the popover — type and press Enter to save
-- **Remove** deletes the contact (reverts name to unhighlighted)
+- **Edit** opens the Contacts panel with this contact pre-selected
+- **✕** closes the popover
 - Popover closes on outside click or Escape
-- This is the primary way players write notes — no need to open the Highlights panel
+- Renders via React portal so it's never clipped by panel overflow
 
-### 15.6 Implementation Notes
+### 15.8 Last-Seen Tracking (Phase 6C)
 
-- Name extraction uses regex patterns per source type; false positives are low-risk (user can delete)
-- Candidate queue capped at 20 — oldest dropped if not acted on
-- `HighlightTemplate` stored separately from rules so templates survive rule imports/resets
-- "Ignore" list is session-only (memory, not localStorage) — names re-prompt on next session
+When a contact's name is detected in any game stream, `lastSeen` and `lastRoom` are updated silently. Sources tracked:
+
+| Source | Updates last seen? |
+|--------|--------------------|
+| Room players component (`room players`) | Yes — room name from current roomState |
+| Arrivals stream | Phase 6D stretch |
+| Thoughts stream | Phase 6D stretch |
+| Tells | Phase 6D stretch |
+
+Implementation tracks `roomState.players` (the "Also here:" line) only — fires when that component updates, not on every line of game text. `lastSeen` and `lastRoom` written to localStorage debounced at 2s.
+
+### 15.9 Auto-Detection (Phase 6D — stretch)
+
+When the client detects a new name it has never seen before, a subtle dismissible banner appears:
+
+```
+Sekmeht detected — add to contacts?  [Friends ▾]  [Add]  [Not now]
+```
+
+- Banner auto-dismisses after 8 seconds
+- "Not now" suppresses that name for the session only
+- Multiple detections queue — one banner at a time
+- Deferred to Phase 6D; Phases 6A–6C are fully useful without it
+
+### 15.10 Implementation Notes
+
+- `ContactsContext` (React context) — provides contact list and template list to all components that need to render names; updated on every save
+- Name matching compiled to a single `RegExp` alternation on context update — not re-compiled per line
+- Whole-word case-insensitive match: `new RegExp('\\b(' + names.join('|') + ')\\b', 'gi')`
+- Tag injection handled in a `renderContactName()` helper called from `renderSegment()` when a match is found
+- Contacts panel rendered via React portal (same pattern as Theme Picker and Settings)
+- All new components use CSS variables from `theme.css` — no hardcoded colors; new CSS file `contacts.css` follows the same structure as existing component stylesheets
+- `lastSeen` / `lastRoom` written to localStorage debounced at 2s — prevents thrashing during busy room updates
+

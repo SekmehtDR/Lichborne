@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
 import { renderSegment } from '../utils/renderSegment'
+import { renderSegmentWithContacts, buildNameRegex } from '../utils/renderWithContacts'
+import { ContactsContext } from '../ContactsContext'
+import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
+import ContactPopover from './ContactPopover'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
 import IconBar from './IconBar'
@@ -10,6 +14,7 @@ import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
 import ContextMenu from './ContextMenu'
+import ContactsPanel from './ContactsPanel'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -158,6 +163,18 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [showSettings,    setShowSettings]      = useState(false)
+  const [showContacts,    setShowContacts]      = useState(false)
+
+  const [contacts,  setContacts]  = useState(() => loadContacts())
+  const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
+  const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
+  const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
+  const [openContactId,  setOpenContactId]  = useState<string | null>(null)
+
+  const contactsRef   = useRef(contacts)
+  const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', exits: [] })
+  const lastSeenTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingContactsRef = useRef<Contact[] | null>(null)
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
@@ -205,6 +222,46 @@ export default function GameWindow({ onDisconnect }: Props) {
     document.addEventListener('mouseup', onMouseUp)
     return () => document.removeEventListener('mouseup', onMouseUp)
   }, [])
+
+  // ── Keep contact refs in sync with state ─────────────────────────────────
+
+  useEffect(() => { contactsRef.current = contacts }, [contacts])
+  useEffect(() => { roomStateRef.current = roomState }, [roomState])
+
+  // ── Last-seen tracking — fires when room players list ("Also here:") updates
+
+  useEffect(() => {
+    const playersText = roomState.players
+    if (!playersText) return
+    const current = contactsRef.current
+    if (current.length === 0) return
+
+    const now  = Date.now()
+    const room = roomState.title || null
+    const base = pendingContactsRef.current ?? current
+    let changed = false
+
+    const updated = base.map(c => {
+      if (!c.name) return c
+      const re = new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      if (re.test(playersText)) {
+        changed = true
+        return { ...c, lastSeen: now, lastRoom: room ?? c.lastRoom }
+      }
+      return c
+    })
+
+    if (changed) {
+      pendingContactsRef.current = updated
+      if (lastSeenTimerRef.current) clearTimeout(lastSeenTimerRef.current)
+      lastSeenTimerRef.current = setTimeout(() => {
+        const toSave = pendingContactsRef.current!
+        saveContacts(toSave)
+        setContacts([...toSave])
+        pendingContactsRef.current = null
+      }, 2000)
+    }
+  }, [roomState.players]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Re-apply theme then settings overlays whenever either changes ────────
 
@@ -536,13 +593,19 @@ export default function GameWindow({ onDisconnect }: Props) {
     discoveredStreams,
   }
 
+  const handleContactClick = useCallback((contactId: string, x: number, y: number) => {
+    setContactPopover({ contactId, x, y })
+  }, [])
+
   return (
+    <ContactsContext.Provider value={{ contacts, templates: contactTemplates, nameRegex, onContactClick: handleContactClick }}>
     <div className="game-layout">
       <div className="game-toolbar">
         <span className="toolbar-title">Klient67</span>
         <span className="toolbar-status">{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
+        <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
@@ -564,7 +627,10 @@ export default function GameWindow({ onDisconnect }: Props) {
               onContextMenu={e => { e.preventDefault(); setMainCtxMenu({ x: e.clientX, y: e.clientY }) }}>
               {lines.map(line => (
                 <div key={line.id} className="text-line">
-                  {line.segments.map((seg, i) => renderSegment(seg, i))}
+                  {line.segments.map((seg, i) => nameRegex
+                    ? renderSegmentWithContacts(seg, i, contacts, contactTemplates, nameRegex, handleContactClick)
+                    : renderSegment(seg, i)
+                  )}
                 </div>
               ))}
               <div ref={bottomRef} />
@@ -651,6 +717,37 @@ export default function GameWindow({ onDisconnect }: Props) {
         />
       )}
 
+      {showContacts && (
+        <ContactsPanel
+          openContactId={openContactId}
+          onClose={() => { setShowContacts(false); setOpenContactId(null) }}
+          onSaved={() => {
+            setContacts(loadContacts())
+            setContactTemplates(loadContactTemplates())
+          }}
+        />
+      )}
+
+      {contactPopover && (() => {
+        const contact = contacts.find(c => c.id === contactPopover.contactId)
+        const template = contact ? (contactTemplates.find(t => t.id === contact.templateId) ?? null) : null
+        return contact ? (
+          <ContactPopover
+            contact={contact}
+            template={template}
+            x={contactPopover.x}
+            y={contactPopover.y}
+            onClose={() => setContactPopover(null)}
+            onEdit={() => {
+              setContactPopover(null)
+              setOpenContactId(contactPopover.contactId)
+              setShowContacts(true)
+            }}
+          />
+        ) : null
+      })()}
+
     </div>
+    </ContactsContext.Provider>
   )
 }

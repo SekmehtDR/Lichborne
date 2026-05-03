@@ -11,8 +11,8 @@
 **Phase 2 — Complete ✅**
 **Phase 3 — Complete ✅**
 **Phase 4 — Complete ✅**
-**Phase 5 — In progress (Quality Pass & Console Polish)**
-**Phase 6 — Not started (Contacts System)**
+**Phase 5 — Complete ✅**
+**Phase 6 — Complete ✅ (6A–6C; 6D auto-detection stretch not started)**
 **Phase 7 — Not started (Highlights, Triggers & Macros)**
 
 ---
@@ -334,26 +334,45 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ---
 
-## Phase 6 — Contacts System
-*Not started. Full spec in DESIGN.md Section 15.*
+## Phase 6 — Contacts System ✅
+*Complete (6A–6C). Full spec in DESIGN.md Section 15.*
 
-### Phase 6A — Name Detection & Candidate Queue
-- [ ] Parser detects player names from arrivals, tells, room players, group events
+### Milestone 6A — Data Model, Templates & Panel UI ✅
+> Goal: contacts stored, templates editable, Contacts panel fully functional
+
+- [x] `contacts.ts` — Contact + ContactTemplate types, loadContacts/saveContacts, loadContactTemplates/saveContactTemplates, newContact, newTemplate, formatLastSeen, normalizeTemplate (fills missing fields on old localStorage data), DR_GUILDS array
+- [x] Default templates: Friends (#a0d080) and Enemies (#e05050 + "[Enemy]" tag)
+- [x] `ContactsPanel.tsx` — portal-rendered modal; Contacts tab with sidebar list + detail form (name, template dropdown with live preview swatch, guild select, circle input, last-seen read-only, notes textarea, delete with confirmation, save); Templates tab with inline expand-to-edit rows
+- [x] Template editor fields: name, text color, BG color, bold checkbox, tag text, tag color, tag BG color
+- [x] `colorPickerValue()` helper — prevents empty string on `<input type="color">` (avoids console errors from old localStorage data missing new fields)
+- [x] Contacts button added to toolbar (`btn-contacts` in `game.css`)
+- [x] `contacts.css` — all CSS vars, no hardcoded colors
+- **Test:** Open Contacts → create contact → assign Friends template → save → name appears styled in list
+
+### Milestone 6B — Name Highlighting & Tag Injection ✅
+> Goal: contact names light up with template colors in all game text panels
+
+- [x] `ContactsContext.tsx` — provides contacts, templates, nameRegex (useMemo), onContactClick to all rendering components
+- [x] `renderWithContacts.tsx` — `buildNameRegex(contacts)`: single case-insensitive whole-word alternation RegExp or null; `renderSegmentWithContacts()`: splits TextSegment text around matches, renders tag span (render-only, never modifies underlying data) + styled name span
+- [x] `GameWindow.tsx` wired — ContactsContext provider wraps entire render; nameRegex recomputes on contacts change only; `handleContactClick` callback
+- [x] `StreamPanel.tsx` wired — uses `useContacts()` hook, passes `onContactClick` to renderSegmentWithContacts
+- **Test:** Add "Sekmeht" as Enemy → see "[Enemy] Sekmeht" highlighted in red wherever name appears in game text
+
+### Milestone 6C — Clickable Popover & Last-Seen Tracking ✅
+> Goal: click a contact name to see their card; last-seen auto-updates from room
+
+- [x] `ContactPopover.tsx` — portal-rendered, `useLayoutEffect` clamps to viewport, closes on outside mousedown or Escape; shows tag+name header, guild·circle subtitle, last-seen (always visible — "never" if null, "Last seen: X ago — Room" if set), notes, Edit contact button
+- [x] `contact-popover.css` — popover styles + `.contact-name--clickable` hover underline
+- [x] "Edit contact" in popover opens ContactsPanel with that contact pre-selected (`openContactId` prop)
+- [x] Last-seen tracking — `useEffect` on `roomState.players`; scans for contact name matches via nameRegex; debounced 2s localStorage write; updates `lastSeen` timestamp + `lastRoom` from current room name
+- [x] Compass "down" → "dn" normalization — `StormFrontParser.ts` normalizes `<dir value="down"/>` to `"dn"` on ingest (server sends "down", FloatingCompass checks for "dn")
+- **Test:** Connect → walk into room with a contact → "Also here:" line triggers last-seen update → click name → popover shows correct last-seen and room
+
+### Phase 6D — Auto-Detection (stretch — not started)
+- [ ] Parser detects new player names from arrivals, tells, room players
 - [ ] Candidate queue — collects detected names with source context
-- [ ] Dismissible add-prompt banner — appears in main text area, shows candidate name + template picker
-- [ ] "Ignore" session-only list — dismissed names don't re-prompt until next session
-
-### Phase 6B — Contacts Roster
-- [ ] Contacts data model + localStorage persistence (`klient67.contacts`)
-- [ ] Contacts roster panel — name, color swatch, last-seen, notes column
-- [ ] Add / edit / delete contacts
-- [ ] Color template picker per contact (Friends, Enemies, Guild, Self, Merchant, custom)
-- [ ] Notes field — freeform text per contact
-
-### Phase 6C — In-Game Integration
-- [ ] Name popover — click a player name in game text → popover shows color, last-seen, notes
-- [ ] Clickable names wired in main text and all stream panels
-- [ ] Contact highlight applied to matching names in game output
+- [ ] Dismissible add-prompt banner — appears in main text area, shows candidate + template picker
+- [ ] "Ignore" session-only suppression list
 
 ---
 
@@ -476,3 +495,9 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-03 | Icon bar collapsed to single row: L hand | R hand | Spell (always visible, "None" when idle) | 6 right-anchored status bars |
 | 2026-05-03 | 6 status bars replace old stance tile + status indicator set — Bar1=Stance (always), Bars2-5=single conditions, Bar6=Bleeding→Stunned→Dead priority; all bars fixed width, empty bars use placeholder text to prevent size collapse |
 | 2026-05-03 | VitalUpdateEvent `label` field added — server sends `customText='t'` + label in `text` attr for guild-specific vital names (e.g. Barbarian mana = "Inner fire"); parser normalizes, GameWindow tracks in `vitalLabels` state, VitalsBar prefers custom label |
+| 2026-05-03 | Contacts default templates: Friends + Enemies only (not the full 5 in spec) — kept minimal to avoid clutter; players add their own |
+| 2026-05-03 | Tag injection is render-time only — renderSegmentWithContacts produces React spans, underlying TextSegment data never modified; highlights and triggers won't see injected tag text |
+| 2026-05-03 | nameRegex compiled via useMemo on contacts change only — single case-insensitive whole-word alternation; not recomputed per line |
+| 2026-05-03 | Last-seen tracks roomState.players only (not all game text) — prevents false last-seen updates from names appearing in unrelated context (e.g. someone mentioned in thoughts) |
+| 2026-05-03 | ContactPopover always renders last-seen line — "Last seen: never" when null rather than hiding; gives players useful signal that they've never encountered this person |
+| 2026-05-03 | Compass bug: server sends `<dir value="down"/>` but FloatingCompass checks for "dn" — normalized in StormFrontParser `case 'dir'` on ingest |

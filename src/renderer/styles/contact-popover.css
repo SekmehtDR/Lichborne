@@ -1,0 +1,129 @@
+/* ── Contact name popover ────────────────────────────────────────────────── */
+
+.cpop {
+  position: fixed;
+  z-index: 500;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 240px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.cpop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px 6px;
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.cpop-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.cpop-tag {
+  font-size: 0.78rem;
+}
+
+.cpop-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cpop-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0 0 0 8px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.cpop-close:hover { color: var(--text-secondary); }
+
+/* ── Body ────────────────────────────────────────────────────────────────── */
+
+.cpop-subtitle {
+  padding: 5px 12px 2px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.cpop-lastseen {
+  padding: 2px 12px 5px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.cpop-room {
+  color: var(--text-faint);
+}
+
+.cpop-divider {
+  height: 1px;
+  background: var(--border-faint);
+  margin: 2px 0;
+}
+
+.cpop-notes {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+
+.cpop-actions {
+  padding: 6px 12px 9px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.cpop-edit-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 12px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cpop-edit-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* ── Clickable name in game text ─────────────────────────────────────────── */
+
+.contact-name--clickable {
+  cursor: pointer;
+}
+
+.contact-name--clickable:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}

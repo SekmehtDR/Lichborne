@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
 import { renderSegment } from '../../utils/renderSegment'
+import { renderSegmentWithContacts } from '../../utils/renderWithContacts'
+import { useContacts } from '../../ContactsContext'
 import ContextMenu from '../ContextMenu'
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
 }
 
 export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
+  const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
@@ -37,7 +40,10 @@ export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
       )}
       {lines.map(line => (
         <div key={line.id} className="text-line">
-          {line.segments.map((seg, i) => renderSegment(seg, i))}
+          {line.segments.map((seg, i) => nameRegex
+            ? renderSegmentWithContacts(seg, i, contacts, templates, nameRegex, onContactClick)
+            : renderSegment(seg, i)
+          )}
         </div>
       ))}
       <div ref={bottomRef} />

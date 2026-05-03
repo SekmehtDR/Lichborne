@@ -31,6 +31,7 @@
 
 .btn-debug,
 .btn-panel-manager,
+.btn-contacts,
 .btn-theme,
 .btn-settings,
 .btn-disconnect {
@@ -47,6 +48,7 @@
 
 .btn-debug:hover,
 .btn-panel-manager:hover,
+.btn-contacts:hover,
 .btn-theme:hover,
 .btn-settings:hover {
   border-color: var(--accent-dim);

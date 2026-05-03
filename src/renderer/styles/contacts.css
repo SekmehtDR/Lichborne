@@ -1,0 +1,511 @@
+/* ── In-game contact name rendering ─────────────────────────────────────── */
+
+.contact-tag {
+  font-size: 0.8em;
+  opacity: 0.9;
+}
+
+.contact-name {
+  cursor: default;
+}
+
+/* ── Contacts Panel ──────────────────────────────────────────────────────── */
+
+.cp-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.cp-modal {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 700px;
+  max-width: 95vw;
+  height: 72vh;
+  max-height: 680px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.cp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cp-title {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  flex: 1;
+}
+
+.cp-tab-bar {
+  display: flex;
+  gap: 2px;
+}
+
+.cp-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 12px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cp-tab:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-secondary);
+}
+
+.cp-tab--active {
+  border-color: var(--accent-bg);
+  color: var(--accent);
+  background: var(--bg-sunken);
+}
+
+.cp-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.cp-close:hover { color: var(--text-secondary); }
+
+/* ── Contacts tab — two-pane layout ─────────────────────────────────────── */
+
+.cp-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.cp-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cp-new-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent-dim);
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 9px 14px;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.cp-new-btn:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.cp-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.cp-empty {
+  padding: 10px 14px;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.cp-list-item {
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cp-list-item:hover { background: var(--bg-hover); }
+
+.cp-list-item--active { background: var(--bg-sunken); }
+
+.cp-list-tag { font-size: 0.75rem; opacity: 0.9; }
+
+.cp-unnamed { color: var(--text-faint); font-size: 0.8rem; }
+
+/* ── Contact detail form ─────────────────────────────────────────────────── */
+
+.cp-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cp-no-selection {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.cp-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px 10px;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.cp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cp-field--grow { flex: 1; }
+
+.cp-field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.cp-field-row .cp-field { flex: 1; }
+
+.cp-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.cp-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 5px 9px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.cp-input:focus { border-color: var(--accent-bg); }
+
+.cp-input--hex { width: 88px; font-family: monospace; }
+
+.cp-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 5px 9px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.cp-select:focus { border-color: var(--accent-bg); }
+
+.cp-tpl-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  background: var(--bg-sunken);
+  border-radius: 4px;
+  border: 1px solid var(--border-faint);
+}
+
+.cp-tpl-preview-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cp-field--readonly .cp-label { margin-bottom: 2px; }
+
+.cp-readonly-value {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.cp-last-room {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.cp-textarea {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 7px 9px;
+  outline: none;
+  resize: none;
+  min-height: 80px;
+  transition: border-color 0.2s;
+}
+
+.cp-textarea:focus { border-color: var(--accent-bg); }
+
+/* ── Actions row ─────────────────────────────────────────────────────────── */
+
+.cp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  flex-shrink: 0;
+}
+
+.cp-confirm-text {
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--color-danger);
+}
+
+.cp-btn {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cp-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-secondary);
+}
+
+.cp-btn--save {
+  margin-left: auto;
+  border-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+.cp-btn--save:hover {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cp-btn--delete {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+.cp-btn--delete:hover {
+  border-color: #8a2020;
+  color: var(--color-danger);
+}
+
+.cp-btn--danger {
+  border-color: #8a2020;
+  color: var(--color-danger);
+}
+
+.cp-btn--danger:hover {
+  background: rgba(180, 40, 40, 0.15);
+}
+
+/* ── Templates tab ───────────────────────────────────────────────────────── */
+
+.cp-tpl-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cp-tpl-top {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cp-tpl-top .cp-new-btn {
+  border-bottom: none;
+}
+
+.cp-tpl-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.cp-tpl-row {
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.cp-tpl-row:last-child { border-bottom: none; }
+
+.cp-tpl-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.cp-tpl-summary:hover { background: var(--bg-hover); }
+
+.cp-tpl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cp-tpl-name-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.cp-tpl-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.cp-tpl-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.cp-tpl-swatch--bg {
+  background-image: linear-gradient(45deg, var(--border-faint) 25%, transparent 25%,
+    transparent 75%, var(--border-faint) 75%),
+    linear-gradient(45deg, var(--border-faint) 25%, transparent 25%,
+    transparent 75%, var(--border-faint) 75%);
+  background-size: 6px 6px;
+  background-position: 0 0, 3px 3px;
+}
+
+.cp-tpl-tag-preview {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.cp-tpl-tag-preview em { color: var(--text-faint); }
+
+.cp-tpl-default-badge {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  border: 1px solid var(--border-faint);
+  border-radius: 3px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Template inline edit form ───────────────────────────────────────────── */
+
+.cp-tpl-edit {
+  padding: 12px 18px 14px;
+  background: var(--bg-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.cp-tpl-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cp-tpl-edit-row .cp-label {
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.cp-color-picker {
+  width: 32px;
+  height: 28px;
+  padding: 1px 2px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-input);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cp-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cp-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cp-tpl-edit-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.cp-tpl-edit-actions .cp-btn--save { margin-left: auto; }
