@@ -11,7 +11,7 @@
   align-items: center;
   gap: 12px;
   padding: 5px 14px;
-  background: linear-gradient(180deg, var(--bg-raised), #181818);
+  background: linear-gradient(180deg, var(--bg-raised), var(--bg-sunken));
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -62,6 +62,37 @@
 .btn-disconnect:hover {
   border-color: var(--color-danger-dim);
   color: var(--color-danger);
+}
+
+/* ── Context menu ────────────────────────────────────────────────── */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 500;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 0;
+  min-width: 120px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+.ctx-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ctx-menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .game-main {
@@ -161,7 +192,7 @@
   align-items: center;
   gap: 8px;
   padding: 7px 12px;
-  background: linear-gradient(180deg, #181818, #141414);
+  background: linear-gradient(180deg, var(--bg-sunken), var(--bg-base));
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }

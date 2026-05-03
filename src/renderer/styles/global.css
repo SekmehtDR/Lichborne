@@ -25,3 +25,8 @@ body {
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--text-primary);
+}

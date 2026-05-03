@@ -8,6 +8,7 @@ import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES,
 import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
+import ContextMenu from './ContextMenu'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -105,6 +106,9 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showDebug, setShowDebug]     = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
   const clearDebugEvents = () => setDebugEvents([])
+  const clearLines       = () => setLines([])
+  const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
+  const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
     health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
@@ -491,6 +495,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     streamLines, roomState, expSkills,
     onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
     debugEvents, onClearDebug: clearDebugEvents,
+    onClearStream: clearStream,
     discoveredStreams,
   }
 
@@ -516,7 +521,9 @@ export default function GameWindow({ onDisconnect }: Props) {
 
       <div className="game-main">
         <div className="text-window-wrap">
-          <div className="text-window" ref={scrollRef} onScroll={handleScroll} onClick={() => inputRef.current?.focus()}>
+          <div className="text-window" ref={scrollRef} onScroll={handleScroll}
+            onClick={() => inputRef.current?.focus()}
+            onContextMenu={e => { e.preventDefault(); setMainCtxMenu({ x: e.clientX, y: e.clientY }) }}>
             {lines.map(line => (
               <div key={line.id} className="text-line">
                 {line.segments.map((seg, i) => renderSegment(seg, i))}
@@ -554,6 +561,12 @@ export default function GameWindow({ onDisconnect }: Props) {
       {settings.iconBarPosition === 'bottom' && (
         <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
+      )}
+
+      {mainCtxMenu && (
+        <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)}
+          items={[{ label: 'Clear', onClick: clearLines }]}
+        />
       )}
 
       {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}

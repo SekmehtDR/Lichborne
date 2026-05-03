@@ -853,8 +853,8 @@ Priority order reflects data availability from the protocol and player-facing va
 - [~] Theme preset coverage audit — deferred; all themes inherit preset vars from darkBase for now
 - [x] Auto-copy on text selection — highlight any text in any panel and release; clipboard updated automatically; skips inputs/textareas
 - [x] Stream panel preset coverage — StreamPanel uses renderSegment + panels.css global; presets apply in all stream panels
-- [ ] Right-click context menu in text window — at minimum Copy, Select All
-- [ ] Text selection styling — visible selection highlight that works across themes
+- [x] Right-click context menu — "Clear" in main text window and all stream/debug panels; portal-rendered, closes on outside click or Escape
+- [x] Text selection styling — ::selection uses color-mix(accent, transparent) to adapt to every theme automatically
 
 ### Phase 6 — Highlights, Triggers & Macros
 - [ ] Highlight rules engine — regex pattern → color/label, applied to incoming game text

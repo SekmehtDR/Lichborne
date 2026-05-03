@@ -48,6 +48,7 @@ interface Props {
   onSendCommand: (cmd: string) => void
   debugEvents?: GameEvent[]
   onClearDebug?: () => void
+  onClearStream?: (streamId: string) => void
   tabs: TabDef[]
   activeId: string
   onTabsChange: (tabs: TabDef[]) => void
@@ -57,7 +58,7 @@ interface Props {
 
 export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
-  debugEvents, onClearDebug,
+  debugEvents, onClearDebug, onClearStream,
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [],
 }: Props) {
@@ -132,6 +133,7 @@ export default function PanelFrame({
         {activeTab && renderPanel(
           activeTab, streamLines, roomState, expSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
+          onClearStream ?? (() => {}),
         )}
       </div>
 
@@ -230,17 +232,19 @@ function renderPanel(
   onSendCommand: (cmd: string) => void,
   debugEvents: GameEvent[],
   onClearDebug: () => void,
+  onClearStream: (streamId: string) => void,
 ) {
+  const clr = (id: string) => () => onClearStream(id)
   switch (tab.type) {
     case 'room':     return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
-    case 'thoughts': return <StreamPanel lines={streamLines.thoughts  ?? []} />
-    case 'arrivals': return <StreamPanel lines={streamLines.arrivals  ?? []} />
-    case 'deaths':   return <StreamPanel lines={streamLines.deaths    ?? []} />
-    case 'spells':   return <StreamPanel lines={streamLines.spells    ?? []} />
+    case 'thoughts': return <StreamPanel lines={streamLines.thoughts  ?? []} onClear={clr('thoughts')} />
+    case 'arrivals': return <StreamPanel lines={streamLines.arrivals  ?? []} onClear={clr('arrivals')} />
+    case 'deaths':   return <StreamPanel lines={streamLines.deaths    ?? []} onClear={clr('deaths')} />
+    case 'spells':   return <StreamPanel lines={streamLines.spells    ?? []} onClear={clr('spells')} />
     case 'exp':      return <ExpPanel skills={expSkills} />
-    case 'familiar': return <StreamPanel lines={streamLines.familiar  ?? []} />
-    case 'inv':      return <StreamPanel lines={streamLines.inv       ?? []} />
+    case 'familiar': return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} />
+    case 'inv':      return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')} />
     case 'debug':    return <DebugPanel events={debugEvents} onClear={onClearDebug} />
-    case 'custom':   return <StreamPanel lines={streamLines[tab.id]   ?? []} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
+    case 'custom':   return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
   }
 }
