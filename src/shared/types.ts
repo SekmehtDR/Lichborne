@@ -46,6 +46,8 @@ export interface TextSegment {
   text: string
   preset?: string
   bold?: boolean
+  fg?: string  // hex color without '#', e.g. 'ff0000'
+  bg?: string  // hex color without '#'
 }
 
 // --- Typed game events ---

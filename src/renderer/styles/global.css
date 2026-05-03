@@ -1,4 +1,5 @@
 @import './theme.css';
+@import './panels.css';
 
 *, *::before, *::after {
   box-sizing: border-box;

@@ -240,11 +240,11 @@ export default function GameWindow({ onDisconnect }: Props) {
             if (evt.stream === 'room-exits')   roomUpdates.exits   = []
             if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
             break
-          case 'unknown': {
-            const raw = (evt as { type: 'unknown'; raw: string }).raw
-            if (raw.startsWith('pushStream:')) newDiscovered.push(raw.slice(11))
+          case 'stream-push':
+            newDiscovered.push(evt.stream)
             break
-          }
+          case 'unknown':
+            break
         }
       }
 

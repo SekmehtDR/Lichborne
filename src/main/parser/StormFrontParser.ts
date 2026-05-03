@@ -31,6 +31,9 @@ const STREAM_MAP: Record<string, StreamTarget> = {
   spells:      'spells',
   familiar:    'familiar',
   inv:         'inv',
+  room:        'room',
+  moonWindow:  'moonWindow',
+  LichScripts: 'raw',      // Lich internal stream — discard
   // Confirmed duplicate of main — discard
   talk:        'raw',
   // Genie window targets
@@ -47,6 +50,19 @@ const COMPONENT_STREAM: Record<string, StreamTarget> = {
   'room exits':    'room-exits',
   'room desc':     'room',
 }
+
+// Known protocol tags that carry no display content — drop silently rather than
+// emitting unknown events that pollute the display.
+const SILENT_TAGS = new Set([
+  // Clickable command links — text inside renders normally, tag itself is UI chrome
+  'd', 'a',
+  // Connection/session metadata
+  'app', 'output', 'launchurl', 'dialogdata', 'settingsinfo', 'identity', 'slot',
+  // Generic layout/formatting wrappers
+  'container', 'inv', 'opendialog',
+  // Genie/StormFront UI chrome — body diagram, quickbars, links, layout
+  'skin', 'image', 'radio', 'link', 'switchquickbar', 'endsetup', 'resource', 'exposestream',
+])
 
 interface ParsedTag {
   name: string
@@ -84,6 +100,9 @@ export class StormFrontParser {
   private activeStream: StreamTarget = 'main'
   private streamStack: StreamTarget[] = []
   private currentPreset: string | undefined = undefined
+  private colorStack: Array<{ fg?: string; bg?: string }> = []
+
+  private compassDirs: string[] = []
 
   private pendingSegments: TextSegment[] = []
   private events: GameEvent[] = []
@@ -106,13 +125,33 @@ export class StormFrontParser {
   // server transaction (room updates, component clears, etc.)
   private lastMainText = ''
 
+  // Call when a new connection is established to clear carry-over state
+  reset() {
+    this.boldDepth     = 0
+    this.activeStream  = 'main'
+    this.streamStack   = []
+    this.currentPreset = undefined
+    this.colorStack    = []
+    this.pendingSegments = []
+    this.events        = []
+    this.captureCtx    = null
+    this.captureBuf    = ''
+    this.compassDirs   = []
+    this.lastMainText  = ''
+    this.rtExpires     = 0
+    this.stance        = ''
+    this.isHidden      = false
+    this.isInvisible   = false
+    this.isStunned     = false
+    this.isWebbed      = false
+    this.isBleeding    = false
+    this.isJoined      = false
+    this.isDead        = false
+  }
+
   parse(line: string): GameEvent[] {
     this.events = []
     const isBlankLine = !line.replace(/[\r\n]/g, '').trim()
-
-    if (/<prompt/i.test(line)) {
-      this.events.push({ type: 'unknown', raw: `RAW_PROMPT: ${line.replace(/[\r\n]/g, '↵')}` })
-    }
 
     const tokenRe = /(<[^>]*>)|([^<]+)/g
     let m: RegExpExecArray | null
@@ -148,10 +187,13 @@ export class StormFrontParser {
     }
     const cleaned = decodeEntities(value.replace(/\r/g, '').replace(/\n$/, ''))
     if (!cleaned.trim()) return  // skip whitespace-only tokens; blank lines handled by isBlankLine
+    const topColor = this.colorStack[this.colorStack.length - 1]
     this.pendingSegments.push({
       text: cleaned,
-      ...(this.boldDepth > 0     ? { bold: true }              : {}),
+      ...(this.boldDepth > 0     ? { bold: true }                 : {}),
       ...(this.currentPreset     ? { preset: this.currentPreset } : {}),
+      ...(topColor?.fg           ? { fg: topColor.fg }            : {}),
+      ...(topColor?.bg           ? { bg: topColor.bg }            : {}),
     })
   }
 
@@ -168,10 +210,8 @@ export class StormFrontParser {
         if (REPLACE_ON_PUSH.has(id.toLowerCase())) {
           this.events.push({ type: 'clear-stream', stream: target })
         }
-        // Emit discovery event for streams not in the known map
-        if (!STREAM_MAP[id] && id) {
-          this.events.push({ type: 'unknown', raw: `pushStream:${id}` })
-        }
+        // Always emit stream-push so the renderer can discover new streams
+        if (id) this.events.push({ type: 'stream-push', stream: target })
         break
       }
 
@@ -194,10 +234,35 @@ export class StormFrontParser {
 
       case 'preset':
         if (!selfClosing) {
-          this.currentPreset = attrs.id
+          this.currentPreset = (attrs.id ?? '').toLowerCase()
           this.captureCtx = { tag: 'preset' }
           this.captureBuf = ''
         }
+        break
+
+      case 'style': {
+        // Style is a push/pop marker, not a container — text flows normally after it.
+        // <style id='roomName'/> sets the active preset; <style id=''/> clears it.
+        // Works for both self-closing and open forms the server may send.
+        this.flushSegments()
+        const styleId = (attrs.id ?? '').toLowerCase()
+        this.currentPreset = styleId || undefined
+        break
+      }
+
+      case 'color': {
+        const fg = attrs.fg || undefined
+        const bg = attrs.bg || undefined
+        this.colorStack.push({ fg, bg })
+        break
+      }
+
+      case 'compass':
+        this.compassDirs = []
+        break
+
+      case 'dir':
+        if (selfClosing && attrs.value) this.compassDirs.push(attrs.value.toLowerCase())
         break
 
       case 'progressbar': {
@@ -312,7 +377,8 @@ export class StormFrontParser {
         break
 
       default:
-        if (!this.captureCtx) {
+        // Silently drop known protocol tags that carry no display content
+        if (!this.captureCtx && !SILENT_TAGS.has(name)) {
           this.events.push({ type: 'unknown', raw: `TAG:${name} ${JSON.stringify(attrs)}` })
         }
         break
@@ -322,6 +388,23 @@ export class StormFrontParser {
   private tagEnd(name: string) {
     if (name === 'b') {
       if (this.boldDepth > 0) this.boldDepth--
+      return
+    }
+
+    if (name === 'color') {
+      this.colorStack.pop()
+      return
+    }
+
+    if (name === 'compass') {
+      this.events.push({ type: 'exits', directions: this.compassDirs })
+      this.compassDirs = []
+      return
+    }
+
+    if (name === 'style') {
+      this.flushSegments()
+      this.currentPreset = undefined
       return
     }
 
@@ -337,10 +420,13 @@ export class StormFrontParser {
       case 'preset': {
         // Emit captured text with preset style into current stream
         if (text) {
+          const topColor = this.colorStack[this.colorStack.length - 1]
           this.pendingSegments.push({
             text,
             preset: this.currentPreset,
-            ...(this.boldDepth > 0 ? { bold: true } : {}),
+            ...(this.boldDepth > 0 ? { bold: true }     : {}),
+            ...(topColor?.fg       ? { fg: topColor.fg } : {}),
+            ...(topColor?.bg       ? { bg: topColor.bg } : {}),
           })
         }
         this.currentPreset = undefined
@@ -353,7 +439,9 @@ export class StormFrontParser {
         if (id.startsWith('exp ')) {
           this.events.push({ type: 'exp-component', skill: id.slice(4), text })
         } else if (id === 'room exits') {
-          this.events.push({ type: 'exits', directions: parseExits(text) })
+          // Compass XML is authoritative for directional exits.
+          // Named exits like "go gate, climb ladder" don't map to direction buttons,
+          // so we skip this component and let compass data drive the exits event.
         } else {
           const stream = COMPONENT_STREAM[id]
           if (stream) {

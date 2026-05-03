@@ -189,11 +189,13 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<component id='exp Evasion' text="Evasion: 3 (2%)">` | Skill name, rank, mindstate per skill trained | Experience panel |
 | `<component id='room name'>...</component>` | Room title string | Room panel |
 | `<component id='room desc'>...</component>` | Room description prose | Room panel |
-| `<component id='room exits'>...<d>north</d>...</component>` | Exit directions, each wrapped in `<d>` | Room panel — clickable buttons |
+| `<compass><dir value="n"/><dir value="sw"/></compass>` | Exit directions as abbreviated values (n/ne/e/se/s/sw/w/nw/up/dn/out) | Room panel — clickable buttons |
 | `<component id='room objs'>...</component>` | Objects in the room | Room panel |
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
 
-**The `<d>` tag** marks interactive/directional elements. Exits arrive pre-tagged by the server as `<d>north</d>`, `<d>east</d>`, etc. The room panel renders these as clickable buttons that send the movement command — this is what the protocol was designed for.
+**The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it use the same abbreviations the room panel buttons display (n, ne, e, se, s, sw, w, nw, up, dn, out). The `<d>` tag marks inline interactive command links in the main text stream — clicking them sends the `cmd` attribute to the game.
+
+**Inline color** is applied via `<color fg="ff0000" bg="000000">text</color>` — the parser maintains a color stack and attaches fg/bg hex values to text segments.
 
 **Vital values** are exact integers from the server, not bar-fill approximations. The numeric label on each bar displays the server's own value directly.
 
@@ -806,8 +808,8 @@ Priority order reflects data availability from the protocol and player-facing va
 
 ### Phase 5 — Quality Pass & Console Polish
 - [x] Panel resize clipping — mid zone drag capped to column height so top zone is never pushed off screen
-- [ ] Text presets verified in all panels — speech, whisper, thought, roomname, roomdesc, bold, expiry, store, command-echo rendering correctly in main stream and all stream panels
-- [ ] Bold text rendering — segments with bold flag display correctly across all themes (correct color, not just font-weight)
+- [x] Parser overhaul — style markers, preset normalization, compass exits, color tags, silent tags, stream discovery, reset()
+- [x] Bold text rendering — data-preset always set on bold elements; roomname/roomdesc confirmed in-game
 - [ ] Theme preset coverage audit — all 17 base/guild themes define every preset CSS var; no panel shows fallback/wrong colors after a theme switch
 - [ ] Copy/paste in text window — select game text and copy to clipboard; verify paste works in command bar
 - [ ] Right-click context menu in text window — at minimum Copy, Select All
