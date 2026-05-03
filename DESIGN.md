@@ -26,6 +26,7 @@
 10. [AI Features](#10-ai-features)
 11. [Backlog](#11-backlog)
 12. [Layout Designer](#12-layout-designer)
+13. [Multi-Character Support](#13-multi-character-support)
 
 ---
 
@@ -1040,3 +1041,125 @@ Any panel type can be floated. "Create floating panel" spawns a new panel immedi
 - Splitter resize updates proportions only — minimum column width and row height enforced to prevent panels from disappearing
 - The current Panel Manager modal becomes a lighter companion to the designer (tab management within cells) rather than the primary layout tool
 - Floating panel state stored separately from the grid layout JSON
+
+---
+
+## 13. Multi-Character Support
+
+> Status: Backlog — not scheduled. Full design spec for when this becomes a phase.
+
+### 13.1 Concept
+
+DragonRealms requires a separate account login per character. Players commonly run two or more characters simultaneously (boxing — e.g. a main character + a healer or gem-seller). The client should make this feel native rather than requiring multiple app windows.
+
+### 13.2 The Session Model
+
+Each character is a **GameSession** — a fully independent unit containing its own connection, game state, panel layout, command history, and theme. Sessions run in parallel; background sessions remain connected but do not render.
+
+The current `GameWindow` becomes one session instance. A **session manager** owns all active sessions and controls which one is currently displayed.
+
+### 13.3 Character Tab Bar
+
+Character tabs live in the **main toolbar row** — inline with the existing Debug / Panels / Theme / Settings / Disconnect buttons. No second row. Same height throughout.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ⚔ Sekmeht 82% ●  │ ✦ Agan 18% 🩸 ↺ │ +    Debug  Panels  Theme  ⏻  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Tabs anchor to the left. Toolbar buttons anchor to the right. The `+` button sits between the last tab and the toolbar buttons. When tabs exceed available width they scroll horizontally.
+
+**Tab anatomy (left to right):**
+
+```
+[Guild Icon]  [Name]  [Health%]  [Status Glyphs]
+```
+
+- **Guild icon** — guild-specific symbol, colored in the guild's accent color
+- **Name** — character name
+- **Health %** — numeric only, color follows vitals thresholds (green ≥80%, yellow 50–80%, orange 30–50%, red <30%)
+- **Status glyphs** — only shown when relevant; hidden when idle
+
+**Active tab indicator:** bold text + bottom border underline + background highlight pill — all themed.
+
+### 13.4 Status Glyphs
+
+| Glyph | Meaning |
+|---|---|
+| `●` | Connected, idle |
+| `⚠` | Roundtime active |
+| `🩸` | Bleeding |
+| `💀` | Dead (replaces health %) |
+| `↺` | Disconnected — click to reconnect |
+
+Multiple glyphs can appear together (e.g. `🩸⚠` = bleeding with RT active).
+
+### 13.5 Tab State Matrix
+
+| State | Appearance |
+|---|---|
+| Connected, idle | `⚔ Sekmeht 82% ●` — clean, colored health % |
+| Connected, RT active | `⚔ Sekmeht 82% ⚠` |
+| Connected, bleeding | `⚔ Sekmeht 51% 🩸` |
+| Connected, dead | `⚔ Sekmeht 💀` — health % replaced by skull |
+| Disconnected, last known ok | `⚔ Sekmeht 82% ↺` — all dimmed/gray, stale data preserved |
+| Disconnected, last known bleeding | `⚔ Sekmeht 51% 🩸 ↺` — dimmed, glyphs preserved |
+| Disconnected, last known dead | `⚔ Sekmeht 💀 ↺` — dimmed, skull preserved |
+| Never connected / fresh tab | `⚔ Sekmeht ↺` — no health shown |
+
+Dimming signals stale data — even alarming glyphs are clearly historical when the tab is gray.
+
+Clicking `↺` attempts reconnect inline without switching to that character's session. If reconnect fails, the client switches to that tab to show the error.
+
+### 13.6 Adding Characters
+
+Clicking `+` drops a compact character launcher:
+
+```
+┌─────────────────────────────────────────┐
+│  Add Character                          │
+│                                         │
+│  [Sekmeht        ▼]  ← saved profiles  │
+│  [Agan           ▼]                     │
+│  [+ New login...  ]                     │
+│                                         │
+│  [ Launch Selected ]                    │
+└─────────────────────────────────────────┘
+```
+
+**Character profiles** store: account credentials (encrypted), preferred layout, preferred theme, connection mode (Lich / direct). "Launch all" connects every saved character at startup.
+
+### 13.7 Keyboard Navigation
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+1` / `Ctrl+2` / `Ctrl+3` | Jump to character by slot |
+| `Ctrl+Tab` | Cycle through connected characters |
+| `Ctrl+Shift+Enter` | Quick-send overlay (see §13.8) |
+
+### 13.8 Quick-Send Overlay
+
+A floating input that sends a command to any character without switching tabs. Useful for boxing — tell your Empath to heal without leaving your main character's screen.
+
+```
+┌──────────────────────────────────┐
+│  Send to: [Agan ▼]               │
+│  > heal Sekmeht                  │
+│  ↵ Send     Esc Cancel           │
+└──────────────────────────────────┘
+```
+
+Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends the command and closes without switching sessions.
+
+### 13.9 Pop-Out Windows
+
+Any character tab can be dragged off the tab bar to become an independent OS window — useful for multi-monitor setups. Each popped window is a full session with its own toolbar and layout. A `⬛ Dock` button in the popped window's toolbar returns it to the tab bar.
+
+### 13.10 Per-Character Memory
+
+Each character profile independently remembers:
+- Panel layout (positions, sizes, active tabs)
+- Guild theme (auto-applied on switch)
+- Command history
+- Highlight and trigger rules (Phase 6)
