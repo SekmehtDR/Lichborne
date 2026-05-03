@@ -25,6 +25,7 @@
 9. [Character Profiles](#9-character-profiles)
 10. [AI Features](#10-ai-features)
 11. [Backlog](#11-backlog)
+12. [Layout Designer](#12-layout-designer)
 
 ---
 
@@ -914,3 +915,128 @@ All AI features require the highlight system and session capture to exist first.
 - [ ] Session summary — end-of-session AI recap: XP gained, ranks, notable events
 - [ ] Config explainer — "what does this highlight rule do?"
 - [ ] API key management UI — store OpenAI key locally, never transmitted elsewhere
+
+---
+
+## 12. Layout Designer
+
+> Status: Backlog — not scheduled. Full design spec for when this becomes a phase.
+
+### 12.1 Concept
+
+The current layout is hardcoded: main text area on the left, right column with three stacked zones. The Layout Designer replaces this with a **freeform grid system** where players define their own column/row structure and assign any content type to any cell.
+
+The goal is to support setups ranging from full-immersive (game text only) to power-user (multiple panel columns, stacked streams) without requiring any layout to be "the right one."
+
+### 12.2 The Grid Model
+
+A layout is defined as an **N-column × M-row grid**. Each cell is addressed by position (col, row) and can span multiple cells in either direction. Every cell is assigned exactly one **content type**.
+
+**Content types:**
+
+| Type | Description |
+|---|---|
+| Game Window | The main story text area. Owns Icon Bar, Vitals Bar, and Input Bar internally. Always exactly one per layout. |
+| Room | Structured room panel (name, desc, exits, objects, players) |
+| Experience | Exp tracker with mindstate bars |
+| Stream | Any named stream (Thoughts, Arrivals, Deaths, Conversations, etc.) |
+| Empty | Unused cell — renders blank |
+
+### 12.3 The Game Window Cell
+
+Icon Bar, Vitals Bar, and Input Bar are **not independent grid cells**. They are fixed-height strips that live *inside* the Game Window cell, stacked vertically:
+
+```
+┌─ Game Window cell ───────────────────┐
+│ Icon Bar          [fixed height]     │
+├──────────────────────────────────────┤
+│                                      │
+│  Game Text        [fills remaining]  │
+│                                      │
+├──────────────────────────────────────┤
+│ Vitals Bar        [fixed height]     │
+├──────────────────────────────────────┤
+│ _ Input Bar ________________________>│
+└──────────────────────────────────────┘
+```
+
+This keeps strip sizing predictable regardless of row height. The Game Window cell can be any size — the strips hug their content height and the game text fills whatever remains.
+
+### 12.4 Example Layouts
+
+**Focused — game text dominant, one panel column:**
+```
+┌─────────────────────────────────────────┬──────────────┐
+│ Icon Bar                                │              │
+├─────────────────────────────────────────┤    Room      │
+│                                         │              │
+│              Game Text                  ├──────────────┤
+│                                         │              │
+├─────────────────────────────────────────┤   Thoughts   │
+│ Vitals Bar                              │              │
+├─────────────────────────────────────────┤              │
+│ _ Input Bar __________________________ >│              │
+└─────────────────────────────────────────┴──────────────┘
+```
+
+**Full immersive — no panels:**
+```
+┌──────────────────────────────────────────────────────────┐
+│ Icon Bar                                                 │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│                       Game Text                          │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│ Vitals Bar                                               │
+├──────────────────────────────────────────────────────────┤
+│ _ Input Bar ____________________________________________>│
+└──────────────────────────────────────────────────────────┘
+```
+
+**Power user — game text + two panel columns:**
+```
+┌──────────────────────────┬─────────────────┬────────────┐
+│ Icon Bar                 │                 │            │
+├──────────────────────────┤    Thoughts     │    Room    │
+│                          │                 │            │
+│       Game Text          ├─────────────────┤            │
+│                          │                 ├────────────┤
+│                          │     Deaths      │    Exp     │
+├──────────────────────────┤                 │            │
+│ Vitals Bar               ├─────────────────┴────────────┤
+├──────────────────────────┤     Arrivals                 │
+│ _ Input Bar ____________>│                              │
+└──────────────────────────┴──────────────────────────────┘
+```
+
+### 12.5 Designer Mode
+
+Accessed via a "Edit Layout" button in the toolbar. While active:
+
+- A **grid overlay** appears showing column/row lines with cell numbers
+- Players set the **grid dimensions** (columns × rows) via a picker
+- **Click-drag across cells** to merge them into a single panel area
+- Each merged area shows a **content type dropdown** to assign it
+- **Drag splitters** between columns and rows to set proportional sizing
+- A **snap-to-grid** guide snaps resize handles to clean proportions
+- Exit designer mode to lock the layout and return to normal use
+
+Layout is stored as JSON (compatible with the layout profiles in Section 2.4).
+
+### 12.6 Floating Panels
+
+Floating panels exist **outside the grid** entirely. They are detached windows that can be:
+
+- **In-app overlays** — free-floating within the app window, always on top of the grid layout
+- **OS windows** — detached into a separate system window (useful for multi-monitor setups)
+
+Any panel type can be floated. "Create floating panel" spawns a new panel immediately without entering designer mode. Floating panels remember their size and position across sessions.
+
+### 12.7 Implementation Notes
+
+- The grid layout replaces the current hardcoded flex column layout in `GameWindow.tsx`
+- Layout JSON stores: column count, row count, cell span assignments, content type per area, column/row size proportions
+- Splitter resize updates proportions only — minimum column width and row height enforced to prevent panels from disappearing
+- The current Panel Manager modal becomes a lighter companion to the designer (tab management within cells) rather than the primary layout tool
+- Floating panel state stored separately from the grid layout JSON
