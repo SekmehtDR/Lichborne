@@ -334,14 +334,33 @@ The text attribute is **not** just the current value — it contains `"current m
 ---
 
 ## Phase 6 — Highlights, Triggers & Macros
-*Not started. See DESIGN.md Phase 6 for spec.*
+*Not started. Full spec in DESIGN.md Section 14.*
 
-- [ ] Highlight rules engine — regex pattern → color/label applied to incoming game text
-- [ ] Highlight editor UI — create, edit, delete, reorder; live preview
-- [ ] Highlight groups — named toggleable sets
-- [ ] Trigger system — regex → action (send command, play sound, open panel)
-- [ ] Command aliases
+### Phase 6A — Highlights
+- [ ] Rule data model + localStorage persistence (`klient67.highlights`)
+- [ ] Pattern engine — text / begins-with / regex; inline and whole-line scope
+- [ ] Overlap resolution — shortest inline match wins; drag-order for whole-line
+- [ ] FG + BG + bold styling; sound per rule
+- [ ] Panel scope — all panels or specific subset
+- [ ] Global + per-character rule scoping
+- [ ] Group system — named groups, drag-to-reorder, bulk toggle
+- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, live preview
+- [ ] Applied in renderSegment() alongside existing text presets
+- [ ] Rule import / export (JSON)
+
+### Phase 6B — Triggers
+- [ ] Trigger data model — extends Rule with action + cooldown fields
+- [ ] Action types: command, sound, open-panel, flash-panel, eval
+- [ ] Eval trigger engine — safe expression evaluator against live game state
+- [ ] Eval variables: health/mana/stamina/concentration/spirit/rt/ct/stance/bleeding/stunned/dead/hidden/invisible/room/spell
+- [ ] Cooldown enforcement — per-trigger minimum fire interval
+- [ ] Trigger editor UI — tab alongside Highlights in same modal
+- [ ] Trigger persistence (`klient67.triggers`)
+
+### Phase 6C — Macros & Aliases (stretch)
+- [ ] Command aliases — short input expands to full command
 - [ ] Macro system — key bindings to commands or sequences
+- [ ] Macro editor UI
 
 ---
 

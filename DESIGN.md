@@ -27,6 +27,7 @@
 11. [Backlog](#11-backlog)
 12. [Layout Designer](#12-layout-designer)
 13. [Multi-Character Support](#13-multi-character-support)
+14. [Highlights & Triggers](#14-highlights--triggers)
 
 ---
 
@@ -890,10 +891,15 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Default panel layout updated — Top-Right: Room + Conversations; Center-Right: Thoughts + Arrivals + Deaths + Active Spells; Bottom-Right: Experience
 
 ### Phase 6 — Highlights, Triggers & Macros
-- [ ] Highlight rules engine — regex pattern → color/label, applied to incoming game text
-- [ ] Highlight editor UI — create, edit, delete, reorder rules; live preview
-- [ ] Highlight groups — named toggleable sets (e.g. "Combat", "Social")
-- [ ] Trigger system — regex → action (send command, play sound, open panel)
+> Full spec: Section 14
+
+- [ ] Highlight rules engine — text / begins-with / regex; inline and whole-line scope; FG + BG + bold; overlap resolution (Section 14.2–14.5)
+- [ ] Highlight groups — named toggleable sets, drag-to-reorder (Section 14.6)
+- [ ] Global + per-character rule scoping (Section 14.8)
+- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, live preview (Section 14.9)
+- [ ] Trigger system — same engine, adds action + cooldown fields (Section 14.10)
+- [ ] Eval triggers — game-state condition expressions (Section 14.11)
+- [ ] Rule import / export (JSON)
 - [ ] Command aliases — short names that expand to full commands
 - [ ] Macro system — key bindings to commands or sequences
 
@@ -1163,3 +1169,207 @@ Each character profile independently remembers:
 - Guild theme (auto-applied on switch)
 - Command history
 - Highlight and trigger rules (Phase 6)
+
+---
+
+## 14. Highlights & Triggers
+
+> Status: Phase 6 — scheduled. This is the full design spec.
+
+### 14.1 Concept
+
+Highlights and triggers share a single pattern-matching engine. The difference is only what fires when a match is found:
+
+- **Highlight** — change how matched text *looks* (color, bold, background)
+- **Trigger** — do something *in response* (send command, play sound, flash panel)
+
+Both use the same rule editor, same match types, same grouping system. Triggers get an extra Action field. Building them together avoids duplicating infrastructure.
+
+### 14.2 Rule Data Model
+
+```
+Rule {
+  id:            uuid
+  name:          string            "My name"
+  pattern:       string            "Sekmeht"
+  matchType:     text              plain substring match
+               | begins-with       anchored to line start
+               | regex             full regex syntax
+  scope:         inline            color only the matched portion
+               | whole-line        color the entire line
+  caseSensitive: boolean
+  style: {
+    fg:          hex | null        foreground color
+    bg:          hex | null        background color
+    bold:        boolean
+  }
+  panels:        all | string[]    ["main", "thoughts", "arrivals", ...]
+  sound:         filepath | null   played on match
+  enabled:       boolean
+  groupId:       uuid | null
+  character:     global | characterId
+}
+```
+
+Triggers extend Rule with one additional field:
+
+```
+Trigger extends Rule {
+  action: {
+    type:     command              send a game command
+            | sound               play a sound file
+            | open-panel          surface a named panel
+            | flash-panel         draw attention to a panel
+            | eval                evaluate a game-state condition
+    payload:  string              "pray" | "sounds/alert.wav" | "thoughts" | "health < 30"
+  }
+  cooldown: seconds | null        minimum gap between firings; prevents spam
+}
+```
+
+### 14.3 Match Types
+
+| Type | Pattern example | Behavior |
+|---|---|---|
+| `text` | `Sekmeht` | Case-sensitive or insensitive substring match anywhere in the line |
+| `begins-with` | `[Sekmeht]` | Matches only if line starts with the pattern — useful for room names, system messages |
+| `regex` | `/You (?:feel|sense) .+ faint/i` | Full regex; `/i` suffix for case-insensitive; compiled on load |
+
+Invalid regex patterns are flagged in the editor and skipped at runtime — they never crash the client.
+
+### 14.4 Styling Options
+
+| Field | Options |
+|---|---|
+| Foreground color | Any hex color, or null (inherit from theme) |
+| Background color | Any hex color, or null (transparent) |
+| Bold | Boolean |
+| Sound | Path to a `.wav` file; null for none |
+
+### 14.5 Overlap Resolution
+
+When two inline rules match overlapping portions of the same text, the **shortest match wins** (most specific). This avoids manual priority management — a tight pattern like `Sekmeht` always wins over a broad pattern like `.+` covering the same characters.
+
+For whole-line rules, the **first matching rule in drag order wins**.
+
+### 14.6 Groups
+
+Rules belong to named groups. Groups can be toggled on/off as a unit — useful for switching between hunting, crafting, and social contexts without editing individual rules.
+
+```
+Group {
+  id:      uuid
+  name:    string     "Combat"
+  enabled: boolean
+  color:   hex        swatch color shown in the editor sidebar
+}
+```
+
+Groups and rules within a group are **drag-to-reorder** — order determines priority for whole-line conflicts. The drag handle makes priority visible and intentional.
+
+### 14.7 Panel Scope
+
+Each rule targets either all panels or a specific subset. The panel selector appears in the rule editor as:
+
+```
+Panels:  ● All   ○ Choose...
+                   ☑ Main   ☑ Thoughts   ☐ Room   ☑ Arrivals ...
+```
+
+Applies to every stream panel including auto-discovered Lich streams.
+
+### 14.8 Global vs. Per-Character Rules
+
+Rules are scoped to either **global** (shared across all characters) or a **specific character**. Both sets apply simultaneously — global rules run first, character rules run second and can override.
+
+Typical usage:
+- **Global**: your name, friend names, death messages, common danger phrases
+- **Per-character**: Barbarian combat patterns, Empath healing responses, guild-specific spell names
+
+The rule editor has a `For` field: `● Global  ○ Sekmeht  ○ Agan`.
+
+### 14.9 Editor UI
+
+Accessed via a **Highlights** button in the main toolbar (same row as Panels, Theme, Settings). Opens as a modal.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Highlights & Triggers                              [× Close] │
+├────────────────┬────────────────────────────────────────────┤
+│ GROUPS         │ [Highlights] [Triggers]      [+ New Rule]  │
+│                │                                            │
+│ ● All          │ ┌──────────────────────────────────────┐   │
+│ ● Combat    ●  │ │ My Name         Sekmeht    ██ inline │   │
+│ ● Social    ●  │ │ Death messages  You die*   ██ line   │   │
+│ ● Healing   ●  │ │ RT warning      roundtime  ██ inline │   │
+│ ○ Crafting  ○  │ └──────────────────────────────────────┘   │
+│                │                                            │
+│ [+ New Group]  │ ┌── Edit Rule ───────────────────────────┐ │
+│                │ │ Name     [My Name              ]       │ │
+│                │ │ Pattern  [Sekmeht               ]      │ │
+│                │ │ Type     ● Text  ○ Begins-with  ○ Regex│ │
+│                │ │ Scope    ● Inline  ○ Whole line        │ │
+│                │ │ Case     □ Sensitive                   │ │
+│                │ │ FG  [■■■] BG [   ] Bold □              │ │
+│                │ │ Sound    [none                  ] [···]│ │
+│                │ │ Panels   ● All  ○ Choose...            │ │
+│                │ │ Group    [Combat              ▼]       │ │
+│                │ │ For      ● Global  ○ Sekmeht           │ │
+│                │ ├────────────────────────────────────────┤ │
+│                │ │ PREVIEW                                │ │
+│                │ │ Sekmeht carefully surveys the area.   │ │
+│                │ │ You see Sekmeht standing nearby.      │ │
+│                │ └────────────────────────────────────────┘ │
+└────────────────┴────────────────────────────────────────────┘
+```
+
+**Live preview** — sample lines at the bottom update in real time as the pattern and style fields change. No need to close the editor to see how a rule will look in-game.
+
+Left sidebar shows all groups with toggle switches. Selecting a group filters the rule list to that group only. `All` shows every rule.
+
+### 14.10 Trigger Actions
+
+| Action type | Payload | Behavior |
+|---|---|---|
+| `command` | `pray` | Sends the command to the game server |
+| `sound` | `sounds/alert.wav` | Plays a local sound file |
+| `open-panel` | `thoughts` | Surfaces the named panel if not already visible |
+| `flash-panel` | `main` | Briefly highlights the panel tab to draw attention |
+| `eval` | `health < 30` | Fires only when the game-state expression is true |
+
+**Cooldown** — minimum seconds between firings of the same trigger. Prevents a bleed message that repeats every second from spamming `pray` 50 times. Set to `null` for one-shot triggers (e.g. "open panel when combat starts").
+
+### 14.11 Eval Trigger Variables
+
+Eval triggers evaluate a simple expression against live game state before firing:
+
+| Variable | Type | Example |
+|---|---|---|
+| `health` | 0–100 | `health < 30` |
+| `mana` | 0–100 | `mana < 20` |
+| `stamina` | 0–100 | `stamina < 50` |
+| `concentration` | 0–100 | `concentration < 40` |
+| `spirit` | 0–100 | `spirit < 25` |
+| `rt` | seconds | `rt > 5` |
+| `ct` | seconds | `ct > 0` |
+| `stance` | string | `stance == "prone"` |
+| `bleeding` | boolean | `bleeding == true` |
+| `stunned` | boolean | `stunned == true` |
+| `dead` | boolean | `dead == true` |
+| `hidden` | boolean | `hidden == false` |
+| `invisible` | boolean | `invisible == true` |
+| `room` | string | `room == "The Crossing"` |
+| `spell` | string | `spell == "Fire Ball"` |
+
+Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intentionally simple — no scripting language, no compound logic. Complex automation belongs in Lich.
+
+### 14.12 Implementation Notes
+
+- Rule and group state stored in `localStorage` as `klient67.highlights` and `klient67.triggers`
+- Pattern matching runs on every incoming text segment after XML parsing, before rendering
+- Regex patterns compiled once on load and cached — not re-compiled per line
+- Whole-line rules checked first via a single combined alternation regex (Genie approach) for performance
+- Inline rules use specificity-first overlap resolution (Profanity approach)
+- Highlights applied in `renderSegment()` — adds inline style or `data-highlight` class alongside existing preset styles
+- Trigger eval expressions parsed with a minimal safe evaluator — no `eval()`, no arbitrary code execution
+- Rules exported/imported as JSON; import merges with existing rules (no full replace)
