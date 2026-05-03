@@ -2,15 +2,15 @@
    Text preset colors — applied via data-preset attribute
    ============================================================ */
 
-[data-preset="speech"]       { color: var(--preset-speech); font-style: italic; }
-[data-preset="whisper"]      { color: var(--preset-whisper); font-style: italic; }
-[data-preset="thought"]      { color: var(--preset-thought); }
-[data-preset="roomname"]     { color: var(--preset-roomname); font-weight: bold; }
-[data-preset="roomdesc"]     { color: var(--preset-roomdesc); }
-[data-preset="bold"]         { color: var(--preset-bold); font-weight: bold; }
-[data-preset="expiry"]       { color: var(--preset-expiry); }
-[data-preset="store"]        { color: var(--preset-store); }
-[data-preset="command-echo"] { color: var(--preset-cmd); }
+[data-preset="speech"]       { color: var(--preset-speech);   background-color: var(--preset-speech-bg);   font-style: italic; }
+[data-preset="whisper"]      { color: var(--preset-whisper);  background-color: var(--preset-whisper-bg);  font-style: italic; }
+[data-preset="thought"]      { color: var(--preset-thought);  background-color: var(--preset-thought-bg); }
+[data-preset="roomname"]     { color: var(--preset-roomname); background-color: var(--preset-roomname-bg); font-weight: bold; }
+[data-preset="roomdesc"]     { color: var(--preset-roomdesc); background-color: var(--preset-roomdesc-bg); }
+[data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: bold; }
+[data-preset="expiry"]       { color: var(--preset-expiry);   background-color: var(--preset-expiry-bg); }
+[data-preset="store"]        { color: var(--preset-store);    background-color: var(--preset-store-bg); }
+[data-preset="command-echo"] { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
 
 /* ============================================================
    Stream panel — generic scrolling text

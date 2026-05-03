@@ -159,6 +159,8 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+  min-width: 160px;
+  justify-content: flex-end;
 }
 
 .te-row-inputs--gradient {
@@ -229,3 +231,43 @@
   color: var(--text-faint);
   flex-shrink: 0;
 }
+
+/* ── Preset row (fg + bg combined) ──────────────────────────────── */
+
+.te-row-inputs--preset {
+  gap: 4px;
+}
+
+.te-preset-divider {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.te-color-swatch--none {
+  opacity: 0.3;
+}
+
+.te-preset-none {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  width: 30px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+.te-preset-clear {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 30px;
+  text-align: left;
+}
+
+.te-preset-clear:hover { color: var(--color-danger); }

@@ -9,7 +9,8 @@ import '../styles/theme-editor.css'
 type ColorField    = { type: 'color';    key: string; label: string }
 type GradientField = { type: 'gradient'; label: string; startKey: string; endKey: string }
 type RgbaField     = { type: 'rgba';     key: string;  label: string }
-type Field = ColorField | GradientField | RgbaField
+type PresetField   = { type: 'preset';   label: string; fgKey: string; bgKey: string }
+type Field = ColorField | GradientField | RgbaField | PresetField
 
 interface FieldGroup { label: string; fields: Field[] }
 interface EditorTab  { id: string; label: string; groups: FieldGroup[] }
@@ -17,6 +18,7 @@ interface EditorTab  { id: string; label: string; groups: FieldGroup[] }
 const c  = (key: string, label: string): ColorField    => ({ type: 'color',    key, label })
 const g  = (label: string, s: string, e: string): GradientField => ({ type: 'gradient', label, startKey: s, endKey: e })
 const r  = (key: string, label: string): RgbaField     => ({ type: 'rgba',     key, label })
+const p  = (label: string, fgKey: string, bgKey: string): PresetField => ({ type: 'preset', label, fgKey, bgKey })
 
 const TABS: EditorTab[] = [
   {
@@ -66,15 +68,15 @@ const TABS: EditorTab[] = [
     id: 'gametext', label: 'Game Text',
     groups: [
       { label: 'Text Presets', fields: [
-        c('--preset-speech',   'Speech'),
-        c('--preset-whisper',  'Whisper'),
-        c('--preset-thought',  'Thought'),
-        c('--preset-roomname', 'Room name'),
-        c('--preset-roomdesc', 'Room description'),
-        c('--preset-bold',     'Bold text'),
-        c('--preset-expiry',   'Expiry / warning'),
-        c('--preset-store',    'Store / item'),
-        c('--preset-cmd',      'Command echo'),
+        p('Speech',           '--preset-speech',   '--preset-speech-bg'),
+        p('Whisper',          '--preset-whisper',  '--preset-whisper-bg'),
+        p('Thought',          '--preset-thought',  '--preset-thought-bg'),
+        p('Room name',        '--preset-roomname', '--preset-roomname-bg'),
+        p('Room description', '--preset-roomdesc', '--preset-roomdesc-bg'),
+        p('Bold text',        '--preset-bold',     '--preset-bold-bg'),
+        p('Expiry / warning', '--preset-expiry',   '--preset-expiry-bg'),
+        p('Store / item',     '--preset-store',    '--preset-store-bg'),
+        p('Command echo',     '--preset-cmd',      '--preset-cmd-bg'),
       ]},
     ],
   },
@@ -269,6 +271,45 @@ function RgbaRow({ field, vars, onChange }: { field: RgbaField; vars: ThemeVars;
   )
 }
 
+function PresetRow({ field, vars, onChange }: { field: PresetField; vars: ThemeVars; onChange: (k: string, v: string) => void }) {
+  const fg = vars[field.fgKey] ?? '#ffffff'
+  const bg = vars[field.bgKey] ?? 'transparent'
+  const hasHighlight = bg !== 'transparent'
+  const bgColor = hasHighlight ? bg : '#000000'
+  return (
+    <div className="te-row">
+      <span className="te-row-label">{field.label}</span>
+      <div className="te-row-inputs te-row-inputs--preset">
+        <input type="color" value={fg} onChange={e => onChange(field.fgKey, e.target.value)} className="te-color-swatch" title="Text color" />
+        <input
+          type="text" value={fg} maxLength={7}
+          onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange(field.fgKey, e.target.value) }}
+          className="te-hex-text"
+        />
+        <span className="te-preset-divider">·</span>
+        <input
+          type="color" value={bgColor}
+          onChange={e => onChange(field.bgKey, e.target.value)}
+          className={`te-color-swatch te-color-swatch--bg${!hasHighlight ? ' te-color-swatch--none' : ''}`}
+          title="Highlight color (background)"
+        />
+        {hasHighlight ? (
+          <>
+            <input
+              type="text" value={bg} maxLength={7}
+              onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange(field.bgKey, e.target.value) }}
+              className="te-hex-text"
+            />
+            <button className="te-preset-clear" onClick={() => onChange(field.bgKey, 'transparent')} title="Remove highlight">✕</button>
+          </>
+        ) : (
+          <span className="te-preset-none">none</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 interface Props {
@@ -335,6 +376,7 @@ export default function ThemeEditor({ theme, isNew, onSave, onCancel }: Props) {
                 if (field.type === 'color')    return <ColorRow    key={i} field={field} vars={vars} onChange={handleChange} />
                 if (field.type === 'gradient') return <GradientRow key={i} field={field} vars={vars} onChange={handleChange} />
                 if (field.type === 'rgba')     return <RgbaRow     key={i} field={field} vars={vars} onChange={handleChange} />
+                if (field.type === 'preset')   return <PresetRow   key={i} field={field} vars={vars} onChange={handleChange} />
                 return null
               })}
             </div>

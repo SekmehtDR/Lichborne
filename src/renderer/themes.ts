@@ -54,6 +54,16 @@ export const darkBase: ThemeVars = {
   '--preset-store':    '#5cb85c',
   '--preset-cmd':      '#6a8a6a',
 
+  '--preset-speech-bg':   'transparent',
+  '--preset-whisper-bg':  'transparent',
+  '--preset-thought-bg':  'transparent',
+  '--preset-roomname-bg': 'transparent',
+  '--preset-roomdesc-bg': 'transparent',
+  '--preset-bold-bg':     'transparent',
+  '--preset-expiry-bg':   'transparent',
+  '--preset-store-bg':    'transparent',
+  '--preset-cmd-bg':      'transparent',
+
   '--vital-health-ok-start':   '#1a5a1a',
   '--vital-health-ok-end':     '#3a9a3a',
   '--vital-health-mid-start':  '#6a5a00',

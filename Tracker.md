@@ -309,6 +309,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Parser reset() method — clears all carry-over state on reconnect
 - [x] Debug RAW_PROMPT logging removed — was firing an unknown event on every server transaction
 - [x] roomname (white) and roomdesc confirmed working in-game via live XML capture
+- [x] Preset highlight (background) color — `--preset-*-bg` vars added to all themes (transparent default); theme editor Game Text tab shows combined fg+bg row per preset; panels.css applies background-color
 - [ ] Theme preset coverage audit — all 17 themes define every preset CSS var
 - [ ] Copy/paste in text window
 - [ ] Right-click context menu (Copy, Select All)
@@ -391,3 +392,5 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Stream discovery moved from unknown-event hack (`pushStream:id`) to typed `stream-push` GameEvent — adding a stream to STREAM_MAP no longer silently breaks discovery |
 | 2026-05-02 | `<color fg bg>` inline tag support added — parser maintains color stack, segments carry fg/bg hex, renderSegment applies inline style |
 | 2026-05-02 | Large batch of Genie UI chrome tags silenced (skin, image, radio, link, switchquickbar, endsetup, resource, exposestream) — confirmed from live XML capture |
+| 2026-05-02 | Preset highlight (background) color added — all themes inherit transparent defaults from darkBase; theme editor Game Text tab shows combined fg+bg row; panels.css applies background-color per preset |
+| 2026-05-02 | Character profiles feature added to DESIGN.md Section 8 — planned, requires dedicated design session before implementation |

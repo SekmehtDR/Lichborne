@@ -21,8 +21,9 @@
    - 6.6 Theme JSON Format
    - 6.7 Sharing Themes
 7. [Settings](#7-settings)
-8. [AI Features](#8-ai-features)
-9. [Backlog](#9-backlog)
+8. [Character Profiles](#8-character-profiles)
+9. [AI Features](#9-ai-features)
+10. [Backlog](#10-backlog)
 
 ---
 
@@ -218,7 +219,7 @@ StormFront `<preset>` tags map to visual styles:
 | `expiry` | Expiring effect warning | Orange |
 | `store` | Commerce text | Green |
 
-All preset colors are overridable per theme.
+Each preset has both a **foreground (text) color** and a **background (highlight) color**. The highlight defaults to transparent (off) for all presets across all themes. Players can enable a highlight color per preset in the theme editor — useful for making speech, thoughts, or expiry warnings pop with a tinted background. Both colors are fully themeable and per-character via profiles.
 
 ---
 
@@ -709,7 +710,43 @@ Settings are grouped into broad sections — not deep submenus. Every section is
 
 ---
 
-## 8. AI Features
+## 8. Character Profiles
+
+> **Status: Planned — requires dedicated design session before implementation.**
+
+Each DragonRealms character is a distinct identity with different playstyles, guilds, and needs. Character profiles let the client automatically switch to a character-specific configuration on login.
+
+### 8.1 What a Profile Contains
+
+A profile is a named bundle of per-character settings that activates when that character logs in:
+
+| Setting | Notes |
+|---|---|
+| **Theme** | Each character can have their own theme (e.g. guild theme matching their class) |
+| **Panel layout** | Zone sizes, tab arrangement, which panels are open |
+| **Text presets** | Highlight colors tuned for that character's content |
+| **Font settings** | Size, family, line height |
+| **Highlight rules** | Character-specific trigger patterns |
+| **Status bar position** | Top vs. bottom preference per character |
+| **Custom panel set** | Which discovered streams are pinned |
+
+### 8.2 Key Design Questions (to resolve in planning session)
+
+- **Profile identity** — keyed by character name, account+character, or user-defined label?
+- **Persistence layer** — separate localStorage keys per profile, or a single profiles JSON blob?
+- **Switching** — auto-switch on login (match by character name from SGE), or manual selection?
+- **Fallback** — what loads if no profile exists for a character yet? Clone from current or use defaults?
+- **Global vs. per-profile** — some settings (Lich paths, connection config) should stay global; others (theme, layout) are per-profile. Need clear boundary.
+- **Profile manager UI** — standalone screen or integrated into Settings?
+- **Import/export** — share a profile with another player (same character class, same playstyle)?
+
+### 8.3 Rough Implementation Approach (to be refined)
+
+On login, the client receives the character name from SGE. It looks up a matching profile and applies it before the game window renders — so the correct theme, layout, and settings are already in place when text starts arriving. If no profile exists, the client offers to save the current settings as a new profile for that character.
+
+---
+
+## 9. AI Features
 
 AI features use the OpenAI API (key stored locally, never transmitted anywhere else).
 
@@ -810,6 +847,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Panel resize clipping — mid zone drag capped to column height so top zone is never pushed off screen
 - [x] Parser overhaul — style markers, preset normalization, compass exits, color tags, silent tags, stream discovery, reset()
 - [x] Bold text rendering — data-preset always set on bold elements; roomname/roomdesc confirmed in-game
+- [x] Preset highlight color — background color support per preset, transparent by default, editable in theme editor Game Text tab
 - [ ] Theme preset coverage audit — all 17 base/guild themes define every preset CSS var; no panel shows fallback/wrong colors after a theme switch
 - [ ] Copy/paste in text window — select game text and copy to clipboard; verify paste works in command bar
 - [ ] Right-click context menu in text window — at minimum Copy, Select All
