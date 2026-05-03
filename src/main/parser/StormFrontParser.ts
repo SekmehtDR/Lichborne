@@ -262,7 +262,10 @@ export class StormFrontParser {
         break
 
       case 'dir':
-        if (selfClosing && attrs.value) this.compassDirs.push(attrs.value.toLowerCase())
+        if (selfClosing && attrs.value) {
+          const raw = attrs.value.toLowerCase()
+          this.compassDirs.push(raw === 'down' ? 'dn' : raw)
+        }
         break
 
       case 'progressbar': {
