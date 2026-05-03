@@ -1,4 +1,4 @@
-.status-strip {
+.vitals-strip {
   flex-shrink: 0;
   background: linear-gradient(180deg, var(--bg-raised) 0%, var(--bg-sunken) 100%);
   border-bottom: 1px solid var(--border-subtle);
@@ -10,7 +10,7 @@
 
 /* --- Vitals row --- */
 
-.status-vitals {
+.vitals-row {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -39,7 +39,7 @@
   transition: width 0.3s ease, background 0.5s ease;
 }
 
-/* Vital fill gradient classes — used by StatusBar.tsx */
+/* Vital fill gradient classes — used by VitalsBar.tsx */
 .vital-fill--health-ok   { background: linear-gradient(90deg, var(--vital-health-ok-start),   var(--vital-health-ok-end)); }
 .vital-fill--health-mid  { background: linear-gradient(90deg, var(--vital-health-mid-start),  var(--vital-health-mid-end)); }
 .vital-fill--health-low  { background: linear-gradient(90deg, var(--vital-health-low-start),  var(--vital-health-low-end)); }

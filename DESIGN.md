@@ -11,7 +11,7 @@
 2. [Terminology](#2-terminology)
 3. [Panel System](#3-panel-system)
 4. [Stream Inventory](#4-stream-inventory)
-5. [Status Bar System & Live Panels](#5-status-bar-system--live-panels)
+5. [Vitals Bar & Live Panels](#5-vitals-bar--live-panels)
 6. [Display & Accessibility](#6-display--accessibility)
 7. [Theming](#7-theming)
    - 7.1 Architecture
@@ -93,11 +93,13 @@ Every panel supports:
 │                                  ├──────────────────────────┤
 │                                  │ THOUGHTS                 │
 │                                  │ * Muse thinks, "hello"   │
-│                                  │ * Agan thinks, "hi"      │
-├──────────────────────────────────┴──────────────────────────┤
-│ >  _                                                [Send]   │
-└─────────────────────────────────────────────────────────────┘
+├──────────────────────────────────┤ * Agan thinks, "hi"      │
+│ >  _                    [Send]   ├──────────────────────────┤
+└──────────────────────────────────┤ EXP                      │
+                                   └──────────────────────────┘
 ```
+
+The command bar spans only the main text area — the right panel column extends to the bottom of the window, giving the bottom-right panel (Experience) maximum vertical space.
 
 This is the **starting point**, not a constraint. Players can reshape it freely.
 
@@ -107,7 +109,7 @@ Players can save named layouts and switch between them:
 
 - **Default** — the layout above
 - **Combat** — bigger main window, RT prominent, room compressed
-- **Crafting** — more streams visible, smaller status bars
+- **Crafting** — more streams visible, smaller vitals bars
 - **Minimal** — just main text and command bar, everything else hidden
 - *(custom)* — player-defined and named
 
@@ -135,7 +137,7 @@ A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows
 | `exp` | Bottom-right | Live skill mindstate tracker |
 | `familiar` | Closeable tab | Familiar stream |
 | `inv` | Floatable | Inventory |
-| `statusbars` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
+| `vitalsbar` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
 | `debug` | Hidden by default | Raw incoming data, for troubleshooting |
 
@@ -245,7 +247,7 @@ Each preset has both a **foreground (text) color** and a **background (highlight
 
 ---
 
-## 5. Status Bar System & Live Panels
+## 5. Vitals Bar & Live Panels
 
 ### 5.1 Vitals
 
@@ -309,24 +311,26 @@ Roundtime and cast time can be displayed as **thin progress bars embedded in the
 
 This is an **option**, not the default. Players can choose to show RT/cast in the command bar, in the status strip, or both.
 
-### 5.5 Status Bar Strip Position
+### 5.5 Vitals Bar Position
 
-By default the status bar strip sits at the top of the window. Players can move it to **just above the command bar** — the layout StormFront uses, which many veterans are accustomed to:
+By default the vitals bar sits at the top of the window, spanning the full width. Players can move it to **just above the command bar** — the layout StormFront uses, which many veterans are accustomed to.
+
+In bottom position, the vitals bar is scoped to the **main text area width only** — it does not extend under the right panel column. This gives the bottom-right panel (Experience) maximum vertical space while keeping the vitals visible at the point of focus.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                                                          │
-│   MAIN TEXT                        ROOM / THOUGHTS       │
-│                                                          │
-├──────────────────────────────────────────────────────────┤
-│  Health ████░░  Mana ████░░  Conc ██░░  Fat ███░░  Spr  │  ← bars here
-│  [Standing]  [RT: 2.1s]  [Fire Ball]                    │
-├──────────────────────────────────────────────────────────┤
-│ >  _                                              [Send] │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────┬──────────────────────┐
+│                                  │ ROOM / THOUGHTS      │
+│   MAIN TEXT                      │                      │
+│                                  ├──────────────────────┤
+│                                  │ EXP                  │
+├──────────────────────────────────┤                      │
+│  Health ████  Mana ████  Conc ██ │                      │  ← bars here
+├──────────────────────────────────┤                      │
+│ >  _                    [Send]   │                      │
+└──────────────────────────────────┴──────────────────────┘
 ```
 
-This is a single setting toggle: **Status bars position — Top / Bottom**. The layout profiles (Combat, Crafting, etc.) can each have their own preference.
+This is a single setting toggle: **Vitals Bar Position — Top / Bottom**. The layout profiles (Combat, Crafting, etc.) can each have their own preference.
 
 ### 5.6 Room Panel
 
@@ -430,7 +434,7 @@ Display and accessibility settings live in **Settings → Display & Accessibilit
 ### 6.1 Large Print
 
 - Base font size: 18px (default is 14px)
-- Taller status bars
+- Taller vitals bars
 - Wider line spacing (1.8)
 - Minimum panel sizes enforced
 
@@ -458,7 +462,7 @@ Three selectable options under Display & Accessibility — only one can be activ
 
 ### 6.4 Colorblind-Aware Color Picker
 
-Rather than special colorblind modes, the client helps players make informed color choices wherever a color picker is shown (highlight rules, theme editor, status bar colors):
+Rather than special colorblind modes, the client helps players make informed color choices wherever a color picker is shown (highlight rules, theme editor, vitals bar colors):
 
 - Below the selected color, a small row of **simulated swatches** shows how the color appears under deuteranopia, protanopia, and tritanopia
 - If the foreground/background combination would be hard to distinguish under any common colorblind condition, a **warning label** appears: *"This combination may be hard to read for red-green colorblind players"*

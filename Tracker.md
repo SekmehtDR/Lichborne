@@ -110,10 +110,10 @@ The text attribute is **not** just the current value — it contains `"current m
 
 **Active spells (percWindow stream):** complex text parsing of spell names + durations. Defer to a later milestone — do not attempt in 2A.
 
-### Milestone 2B — Status Bar Strip ✅
+### Milestone 2B — Vitals Bar Strip ✅
 > Goal: vitals, roundtime, indicators, prepared spell all live and updating
 
-- [x] Fixed status bar strip at top of layout (flexbox column, between toolbar and main text)
+- [x] Fixed vitals bar strip at top of layout (flexbox column, between toolbar and main text)
 - [x] Vital bars — Health, Mana, Concentration, Fatigue, Spirit (from VitalUpdate)
 - [x] Vital bar gradient fills + 4-state health thresholds (green/yellow/orange/red at 80/50/30%)
 - [x] Roundtime countdown — precise timer from Unix timestamp, scales to actual RT max
@@ -131,7 +131,7 @@ The text attribute is **not** just the current value — it contains `"current m
 
 #### Implementation Notes
 
-- `StatusBar.tsx` + `statusbar.css` — vitals only, gradient fills, threshold colors
+- `VitalsBar.tsx` + `vitalsbar.css` — vitals only, gradient fills, threshold colors
 - `IconBar.tsx` + `iconbar.css` — two-row HUD, all character/world state indicators
 - Countdown interval runs at 100ms; `rtMaxRef` captures initial duration on each new timer for correct fill scaling
 - RT/CT strips always rendered; `timer-strip--idle` class dims them when inactive
@@ -278,7 +278,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] High Contrast mode — black bg, white text, yellow accent; overlaid as inline CSS vars on top of active theme
 - [x] Color Blind mode — Deuteranopia, Protanopia, Tritanopia; targeted semantic var overrides (health/indicator/timer/compass colors)
 - [x] Epilepsy Safe Mode toggle — sets `data-epilepsy-safe="true"` on `<html>`; CSS `[data-epilepsy-safe="true"]` disables pulse animations
-- [x] Status bar position toggle — StatusBar + IconBar render above game-main (top) or between game-main and command-bar (bottom) via conditional rendering
+- [x] Vitals bar position toggle — top renders above game-main (full width); bottom renders inside `.text-window-wrap` above command bar (main area width only, stops at panel column divider)
 - [x] Theme overlay ordering: re-apply effect in GameWindow re-applies base theme then settings overlays on every settings/theme change so overlays survive theme switches
 - [x] Settings persisted to localStorage (`klient67.settings`); restored on startup via `initSettings()`
 - [x] Icon bar position toggle — independent of status bar position (top or bottom)
@@ -321,6 +321,9 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Stream mapping expansion — `talk`→`conversations`, `combat`→`combat`, `atmospherics`→`atmospherics`, `group`→`group` added to STREAM_MAP; `conversations` added as built-in PanelType with label, renderPanel case, and NEVER_DISCOVER entry
 - [x] Stream fallback system — `STREAM_FALLBACK` map + `watchedStreamsRef` (updated on tab changes); all named streams (conversations, thoughts, arrivals, deaths, spells, familiar, combat, atmospherics, group) fall back to main when no panel is open; main window is always the safety net
 - [x] Default panel layout updated — Top-Right: Room + Conversations; Center-Right: Thoughts + Arrivals + Deaths + Active Spells; Bottom-Right: Experience; reset-to-defaults block updated to match
+- [x] Command bar scoped to main text area — moved inside `.text-window-wrap`; right panel column now extends full window height; bottom-right panel gains the space previously consumed by the full-width input bar
+- [x] VitalsBar bottom position scoped to main text area — renders inside `.text-window-wrap` directly above command bar; matches input bar width, stops at panel column divider
+- [x] StatusBar renamed to VitalsBar throughout — `VitalsBar.tsx`, `vitalsbar.css`, `vitalsBarPosition` settings key, "Vitals Bar Position" label, all docs updated
 
 ---
 
@@ -352,7 +355,7 @@ Items removed from active phase scope — too large for current pass, require de
 |---|---|
 | Full keyboard navigation | Tab through panels, Enter to focus command bar, configurable bindings — touches every component |
 | Screen reader / ARIA live regions | Main, room, thoughts panels as live regions; landmark navigation; status bar values as text — requires real screen reader testing (NVDA, JAWS, VoiceOver) |
-| HUD widget system | Individual repositionable elements — compass, hands, RT/CT, spell; requires redesign of IconBar/StatusBar |
+| HUD widget system | Individual repositionable elements — compass, hands, RT/CT, spell; requires redesign of IconBar/VitalsBar |
 | All AI features | Blocked on highlight system (Phase 6) + session capture existing first — see DESIGN.md AI Backlog section |
 
 ---
@@ -388,8 +391,10 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Settings stored in AppSettings; applySettingsToDOM composable overlay — applies after base theme so high contrast/colorblind survive theme changes |
 | 2026-05-02 | Large Print scales html.style.fontSize to 16px so all rem values enlarge without touching individual CSS rules |
 | 2026-05-02 | Color Blind mode targets only semantic indicator/health/timer vars (not all colors) — avoids breaking theme aesthetics for non-critical UI |
-| 2026-05-02 | Status bar position conditional render in GameWindow — same StatusBar+IconBar JSX, just placed before or after game-main div |
-| 2026-05-02 | Icon bar position is independent from status bar position — each has its own setting and conditional render |
+| 2026-05-02 | Vitals bar position conditional render in GameWindow — top renders before game-main (full width); bottom later moved inside text-window-wrap for scoped width |
+| 2026-05-02 | Icon bar position is independent from vitals bar position — each has its own setting and conditional render |
+| 2026-05-03 | StatusBar renamed to VitalsBar — component, CSS file, settings key (`vitalsBarPosition`), and all docs updated |
+| 2026-05-03 | VitalsBar bottom position scoped to main text width — rendered inside `.text-window-wrap` above command bar; right panel column unaffected, bottom-right panel retains full height |
 | 2026-05-02 | Login advanced settings grouped into AdvancedSettings interface and persisted to klient67.advancedSettings; credentials intentionally excluded |
 | 2026-05-02 | Reset Panels moved from toolbar button into Panel Manager modal header — toolbar now has Debug, Panels, Theme, Settings, Disconnect only |
 | 2026-05-02 | `<style>` tags confirmed as self-closing push/pop markers from live protocol data — DR sends `<style id='roomName'/>` not `<style id='roomName'>text</style>`; parser redesigned accordingly |
@@ -411,3 +416,4 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | `combat` stream mapped to its own target (was incorrectly routed to `main`) — combat/atmospherics/group now discoverable dynamic streams |
 | 2026-05-02 | Stream fallback system added — all named streams fall back to main when no panel is open (conversations, thoughts, arrivals, deaths, spells, familiar, combat, atmospherics, group); `watchedStreamsRef` tracks open tab IDs and updates on every tab change |
 | 2026-05-02 | Default panel layout overhauled — Room+Conversations top-right; Thoughts+Arrivals+Deaths+Spells center-right; Experience bottom-right; chosen based on how frequently each stream fires during normal play |
+| 2026-05-03 | Command bar moved inside `.text-window-wrap` — scoped to main text area width only; right panel column now fills full window height giving bottom-right panel maximum vertical space |

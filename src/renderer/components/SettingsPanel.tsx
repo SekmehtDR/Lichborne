@@ -155,9 +155,9 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
           />
 
           <RadioGroup
-            label="Status Bar Position"
-            value={settings.statusBarPosition}
-            onChange={v => set('statusBarPosition', v)}
+            label="Vitals Bar Position"
+            value={settings.vitalsBarPosition}
+            onChange={v => set('vitalsBarPosition', v)}
             options={[
               { value: 'top',    label: 'Top',    description: 'Vitals below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Vitals above the command bar' },

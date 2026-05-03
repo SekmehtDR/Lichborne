@@ -1,4 +1,4 @@
-import '../styles/statusbar.css'
+import '../styles/vitalsbar.css'
 
 interface VitalState {
   current: number
@@ -24,10 +24,10 @@ function vitalFillClass(id: string, pct: number): string {
   return `vital-fill vital-fill--${id}`
 }
 
-export default function StatusBar({ vitals }: Props) {
+export default function VitalsBar({ vitals }: Props) {
   return (
-    <div className="status-strip">
-      <div className="status-vitals">
+    <div className="vitals-strip">
+      <div className="vitals-row">
         {VITAL_ORDER.map(id => {
           const v = vitals[id]
           const pct = v.max > 0 ? (v.current / v.max) * 100 : 0

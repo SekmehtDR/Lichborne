@@ -8,7 +8,7 @@ export interface AppSettings {
   highContrast: boolean
   colorBlind: 'none' | 'deuteranopia' | 'protanopia' | 'tritanopia'
   epilepsySafe: boolean
-  statusBarPosition: 'top' | 'bottom'
+  vitalsBarPosition: 'top' | 'bottom'
   iconBarPosition: 'top' | 'bottom'
 }
 
@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   highContrast: false,
   colorBlind: 'none',
   epilepsySafe: false,
-  statusBarPosition: 'top',
+  vitalsBarPosition: 'top',
   iconBarPosition: 'top',
 }
 

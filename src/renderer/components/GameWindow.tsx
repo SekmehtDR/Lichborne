@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
 import { renderSegment } from '../utils/renderSegment'
 import DebugPanel from './DebugPanel'
-import StatusBar from './StatusBar'
+import VitalsBar from './VitalsBar'
 import IconBar from './IconBar'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
@@ -542,7 +542,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         </button>
       </div>
 
-      {settings.statusBarPosition === 'top' && <StatusBar vitals={vitals} />}
+      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} />}
       {settings.iconBarPosition === 'top' && (
         <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
@@ -565,6 +565,14 @@ export default function GameWindow({ onDisconnect }: Props) {
               ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
             </div>
           )}
+          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} />}
+          <form className="command-bar" onSubmit={handleCommand}>
+            <span className="prompt-marker">&gt;</span>
+            <input ref={inputRef} type="text" value={command}
+              onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
+              onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+            <button type="submit" className="btn-send">Send</button>
+          </form>
         </div>
 
         <div className="panel-divider" onMouseDown={handleColDividerDown} />
@@ -586,7 +594,6 @@ export default function GameWindow({ onDisconnect }: Props) {
         </div>
       </div>
 
-      {settings.statusBarPosition === 'bottom' && <StatusBar vitals={vitals} />}
       {settings.iconBarPosition === 'bottom' && (
         <IconBar stance={stance} rtExpires={rtExpires} ctExpires={ctExpires} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} exits={exits} />
@@ -631,13 +638,6 @@ export default function GameWindow({ onDisconnect }: Props) {
         />
       )}
 
-      <form className="command-bar" onSubmit={handleCommand}>
-        <span className="prompt-marker">&gt;</span>
-        <input ref={inputRef} type="text" value={command}
-          onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
-          onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
-        <button type="submit" className="btn-send">Send</button>
-      </form>
     </div>
   )
 }
