@@ -850,11 +850,11 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Parser overhaul — style markers, preset normalization, compass exits, color tags, silent tags, stream discovery, reset()
 - [x] Bold text rendering — data-preset always set on bold elements; roomname/roomdesc confirmed in-game
 - [x] Preset highlight color — background color support per preset, transparent by default, editable in theme editor Game Text tab
-- [ ] Theme preset coverage audit — all 17 base/guild themes define every preset CSS var; no panel shows fallback/wrong colors after a theme switch
-- [ ] Copy/paste in text window — select game text and copy to clipboard; verify paste works in command bar
+- [~] Theme preset coverage audit — deferred; all themes inherit preset vars from darkBase for now
+- [x] Auto-copy on text selection — highlight any text in any panel and release; clipboard updated automatically; skips inputs/textareas
+- [x] Stream panel preset coverage — StreamPanel uses renderSegment + panels.css global; presets apply in all stream panels
 - [ ] Right-click context menu in text window — at minimum Copy, Select All
 - [ ] Text selection styling — visible selection highlight that works across themes
-- [ ] Stream panel preset coverage — presets applied to thoughts, arrivals, deaths, spells, familiar, inventory, and user-created panels, not just main stream
 
 ### Phase 6 — Highlights, Triggers & Macros
 - [ ] Highlight rules engine — regex pattern → color/label, applied to incoming game text

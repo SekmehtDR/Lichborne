@@ -310,11 +310,12 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Debug RAW_PROMPT logging removed — was firing an unknown event on every server transaction
 - [x] roomname (white) and roomdesc confirmed working in-game via live XML capture
 - [x] Preset highlight (background) color — `--preset-*-bg` vars added to all themes (transparent default); theme editor Game Text tab shows symmetric fg+bg rows per preset; panels.css applies background-color; bg hex input always visible, clears to transparent on empty
-- [ ] Theme preset coverage audit — all 17 themes define every preset CSS var
-- [ ] Copy/paste in text window
+- [~] Theme preset coverage audit — deferred, all themes inherit from darkBase for now
+- [x] Auto-copy on text selection — mouseup listener copies any highlighted text to clipboard in all panels; skips inputs/textareas
+- [x] Debug button false-active on login — command input now focused on GameWindow mount; browser no longer lands focus on Debug button
+- [x] Stream panel preset coverage — StreamPanel uses renderSegment + panels.css is global; presets apply identically in all stream panels
 - [ ] Right-click context menu (Copy, Select All)
 - [ ] Text selection styling visible across themes
-- [ ] Stream panel preset coverage — presets work in thoughts, arrivals, deaths, spells, familiar, inventory, custom panels
 
 ---
 
@@ -395,3 +396,6 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Preset highlight (background) color added — all themes inherit transparent defaults from darkBase; theme editor Game Text tab shows combined fg+bg row; panels.css applies background-color per preset |
 | 2026-05-02 | Character profiles feature added to DESIGN.md Section 8 — planned, requires dedicated design session before implementation |
 | 2026-05-02 | Preset highlight UX finalized — symmetric swatch+hex pairs for fg and bg; bg always shows `none` placeholder; auto-prepends `#` on type; clearing hex reverts to transparent; no ✕ button needed |
+| 2026-05-02 | Auto-copy on text selection — document mouseup listener in GameWindow; skips input/textarea nodes; covers all panels including debug |
+| 2026-05-02 | Debug button focus bug — GameWindow now focuses command input on mount; eliminates browser default focus landing on Debug toolbar button |
+| 2026-05-02 | Stream panel preset coverage confirmed — StreamPanel uses renderSegment; panels.css global import means all stream panels get preset colors automatically |

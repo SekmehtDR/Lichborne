@@ -157,6 +157,25 @@ export default function GameWindow({ onDisconnect }: Props) {
   const rowDragStartY    = useRef(0)
   const rowDragStartH    = useRef(0)
 
+  // ── On mount: focus command input + wire auto-copy on text selection ───────
+
+  useEffect(() => {
+    inputRef.current?.focus()
+
+    function onMouseUp() {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) return
+      const text = sel.toString()
+      if (!text) return
+      const anchor = sel.anchorNode
+      const el = anchor instanceof Element ? anchor : anchor?.parentElement
+      if (el?.closest('input, textarea')) return
+      navigator.clipboard.writeText(text).catch(() => {})
+    }
+    document.addEventListener('mouseup', onMouseUp)
+    return () => document.removeEventListener('mouseup', onMouseUp)
+  }, [])
+
   // ── Re-apply theme then settings overlays whenever either changes ────────
 
   useEffect(() => {
