@@ -36,5 +36,8 @@ contextBridge.exposeInMainWorld('api', {
     const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
     ipcRenderer.on(CH.ERROR, listener)
     return () => ipcRenderer.removeListener(CH.ERROR, listener)
-  }
+  },
+
+  browseFile: (filters: { name: string; extensions: string[] }[]) =>
+    ipcRenderer.invoke('browse-file', filters),
 })

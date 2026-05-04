@@ -29,6 +29,7 @@
 13. [Multi-Character Support](#13-multi-character-support)
 14. [Highlights & Triggers](#14-highlights--triggers)
 15. [Smart Names / Contacts](#15-smart-names--contacts)
+16. [Login Screen](#16-login-screen)
 
 ---
 
@@ -1693,4 +1694,87 @@ Sekmeht detected — add to contacts?  [Friends ▾]  [Add]  [Not now]
 - Contacts panel rendered via React portal (same pattern as Theme Picker and Settings)
 - All new components use CSS variables from `theme.css` — no hardcoded colors; new CSS file `contacts.css` follows the same structure as existing component stylesheets
 - `lastSeen` / `lastRoom` written to localStorage debounced at 2s — prevents thrashing during busy room updates
+
+---
+
+## 16. Login Screen
+
+> Status: Implemented (Phase 1 baseline + UI polish pass 2026-05-03).
+
+### 16.1 Layout
+
+Single-page card (460px wide, dark fixed palette — intentionally hardcoded, not theme-driven since it renders before any character theme is loaded).
+
+```
+┌─ Klient67 ──────────────────────────────────────┐
+│              Klient67                            │
+│          DRAGONREALMS CLIENT                     │
+│                                                  │
+│  ACCOUNT NAME                                    │
+│  [                                             ] │
+│  PASSWORD                                        │
+│  [                                             ] │
+│  CHARACTER NAME                                  │
+│  [ e.g. Katasha                                ] │
+│                                                  │
+│  ☑ Connect via Lich (recommended)                │
+│  ─────────────────────────────────────────────   │
+│  ▸ Advanced / Lich Settings                      │
+│                                                  │
+│  [ ⚡ Connect via Lich ]                         │
+└──────────────────────────────────────────────────┘
+```
+
+### 16.2 Advanced / Lich Settings Panel
+
+Collapsed by default (never persisted — always starts closed). Expands to show Lich-specific infrastructure fields. All inputs/buttons pinned to 30px height for visual alignment.
+
+```
+▾ Advanced / Lich Settings
+┌─────────────────────────────────────────────────┐
+│ RUBY PATH (RUBY.EXE)                            │
+│ [ C:\Ruby4Lich5\4.0.0\bin\ruby.exe ] [ Browse ] │
+│ LICH PATH (LICH.RBW)                            │
+│ [ C:\Ruby4Lich5\Lich5\lich.rbw     ] [ Browse ] │
+│ DELAY (S)  PORT              MODE               │
+│ [ 7      ] [ 11024 ] [🔒]   [ --stormfront ▾][🔒]│
+│ ☑ Hide Lich window (run as background process)  │
+└─────────────────────────────────────────────────┘
+```
+
+**Browse buttons** — open a native OS file picker filtered to `.exe` (Ruby) or `.rbw/.rb` (Lich). IPC channel: `browse-file`.
+
+**Port lock** — locked by default (greyed, non-editable). Click 🔒 to unlock (gold border). Re-locking resets to the default port (11024). Prevents accidental port corruption.
+
+**Mode lock** — same padlock pattern as Port. Locked to `--stormfront` by default. Re-locking resets to default.
+
+**Delay** — plain numeric input (seconds). No lock. Users may legitimately need to tune this.
+
+### 16.3 Connecting State
+
+When connecting, the form is replaced entirely by a spinner + scrolling status log. The card stays the same compact size — no layout shift.
+
+```
+┌─ Klient67 ──────────────────────────────────────┐
+│              Klient67                            │
+│          DRAGONREALMS CLIENT                     │
+│                                                  │
+│               ◌  (spinner)                       │
+│  ┌─────────────────────────────────────────┐     │
+│  │ › SGE connected — requesting key...     │     │
+│  │ › Got 8 character(s): Agan, ...         │     │
+│  │ › Getting login key for Agan...         │     │
+│  └─────────────────────────────────────────┘     │
+└──────────────────────────────────────────────────┘
+```
+
+On error, `setConnecting(false)` restores the form with the error message displayed so the user can correct and retry.
+
+### 16.4 Design Decisions
+
+- **Hardcoded colors** — login.css uses fixed hex values, not CSS custom properties. The screen renders before any character or theme is active; it should always look the same regardless of user theme config.
+- **`showAdvanced` never persisted** — `loadAdvanced()` always overrides with `showAdvanced: false` after merging localStorage. Prevents the panel defaulting open on future loads if the user left it open.
+- **"Connect via Lich" outside the advanced panel** — it is a primary choice, not an infrastructure detail. Lives in the main form between Character Name and the Advanced toggle.
+- **Subtle divider** before the Advanced toggle (`border-top: 1px solid #222`) separates credential fields from configuration fields visually.
+- **Grid columns for Delay/Port/Mode row**: `72px 108px 1fr` — Delay tight (small number), Port fixed (5-digit + lock), Mode fills remaining space.
 

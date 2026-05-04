@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
@@ -80,6 +80,11 @@ ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
 
 ipcMain.on(CH.SEND_COMMAND, (_event, command: string) => {
   connection.send(command)
+})
+
+ipcMain.handle('browse-file', async (_event, filters: { name: string; extensions: string[] }[]) => {
+  const result = await dialog.showOpenDialog({ properties: ['openFile'], filters })
+  return result.canceled ? null : result.filePaths[0] ?? null
 })
 
 ipcMain.on(CH.DISCONNECT, () => {
