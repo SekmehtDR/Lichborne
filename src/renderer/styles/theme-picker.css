@@ -1,7 +1,7 @@
 .tp-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,7 +11,7 @@
 .tp-modal {
   background: var(--bg-base);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   width: 640px;
   max-width: 95vw;
   max-height: 85vh;
@@ -153,7 +153,7 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 5px 8px 4px;
-  border-top: 1px solid rgba(128, 128, 128, 0.15);
+  border-top: 1px solid var(--border-faint);
   min-height: 28px;
 }
 
@@ -189,7 +189,7 @@
   display: flex;
   gap: 3px;
   padding: 3px 6px 5px;
-  border-top: 1px solid rgba(128, 128, 128, 0.1);
+  border-top: 1px solid var(--border-faint);
 }
 
 .tp-card-btn {

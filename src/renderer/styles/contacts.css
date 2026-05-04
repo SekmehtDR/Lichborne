@@ -41,7 +41,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 11px 16px;
+  padding: 12px 16px;
   background: var(--bg-hover);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -87,7 +87,7 @@
   background: transparent;
   border: none;
   color: var(--text-dim);
-  font-size: 1.2rem;
+  font-size: 1.4rem;
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
@@ -208,10 +208,10 @@
 
 .cp-label {
   font-size: 0.7rem;
-  font-weight: 600;
-  color: var(--text-dim);
+  font-weight: 700;
+  color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
 }
 
 .cp-input {
@@ -226,7 +226,7 @@
   transition: border-color 0.2s;
 }
 
-.cp-input:focus { border-color: var(--accent-bg); }
+.cp-input:focus { border-color: var(--accent-dim); }
 
 .cp-input--hex { width: 88px; font-family: monospace; }
 
@@ -243,7 +243,7 @@
   transition: border-color 0.2s;
 }
 
-.cp-select:focus { border-color: var(--accent-bg); }
+.cp-select:focus { border-color: var(--accent-dim); }
 
 .cp-tpl-preview {
   display: flex;
@@ -291,7 +291,7 @@
   transition: border-color 0.2s;
 }
 
-.cp-textarea:focus { border-color: var(--accent-bg); }
+.cp-textarea:focus { border-color: var(--accent-dim); }
 
 /* ── Actions row ─────────────────────────────────────────────────────────── */
 
@@ -345,17 +345,17 @@
 }
 
 .cp-btn--delete:hover {
-  border-color: #8a2020;
+  border-color: var(--color-danger-border);
   color: var(--color-danger);
 }
 
 .cp-btn--danger {
-  border-color: #8a2020;
+  border-color: var(--color-danger-border);
   color: var(--color-danger);
 }
 
 .cp-btn--danger:hover {
-  background: rgba(180, 40, 40, 0.15);
+  background: var(--color-danger-bg);
 }
 
 /* ── Templates tab ───────────────────────────────────────────────────────── */

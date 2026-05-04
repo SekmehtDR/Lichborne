@@ -35,8 +35,13 @@ export function renderSegmentWithContacts(
     }
 
     const matchedName = match[0]
-    const contact = contacts.find(c => c.name.toLowerCase() === matchedName.toLowerCase())!
-    const template = templates.find(t => t.id === contact?.templateId) ?? null
+    const contact = contacts.find(c => c.name.toLowerCase() === matchedName.toLowerCase()) ?? null
+    if (!contact) {
+      parts.push(renderSegment({ ...seg, text: matchedName }, k()))
+      lastIndex = match.index + matchedName.length
+      continue
+    }
+    const template = templates.find(t => t.id === contact.templateId) ?? null
 
     // Tag is a separate render-only span — never touches the underlying text data
     if (template?.tagText) {
@@ -59,7 +64,7 @@ export function renderSegmentWithContacts(
         ? { backgroundColor: template.bgColor }
         : {}),
     }
-    const clickable = !!onContactClick && !!contact
+    const clickable = !!onContactClick
     const nameContent = template?.bold
       ? <strong style={nameStyle}>{matchedName}</strong>
       : <span style={nameStyle}>{matchedName}</span>
@@ -67,7 +72,7 @@ export function renderSegmentWithContacts(
       <span
         key={k()}
         className={`contact-name${clickable ? ' contact-name--clickable' : ''}`}
-        onClick={clickable ? (e) => { e.stopPropagation(); onContactClick!(contact!.id, e.clientX, e.clientY) } : undefined}
+        onClick={clickable ? (e) => { e.stopPropagation(); onContactClick!(contact.id, e.clientX, e.clientY) } : undefined}
       >
         {nameContent}
       </span>

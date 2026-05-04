@@ -228,6 +228,10 @@ export default function GameWindow({ onDisconnect }: Props) {
   useEffect(() => { contactsRef.current = contacts }, [contacts])
   useEffect(() => { roomStateRef.current = roomState }, [roomState])
 
+  useEffect(() => {
+    return () => { if (lastSeenTimerRef.current) clearTimeout(lastSeenTimerRef.current) }
+  }, [])
+
   // ── Last-seen tracking — fires when room players list ("Also here:") updates
 
   useEffect(() => {
