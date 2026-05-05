@@ -914,7 +914,7 @@ Priority order reflects data availability from the protocol and player-facing va
 > Full spec: Section 14. 7A complete; 7B–7C not started.
 
 - [x] Highlight rules engine — Text (word-by-word `\b`), Phrase (exact substring), Regex; Line and Match scope; FG + BG + bold + glow; overlap resolution (contacts beat highlights on ties, first-position wins)
-- [x] Highlight editor UI — toolbar button; sidebar list with enable toggle, color swatch, scope badge; detail form with pattern field, mode toggle, `Aa` case sensitivity, style pickers, live preview with test input; right-click "Highlight word / line" from game text
+- [x] Highlight editor UI — toolbar button; sidebar list with enable toggle, color swatch, scope badge; detail form with pattern field, mode toggle, `Aa` case sensitivity, style pickers, live preview with test input; right-click "Highlight word / line" from game text and all stream panels
 - [ ] Highlight groups — Danger, Alerts, Info, Social; named toggleable sets (Section 14.6)
 - [ ] Highlight Wizard — paste text → keyword analysis → match suggestions (Section 14.0)
 - [ ] Global + per-character rule scoping (Section 14.8)

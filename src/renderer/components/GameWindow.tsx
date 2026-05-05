@@ -604,6 +604,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
     debugEvents, onClearDebug: clearDebugEvents,
     onClearStream: clearStream,
+    onHighlight: openHighlightEditor,
     discoveredStreams,
   }
 

@@ -4,21 +4,23 @@ import { renderSegment } from '../../utils/renderSegment'
 import { renderSegmentFull, getLineHighlightStyle } from '../../utils/renderSegmentFull'
 import { useContacts } from '../../ContactsContext'
 import { useHighlights } from '../../HighlightsContext'
+import { newHighlight, type HighlightRule } from '../../highlights'
 import ContextMenu from '../ContextMenu'
 
 interface Props {
   lines: TextLine[]
   emptyMessage?: string
   onClear?: () => void
+  onHighlight?: (rule: HighlightRule, testText?: string) => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
   const hasExtras = nameRegex || matchRules.length > 0
 
@@ -28,9 +30,30 @@ export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
   }
 
+  function getWordAtPoint(x: number, y: number): string | null {
+    const range = document.caretRangeFromPoint(x, y)
+    if (!range) return null
+    const node = range.startContainer
+    if (node.nodeType !== Node.TEXT_NODE) return null
+    const text = node.textContent ?? ''
+    const offset = range.startOffset
+    let start = offset, end = offset
+    while (start > 0 && /[\w']/.test(text[start - 1])) start--
+    while (end < text.length && /[\w']/.test(text[end])) end++
+    const word = text.slice(start, end).trim()
+    return word.length >= 2 ? word : null
+  }
+
+  function getLineTextAtPoint(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y)
+    return el?.closest('.text-line')?.textContent?.trim() || null
+  }
+
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
-    setCtxMenu({ x: e.clientX, y: e.clientY })
+    const word = onHighlight ? getWordAtPoint(e.clientX, e.clientY) : null
+    const lineText = onHighlight ? getLineTextAtPoint(e.clientX, e.clientY) : null
+    setCtxMenu({ x: e.clientX, y: e.clientY, word, lineText })
   }
 
   useLayoutEffect(() => {
@@ -56,7 +79,17 @@ export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
       <div ref={bottomRef} />
       {ctxMenu && (
         <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}
-          items={[...(onClear ? [{ label: 'Clear', onClick: onClear }] : [])]}
+          items={[
+            ...(onHighlight && ctxMenu.word ? [{
+              label: `Highlight "${ctxMenu.word}"`,
+              onClick: () => onHighlight(newHighlight(ctxMenu.word!, 'match'), ctxMenu.lineText ?? undefined),
+            }] : []),
+            ...(onHighlight && ctxMenu.lineText ? [{
+              label: 'Highlight this line',
+              onClick: () => onHighlight(newHighlight(ctxMenu.lineText!, 'line'), ctxMenu.lineText ?? undefined),
+            }] : []),
+            ...(onClear ? [{ label: 'Clear', onClick: onClear }] : []),
+          ]}
         />
       )}
     </div>

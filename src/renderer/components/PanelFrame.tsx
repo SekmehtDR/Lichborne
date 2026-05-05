@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { GameEvent, TextLine, RoomState } from '../../shared/types'
+import type { HighlightRule } from '../highlights'
 import RoomPanel from './panels/RoomPanel'
 import StreamPanel from './panels/StreamPanel'
 import ExpPanel from './panels/ExpPanel'
@@ -51,6 +52,7 @@ interface Props {
   debugEvents?: GameEvent[]
   onClearDebug?: () => void
   onClearStream?: (streamId: string) => void
+  onHighlight?: (rule: HighlightRule, testText?: string) => void
   tabs: TabDef[]
   activeId: string
   onTabsChange: (tabs: TabDef[]) => void
@@ -60,7 +62,7 @@ interface Props {
 
 export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
-  debugEvents, onClearDebug, onClearStream,
+  debugEvents, onClearDebug, onClearStream, onHighlight,
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [],
 }: Props) {
@@ -135,7 +137,7 @@ export default function PanelFrame({
         {activeTab && renderPanel(
           activeTab, streamLines, roomState, expSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
-          onClearStream ?? (() => {}),
+          onClearStream ?? (() => {}), onHighlight,
         )}
       </div>
 
@@ -235,20 +237,21 @@ function renderPanel(
   debugEvents: GameEvent[],
   onClearDebug: () => void,
   onClearStream: (streamId: string) => void,
+  onHighlight?: (rule: HighlightRule, testText?: string) => void,
 ) {
   const clr = (id: string) => () => onClearStream(id)
   switch (tab.type) {
     case 'room':     return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
-    case 'thoughts':      return <StreamPanel lines={streamLines.thoughts      ?? []} onClear={clr('thoughts')} />
-    case 'arrivals':      return <StreamPanel lines={streamLines.arrivals      ?? []} onClear={clr('arrivals')} />
-    case 'conversations': return <StreamPanel lines={streamLines.conversations ?? []} onClear={clr('conversations')} />
-    case 'deaths':   return <StreamPanel lines={streamLines.deaths    ?? []} onClear={clr('deaths')} />
-    case 'spells':   return <StreamPanel lines={streamLines.spells    ?? []} onClear={clr('spells')} />
+    case 'thoughts':      return <StreamPanel lines={streamLines.thoughts      ?? []} onClear={clr('thoughts')}      onHighlight={onHighlight} />
+    case 'arrivals':      return <StreamPanel lines={streamLines.arrivals      ?? []} onClear={clr('arrivals')}      onHighlight={onHighlight} />
+    case 'conversations': return <StreamPanel lines={streamLines.conversations ?? []} onClear={clr('conversations')} onHighlight={onHighlight} />
+    case 'deaths':   return <StreamPanel lines={streamLines.deaths    ?? []} onClear={clr('deaths')}   onHighlight={onHighlight} />
+    case 'spells':   return <StreamPanel lines={streamLines.spells    ?? []} onClear={clr('spells')}   onHighlight={onHighlight} />
     case 'exp':      return <ExpPanel skills={expSkills} />
-    case 'familiar': return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} />
-    case 'inv':      return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')} />
+    case 'familiar': return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} onHighlight={onHighlight} />
+    case 'inv':      return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')}       onHighlight={onHighlight} />
     case 'debug':    return <DebugPanel events={debugEvents} onClear={onClearDebug} />
-    case 'log':      return <StreamPanel lines={streamLines.log       ?? []} onClear={clr('log')} />
-    case 'custom':   return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
+    case 'log':      return <StreamPanel lines={streamLines.log       ?? []} onClear={clr('log')}       onHighlight={onHighlight} />
+    case 'custom':   return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)}     onHighlight={onHighlight} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
   }
 }
