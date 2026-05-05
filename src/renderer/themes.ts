@@ -899,14 +899,173 @@ const commoner: ThemeVars = {
   '--ind-inactive-border': '#302c24',
 }
 
+const classic: ThemeVars = {
+  // Pure black canvas, WhiteSmoke text — mirrors Genie's out-of-box presets.cfg defaults
+  '--bg-app':    '#000000',  // game stream canvas stays true black
+  '--bg-base':   '#0e0e0e',  // panel backgrounds — lifted enough to frame UI
+  '--bg-raised': '#181818',  // raised surfaces (cards, dropdowns)
+  '--bg-sunken': '#080808',  // recessed areas (input wells, inset panels)
+  '--bg-input':  '#0a0a0a',
+  '--bg-hover':  '#222222',  // needs a clear visible step up from base
+  '--bg-active': '#1a1a1a',
+  '--bg-btn':    '#242424',  // buttons must read against base
+
+  '--text-primary':   '#f5f5f5',  // WhiteSmoke — Genie's exact default output color
+  '--text-secondary': '#c8c8c8',  // slightly brighter for UI labels
+  '--text-muted':     '#909090',  // muted UI text — still passes WCAG AA on lifted bg
+  '--text-dim':       '#606060',
+  '--text-faint':     '#404040',
+
+  '--border':        '#3c3c3c',  // visible separation between panels
+  '--border-subtle': '#282828',  // section dividers
+  '--border-faint':  '#1c1c1c',  // very light structural lines
+
+  '--accent':     '#c8905a',  // Warm peach — derived from Genie roomname #FFDBBF
+  '--accent-dim': '#8a5e2a',  // brighter dim so interactive focus rings show
+  '--accent-bg':  '#1e1208',  // lifted so accent-tinted areas are visible
+
+  '--scrollbar-track':       '#080808',
+  '--scrollbar-thumb':       '#3a3a3a',
+  '--scrollbar-thumb-hover': '#585858',
+
+  // Preset colors — exact values from Genie presets.cfg
+  '--preset-speech':   '#ffccb2',  // Genie speech
+  '--preset-whisper':  '#bfffff',  // Genie whispers
+  '--preset-thought':  '#f9c5f9',  // Genie thoughts
+  '--preset-roomname': '#ffdbbf',  // Genie roomname fg
+  '--preset-roomdesc': '#f5f5f5',  // Genie roomdesc (WhiteSmoke)
+  '--preset-bold':     '#ffffff',
+  '--preset-expiry':   '#ff8000',  // Genie stamina orange
+  '--preset-store':    '#00e686',  // Genie mana green
+  '--preset-cmd':      '#c0c0c0',  // Genie inputuser silver
+
+  '--preset-roomname-bg': '#1a0b00',  // Softened from Genie's #331600 dark brown
+
+  // Vitals — pulled directly from Genie presets.cfg bar colors
+  '--vital-health-ok-start':   '#3a0000',
+  '--vital-health-ok-end':     '#dd0000',  // Genie health #FF0000
+  '--vital-health-mid-start':  '#3a1a00',
+  '--vital-health-mid-end':    '#cc4400',
+  '--vital-health-low-start':  '#2a0000',
+  '--vital-health-low-end':    '#992200',
+  '--vital-health-crit-start': '#1e0000',
+  '--vital-health-crit-end':   '#660000',
+  '--vital-mana-start':        '#001e10',
+  '--vital-mana-end':          '#00c870',  // Genie mana #00E686
+  '--vital-conc-start':        '#28002a',
+  '--vital-conc-end':          '#cc00cc',  // Genie concentration #FF00FF
+  '--vital-stamina-start':     '#301400',
+  '--vital-stamina-end':       '#cc6600',  // Genie stamina #FF8000
+  '--vital-spirit-start':      '#080e1e',
+  '--vital-spirit-end':        '#4878d0',  // Genie spirit #75A2FF
+
+  // Roundtime — Genie uses #FF0000 on #400000; cast timer uses concentration magenta
+  '--rt-start': '#400000',
+  '--rt-end':   '#cc0000',
+  '--rt-glow':  'rgba(200, 0, 0, 0.65)',
+  '--ct-start': '#28002a',
+  '--ct-end':   '#aa00cc',
+  '--ct-glow':  'rgba(160, 0, 200, 0.6)',
+
+  '--stance-standing-color':  '#00e686',
+  '--stance-standing-border': '#004a28',
+  '--stance-standing-bg':     '#001408',
+  '--stance-kneeling-color':  '#f0c040',
+  '--stance-kneeling-border': '#5a4010',
+  '--stance-kneeling-bg':     '#161000',
+  '--stance-prone-color':     '#ff8000',
+  '--stance-prone-border':    '#5a2800',
+  '--stance-prone-bg':        '#160800',
+  '--stance-sitting-color':   '#75a2ff',
+  '--stance-sitting-border':  '#1e3066',
+  '--stance-sitting-bg':      '#060c1e',
+
+  '--ind-inactive-color':  '#555555',
+  '--ind-inactive-bg':     '#0a0a0a',
+  '--ind-inactive-border': '#1e1e1e',
+
+  '--ind-dead-color':  '#ff4444',
+  '--ind-dead-bg':     '#200000',
+  '--ind-dead-border': '#550000',
+  '--ind-dead-glow':   'rgba(255, 50, 50, 0.4)',
+
+  '--ind-stunned-color':  '#ff8000',
+  '--ind-stunned-bg':     '#1e0e00',
+  '--ind-stunned-border': '#4a2000',
+  '--ind-stunned-glow':   'rgba(255, 128, 0, 0.35)',
+
+  '--ind-bleeding-color':  '#ff4040',
+  '--ind-bleeding-bg':     '#1a0000',
+  '--ind-bleeding-border': '#4a0000',
+  '--ind-bleeding-glow':   'rgba(255, 60, 60, 0.35)',
+
+  '--ind-webbed-color':  '#00e8ff',
+  '--ind-webbed-bg':     '#001a1e',
+  '--ind-webbed-border': '#004858',
+  '--ind-webbed-glow':   'rgba(0, 230, 255, 0.3)',
+
+  '--ind-invisible-color':  '#f9c5f9',
+  '--ind-invisible-bg':     '#160016',
+  '--ind-invisible-border': '#440044',
+  '--ind-invisible-glow':   'rgba(249, 197, 249, 0.3)',
+
+  '--ind-hidden-color':  '#80c040',
+  '--ind-hidden-bg':     '#0c1400',
+  '--ind-hidden-border': '#2a4400',
+  '--ind-hidden-glow':   'rgba(120, 190, 60, 0.3)',
+
+  '--ind-joined-color':  '#75a2ff',
+  '--ind-joined-bg':     '#060e1e',
+  '--ind-joined-border': '#142050',
+  '--ind-joined-glow':   'rgba(117, 162, 255, 0.3)',
+
+  '--compass-active-text':     '#00e686',
+  '--compass-active-bg':       '#001a0c',
+  '--compass-active-border':   '#009950',
+  '--compass-active-glow':     'rgba(0, 230, 134, 0.4)',
+  '--compass-inactive-text':   '#3a3a3a',
+  '--compass-inactive-bg':     '#050505',
+  '--compass-inactive-border': '#181818',
+  '--compass-center-text':     '#222222',
+
+  '--hand-label-color':   '#555555',
+  '--hand-empty-color':   '#808080',
+  '--hand-held-color':    '#ffdbbf',  // Genie roomname peach
+  '--spell-empty-color':  '#808080',
+  '--spell-active-color': '#f9c5f9',  // Genie thoughts pink
+  '--spell-active-glow':  'rgba(249, 197, 249, 0.4)',
+
+  '--room-title-color':   '#ffdbbf',  // Genie roomname
+  '--room-desc-color':    '#f5f5f5',  // Genie roomdesc WhiteSmoke
+  '--room-section-color': '#666666',
+  '--room-content-color': '#a0a0a0',
+  '--exit-bg':            '#100800',
+  '--exit-border':        '#3a2400',
+  '--exit-text':          '#80b840',
+  '--exit-bg-hover':      '#1a1200',
+  '--exit-border-hover':  '#5a3c00',
+  '--exit-text-hover':    '#b0e060',
+
+  '--exp-skill-color':     '#c0c0c0',
+  '--exp-rank-color':      '#a0a0a0',
+  '--exp-pct-color':       '#a0a0a0',
+  '--exp-mindstate-color': '#a0a0a0',
+  '--exp-rate-color':      '#707070',
+  '--exp-bar-bg':          '#080808',
+  '--exp-locked-skill':    '#ffcc00',
+  '--exp-locked-mind':     '#cc9900',
+  '--exp-locked-rate':     '#996600',
+}
+
 // ── Theme catalog ──────────────────────────────────────────────────────────
 
 export const THEMES: Theme[] = [
-  // General themes
+  // General themes (alphabetical)
+  { id: 'classic',    name: 'Classic',    category: 'general', vars: classic,    swatches: ['#000000', '#c8905a', '#f5f5f5'] },
   { id: 'dark',       name: 'Dark',       category: 'general', vars: {},         swatches: ['#0f0f0f', '#c8a840', '#d4c9a8'] },
   { id: 'darker',     name: 'Darker',     category: 'general', vars: darker,     swatches: ['#060606', '#d9b840', '#ccc2a0'] },
-  { id: 'slate',      name: 'Slate',      category: 'general', vars: slate,      swatches: ['#0d1117', '#58a6ff', '#c9d1d9'] },
   { id: 'parchment',  name: 'Parchment',  category: 'general', vars: parchment,  swatches: ['#f0ead8', '#8b4c00', '#2a1f0e'] },
+  { id: 'slate',      name: 'Slate',      category: 'general', vars: slate,      swatches: ['#0d1117', '#58a6ff', '#c9d1d9'] },
   { id: 'terminal',   name: 'Terminal',   category: 'general', vars: terminal,   swatches: ['#000000', '#00ff41', '#00ff41'] },
   // Guild themes
   { id: 'barbarian',   name: 'Barbarian',   category: 'guild', vars: barbarian,   swatches: ['#1a0f0a', '#8b1a1a', '#d4b896'] },
@@ -939,7 +1098,7 @@ export function applyCustomTheme(vars: ThemeVars, id?: string): void {
 }
 
 export function initTheme(): void {
-  const savedId = localStorage.getItem('klient67.theme') ?? 'dark'
+  const savedId = localStorage.getItem('klient67.theme') ?? 'classic'
   const base = THEMES.find(t => t.id === savedId)
   if (base) { applyTheme(base); return }
   try {

@@ -20,7 +20,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   highContrast: false,
   colorBlind: 'none',
   epilepsySafe: false,
-  vitalsBarPosition: 'top',
+  vitalsBarPosition: 'bottom',
   iconBarPosition: 'top',
 }
 

@@ -632,7 +632,8 @@ Every color field opens the colorblind-aware color picker — the player sees si
 
 | Theme | Description |
 |---|---|
-| **Dark** *(default)* | Dark background, warm off-white text — the default look |
+| **Classic** *(default)* | Black canvas, WhiteSmoke text — mirrors Genie's exact out-of-box preset colors (speech, whisper, thought, roomname, vitals bars) so veteran players feel at home immediately |
+| **Dark** | Dark background, warm off-white text |
 | **Darker** | Pure black background, maximum contrast |
 | **Slate** | Cool blue-grey tones, softer than Dark |
 | **Parchment** | Light background, dark text — better for bright environments |
