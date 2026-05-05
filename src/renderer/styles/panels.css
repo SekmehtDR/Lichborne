@@ -11,6 +11,7 @@
 [data-preset="expiry"]       { color: var(--preset-expiry);   background-color: var(--preset-expiry-bg); }
 [data-preset="store"]        { color: var(--preset-store);    background-color: var(--preset-store-bg); }
 [data-preset="command-echo"] { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
+[data-preset="echo"]         { color: var(--text-dim); font-style: italic; }
 
 /* ============================================================
    Stream panel — generic scrolling text

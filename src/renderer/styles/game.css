@@ -33,6 +33,7 @@
 .btn-panel-manager,
 .btn-contacts,
 .btn-highlights,
+.btn-triggers,
 .btn-theme,
 .btn-settings,
 .btn-disconnect {
@@ -51,6 +52,7 @@
 .btn-panel-manager:hover,
 .btn-contacts:hover,
 .btn-highlights:hover,
+.btn-triggers:hover,
 .btn-theme:hover,
 .btn-settings:hover {
   border-color: var(--accent-dim);

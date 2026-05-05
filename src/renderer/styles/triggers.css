@@ -1,0 +1,779 @@
+/* ── Triggers Panel ────────────────────────────────────────────────────────── */
+
+.tp-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.tp-modal {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 800px;
+  max-width: 96vw;
+  height: 80vh;
+  max-height: 760px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+
+.tp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tp-title {
+  flex: 1;
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+}
+
+.tp-close {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.tp-close:hover { color: var(--text-secondary); }
+
+/* ── Body — two-pane ─────────────────────────────────────────────────────── */
+
+.tp-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.tp-sidebar {
+  width: 210px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tp-new-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--accent-dim);
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 9px 14px;
+  text-align: left;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.tp-new-btn:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.tp-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.tp-empty {
+  padding: 14px;
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.5;
+}
+
+.tp-list-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px 6px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tp-list-item:hover         { background: var(--bg-hover); }
+.tp-list-item--active       { background: var(--bg-sunken); }
+.tp-list-item--disabled     { opacity: 0.45; }
+.tp-list-item--pending      { opacity: 0.7; font-style: italic; }
+
+.tp-toggle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tp-toggle--on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tp-list-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.tp-list-badges {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.tp-badge {
+  font-size: 0.65rem;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text-faint);
+}
+
+/* ── Detail pane ─────────────────────────────────────────────────────────── */
+
+.tp-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tp-no-selection {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.tp-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+/* ── Section dividers (WHEN / THEN / TEST) ───────────────────────────────── */
+
+.tp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 18px;
+}
+
+.tp-section + .tp-section {
+  border-top: 1px solid var(--border);
+}
+
+.tp-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.tp-section-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-dim);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.tp-section-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-faint);
+}
+
+/* ── Shared field + label (mirrors hp-*) ─────────────────────────────────── */
+
+.tp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tp-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.tp-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 5px 9px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tp-input:focus { border-color: var(--accent-dim); }
+
+.tp-input--error {
+  border-color: var(--color-danger-border) !important;
+  box-shadow: 0 0 0 1px var(--color-danger-border);
+}
+
+.tp-pattern-error {
+  font-size: 0.72rem;
+  color: var(--color-danger);
+}
+
+.tp-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.83rem;
+  padding: 5px 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+.tp-select:focus { border-color: var(--accent-dim); }
+
+/* ── Pattern row ─────────────────────────────────────────────────────────── */
+
+.tp-pattern-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tp-mode-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tp-mode-btn {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.tp-mode-btn:last-child { border-right: none; }
+
+.tp-mode-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.tp-mode-btn--active {
+  background: var(--bg-sunken);
+  color: var(--accent);
+}
+
+.tp-mode-btn--case {
+  margin-left: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-style: italic;
+}
+
+/* ── Watch + cooldown row ────────────────────────────────────────────────── */
+
+.tp-meta-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.tp-meta-row .tp-field { flex: 1; }
+
+.tp-cooldown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tp-cooldown-input {
+  width: 54px;
+}
+
+.tp-cooldown-unit {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.tp-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.83rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tp-checkbox {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Per-gate connector button (AND / OR between rows) ───────────────────── */
+
+.tp-gate-connector-btn {
+  align-self: flex-start;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: all 0.15s;
+}
+
+.tp-gate-connector-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent-dim);
+}
+
+.tp-gate-connector-btn--or {
+  border-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ── State gates ─────────────────────────────────────────────────────────── */
+
+.tp-gates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.tp-gate-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tp-gate-row .tp-select { flex: 1; font-size: 0.8rem; padding: 4px 6px; }
+
+.tp-gate-select--op {
+  flex: 0 0 60px !important;
+  text-align: center;
+}
+
+.tp-gate-value {
+  flex: 0 0 80px !important;
+  font-size: 0.8rem;
+}
+
+.tp-gate-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 3px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.tp-gate-remove:hover { color: var(--color-danger); }
+
+.tp-add-gate-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  align-self: flex-start;
+}
+
+.tp-add-gate-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent-dim);
+}
+
+/* ── Action cards ────────────────────────────────────────────────────────── */
+
+.tp-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tp-action-card {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--bg-sunken);
+}
+
+.tp-action-header {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.tp-action-type-pills {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tp-action-type-pill {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+
+.tp-action-type-pill:hover {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+}
+
+.tp-action-type-pill--active {
+  background: var(--bg-base);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tp-action-remove {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 10px;
+  line-height: 1;
+  height: 100%;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.tp-action-remove:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.tp-action-fields {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tp-action-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tp-action-row .tp-label {
+  flex: 0 0 72px;
+  text-align: right;
+}
+
+.tp-action-row .tp-input,
+.tp-action-row .tp-select {
+  flex: 1;
+}
+
+.tp-delay-unit {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.tp-sound-pills {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.tp-sound-pill {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  cursor: pointer;
+  flex: 1;
+  transition: all 0.12s;
+}
+
+.tp-sound-pill:last-child { border-right: none; }
+
+.tp-sound-pill:hover { background: var(--bg-hover); color: var(--text-secondary); }
+
+.tp-sound-pill--active {
+  background: var(--bg-sunken);
+  color: var(--accent);
+}
+
+/* ── Variable insertion button + menu ────────────────────────────────────── */
+
+.tp-var-btn {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--accent-dim);
+  font-family: monospace;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+
+.tp-var-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.tp-var-menu {
+  position: fixed;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  z-index: 300;
+  min-width: 200px;
+  overflow: hidden;
+}
+
+.tp-var-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tp-var-item:hover { background: var(--bg-hover); }
+
+.tp-var-item code {
+  font-size: 0.78rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.tp-var-item span {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+}
+
+/* ── Add action button ───────────────────────────────────────────────────── */
+
+.tp-add-action-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.tp-add-action-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent-dim);
+}
+
+/* ── Test section ────────────────────────────────────────────────────────── */
+
+.tp-test-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tp-test-stream {
+  flex: 0 0 140px;
+}
+
+.tp-test-result {
+  font-size: 0.8rem;
+  padding: 5px 10px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tp-test-result--match {
+  background: rgba(80, 200, 100, 0.1);
+  border: 1px solid rgba(80, 200, 100, 0.3);
+  color: #50c864;
+}
+
+.tp-test-result--no-match {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+}
+
+.tp-test-actions {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* ── Footer actions ──────────────────────────────────────────────────────── */
+
+.tp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tp-confirm-text {
+  flex: 1;
+  font-size: 0.82rem;
+  color: var(--color-danger);
+}
+
+.tp-btn {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tp-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--text-secondary);
+}
+
+.tp-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.tp-btn--save {
+  margin-left: auto;
+  border-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+.tp-btn--save:hover:not(:disabled) {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+}
+
+.tp-btn--delete {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+.tp-btn--delete:hover {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+.tp-btn--danger {
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+.tp-btn--danger:hover { background: var(--color-danger-bg); }
+
+.tp-btn--test {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-color: var(--border);
+  color: var(--text-dim);
+}
+
+.tp-btn--test:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent-dim);
+}

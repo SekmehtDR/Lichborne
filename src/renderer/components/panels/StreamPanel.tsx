@@ -12,9 +12,10 @@ interface Props {
   emptyMessage?: string
   onClear?: () => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
+  onTrigger?: (pattern: string) => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight }: Props) {
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -51,8 +52,9 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight 
 
   function handleContextMenu(e: React.MouseEvent) {
     e.preventDefault()
-    const word = onHighlight ? getWordAtPoint(e.clientX, e.clientY) : null
-    const lineText = onHighlight ? getLineTextAtPoint(e.clientX, e.clientY) : null
+    const hasExtras = onHighlight || onTrigger
+    const word = hasExtras ? getWordAtPoint(e.clientX, e.clientY) : null
+    const lineText = hasExtras ? getLineTextAtPoint(e.clientX, e.clientY) : null
     setCtxMenu({ x: e.clientX, y: e.clientY, word, lineText })
   }
 
@@ -87,6 +89,14 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight 
             ...(onHighlight && ctxMenu.lineText ? [{
               label: 'Highlight this line',
               onClick: () => onHighlight(newHighlight(ctxMenu.lineText!, 'line'), ctxMenu.lineText ?? undefined),
+            }] : []),
+            ...(onTrigger && ctxMenu.word ? [{
+              label: `Trigger for "${ctxMenu.word}"`,
+              onClick: () => onTrigger(ctxMenu.word!),
+            }] : []),
+            ...(onTrigger && ctxMenu.lineText ? [{
+              label: 'Trigger for this line',
+              onClick: () => onTrigger(ctxMenu.lineText!),
             }] : []),
             ...(onClear ? [{ label: 'Clear', onClick: onClear }] : []),
           ]}

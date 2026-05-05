@@ -7,6 +7,8 @@ import { ContactsContext } from '../ContactsContext'
 import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
 import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
+import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
+import { useTriggerEngine, type TriggerGameState } from '../hooks/useTriggerEngine'
 import ContactPopover from './ContactPopover'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
@@ -19,6 +21,7 @@ import SettingsPanel from './SettingsPanel'
 import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
 import HighlightsPanel from './HighlightsPanel'
+import TriggersPanel from './TriggersPanel'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -178,11 +181,32 @@ export default function GameWindow({ onDisconnect }: Props) {
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
   const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights())
   const { matchRules, lineRules } = useCompiledHighlights(highlights)
+  const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers())
+  const [showTriggers, setShowTriggers]       = useState(false)
+  const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
   const contactsRef   = useRef(contacts)
   const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', exits: [] })
+
+  // Live game state for the trigger engine — updated directly in the event loop
+  // so triggers always see the current values within the same event batch.
+  const triggerCtxRef = useRef<TriggerGameState>({
+    vitals: {
+      health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
+      stamina: { current: 0, max: 0 }, spirit: { current: 0, max: 0 },
+      concentration: { current: 0, max: 0 },
+    },
+    rtSeconds: 0,
+    stance: '',
+    spell: 'None',
+    leftHand: 'Empty',
+    rightHand: 'Empty',
+    indicators: {},
+    roomTitle: '',
+    variables: {},
+  })
   const lastSeenTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingContactsRef = useRef<Contact[] | null>(null)
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
@@ -191,6 +215,31 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
 
   const { rt, ct, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
+
+  // ── Trigger engine ────────────────────────────────────────────────────────
+
+  const echoToStream = useCallback((stream: string, text: string) => {
+    const line = { id: lineId++, segments: [{ text, preset: 'echo' as const }] }
+    setStreamLines(prev => ({
+      ...prev,
+      [stream]: [...(prev[stream] ?? []).slice(-(MAX_STREAM_LINES - 1)), line],
+    }))
+  }, [])
+
+  const triggerCallbacks = useMemo(() => ({
+    sendCommand: (cmd: string) => window.api.sendCommand(cmd),
+    echoToStream,
+    setVariable: (name: string, value: string) => { triggerCtxRef.current.variables[name] = value },
+    disableTrigger: (id: string) => setTriggers(prev => {
+      const updated = prev.map(r => r.id === id ? { ...r, enabled: false } : r)
+      saveTriggers(updated)
+      return updated
+    }),
+  }), [echoToStream])
+
+  const processLine = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks)
+  const processLineRef = useRef(processLine)
+  useEffect(() => { processLineRef.current = processLine }, [processLine])
 
   // Drag refs
   const bottomRef        = useRef<HTMLDivElement>(null)
@@ -320,16 +369,18 @@ export default function GameWindow({ onDisconnect }: Props) {
         switch (evt.type) {
           case 'stream-text': {
             const { stream, segments } = evt as StreamTextEvent
+            const lineText = segments.map(s => s.text).join('')
             if (stream === 'main') {
               if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
+              processLineRef.current('main', lineText)
             } else if (stream === 'raw') {
               // discard
             } else if (stream === 'room') {
-              roomUpdates.desc = segments.map(s => s.text).join('')
+              roomUpdates.desc = lineText
             } else if (stream === 'room-objects') {
-              roomUpdates.objects = segments.map(s => s.text).join('')
+              roomUpdates.objects = lineText
             } else if (stream === 'room-players') {
-              roomUpdates.players = segments.map(s => s.text).join('')
+              roomUpdates.players = lineText
             } else {
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
@@ -340,27 +391,50 @@ export default function GameWindow({ onDisconnect }: Props) {
                 if (!newStream[target]) newStream[target] = []
                 newStream[target].push({ id: lineId++, segments })
               }
+              // Use original stream name for trigger matching (not the fallback target)
+              processLineRef.current(stream, lineText)
             }
             break
           }
           case 'vital-update':
             vitalUpdates[evt.id] = { current: evt.current, max: evt.max }
+            triggerCtxRef.current.vitals[evt.id] = { current: evt.current, max: evt.max }
             if (evt.label) labelUpdates[evt.id] = evt.label
             break
-          case 'roundtime':  newRt = evt.expires; break
+          case 'roundtime':
+            newRt = evt.expires
+            triggerCtxRef.current.rtSeconds = Math.max(0, (evt.expires - Date.now()) / 1000)
+            break
           case 'casttime':   newCt = evt.expires; break
-          case 'indicator':  indicatorUpdates[evt.id] = evt.visible; break
-          case 'stance':     newStance = evt.text; break
-          case 'spell':      newSpell = evt.name; break
+          case 'indicator':
+            indicatorUpdates[evt.id] = evt.visible
+            triggerCtxRef.current.indicators[evt.id] = evt.visible
+            break
+          case 'stance':
+            newStance = evt.text
+            triggerCtxRef.current.stance = evt.text
+            break
+          case 'spell':
+            newSpell = evt.name
+            triggerCtxRef.current.spell = evt.name
+            break
           case 'hand':
-            if (evt.hand === 'right') setRightHand(evt.item || 'Empty')
-            else setLeftHand(evt.item || 'Empty')
+            if (evt.hand === 'right') {
+              setRightHand(evt.item || 'Empty')
+              triggerCtxRef.current.rightHand = evt.item || 'Empty'
+            } else {
+              setLeftHand(evt.item || 'Empty')
+              triggerCtxRef.current.leftHand = evt.item || 'Empty'
+            }
             break
           case 'exits':
             setExits(evt.directions)
             roomUpdates.exits = evt.directions
             break
-          case 'room-title':    roomUpdates.title = evt.title; break
+          case 'room-title':
+            roomUpdates.title = evt.title
+            triggerCtxRef.current.roomTitle = evt.title
+            break
           case 'exp-component': expUpdates[evt.skill] = evt.text; break
           case 'clear-stream':
             if (evt.stream === 'room')         roomUpdates.desc    = ''
@@ -605,6 +679,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     debugEvents, onClearDebug: clearDebugEvents,
     onClearStream: clearStream,
     onHighlight: openHighlightEditor,
+    onTrigger: openTriggerEditor,
     discoveredStreams,
   }
 
@@ -637,6 +712,11 @@ export default function GameWindow({ onDisconnect }: Props) {
     setShowHighlights(true)
   }
 
+  function openTriggerEditor(pattern: string) {
+    setTriggerPrefillPattern(pattern)
+    setShowTriggers(true)
+  }
+
   return (
     <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
     <ContactsContext.Provider value={{ contacts, templates: contactTemplates, nameRegex, onContactClick: handleContactClick }}>
@@ -648,6 +728,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
         <button className="btn-highlights" onClick={() => { setHighlightPrefill(undefined); setShowHighlights(v => !v) }}>Highlights</button>
+        <button className="btn-triggers" onClick={() => { setTriggerPrefillPattern(undefined); setShowTriggers(v => !v) }}>Triggers</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
@@ -746,6 +827,14 @@ export default function GameWindow({ onDisconnect }: Props) {
                 mainCtxMenu.lineText ?? undefined,
               ),
             }] : []),
+            ...(mainCtxMenu.word ? [{
+              label: `Trigger for "${mainCtxMenu.word}"`,
+              onClick: () => openTriggerEditor(mainCtxMenu.word!),
+            }] : []),
+            ...(mainCtxMenu.lineText ? [{
+              label: 'Trigger for this line',
+              onClick: () => openTriggerEditor(mainCtxMenu.lineText!),
+            }] : []),
             { label: 'Clear', onClick: clearLines },
           ]}
         />
@@ -820,6 +909,13 @@ export default function GameWindow({ onDisconnect }: Props) {
           initialTestText={highlightTestText}
           onClose={() => { setShowHighlights(false); setHighlightPrefill(undefined); setHighlightTestText(undefined) }}
           onSaved={() => setHighlights(loadHighlights())}
+        />
+      )}
+
+      {showTriggers && (
+        <TriggersPanel
+          prefillPattern={triggerPrefillPattern}
+          onClose={() => { setShowTriggers(false); setTriggerPrefillPattern(undefined); setTriggers(loadTriggers()) }}
         />
       )}
 
