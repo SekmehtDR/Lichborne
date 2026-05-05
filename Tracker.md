@@ -13,7 +13,7 @@
 **Phase 4 — Complete ✅**
 **Phase 5 — Complete ✅**
 **Phase 6 — Complete ✅ (6A–6C; 6D moved to backlog)**
-**Phase 7 — In progress (7A Highlights complete; 7B Triggers not started)**
+**Phase 7 — In progress (7A Highlights complete + post-launch fixes; 7B Triggers not started)**
 
 ---
 
@@ -390,6 +390,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Right-click integration — "Highlight 'word'" (Match scope) and "Highlight this line" (Line scope) in main text context menu; captured line text pre-fills the preview test input
 - [x] Highlights toolbar button (`btn-highlights`) wired to theme CSS vars
 - [x] `highlights.css` — all `hp-*` panel styles; `.hl-match` in-game span
+- [x] **Post-launch bug fixes** — scroll pinning race (useLayoutEffect + overflow-anchor:none); thoughts/arrivals/deaths stream colors (STREAM_DEFAULT_PRESET); mind lock exp panel (nested `<preset>` inside `<component>` no longer steals captureCtx)
 - [ ] Rule import / export (JSON) — deferred
 - [ ] Group system (Danger, Alerts, Info, Social) — deferred
 - [ ] Highlight Wizard — deferred
@@ -532,3 +533,6 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-04 | Right-click context menu extended — "Highlight 'word'" (Match scope) and "Highlight this line" (Line scope); captured line text passed as `initialTestText` to preview panel so match is immediately visible |
 | 2026-05-04 | `renderSegmentFull` replaces `renderSegmentWithContacts` at all render sites — single regex exec loop collects all contact + highlight match ranges, sorts by position, contacts win ties; no double-pass needed |
 | 2026-05-04 | Regex error indicator added — red border + error message on pattern field when Regex mode contains invalid syntax; `isValidRegex()` exported from `highlights.ts` |
+| 2026-05-04 | Scroll pinning race fixed — `useEffect` → `useLayoutEffect` for scroll-to-bottom in GameWindow and StreamPanel; fires sync before paint, wins race against Chrome scroll anchoring; `overflow-anchor: none` added to `.text-window` CSS to stop browser competing with our pinning logic |
+| 2026-05-04 | Thoughts/Arrivals/Deaths stream colors fixed — parser's `flushSegments()` now auto-assigns a default preset (`thought`/`speech`/`bold`) to unstyled segments in those streams; previously the server sent raw text with no `<preset>` wrapper so `[data-preset="thought"]` CSS never fired |
+| 2026-05-04 | Mind lock exp bug fixed — DR server wraps mind lock components in `<preset id='exptraining'>...</preset>` inside `<component>`; parser was overwriting the component's `captureCtx` with the preset's, so the component event was never emitted and 34/34 skills silently disappeared from the exp panel; fix: `<preset>` inside an existing capture context no longer overwrites `captureCtx` |

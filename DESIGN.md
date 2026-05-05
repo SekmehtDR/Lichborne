@@ -178,6 +178,7 @@ The main text window has one job: never lose game text, never lose your place.
 - **Append-only rendering** — new lines push to the bottom; the DOM above is never rewritten
 - **Virtualized list** — only the visible lines (~60) are in the DOM at any time, regardless of how many lines are in memory. 2000 lines in memory = ~60 nodes rendered. No exceptions.
 - **Smart scroll anchor** — scrolling up pauses auto-scroll silently. A **"▼ N new lines"** badge appears at the bottom edge. Clicking it or pressing End resumes auto-scroll and jumps to the bottom. The player decides when to return; the client never forces them.
+- **Scroll pinning implementation** — `useLayoutEffect` (not `useEffect`) fires the scroll-to-bottom synchronously after DOM mutation, before the browser paints or fires scroll events. Combined with `overflow-anchor: none` on the scroll container to prevent Chrome's native scroll anchoring from competing. Together these eliminate the race condition where large text bursts could unpin the scroll.
 - **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line
 
 ---

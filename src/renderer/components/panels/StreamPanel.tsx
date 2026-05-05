@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
 import { renderSegment } from '../../utils/renderSegment'
 import { renderSegmentFull, getLineHighlightStyle } from '../../utils/renderSegmentFull'
@@ -33,7 +33,7 @@ export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
     setCtxMenu({ x: e.clientX, y: e.clientY })
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines])
 

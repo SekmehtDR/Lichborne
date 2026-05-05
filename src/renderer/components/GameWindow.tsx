@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
 import { renderSegment } from '../utils/renderSegment'
 import { renderSegmentFull, getLineHighlightStyle } from '../utils/renderSegmentFull'
@@ -442,7 +442,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     pinnedRef.current = atBottom
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines])
 

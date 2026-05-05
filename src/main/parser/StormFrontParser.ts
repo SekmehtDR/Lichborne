@@ -44,6 +44,15 @@ const STREAM_MAP: Record<string, StreamTarget> = {
 // Streams that are state displays — each push is a full refresh, not an append
 const REPLACE_ON_PUSH = new Set(['moonwindow'])
 
+// Default preset to apply to unstyled segments when emitted on these streams.
+// Needed because the protocol sends thoughts/arrivals/deaths as raw text with
+// no <preset> tag, so the renderer can't color them without this hint.
+const STREAM_DEFAULT_PRESET: Partial<Record<string, string>> = {
+  thoughts:  'thought',
+  arrivals:  'speech',
+  deaths:    'bold',
+}
+
 const COMPONENT_STREAM: Record<string, StreamTarget> = {
   'room objs':     'room-objects',
   'room players':  'room-players',
@@ -235,8 +244,12 @@ export class StormFrontParser {
       case 'preset':
         if (!selfClosing) {
           this.currentPreset = (attrs.id ?? '').toLowerCase()
-          this.captureCtx = { tag: 'preset' }
-          this.captureBuf = ''
+          // Don't overwrite an outer component/compdef capture — text inside a
+          // <preset> nested in <component> must accumulate in the component buffer.
+          if (!this.captureCtx) {
+            this.captureCtx = { tag: 'preset' }
+            this.captureBuf = ''
+          }
         }
         break
 
@@ -512,10 +525,16 @@ export class StormFrontParser {
       return
     }
 
+    const defaultPreset = STREAM_DEFAULT_PRESET[this.activeStream]
+    const segments = defaultPreset
+      ? this.pendingSegments.map(s =>
+          (!s.preset && !s.fg && !s.bg) ? { ...s, preset: defaultPreset } : s)
+      : this.pendingSegments
+
     const evt: GameEvent = {
       type: 'stream-text',
       stream: this.activeStream,
-      segments: this.pendingSegments,
+      segments,
       timestamp: Date.now(),
     }
     if (this.activeStream === 'main') {
