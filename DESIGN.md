@@ -78,6 +78,7 @@ Every panel supports:
 | **Dock** | Snap into the main window grid (left, right, top, bottom, center) |
 | **Float** | Detach into its own OS window (useful for multi-monitor setups) |
 | **Tab** | Merge with another panel — they share space with tabs to switch between them |
+| **Unread indicator** | A gold dot appears on an inactive tab when new content has arrived; clears when the tab is activated |
 | **Resize** | Drag borders to resize within the layout grid |
 | **Close** | Hide the panel (stream still runs, just not displayed) |
 | **Reopen** | Restore any closed panel from the View menu or panel manager |
@@ -739,9 +740,11 @@ This is the fix for "I know this setting exists but I can't find it." Settings s
 
 Settings are grouped into broad sections — not deep submenus. Every section is one level down from the top, never more.
 
+The Display section includes a **live font preview** — a bordered box showing representative game-text lines (room name, speech, thought, bold) rendered with the currently selected font family, size, and line height. It updates instantly on every control change and respects the active theme's preset colors.
+
 | Section | Contains |
 |---|---|
-| **Display & Accessibility** | Font, large print, high contrast, epilepsy safe, colorblind picker |
+| **Display & Accessibility** | Font family, font size, line height, live preview, large print, high contrast, epilepsy safe, colorblind picker |
 | **Theme** | Theme picker, theme editor, My Themes, import/export |
 | **Panels & Layout** | Status bar position, icon bar position, RT bars in command bar, panel defaults |
 | **Command Bar** | RT display, cast time display, command history size |

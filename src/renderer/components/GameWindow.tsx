@@ -237,9 +237,20 @@ export default function GameWindow({ onDisconnect }: Props) {
     }),
   }), [echoToStream])
 
-  const processLine = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks)
+  const { processLine, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks)
   const processLineRef = useRef(processLine)
   useEffect(() => { processLineRef.current = processLine }, [processLine])
+  const cancelPendingRef = useRef(cancelPending)
+  useEffect(() => { cancelPendingRef.current = cancelPending }, [cancelPending])
+
+  // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
+  const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
+  const unreadRef = useRef<Set<string>>(new Set())
+  // Keep a ref of currently active tab IDs so the event handler (stable closure) can read them
+  const activeIdsRef = useRef(new Set([topActiveId, midActiveId, bottomActiveId]))
+  useEffect(() => {
+    activeIdsRef.current = new Set([topActiveId, midActiveId, bottomActiveId])
+  }, [topActiveId, midActiveId, bottomActiveId])
 
   // Drag refs
   const bottomRef        = useRef<HTMLDivElement>(null)
@@ -466,6 +477,15 @@ export default function GameWindow({ onDisconnect }: Props) {
           }
           return next
         })
+        // Mark streams with new content as unread if their tab is not currently active
+        let unreadDirty = false
+        for (const streamId of Object.keys(newStream)) {
+          if (!activeIdsRef.current.has(streamId) && !unreadRef.current.has(streamId)) {
+            unreadRef.current.add(streamId)
+            unreadDirty = true
+          }
+        }
+        if (unreadDirty) setUnreadStreams(new Set(unreadRef.current))
       }
 
       if (newDiscovered.length > 0) {
@@ -496,7 +516,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     })
 
     inputRef.current?.focus()
-    return () => { unsubEvents(); unsubStatus() }
+    return () => { unsubEvents(); unsubStatus(); cancelPendingRef.current() }
   }, [onDisconnect])
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -665,9 +685,18 @@ export default function GameWindow({ onDisconnect }: Props) {
     }
   }
 
+  function clearUnread(id: string) {
+    if (unreadRef.current.delete(id)) setUnreadStreams(new Set(unreadRef.current))
+  }
+
+  function handleTopActive(id: string)    { setTopActiveId(id);    clearUnread(id) }
+  function handleMidActive(id: string)    { setMidActiveId(id);    clearUnread(id) }
+  function handleBottomActive(id: string) { setBottomActiveId(id); clearUnread(id) }
+
   function handleDisconnect() {
     if (disconnecting) return
     setDisconnecting(true)
+    cancelPendingRef.current()
     window.api.disconnect()
   }
 
@@ -681,6 +710,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     onHighlight: openHighlightEditor,
     onTrigger: openTriggerEditor,
     discoveredStreams,
+    unreadIds: unreadStreams,
   }
 
   const handleContactClick = useCallback((contactId: string, x: number, y: number) => {
@@ -790,17 +820,17 @@ export default function GameWindow({ onDisconnect }: Props) {
         <div className="panel-column" ref={panelColumnRef} style={{ width: panelWidth }}>
           <div className="panel-zone" style={{ height: topPanelHeight, flexShrink: 0 }}>
             <PanelFrame {...sharedFrameProps} tabs={topTabs} activeId={topActiveId}
-              onTabsChange={setTopTabs} onActiveChange={setTopActiveId} />
+              onTabsChange={setTopTabs} onActiveChange={handleTopActive} />
           </div>
           <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('top-mid', e)} />
           <div className="panel-zone" style={{ height: midPanelHeight, flexShrink: 0 }}>
             <PanelFrame {...sharedFrameProps} tabs={midTabs} activeId={midActiveId}
-              onTabsChange={setMidTabs} onActiveChange={setMidActiveId} />
+              onTabsChange={setMidTabs} onActiveChange={handleMidActive} />
           </div>
           <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('mid-bot', e)} />
           <div className="panel-zone panel-zone--bottom">
             <PanelFrame {...sharedFrameProps} tabs={bottomTabs} activeId={bottomActiveId}
-              onTabsChange={setBottomTabs} onActiveChange={setBottomActiveId} />
+              onTabsChange={setBottomTabs} onActiveChange={handleBottomActive} />
           </div>
         </div>
       </div>

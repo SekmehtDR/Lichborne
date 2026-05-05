@@ -2,6 +2,14 @@ import { createPortal } from 'react-dom'
 import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import '../styles/settings.css'
 
+const PREVIEW_LINES = [
+  { text: '[The Crossing, Town Square]',           cls: 'sp-preview-roomname' },
+  { text: 'A bustling square at the heart of the city.' },
+  { text: 'Vayne says, "Watch your step."',         cls: 'sp-preview-speech'   },
+  { text: 'You sense Kaela thinking, "Low mana."', cls: 'sp-preview-thought'  },
+  { text: 'The troll swings at you and connects!', cls: 'sp-preview-bold'     },
+]
+
 interface Props {
   settings: AppSettings
   onChange: (s: AppSettings) => void
@@ -114,6 +122,22 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
               <option value={1.8}>Relaxed (1.8)</option>
               <option value={2.0}>Double (2.0)</option>
             </select>
+          </div>
+
+          <div className="sp-preview">
+            <div className="sp-preview-label">Preview</div>
+            <div
+              className="sp-preview-body"
+              style={{
+                fontFamily: FONT_FAMILIES[settings.fontFamily] ?? FONT_FAMILIES.cascadia,
+                fontSize: `${settings.largePrint ? 18 : settings.fontSize}px`,
+                lineHeight: settings.largePrint ? 1.8 : settings.lineHeight,
+              }}
+            >
+              {PREVIEW_LINES.map((line, i) => (
+                <div key={i} className={line.cls ?? ''}>{line.text}</div>
+              ))}
+            </div>
           </div>
 
           <div className="sp-divider" />

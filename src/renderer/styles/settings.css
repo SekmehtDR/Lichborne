@@ -287,3 +287,34 @@
   color: var(--text-muted);
   line-height: 1.3;
 }
+
+/* ── Font preview ────────────────────────────────────────────── */
+
+.sp-preview {
+  margin: 6px 16px 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sp-preview-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 5px 10px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-preview-body {
+  padding: 8px 10px;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+.sp-preview-roomname { color: var(--preset-roomname); font-weight: bold; }
+.sp-preview-speech   { color: var(--preset-speech); }
+.sp-preview-thought  { color: var(--preset-thought); }
+.sp-preview-bold     { color: var(--preset-bold); font-weight: bold; }

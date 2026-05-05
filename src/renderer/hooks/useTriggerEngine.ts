@@ -129,14 +129,19 @@ function executeAction(
   action: TriggerAction,
   vars: Record<string, string>,
   cbs: TriggerCallbacks,
+  trackTimer: (handle: ReturnType<typeof setTimeout>) => void,
 ) {
   switch (action.type) {
     case 'command': {
       const cmd = interpolate(action.command ?? '', vars).trim()
       if (!cmd) return
       const delay = action.delayMs ?? 0
-      if (delay > 0) setTimeout(() => cbs.sendCommand(cmd), delay)
-      else cbs.sendCommand(cmd)
+      if (delay > 0) {
+        const handle = setTimeout(() => cbs.sendCommand(cmd), delay)
+        trackTimer(handle)
+      } else {
+        cbs.sendCommand(cmd)
+      }
       break
     }
     case 'echo': {
@@ -184,7 +189,7 @@ export function useTriggerEngine(
   rules: TriggerRule[],
   stateRef: React.MutableRefObject<TriggerGameState>,
   callbacks: TriggerCallbacks,
-): (stream: string, lineText: string) => void {
+): { processLine: (stream: string, lineText: string) => void; cancelPending: () => void } {
   // Compiled regexes — recompiled whenever rules change
   const compiledRef = useRef<{ rule: TriggerRule; regex: RegExp | null }[]>([])
   useEffect(() => {
@@ -193,6 +198,18 @@ export function useTriggerEngine(
 
   // Per-trigger cooldown timestamps
   const cooldownsRef = useRef<Record<string, number>>({})
+
+  // Pending delayed command timer handles — cleared on disconnect
+  const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  const trackTimer = useCallback((handle: ReturnType<typeof setTimeout>) => {
+    pendingTimersRef.current.add(handle)
+  }, [])
+
+  const cancelPending = useCallback(() => {
+    for (const h of pendingTimersRef.current) clearTimeout(h)
+    pendingTimersRef.current.clear()
+  }, [])
 
   const processLine = useCallback((stream: string, lineText: string) => {
     const now   = Date.now()
@@ -232,7 +249,7 @@ export function useTriggerEngine(
 
       // Execute all actions in order
       for (const action of rule.actions) {
-        executeAction(action, vars, callbacks)
+        executeAction(action, vars, callbacks, trackTimer)
       }
 
       // One-shot: disable after first fire
@@ -240,7 +257,7 @@ export function useTriggerEngine(
         callbacks.disableTrigger(rule.id)
       }
     }
-  }, [stateRef, callbacks])
+  }, [stateRef, callbacks, trackTimer])
 
-  return processLine
+  return { processLine, cancelPending }
 }

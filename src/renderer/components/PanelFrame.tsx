@@ -60,13 +60,14 @@ interface Props {
   onTabsChange: (tabs: TabDef[]) => void
   onActiveChange: (id: string) => void
   discoveredStreams?: string[]
+  unreadIds?: Set<string>
 }
 
 export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
   debugEvents, onClearDebug, onClearStream, onHighlight, onTrigger,
   tabs, activeId, onTabsChange, onActiveChange,
-  discoveredStreams = [],
+  discoveredStreams = [], unreadIds,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
@@ -145,20 +146,25 @@ export default function PanelFrame({
 
       <div className="panel-frame-tabs">
         <div className="panel-tab-list">
-          {tabs.map(tab => (
-            <div
-              key={tab.id}
-              className={`panel-tab${activeId === tab.id ? ' panel-tab--active' : ''}`}
-              onClick={() => onActiveChange(tab.id)}
-            >
-              <span>{tab.label}</span>
-              <span
-                className="panel-tab-close"
-                onClick={e => { e.stopPropagation(); closeTab(tab.id) }}
-                title="Close tab"
-              >×</span>
-            </div>
-          ))}
+          {tabs.map(tab => {
+            const isActive = activeId === tab.id
+            const isUnread = !isActive && (unreadIds?.has(tab.id) ?? false)
+            return (
+              <div
+                key={tab.id}
+                className={`panel-tab${isActive ? ' panel-tab--active' : ''}${isUnread ? ' panel-tab--unread' : ''}`}
+                onClick={() => onActiveChange(tab.id)}
+              >
+                <span>{tab.label}</span>
+                {isUnread && <span className="panel-tab-unread-dot" title="New content" />}
+                <span
+                  className="panel-tab-close"
+                  onClick={e => { e.stopPropagation(); closeTab(tab.id) }}
+                  title="Close tab"
+                >×</span>
+              </div>
+            )
+          })}
         </div>
 
         <div className="panel-tab-add-wrap" ref={addWrapRef}>

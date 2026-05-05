@@ -72,6 +72,15 @@
   border-top-color: var(--accent-dim);
 }
 
+.panel-tab-unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
 .panel-tab-close {
   font-size: 0.85rem;
   color: var(--text-faint);
