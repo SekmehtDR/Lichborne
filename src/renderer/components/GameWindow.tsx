@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
 import { renderSegment } from '../utils/renderSegment'
-import { renderSegmentWithContacts, buildNameRegex } from '../utils/renderWithContacts'
+import { renderSegmentFull, getLineHighlightStyle } from '../utils/renderSegmentFull'
+import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
+import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
 import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
+import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import ContactPopover from './ContactPopover'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
@@ -15,6 +18,7 @@ import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
 import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
+import HighlightsPanel from './HighlightsPanel'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -131,7 +135,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const clearDebugEvents = () => setDebugEvents([])
   const clearLines       = () => setLines([])
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
-  const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
     health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
@@ -165,10 +169,15 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [showSettings,    setShowSettings]      = useState(false)
   const [showContacts,    setShowContacts]      = useState(false)
+  const [showHighlights,    setShowHighlights]    = useState(false)
+  const [highlightPrefill,  setHighlightPrefill]  = useState<HighlightRule | undefined>(undefined)
+  const [highlightTestText, setHighlightTestText] = useState<string | undefined>(undefined)
 
   const [contacts,  setContacts]  = useState(() => loadContacts())
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
+  const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights())
+  const { matchRules, lineRules } = useCompiledHighlights(highlights)
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
@@ -602,7 +611,33 @@ export default function GameWindow({ onDisconnect }: Props) {
     setContactPopover({ contactId, x, y })
   }, [])
 
+  function getWordAtPoint(x: number, y: number): string | null {
+    const range = document.caretRangeFromPoint(x, y)
+    if (!range) return null
+    const node = range.startContainer
+    if (node.nodeType !== Node.TEXT_NODE) return null
+    const text = node.textContent ?? ''
+    const offset = range.startOffset
+    let start = offset, end = offset
+    while (start > 0 && /[\w']/.test(text[start - 1])) start--
+    while (end < text.length && /[\w']/.test(text[end])) end++
+    const word = text.slice(start, end).trim()
+    return word.length >= 2 ? word : null
+  }
+
+  function getLineTextAtPoint(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y)
+    return el?.closest('.text-line')?.textContent?.trim() || null
+  }
+
+  function openHighlightEditor(rule: HighlightRule, testText?: string) {
+    setHighlightPrefill(rule)
+    setHighlightTestText(testText)
+    setShowHighlights(true)
+  }
+
   return (
+    <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
     <ContactsContext.Provider value={{ contacts, templates: contactTemplates, nameRegex, onContactClick: handleContactClick }}>
     <div className="game-layout">
       <div className="game-toolbar">
@@ -611,6 +646,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
+        <button className="btn-highlights" onClick={() => { setHighlightPrefill(undefined); setShowHighlights(v => !v) }}>Highlights</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
@@ -629,15 +665,24 @@ export default function GameWindow({ onDisconnect }: Props) {
           <div className="text-area">
             <div className="text-window" ref={scrollRef} onScroll={handleScroll}
               onClick={() => inputRef.current?.focus()}
-              onContextMenu={e => { e.preventDefault(); setMainCtxMenu({ x: e.clientX, y: e.clientY }) }}>
-              {lines.map(line => (
-                <div key={line.id} className="text-line">
-                  {line.segments.map((seg, i) => nameRegex
-                    ? renderSegmentWithContacts(seg, i, contacts, contactTemplates, nameRegex, handleContactClick)
-                    : renderSegment(seg, i)
-                  )}
-                </div>
-              ))}
+              onContextMenu={e => {
+                e.preventDefault()
+                const word = getWordAtPoint(e.clientX, e.clientY)
+                const lineText = getLineTextAtPoint(e.clientX, e.clientY)
+                setMainCtxMenu({ x: e.clientX, y: e.clientY, word, lineText })
+              }}>
+              {lines.map(line => {
+                const lineStyle = getLineHighlightStyle(line.segments, lineRules)
+                const hasExtras = nameRegex || matchRules.length > 0
+                return (
+                  <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
+                    {line.segments.map((seg, i) => hasExtras
+                      ? renderSegmentFull(seg, i, contacts, contactTemplates, nameRegex, matchRules, handleContactClick)
+                      : renderSegment(seg, i)
+                    )}
+                  </div>
+                )
+              })}
               <div ref={bottomRef} />
             </div>
             {newLineCount > 0 && (
@@ -685,7 +730,23 @@ export default function GameWindow({ onDisconnect }: Props) {
 
       {mainCtxMenu && (
         <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)}
-          items={[{ label: 'Clear', onClick: clearLines }]}
+          items={[
+            ...(mainCtxMenu.word ? [{
+              label: `Highlight "${mainCtxMenu.word}"`,
+              onClick: () => openHighlightEditor(
+                newHighlight(mainCtxMenu.word!, 'match'),
+                mainCtxMenu.lineText ?? undefined,
+              ),
+            }] : []),
+            ...(mainCtxMenu.lineText ? [{
+              label: 'Highlight this line',
+              onClick: () => openHighlightEditor(
+                newHighlight(mainCtxMenu.lineText!, 'line'),
+                mainCtxMenu.lineText ?? undefined,
+              ),
+            }] : []),
+            { label: 'Clear', onClick: clearLines },
+          ]}
         />
       )}
 
@@ -752,7 +813,17 @@ export default function GameWindow({ onDisconnect }: Props) {
         ) : null
       })()}
 
+      {showHighlights && (
+        <HighlightsPanel
+          prefill={highlightPrefill}
+          initialTestText={highlightTestText}
+          onClose={() => { setShowHighlights(false); setHighlightPrefill(undefined); setHighlightTestText(undefined) }}
+          onSaved={() => setHighlights(loadHighlights())}
+        />
+      )}
+
     </div>
     </ContactsContext.Provider>
+    </HighlightsContext.Provider>
   )
 }

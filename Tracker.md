@@ -13,7 +13,7 @@
 **Phase 4 — Complete ✅**
 **Phase 5 — Complete ✅**
 **Phase 6 — Complete ✅ (6A–6C; 6D moved to backlog)**
-**Phase 7 — Not started (Highlights, Triggers & Macros)**
+**Phase 7 — In progress (7A Highlights complete; 7B Triggers not started)**
 
 ---
 
@@ -371,21 +371,29 @@ The text attribute is **not** just the current value — it contains `"current m
 ---
 
 ## Phase 7 — Highlights, Triggers & Macros
-*Not started. Full spec in DESIGN.md Section 14.*
+*7A complete. Full spec in DESIGN.md Section 14.*
 
-### Phase 7A — Highlights
-- [ ] Rule data model + localStorage persistence (`klient67.highlights`, `klient67.highlight-groups`) — `highlights.ts`
-- [ ] Pattern engine — text / begins-with / regex; inline and whole-line scope — `highlightEngine.ts`
-- [ ] Overlap resolution — shortest inline match wins; first whole-line rule in order wins
-- [ ] FG + BG + bold styling per rule
-- [ ] Global + per-character rule scoping field (character field on rule)
-- [ ] Group system — Danger, Alerts, Info, Social; named groups with color swatch, bulk toggle, filter rule list
-- [ ] HighlightsContext — compiled rules passed to all panels via React context
-- [ ] Applied in main text render loop (GameWindow) and all stream panels (StreamPanel)
-- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, edit form, live preview — `HighlightsPanel.tsx`
-- [ ] Highlight Wizard — paste text → keyword analysis → match suggestions → group recommendation (Section 14.0)
-- [ ] Rule import / export (JSON)
-- [ ] Panel scope selector — per-rule panel filtering
+### Phase 7A — Highlights ✅
+
+- [x] `highlights.ts` — `HighlightRule` data model (`id, name, enabled, pattern, mode, caseSensitive, scope, style, priority`); `HighlightStyle` (`textColor, bgColor, bold, glow, glowColor`); `buildHighlightRegex()` with three match modes; `isValidRegex()`; `newHighlight()` factory; localStorage persistence (`klient67.highlights`)
+- [x] Pattern engine — three modes:
+  - **Text** — word-by-word `\b` matching joined with `\s+`; handles multi-word phrases and punctuation correctly
+  - **Phrase** — exact escaped substring; case-insensitive by default
+  - **Regex** — raw user-supplied regex; live error indicator on invalid syntax
+- [x] Case sensitivity toggle — `caseSensitive` field on rule; default `true` (case-sensitive); `Aa` button in editor; switches regex between `g` and `gi` flags
+- [x] Scope — **Line** (entire `.text-line` div styled via inline style) or **Match** (only matched spans styled); overlap resolution: contacts beat highlights on ties, first match by position wins
+- [x] Style per rule — text color, background color, bold, glow (`text-shadow`), glow color (independent picker)
+- [x] `HighlightsContext.tsx` — `rules, matchRules, lineRules`; `useCompiledHighlights()` pre-compiles active regexes via `useMemo`
+- [x] `renderSegmentFull.tsx` — single-pass renderer replacing `renderSegmentWithContacts`; handles contacts + match-scope highlights in one regex loop; `getLineHighlightStyle()` for line-scope
+- [x] Applied in GameWindow main text + all StreamPanels via context
+- [x] `HighlightsPanel.tsx` — portal modal; sidebar list (toggle bullet, color swatch, scope badge); detail form with label, pattern field, mode toggle (Text / Phrase / Regex), `Aa` case sensitivity button, Line/Match scope radio, 3-column style grid (Text / Background / Glow with pickers + Bold checkbox), live preview box with custom test input field
+- [x] Right-click integration — "Highlight 'word'" (Match scope) and "Highlight this line" (Line scope) in main text context menu; captured line text pre-fills the preview test input
+- [x] Highlights toolbar button (`btn-highlights`) wired to theme CSS vars
+- [x] `highlights.css` — all `hp-*` panel styles; `.hl-match` in-game span
+- [ ] Rule import / export (JSON) — deferred
+- [ ] Group system (Danger, Alerts, Info, Social) — deferred
+- [ ] Highlight Wizard — deferred
+- [ ] Panel scope selector (per-rule stream filtering) — deferred
 
 ### Phase 7B — Triggers
 - [ ] Trigger data model — extends Rule with action + destination + cooldown fields
@@ -517,3 +525,10 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-04 | General themes sorted alphabetically — Classic, Dark, Darker, Parchment, Slate, Terminal |
 | 2026-05-04 | Vitals bar defaults to bottom position — `DEFAULT_SETTINGS.vitalsBarPosition` changed from `'top'` to `'bottom'`; matches where most players expect it in the DR client layout |
 | 2026-05-04 | Log stream panel added as built-in panel type — routes `log` game stream to a dedicated StreamPanel; added to `NEVER_DISCOVER`; included in default bottom-right zone alongside Experience |
+| 2026-05-04 | Highlight engine built (Phase 7A) — `HighlightRule` model with Text/Phrase/Regex modes, Line/Match scope, case sensitivity, glow; `renderSegmentFull` single-pass renderer handles contacts + highlights together; line-scope applied at div level, match-scope at span level |
+| 2026-05-04 | Text mode uses word-by-word `\b` matching — splits pattern on whitespace, applies `\b` per token, joins with `\s+`; correctly handles multi-word phrases, trailing punctuation, and asterisks without needing Phrase mode |
+| 2026-05-04 | Case sensitivity defaults to `true` (case-sensitive) — right-click captures exact game text so exact case is the right default; toggle button `Aa` in editor switches `g`↔`gi` |
+| 2026-05-04 | Glow implemented as `text-shadow` — uses dedicated `glowColor` picker (independent from text color); `0 0 6px / 0 0 14px` double-shadow; applied to both match-scope spans and line-scope divs |
+| 2026-05-04 | Right-click context menu extended — "Highlight 'word'" (Match scope) and "Highlight this line" (Line scope); captured line text passed as `initialTestText` to preview panel so match is immediately visible |
+| 2026-05-04 | `renderSegmentFull` replaces `renderSegmentWithContacts` at all render sites — single regex exec loop collects all contact + highlight match ranges, sorts by position, contacts win ties; no double-pass needed |
+| 2026-05-04 | Regex error indicator added — red border + error message on pattern field when Regex mode contains invalid syntax; `isValidRegex()` exported from `highlights.ts` |

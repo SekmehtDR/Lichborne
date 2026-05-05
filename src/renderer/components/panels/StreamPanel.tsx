@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
 import { renderSegment } from '../../utils/renderSegment'
-import { renderSegmentWithContacts } from '../../utils/renderWithContacts'
+import { renderSegmentFull, getLineHighlightStyle } from '../../utils/renderSegmentFull'
 import { useContacts } from '../../ContactsContext'
+import { useHighlights } from '../../HighlightsContext'
 import ContextMenu from '../ContextMenu'
 
 interface Props {
@@ -13,10 +14,13 @@ interface Props {
 
 export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
+  const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+
+  const hasExtras = nameRegex || matchRules.length > 0
 
   function handleScroll() {
     const el = scrollRef.current
@@ -38,14 +42,17 @@ export default function StreamPanel({ lines, emptyMessage, onClear }: Props) {
       {lines.length === 0 && emptyMessage && (
         <div className="stream-panel-empty">{emptyMessage}</div>
       )}
-      {lines.map(line => (
-        <div key={line.id} className="text-line">
-          {line.segments.map((seg, i) => nameRegex
-            ? renderSegmentWithContacts(seg, i, contacts, templates, nameRegex, onContactClick)
-            : renderSegment(seg, i)
-          )}
-        </div>
-      ))}
+      {lines.map(line => {
+        const lineStyle = getLineHighlightStyle(line.segments, lineRules)
+        return (
+          <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
+            {line.segments.map((seg, i) => hasExtras
+              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick)
+              : renderSegment(seg, i)
+            )}
+          </div>
+        )
+      })}
       <div ref={bottomRef} />
       {ctxMenu && (
         <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}

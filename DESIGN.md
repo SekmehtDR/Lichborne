@@ -910,16 +910,16 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Auto-detection from arrivals/tells/room desc — candidate queue + dismissible banner (6D stretch)
 
 ### Phase 7 — Highlights, Triggers & Macros
-> Full spec: Section 14
+> Full spec: Section 14. 7A complete; 7B–7C not started.
 
-- [ ] Highlight rules engine — text / begins-with / regex; inline and whole-line scope; FG + BG + bold; overlap resolution (Section 14.2–14.5)
+- [x] Highlight rules engine — Text (word-by-word `\b`), Phrase (exact substring), Regex; Line and Match scope; FG + BG + bold + glow; overlap resolution (contacts beat highlights on ties, first-position wins)
+- [x] Highlight editor UI — toolbar button; sidebar list with enable toggle, color swatch, scope badge; detail form with pattern field, mode toggle, `Aa` case sensitivity, style pickers, live preview with test input; right-click "Highlight word / line" from game text
 - [ ] Highlight groups — Danger, Alerts, Info, Social; named toggleable sets (Section 14.6)
-- [ ] Highlight Wizard — paste text → keyword analysis → match suggestions → group recommendation (Section 14.0)
+- [ ] Highlight Wizard — paste text → keyword analysis → match suggestions (Section 14.0)
 - [ ] Global + per-character rule scoping (Section 14.8)
-- [ ] Highlight editor UI — toolbar button, group sidebar, rule list, live preview (Section 14.9)
+- [ ] Rule import / export (JSON)
 - [ ] Trigger system — same engine, adds action + cooldown fields (Section 14.10)
 - [ ] Eval triggers — game-state condition expressions (Section 14.11)
-- [ ] Rule import / export (JSON)
 - [ ] Command aliases — short names that expand to full commands
 - [ ] Macro system — key bindings to commands or sequences
 
@@ -1194,7 +1194,7 @@ Each character profile independently remembers:
 
 ## 14. Highlights & Triggers
 
-> Status: Phase 7 — scheduled after Phase 6 (Contacts). This is the full design spec.
+> Status: Phase 7A complete (highlight engine, editor UI, right-click capture, glow, case sensitivity). Groups, Wizard, triggers, and macros remain. This section is the full design spec for what's remaining.
 
 ### 14.0 Highlight Wizard
 
