@@ -7,7 +7,7 @@ import ExpPanel from './panels/ExpPanel'
 import DebugPanel from './DebugPanel'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'debug' | 'custom'
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'debug' | 'log' | 'custom'
 
 export interface TabDef {
   id: string
@@ -26,11 +26,12 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   familiar:      'Familiar',
   inv:           'Inventory',
   debug:         'Debug',
+  log:           'Log',
   custom:        'Custom',
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'debug',
+  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'debug', 'log',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -247,6 +248,7 @@ function renderPanel(
     case 'familiar': return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} />
     case 'inv':      return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')} />
     case 'debug':    return <DebugPanel events={debugEvents} onClear={onClearDebug} />
+    case 'log':      return <StreamPanel lines={streamLines.log       ?? []} onClear={clr('log')} />
     case 'custom':   return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
   }
 }

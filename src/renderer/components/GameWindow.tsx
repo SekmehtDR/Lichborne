@@ -55,6 +55,7 @@ const NEVER_DISCOVER = new Set([
   'inv', 'inventory',
   'exp',
   'debug',
+  'log',
 ])
 
 // Streams that fall back to main when no panel is open for them.
@@ -157,7 +158,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [topActiveId, setTopActiveId]   = useState(() => loadStr('klient67.topActiveId',    'room'))
   const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('klient67.midTabs',    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
   const [midActiveId, setMidActiveId]   = useState(() => loadStr('klient67.midActiveId',    'thoughts'))
-  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', [makeTab('exp')]))
+  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', [makeTab('exp'), makeTab('log')]))
   const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', 'exp'))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
@@ -521,7 +522,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     localStorage.setItem('klient67.midPanelHeight', String(DEFAULT_MID_HEIGHT))
     const defaultTop = [makeTab('room'), makeTab('conversations')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
-    const defaultBot = [makeTab('exp')]
+    const defaultBot = [makeTab('exp'), makeTab('log')]
     setTopTabs(defaultTop);    setTopActiveId('room')
     setMidTabs(defaultMid);    setMidActiveId('thoughts')
     setBottomTabs(defaultBot); setBottomActiveId('exp')

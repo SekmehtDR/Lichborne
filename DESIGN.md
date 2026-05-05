@@ -100,11 +100,11 @@ Every panel supports:
 │                                  │ * Muse thinks, "hello"   │
 ├──────────────────────────────────┤ * Agan thinks, "hi"      │
 │ >  _                    [Send]   ├──────────────────────────┤
-└──────────────────────────────────┤ EXP                      │
+└──────────────────────────────────┤ EXP  |  LOG              │
                                    └──────────────────────────┘
 ```
 
-The command bar spans only the main text area — the right panel column extends to the bottom of the window, giving the bottom-right panel (Experience) maximum vertical space.
+The command bar spans only the main text area — the right panel column extends to the bottom of the window, giving the bottom-right panel (Experience + Log) maximum vertical space.
 
 This is the **starting point**, not a constraint. Players can reshape it freely.
 
