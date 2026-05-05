@@ -578,12 +578,13 @@ Base themes are never modified. Editing a base automatically creates a personal 
 
 ### 7.2 Theme Picker Flow
 
-1. **Settings → Theme** — a grid of theme cards, each showing a small live preview swatch (background, text, accent, a sample vital bar)
-2. Two tabs at the top: **General** | **Guild**
-3. Click any theme card → applies immediately as a live preview — no confirmation step
-4. A **My Themes** section sits above the base grid and shows the player's saved custom themes
-5. At the bottom of each theme card: **"Customize..."** button
-6. Navigating away from Settings keeps whatever is currently applied
+1. **Settings → Theme** — a list+detail two-panel layout inside a modal
+2. Three tabs at the top: **General** | **Guild** | **Custom**
+3. Left column: scrollable list of theme names, each with a small colored dot (theme background color) and a ✓ badge on the currently active theme
+4. Right panel: live preview mock using the selected theme's actual colors — room name, description, exit buttons, speech line; plus the theme name and action buttons below
+5. Clicking a list item applies the theme immediately (live preview, no confirmation) and highlights the row
+6. Action buttons in the right panel: **Customize…** for base/guild themes; **Edit / Duplicate / Export / Delete** for custom themes
+7. Navigating away from Settings keeps whatever is currently applied
 
 ### 7.3 Theme Editor
 
