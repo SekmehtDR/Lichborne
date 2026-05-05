@@ -264,6 +264,10 @@ export class StormFrontParser {
       }
 
       case 'color': {
+        // Self-closing <color/> has no content to style — skip the push entirely.
+        // Without this guard the stack grows permanently because tagEnd is never
+        // called for self-closing tags, so the entry would never be popped.
+        if (selfClosing) break
         const fg = attrs.fg || undefined
         const bg = attrs.bg || undefined
         this.colorStack.push({ fg, bg })
@@ -433,6 +437,16 @@ export class StormFrontParser {
     }
 
     if (!this.captureCtx) return
+
+    // </preset> closing while inside a different capture context (e.g. <component>):
+    // the component's captureCtx must stay intact, but we still need to clear the
+    // currentPreset that was set when the nested <preset> opened — otherwise it
+    // leaks into text rendered after the outer capture context closes.
+    if (name === 'preset' && this.captureCtx.tag !== 'preset') {
+      this.currentPreset = undefined
+      return
+    }
+
     if (name !== this.captureCtx.tag) return
 
     const ctx  = this.captureCtx
@@ -499,6 +513,12 @@ export class StormFrontParser {
         // With statusprompt enabled DR sends the full state string in the tag text
         // (e.g. "H>", "HR>", "s>"). Fall back to ">" if the server sends nothing.
         const prompt = text || '>'
+        // Prompts are frame boundaries — clear any lingering inline style state so it
+        // doesn't bleed into the next server turn (e.g. crystal whisper bleeding
+        // into subsequent movement messages, or orphaned <color> entries from a
+        // Lich script that forgot to close its color tag).
+        this.currentPreset = undefined
+        this.colorStack    = []
         if (prompt !== this.lastMainText) {
           this.lastMainText = prompt
           this.events.push({
