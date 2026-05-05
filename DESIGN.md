@@ -638,8 +638,10 @@ Every color field opens the colorblind-aware color picker — the player sees si
 | **Classic** *(default)* | Black canvas, WhiteSmoke text — mirrors Genie's exact out-of-box preset colors (speech, whisper, thought, roomname, vitals bars) so veteran players feel at home immediately |
 | **Dark** | Dark background, warm off-white text |
 | **Darker** | Pure black background, maximum contrast |
+| **Ivory** | True white chrome, deep indigo accent, near-black text — maximum clarity for players who prefer a bright, document-like interface; all preset colors fully retuned for light backgrounds |
+| **Mist** | Cool soft-gray chrome, steel blue accent — the comfortable daily-driver light theme; easier on the eyes than pure white during long sessions; preset colors calibrated for the tinted base |
+| **Parchment** | Warm cream background, earthy brown tones — aged parchment aesthetic for players who want a fantasy-immersive light experience |
 | **Slate** | Cool blue-grey tones, softer than Dark |
-| **Parchment** | Light background, dark text — better for bright environments |
 | **Terminal** | Green on black, monospace CRT aesthetic |
 
 ### 7.5 Guild Base Themes
@@ -648,10 +650,10 @@ Guild themes are base themes with palettes designed around each guild's identity
 
 | Guild | Palette Feel | Background | Text | Accent |
 |---|---|---|---|---|
-| **Commoner** | Plain cloth, road dust, humble origins | `#141210` | `#c8b89a` | `#7a6a50` |
 | **Barbarian** | Blood and ash, primal warrior | `#1a0f0a` | `#d4b896` | `#8b1a1a` |
 | **Bard** | Theatrical gold, warm parchment | `#1a1020` | `#e8d5a0` | `#c08030` |
 | **Cleric** | Cathedral light, holy gold | `#0d1020` | `#e8eaf0` | `#c8a840` |
+| **Commoner** | Plain cloth, road dust, humble origins | `#141210` | `#c8b89a` | `#7a6a50` |
 | **Empath** | Soft greens, healing light | `#0d1a12` | `#d8f0d8` | `#60b870` |
 | **Moon Mage** | Night sky, starlight blue | `#07091a` | `#c8d8f8` | `#7878d8` |
 | **Necromancer** | Pure black, bone and decay | `#0a0a0a` | `#c8c8b0` | `#50a050` |
@@ -1517,6 +1519,7 @@ Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intention
 - Highlights applied in `renderSegment()` — adds inline style or `data-highlight` class alongside existing preset styles
 - Trigger eval expressions parsed with a minimal safe evaluator — no `eval()`, no arbitrary code execution
 - Rules exported/imported as JSON; import merges with existing rules (no full replace)
+- **Zero-length match guard** — all `while (regex.exec())` loops (preview and live render) advance `lastIndex` manually when a zero-length match is returned (`m[0].length === 0`). This prevents an infinite loop when patterns use zero-width assertions like `^`, `$`, `\b`, or `(?=...)` in regex mode. Without this guard, a pattern like `^` produces a zero-length match at position 0 and can freeze the renderer thread before V8 can be interrupted.
 
 ---
 

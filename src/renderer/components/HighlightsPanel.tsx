@@ -78,6 +78,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
     let n = 0
     let m: RegExpExecArray | null
     while ((m = regex.exec(previewSource)) !== null) {
+      if (m[0].length === 0) { regex.lastIndex++; continue }
       if (m.index > last) parts.push(<span key={n++}>{previewSource.slice(last, m.index)}</span>)
       const hlStyle: React.CSSProperties = {
         ...(draft.style.bgColor && draft.style.bgColor !== 'transparent'

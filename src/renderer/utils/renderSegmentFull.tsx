@@ -26,6 +26,7 @@ export function renderSegmentFull(
     nameRegex.lastIndex = 0
     let m: RegExpExecArray | null
     while ((m = nameRegex.exec(text)) !== null) {
+      if (m[0].length === 0) { nameRegex.lastIndex++; continue }
       const contact = contacts.find(c => c.name.toLowerCase() === m![0].toLowerCase()) ?? null
       if (contact) {
         const template = templates.find(t => t.id === contact.templateId) ?? null
@@ -38,6 +39,7 @@ export function renderSegmentFull(
     compiled.regex.lastIndex = 0
     let m: RegExpExecArray | null
     while ((m = compiled.regex.exec(text)) !== null) {
+      if (m[0].length === 0) { compiled.regex.lastIndex++; continue }
       ranges.push({ start: m.index, end: m.index + m[0].length, kind: 'highlight', compiled })
     }
   }
