@@ -247,7 +247,7 @@ The text attribute is **not** just the current value — it contains `"current m
 ### Milestone 4B — Base Themes & Theme Picker ✅
 > Goal: 5 general themes + theme picker UI in settings
 
-- [x] General base themes: Dark (current), Darker, Slate, Parchment, Terminal
+- [x] General base themes: Classic (default), Dark, Darker, Slate, Parchment, Terminal
 - [x] Theme picker UI — grid of theme cards with live preview swatches, General/Guild tabs
 - [x] Live preview on click — no confirmation needed, persists to localStorage
 - [x] Guild themes (all 12 guilds including Commoner) — palettes from DESIGN.md Section 6.5
@@ -512,3 +512,7 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-03 | Connecting state replaces form — when connecting, form is hidden and only spinner + scrolling status log shown; card stays compact with no layout shift; error restores form for retry |
 | 2026-05-03 | login.css intentionally hardcoded — uses fixed hex values, not CSS custom properties; login renders before any character theme is active and must always look consistent |
 | 2026-05-03 | Delay/Port/Mode grid columns fixed to `72px 108px 1fr` — Delay tight, Port sized for 5 digits + lock, Mode fills remainder; fixes Mode truncation issue |
+| 2026-05-04 | Classic theme added — pure black canvas + WhiteSmoke (#F5F5F5) text; all preset/vital colors sourced directly from Genie's presets.cfg (speech #FFCCB2, whisper #BFFFFF, thought #F9C5F9, roomname #FFDBBF, health red, mana green, etc.); UI chrome lifted above pure-black to maintain panel depth and readable borders |
+| 2026-05-04 | Classic set as default theme — `initTheme()` defaults to `'classic'` instead of `'dark'`; Genie veterans see familiar colors immediately on first launch |
+| 2026-05-04 | General themes sorted alphabetically — Classic, Dark, Darker, Parchment, Slate, Terminal |
+| 2026-05-04 | Vitals bar defaults to bottom position — `DEFAULT_SETTINGS.vitalsBarPosition` changed from `'top'` to `'bottom'`; matches where most players expect it in the DR client layout |
