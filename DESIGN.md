@@ -30,6 +30,7 @@
 14. [Highlights & Triggers](#14-highlights--triggers)
 15. [Smart Names / Contacts](#15-smart-names--contacts)
 16. [Login Screen](#16-login-screen)
+17. [Automations, Groups & Modes](#17-automations-groups--modes)
 
 ---
 
@@ -1779,4 +1780,156 @@ On error, `setConnecting(false)` restores the form with the error message displa
 - **"Connect via Lich" outside the advanced panel** — it is a primary choice, not an infrastructure detail. Lives in the main form between Character Name and the Advanced toggle.
 - **Subtle divider** before the Advanced toggle (`border-top: 1px solid #222`) separates credential fields from configuration fields visually.
 - **Grid columns for Delay/Port/Mode row**: `72px 108px 1fr` — Delay tight (small number), Port fixed (5-digit + lock), Mode fills remaining space.
+
+---
+
+## 17. Automations, Groups & Modes
+
+> Status: Planned — not started. Design finalized 2026-05-04. Build after Phase 7C (Macros & Aliases) so all four rule-bearing systems exist before wiring groups.
+
+### 17.1 Concept
+
+A three-level hierarchy for organizing and context-switching all automation rules:
+
+```
+Mode  ──────────────  saved preset of which groups are active
+ └── enabledGroups[]
+
+Group  ─────────────  named, colored tag; assigned to rules
+ └── name, color
+
+Rule  ──────────────  highlight / trigger / macro / alias
+ └── groupIds[]       belongs to zero or more groups
+ └── enabled          individual toggle still works independently
+```
+
+A **Group** is a named tag with a color. Rules (highlights, triggers, macros, aliases) can belong to multiple groups. A **Mode** is a saved snapshot specifying which groups are enabled. Switching modes flips all associated groups at once — the primary context-switching mechanism for DR players moving between PVP, hunting, crafting, and social play.
+
+### 17.2 Data Model
+
+```typescript
+interface RuleGroup {
+  id:    string   // uuid
+  name:  string   // "Combat", "PVP", "Social"
+  color: string   // hex — used for sidebar borders and pills
+}
+
+interface GameMode {
+  id:            string    // uuid
+  name:          string    // "Hunting", "PVP", "Town"
+  enabledGroups: string[]  // IDs of groups that are ON; everything else is OFF
+}
+
+// Runtime state (persisted separately from mode definitions)
+activeGroupStates: Record<string, boolean>  // live per-group on/off
+activeModeId:      string | null
+```
+
+Each rule-bearing type gets:
+```typescript
+groupIds: string[]   // replaces any future groupId?: string — multi-assign from the start
+```
+
+### 17.3 Built-in General Group
+
+Every new rule is auto-assigned to a built-in **General** group. General is included in every mode by default. Players who ignore the groups system entirely get sensible behavior — their rules always run. Power users reassign rules to specific groups.
+
+The General group cannot be deleted, but can be removed from a mode if the player explicitly wants it off.
+
+### 17.4 Mode Behavior
+
+- Switching a mode applies its `enabledGroups` snapshot to `activeGroupStates` immediately
+- Manual group toggles work on top of the active mode without modifying the mode definition
+- When current group state diverges from the active mode, the toolbar shows **Mode (modified)**
+- Re-selecting the active mode resets manual overrides back to the clean mode snapshot
+- **"No Mode"** is a valid state — groups stay in whatever state they were last left in
+
+### 17.5 Rule Firing Logic
+
+A rule fires if:
+1. Its own `enabled` toggle is `true`, **AND**
+2. At least one of its `groupIds` is active in `activeGroupStates` (OR logic across groups)
+
+Rules with an empty `groupIds` array never fire (unreachable — prevented by UI defaulting to General).
+
+### 17.6 Unified Automations Panel
+
+Rather than adding a separate toolbar button per system (Highlights, Triggers, Macros, Aliases), all four are consolidated under a single **[Automations]** toolbar button. The Mode switcher remains a separate toolbar control since it's a runtime toggle, not an editor.
+
+```
+Toolbar:
+[Automations] [Mode: Hunting ▾] [Disconnect]
+```
+
+Inside the Automations panel — tabbed:
+```
+┌─ Automations ──────────────────────────────────────────────┐
+│ [ Highlights | Triggers | Macros | Aliases | Groups/Modes ] │
+│                                                             │
+│  (selected tab content)                                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The Groups/Modes tab is where players create/rename/delete groups and modes and configure which groups each mode enables.
+
+### 17.7 Mode Switcher (Toolbar Popover)
+
+```
+[Mode: Hunting ▾]
+
+┌─ Mode ──────────────────────────────┐
+│  ○ PVP                              │
+│  ● Hunting              (active)    │
+│  ○ Town / Social                    │
+│  ─────────────────────────────────  │
+│  [Manage Modes…]                    │
+└─────────────────────────────────────┘
+```
+
+Selecting a mode applies its group snapshot instantly. "Manage Modes…" opens the Groups/Modes tab inside Automations.
+
+### 17.8 Groups in Rule Editors
+
+Each rule editor (highlight, trigger, macro, alias) gains a **Groups** field:
+
+```
+Groups
+┌────────────────────────────────────┐
+│ ■ General  ■ Combat  [+ Add…]      │
+└────────────────────────────────────┘
+```
+
+Multi-select chip picker. New rules start with General pre-selected.
+
+### 17.9 Sidebar Group Visibility
+
+Inside each Automations tab, the rule list sidebar gains a group filter strip:
+
+```
+[ All ] [ ■ General ] [ ■ Combat ] [ ■ PVP ] ...
+```
+
+Clicking a pill filters the list to only rules in that group. Each rule row shows a colored `▌` left border matching its primary group. Rules in a disabled group are dimmed.
+
+### 17.10 Storage Keys
+
+```
+klient67.groups            — RuleGroup[]
+klient67.modes             — GameMode[]
+klient67.activeGroupStates — Record<string, boolean>
+klient67.activeModeId      — string | null
+```
+
+Highlights and Triggers already use `klient67.highlights` and `klient67.triggers`. The `groupIds` field is added to those existing records when Groups is implemented — backwards compatible (missing field treated as `['general']`).
+
+### 17.11 Build Order
+
+1. **Core infrastructure** — `groups.ts`, `GroupsContext.tsx`, storage, built-in General group
+2. **Toolbar mode switcher** — popover, mode apply logic, modified-state indicator
+3. **Groups/Modes manager** — create/rename/delete groups and modes; configure mode snapshots
+4. **Wire Highlights** — add `groupIds` to HighlightRule; group picker in editor; sidebar filter; engine respects activeGroupStates
+5. **Wire Triggers** — same as Highlights; useTriggerEngine filters suppressed rules
+6. **Wire Macros** — when built (Phase 7C+)
+7. **Wire Aliases** — when built
+8. **Consolidate toolbar** — replace separate Highlights/Triggers buttons with unified Automations button
 
