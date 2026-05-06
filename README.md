@@ -1,4 +1,4 @@
-# Klient67
+# Lichborne
 
 A DragonRealms game client built with Electron, React, and TypeScript. Supports connecting via [Lich](https://github.com/elanthia-online/lich-5) (recommended) or direct to the game server.
 
@@ -6,7 +6,7 @@ A DragonRealms game client built with Electron, React, and TypeScript. Supports 
 
 ## Prerequisites
 
-Before you can build and run Klient67, you need the following installed:
+Before you can build and run Lichborne, you need the following installed:
 
 - **[Node.js](https://nodejs.org/)** v18 or later (v24 recommended)
 - **npm** v9 or later (comes with Node.js)
@@ -23,8 +23,8 @@ Before you can build and run Klient67, you need the following installed:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/SekmehtDR/Klient67.git
-cd Klient67
+git clone https://github.com/SekmehtDR/Lichborne.git
+cd Lichborne
 
 # 2. Install dependencies
 npm install
@@ -60,7 +60,7 @@ This builds the main process, builds the renderer, and launches the Electron app
 
 ### Recommended In-Game Settings
 
-Enable **statusprompt** in DragonRealms for the best experience — this causes the game server to send your full status (hidden, stunned, roundtime, etc.) in the prompt, which Klient67 displays correctly.
+Enable **statusprompt** in DragonRealms for the best experience — this causes the game server to send your full status (hidden, stunned, roundtime, etc.) in the prompt, which Lichborne displays correctly.
 
 ```
 SET PROMPT STATUS

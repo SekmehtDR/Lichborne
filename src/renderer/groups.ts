@@ -13,10 +13,10 @@ export interface GameMode {
 
 // ── Storage keys ────────────────────────────────────────────────────────────
 
-const KEY_GROUPS       = 'klient67.groups'
-const KEY_MODES        = 'klient67.modes'
-const KEY_GROUP_STATES = 'klient67.activeGroupStates'
-const KEY_ACTIVE_MODE  = 'klient67.activeModeId'
+const KEY_GROUPS       = 'lichborne.groups'
+const KEY_MODES        = 'lichborne.modes'
+const KEY_GROUP_STATES = 'lichborne.activeGroupStates'
+const KEY_ACTIVE_MODE  = 'lichborne.activeModeId'
 
 // ── Default groups and modes ─────────────────────────────────────────────────
 

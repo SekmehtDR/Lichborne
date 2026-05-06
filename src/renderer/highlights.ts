@@ -20,7 +20,7 @@ export interface HighlightRule {
   allGroups: boolean
 }
 
-const STORAGE_KEY = 'klient67.highlights'
+const STORAGE_KEY = 'lichborne.highlights'
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

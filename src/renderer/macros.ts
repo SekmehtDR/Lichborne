@@ -32,8 +32,8 @@ export interface MacroRule {
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
-const ALIAS_KEY = 'klient67.aliases'
-const MACRO_KEY = 'klient67.macros'
+const ALIAS_KEY = 'lichborne.aliases'
+const MACRO_KEY = 'lichborne.macros'
 
 export function loadAliases(): AliasRule[] {
   try {

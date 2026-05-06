@@ -42,7 +42,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
-    title: 'Klient67 — DragonRealms',
+    title: 'Lichborne — DragonRealms',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

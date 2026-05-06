@@ -56,7 +56,7 @@ export interface TriggerRule {
   allGroups: boolean
 }
 
-const STORAGE_KEY = 'klient67.triggers'
+const STORAGE_KEY = 'lichborne.triggers'
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -112,7 +112,7 @@ export function newTriggerAction(type: ActionType = 'command'): TriggerAction {
     delayMs: 0,
     echoMessage: '',
     echoStream: 'log',
-    notifyTitle: 'Klient67',
+    notifyTitle: 'Lichborne',
     notifyBody: '$line',
     soundPreset: 'chime',
     webhookUrl: '',

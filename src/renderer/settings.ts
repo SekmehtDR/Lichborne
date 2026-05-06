@@ -40,7 +40,7 @@ export const FONT_FAMILY_LABELS: Record<string, string> = {
   serif:     'Serif (Georgia)',
 }
 
-const STORAGE_KEY = 'klient67.settings'
+const STORAGE_KEY = 'lichborne.settings'
 
 export function loadSettings(): AppSettings {
   try {

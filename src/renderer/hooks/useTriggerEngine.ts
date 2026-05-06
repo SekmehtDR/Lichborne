@@ -152,7 +152,7 @@ function executeAction(
       break
     }
     case 'notify': {
-      const title = interpolate(action.notifyTitle ?? 'Klient67', vars)
+      const title = interpolate(action.notifyTitle ?? 'Lichborne', vars)
       const body  = interpolate(action.notifyBody  ?? '',        vars)
       if (Notification.permission === 'granted') {
         new Notification(title, { body })

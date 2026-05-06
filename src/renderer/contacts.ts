@@ -21,8 +21,8 @@ export interface Contact {
   lastRoom: string | null
 }
 
-const STORAGE_CONTACTS  = 'klient67.contacts'
-const STORAGE_TEMPLATES = 'klient67.contact-templates'
+const STORAGE_CONTACTS  = 'lichborne.contacts'
+const STORAGE_TEMPLATES = 'lichborne.contact-templates'
 
 export const DEFAULT_TEMPLATES: ContactTemplate[] = [
   { id: 'tpl-friends', name: 'Friends', textColor: '#a0d080', bgColor: 'transparent', bold: false, tagText: '',        tagColor: '#a0d080', tagBgColor: 'transparent', isDefault: true },

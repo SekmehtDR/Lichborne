@@ -206,7 +206,7 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
           <>
             <VarInputRow
               label="Title"
-              value={action.notifyTitle ?? 'Klient67'}
+              value={action.notifyTitle ?? 'Lichborne'}
               onChange={v => up({ notifyTitle: v })}
               placeholder="Notification title"
             />
@@ -368,7 +368,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
       switch (a.type) {
         case 'command':  return `Command: "${interpolate(a.command ?? '', sampleVars)}"`
         case 'echo':     return `Echo → ${a.echoStream ?? 'log'}: "${interpolate(a.echoMessage ?? '', sampleVars)}"`
-        case 'notify':   return `Notify: "${interpolate(a.notifyTitle ?? 'Klient67', sampleVars)}"`
+        case 'notify':   return `Notify: "${interpolate(a.notifyTitle ?? 'Lichborne', sampleVars)}"`
         case 'sound':    return `Sound: ${a.soundPreset ?? 'chime'}`
         case 'webhook':  return `Webhook → ${a.webhookUrl ? a.webhookUrl.slice(0, 30) + '…' : '(no url)'}`
         case 'variable': return `Set $${a.varName ?? '?'} = "${interpolate(a.varValue ?? '', sampleVars)}"`

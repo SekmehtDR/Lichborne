@@ -1,4 +1,4 @@
-# Klient67 — Development Tracker
+# Lichborne — Development Tracker
 
 > Tracks where we are in active development.
 > DESIGN.md tracks ideas and spec. This file tracks build progress.
@@ -289,10 +289,10 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Epilepsy Safe Mode toggle — sets `data-epilepsy-safe="true"` on `<html>`; CSS `[data-epilepsy-safe="true"]` disables pulse animations
 - [x] Vitals bar position toggle — top renders above game-main (full width); bottom renders inside `.text-window-wrap` above command bar (main area width only, stops at panel column divider)
 - [x] Theme overlay ordering: re-apply effect in GameWindow re-applies base theme then settings overlays on every settings/theme change so overlays survive theme switches
-- [x] Settings persisted to localStorage (`klient67.settings`); restored on startup via `initSettings()`
+- [x] Settings persisted to localStorage (`lichborne.settings`); restored on startup via `initSettings()`
 - [x] Icon bar position toggle — independent of status bar position (top or bottom)
 - [x] Settings reset to defaults button in Settings panel header
-- [x] Login screen advanced settings (Lich paths, port, mode, delay, panel open/closed) persisted to localStorage (`klient67.advancedSettings`)
+- [x] Login screen advanced settings (Lich paths, port, mode, delay, panel open/closed) persisted to localStorage (`lichborne.advancedSettings`)
 - [x] Reset Panels moved from toolbar into Panel Manager header; toolbar cleaned up
 - [x] Settings button now inherits toolbar theme styling (was missing from CSS selectors)
 - [~] Full keyboard navigation — backlogged (see Backlog section)
@@ -383,7 +383,7 @@ The text attribute is **not** just the current value — it contains `"current m
 
 ### Phase 7A — Highlights ✅
 
-- [x] `highlights.ts` — `HighlightRule` data model (`id, name, enabled, pattern, mode, caseSensitive, scope, style, priority`); `HighlightStyle` (`textColor, bgColor, bold, glow, glowColor`); `buildHighlightRegex()` with three match modes; `isValidRegex()`; `newHighlight()` factory; localStorage persistence (`klient67.highlights`)
+- [x] `highlights.ts` — `HighlightRule` data model (`id, name, enabled, pattern, mode, caseSensitive, scope, style, priority`); `HighlightStyle` (`textColor, bgColor, bold, glow, glowColor`); `buildHighlightRegex()` with three match modes; `isValidRegex()`; `newHighlight()` factory; localStorage persistence (`lichborne.highlights`)
 - [x] Pattern engine — three modes:
   - **Text** — word-by-word `\b` matching joined with `\s+`; handles multi-word phrases and punctuation correctly
   - **Phrase** — exact escaped substring; case-insensitive by default
@@ -414,7 +414,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Action types fully implemented: **Command** (text + optional delay ms), **Echo** (message + stream ID), **Notify** (title + body via Web Notification API), **Sound** (Chime/Alert/Alarm/Ping via Web Audio API), **Webhook** (URL + message → Discord-compatible JSON POST), **Variable** (name + value expression)
 - [x] Right-click "Trigger for 'word'" and "Trigger for this line" in main text window and all stream panels — `onTrigger` threaded `GameWindow → PanelFrame → StreamPanel`, mirrors the highlights pattern
 - [x] Separate "Triggers" toolbar button; panel styled fully with CSS custom properties, adapts to all themes automatically
-- [x] Trigger persistence (`klient67.triggers`)
+- [x] Trigger persistence (`lichborne.triggers`)
 - [ ] Rule import / export — deferred
 - [ ] Trigger groups — deferred
 
@@ -583,7 +583,7 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-02 | Icon bar position is independent from vitals bar position — each has its own setting and conditional render |
 | 2026-05-03 | StatusBar renamed to VitalsBar — component, CSS file, settings key (`vitalsBarPosition`), and all docs updated |
 | 2026-05-03 | VitalsBar bottom position scoped to main text width — rendered inside `.text-window-wrap` above command bar; right panel column unaffected, bottom-right panel retains full height |
-| 2026-05-02 | Login advanced settings grouped into AdvancedSettings interface and persisted to klient67.advancedSettings; credentials intentionally excluded |
+| 2026-05-02 | Login advanced settings grouped into AdvancedSettings interface and persisted to lichborne.advancedSettings; credentials intentionally excluded |
 | 2026-05-02 | Reset Panels moved from toolbar button into Panel Manager modal header — toolbar now has Debug, Panels, Theme, Settings, Disconnect only |
 | 2026-05-02 | `<style>` tags confirmed as self-closing push/pop markers from live protocol data — DR sends `<style id='roomName'/>` not `<style id='roomName'>text</style>`; parser redesigned accordingly |
 | 2026-05-02 | Preset id normalized to lowercase on ingest — server sends `roomName`/`roomDesc` (camelCase), CSS rules use `roomname`/`roomdesc` (lowercase) |

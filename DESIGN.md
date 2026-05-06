@@ -1,4 +1,4 @@
-# Klient67 — Design Document
+# Lichborne — Design Document
 
 > This is a living document. Update it before building, not after.
 > Every significant UI or architecture decision should be reflected here first.
@@ -37,7 +37,7 @@
 
 ## 1. Vision
 
-Klient67 is a DragonRealms game client built for **real players** — from first-timers to veterans who have played for 30 years. It connects via Lich (primary) or direct SGE (fallback), and layers AI assistance on top of the raw game experience.
+Lichborne is a DragonRealms game client built for **real players** — from first-timers to veterans who have played for 30 years. It connects via Lich (primary) or direct SGE (fallback), and layers AI assistance on top of the raw game experience.
 
 **Design principles:**
 - **Composable** — every panel is independently movable, resizable, floatable, and closeable
@@ -121,7 +121,7 @@ Players can save named layouts and switch between them:
 - **Minimal** — just main text and command bar, everything else hidden
 - *(custom)* — player-defined and named
 
-Layout profiles are saved to `~/.klient67/layouts/[name].json`.
+Layout profiles are saved to `~/.lichborne/layouts/[name].json`.
 
 ### 2.5 Panel Manager
 
@@ -465,9 +465,9 @@ DragonRealms has two exp display modes:
 | Mode | Format | Used by |
 |---|---|---|
 | Standard | Verbose text output, parsed from prose | Genie (forces this mode on login) |
-| expbrief | Structured XML `<component>` tags | StormFront, Frostbite, Klient67 |
+| expbrief | Structured XML `<component>` tags | StormFront, Frostbite, Lichborne |
 
-Klient67 is an XML client — expbrief is the natural mode and gives us the structured data the exp panel needs for free. On login, the client sends `expbrief` to ensure the game is in the right state, matching StormFront's behavior.
+Lichborne is an XML client — expbrief is the natural mode and gives us the structured data the exp panel needs for free. On login, the client sends `expbrief` to ensure the game is in the right state, matching StormFront's behavior.
 
 **Lich mode:** Lich may handle the expbrief toggle itself on login. In Lich mode, the client does not send the `expbrief` command — Lich owns the session setup. The exp panel still works identically either way since the data arrives as the same XML regardless of who toggled the mode.
 
@@ -706,7 +706,7 @@ Each guild theme also ships with matching preset colors (speech, whisper, though
 
 ### 7.6 Theme JSON Format
 
-Themes are stored in `~/.klient67/themes/` as JSON. Base themes are bundled with the app; custom themes live in this directory.
+Themes are stored in `~/.lichborne/themes/` as JSON. Base themes are bundled with the app; custom themes live in this directory.
 
 ```json
 {
@@ -940,7 +940,7 @@ Priority order reflects data availability from the protocol and player-facing va
 ### Phase 6 — Contacts System
 > Full spec: Section 15
 
-- [x] Contact + ContactTemplate data model; localStorage persistence (`klient67.contacts`, `klient67.contact-templates`) (6A)
+- [x] Contact + ContactTemplate data model; localStorage persistence (`lichborne.contacts`, `lichborne.contact-templates`) (6A)
 - [x] Default templates: Friends (#a0d080) and Enemies (#e05050); full CRUD for templates including bold, tag text, tag color, tag BG color (6A)
 - [x] Contacts panel UI — sidebar roster + detail form (name, template dropdown, guild, circle, notes, last-seen read-only, delete with confirmation) (6A)
 - [x] Templates tab — inline expand-to-edit rows with all color fields; colorPickerValue helper prevents empty color inputs (6A)
@@ -1550,7 +1550,7 @@ Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intention
 
 ### 14.12 Implementation Notes
 
-- Rule and group state stored in `localStorage` as `klient67.highlights` and `klient67.triggers`
+- Rule and group state stored in `localStorage` as `lichborne.highlights` and `lichborne.triggers`
 - Pattern matching runs on every incoming text segment after XML parsing, before rendering
 - Regex patterns compiled once on load and cached — not re-compiled per line
 - Whole-line rules checked first via a single combined alternation regex (Genie approach) for performance
@@ -1601,8 +1601,8 @@ Contact {
 ```
 
 Stored in localStorage:
-- `klient67.contacts` — `Contact[]`
-- `klient67.contact-templates` — `ContactTemplate[]`
+- `lichborne.contacts` — `Contact[]`
+- `lichborne.contact-templates` — `ContactTemplate[]`
 
 ### 15.3 Contact Templates
 
@@ -1752,8 +1752,8 @@ Sekmeht detected — add to contacts?  [Friends ▾]  [Add]  [Not now]
 Single-page card (460px wide, dark fixed palette — intentionally hardcoded, not theme-driven since it renders before any character theme is loaded).
 
 ```
-┌─ Klient67 ──────────────────────────────────────┐
-│              Klient67                            │
+┌─ Lichborne ──────────────────────────────────────┐
+│              Lichborne                            │
 │          DRAGONREALMS CLIENT                     │
 │                                                  │
 │  ACCOUNT NAME                                    │
@@ -1801,8 +1801,8 @@ Collapsed by default (never persisted — always starts closed). Expands to show
 When connecting, the form is replaced entirely by a spinner + scrolling status log. The card stays the same compact size — no layout shift.
 
 ```
-┌─ Klient67 ──────────────────────────────────────┐
-│              Klient67                            │
+┌─ Lichborne ──────────────────────────────────────┐
+│              Lichborne                            │
 │          DRAGONREALMS CLIENT                     │
 │                                                  │
 │               ◌  (spinner)                       │
@@ -1932,7 +1932,7 @@ Players can rename, delete, or add their own. No group is protected — even the
 
 ```
 Toolbar (final):
-Klient67 · status · Debug · Panels · Contacts · Automations · [Hunting ▾] · Theme · Settings · Disconnect
+Lichborne · status · Debug · Panels · Contacts · Automations · [Hunting ▾] · Theme · Settings · Disconnect
 ```
 
 Inside the Automations panel — Contacts-style header with tabs on the right:
@@ -2052,13 +2052,13 @@ Example use cases:
 ### 17.12 Storage Keys
 
 ```
-klient67.groups            — RuleGroup[]
-klient67.modes             — GameMode[]
-klient67.activeGroupStates — Record<string, boolean>
-klient67.activeModeId      — string | null
+lichborne.groups            — RuleGroup[]
+lichborne.modes             — GameMode[]
+lichborne.activeGroupStates — Record<string, boolean>
+lichborne.activeModeId      — string | null
 ```
 
-Existing rule storage keys (`klient67.highlights`, `klient67.triggers`, `klient67.macros`, `klient67.aliases`) are unchanged. The `groupIds: string[]` field is added to each rule type — missing field on load treated as `[]`.
+Existing rule storage keys (`lichborne.highlights`, `lichborne.triggers`, `lichborne.macros`, `lichborne.aliases`) are unchanged. The `groupIds: string[]` field is added to each rule type — missing field on load treated as `[]`.
 
 ### 17.13 Build Order
 

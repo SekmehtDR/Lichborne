@@ -6,7 +6,7 @@ const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
 const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
 const DEFAULT_LICH_PORT = 11024
 
-const ADV_KEY = 'klient67.advancedSettings'
+const ADV_KEY = 'lichborne.advancedSettings'
 
 interface AdvancedSettings {
   useLich: boolean
@@ -118,7 +118,7 @@ export default function LoginScreen({ onConnected }: Props) {
     <div className="login-bg">
       <div className="login-card">
         <div className="login-logo">
-          <h1>Klient<span>67</span></h1>
+          <h1>Lichborne</h1>
           <p>DragonRealms Client</p>
         </div>
 

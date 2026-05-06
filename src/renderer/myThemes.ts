@@ -7,7 +7,7 @@ export interface CustomTheme {
   vars: ThemeVars  // complete merged vars (always a full set)
 }
 
-const STORAGE_KEY = 'klient67.myThemes'
+const STORAGE_KEY = 'lichborne.myThemes'
 
 export function loadMyThemes(): CustomTheme[] {
   try {
@@ -49,7 +49,7 @@ export function exportTheme(theme: CustomTheme): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${theme.name.replace(/\s+/g, '-').toLowerCase()}.klient67-theme.json`
+  a.download = `${theme.name.replace(/\s+/g, '-').toLowerCase()}.lichborne-theme.json`
   a.click()
   URL.revokeObjectURL(url)
 }

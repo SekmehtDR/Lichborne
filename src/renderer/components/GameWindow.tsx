@@ -164,17 +164,17 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [newLineCount, setNewLineCount] = useState(0)
 
   // Layout sizes
-  const [panelWidth, setPanelWidth]       = useState(() => loadInt('klient67.panelWidth', DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
-  const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt('klient67.topPanelHeight', DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
-  const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt('klient67.midPanelHeight', DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
+  const [panelWidth, setPanelWidth]       = useState(() => loadInt('lichborne.panelWidth', DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
+  const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt('lichborne.topPanelHeight', DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
+  const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt('lichborne.midPanelHeight', DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
 
   // Panel tabs — 3 zones, persisted to localStorage
-  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('klient67.topTabs',    [makeTab('room'), makeTab('conversations')]))
-  const [topActiveId, setTopActiveId]   = useState(() => loadStr('klient67.topActiveId',    'room'))
-  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('klient67.midTabs',    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
-  const [midActiveId, setMidActiveId]   = useState(() => loadStr('klient67.midActiveId',    'thoughts'))
-  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('klient67.bottomTabs', [makeTab('exp'), makeTab('log')]))
-  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('klient67.bottomActiveId', 'exp'))
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('lichborne.topTabs',    [makeTab('room'), makeTab('conversations')]))
+  const [topActiveId, setTopActiveId]   = useState(() => loadStr('lichborne.topActiveId',    'room'))
+  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('lichborne.midTabs',    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
+  const [midActiveId, setMidActiveId]   = useState(() => loadStr('lichborne.midActiveId',    'thoughts'))
+  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('lichborne.bottomTabs', [makeTab('exp'), makeTab('log')]))
+  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('lichborne.bottomActiveId', 'exp'))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -226,7 +226,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   })
   const lastSeenTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingContactsRef = useRef<Contact[] | null>(null)
-  const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('klient67.theme') ?? 'dark')
+  const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('lichborne.theme') ?? 'dark')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
@@ -386,12 +386,12 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   // ── Persist panel layout ─────────────────────────────────────────────────
 
-  useEffect(() => { localStorage.setItem('klient67.topTabs',       JSON.stringify(topTabs))      }, [topTabs])
-  useEffect(() => { localStorage.setItem('klient67.topActiveId',   topActiveId)                  }, [topActiveId])
-  useEffect(() => { localStorage.setItem('klient67.midTabs',       JSON.stringify(midTabs))      }, [midTabs])
-  useEffect(() => { localStorage.setItem('klient67.midActiveId',   midActiveId)                  }, [midActiveId])
-  useEffect(() => { localStorage.setItem('klient67.bottomTabs',    JSON.stringify(bottomTabs))   }, [bottomTabs])
-  useEffect(() => { localStorage.setItem('klient67.bottomActiveId', bottomActiveId)              }, [bottomActiveId])
+  useEffect(() => { localStorage.setItem('lichborne.topTabs',       JSON.stringify(topTabs))      }, [topTabs])
+  useEffect(() => { localStorage.setItem('lichborne.topActiveId',   topActiveId)                  }, [topActiveId])
+  useEffect(() => { localStorage.setItem('lichborne.midTabs',       JSON.stringify(midTabs))      }, [midTabs])
+  useEffect(() => { localStorage.setItem('lichborne.midActiveId',   midActiveId)                  }, [midActiveId])
+  useEffect(() => { localStorage.setItem('lichborne.bottomTabs',    JSON.stringify(bottomTabs))   }, [bottomTabs])
+  useEffect(() => { localStorage.setItem('lichborne.bottomActiveId', bottomActiveId)              }, [bottomActiveId])
 
   // ── Event stream ──────────────────────────────────────────────────────────
 
@@ -650,13 +650,13 @@ export default function GameWindow({ onDisconnect }: Props) {
         isDraggingColRef.current = false
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
-        localStorage.setItem('klient67.panelWidth', String(panelWidthRef.current))
+        localStorage.setItem('lichborne.panelWidth', String(panelWidthRef.current))
       }
       if (draggingRow.current === 'top-mid') {
-        localStorage.setItem('klient67.topPanelHeight', String(topHeightRef.current))
+        localStorage.setItem('lichborne.topPanelHeight', String(topHeightRef.current))
       }
       if (draggingRow.current === 'mid-bot') {
-        localStorage.setItem('klient67.midPanelHeight', String(midHeightRef.current))
+        localStorage.setItem('lichborne.midPanelHeight', String(midHeightRef.current))
       }
       if (draggingRow.current) {
         draggingRow.current = null
@@ -691,9 +691,9 @@ export default function GameWindow({ onDisconnect }: Props) {
     panelWidthRef.current = DEFAULT_PANEL_WIDTH; setPanelWidth(DEFAULT_PANEL_WIDTH)
     topHeightRef.current = DEFAULT_TOP_HEIGHT;   setTopPanelHeight(DEFAULT_TOP_HEIGHT)
     midHeightRef.current = DEFAULT_MID_HEIGHT;   setMidPanelHeight(DEFAULT_MID_HEIGHT)
-    localStorage.setItem('klient67.panelWidth',    String(DEFAULT_PANEL_WIDTH))
-    localStorage.setItem('klient67.topPanelHeight', String(DEFAULT_TOP_HEIGHT))
-    localStorage.setItem('klient67.midPanelHeight', String(DEFAULT_MID_HEIGHT))
+    localStorage.setItem('lichborne.panelWidth',    String(DEFAULT_PANEL_WIDTH))
+    localStorage.setItem('lichborne.topPanelHeight', String(DEFAULT_TOP_HEIGHT))
+    localStorage.setItem('lichborne.midPanelHeight', String(DEFAULT_MID_HEIGHT))
     const defaultTop = [makeTab('room'), makeTab('conversations')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
     const defaultBot = [makeTab('exp'), makeTab('log')]
@@ -878,7 +878,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     <ContactsContext.Provider value={{ contacts, templates: contactTemplates, nameRegex, onContactClick: handleContactClick }}>
     <div className="game-layout">
       <div className="game-toolbar">
-        <span className="toolbar-title">Klient67</span>
+        <span className="toolbar-title"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
         <span className="toolbar-status">{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
