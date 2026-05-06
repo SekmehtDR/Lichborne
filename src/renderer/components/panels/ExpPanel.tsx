@@ -84,8 +84,45 @@ function ExpGroup({ label, count, locked = false, defaultExpanded, children }: G
   )
 }
 
+function ExpFooter({ skills }: { skills: Record<string, string> }) {
+  const tdp   = (skills['tdp']   ?? '').match(/(\d+)/)?.[1]
+  const favor = (skills['favor'] ?? '').match(/(\d+)/)?.[1]
+  const rexp  = skills['rexp'] ?? ''
+  const sleepRaw = (skills['sleep'] ?? '').trim()
+  const sleepLevel = !sleepRaw ? 0 : /deep sleep/i.test(sleepRaw) ? 2 : 1
+
+  const rexpStored  = rexp.match(/Stored:\s*([\d:]+)\s*hour/i)?.[1]
+  const rexpUsable  = rexp.match(/Usable.*?:\s*(\d+)\s*min/i)?.[1]
+  const rexpRefresh = rexp.match(/Refreshes:\s*([\d:]+)\s*hour/i)?.[1]
+
+  if (!tdp && !favor && !rexpStored && !sleepLevel) return null
+
+  return (
+    <div className="exp-footer">
+      <div className="exp-footer-row">
+        {tdp        && <span className="exp-footer-item"><span className="exp-footer-label">TDP</span>{tdp}</span>}
+        {favor      && <span className="exp-footer-item"><span className="exp-footer-label">Fav</span>{favor}</span>}
+        {(rexpUsable || rexpStored) && (
+          <span className="exp-footer-item exp-footer-rest">
+            <span className="exp-footer-label">RXP</span>
+            {rexpUsable ? `${rexpUsable}m` : '—'}{rexpStored ? ` / ${rexpStored}h` : ''}
+          </span>
+        )}
+        {sleepLevel > 0 && (
+          <span className={`exp-footer-item exp-footer-sleep exp-footer-sleep--${sleepLevel}`}>
+            {sleepLevel === 1 ? 'Resting' : 'Deep Sleep'}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ExpPanel({ skills }: Props) {
-  const active = Object.entries(skills).filter(([, text]) => parseExp(text).mindstateIdx > 0)
+  const active = Object.entries(skills).filter(([k, text]) =>
+    k !== 'rexp' && k !== 'tdp' && k !== 'favor' && k !== 'sleep' &&
+    parseExp(text).mindstateIdx > 0
+  )
 
   const locked   = active.filter(([, t]) => parseExp(t).mindstateIdx === 34)
   const learning = active
@@ -94,15 +131,18 @@ export default function ExpPanel({ skills }: Props) {
 
   return (
     <div className="exp-panel">
-      <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
-        {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
-      </ExpGroup>
-      <ExpGroup label="Mind Locked" count={locked.length} locked defaultExpanded={false}>
-        {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
-      </ExpGroup>
-      {active.length === 0 && (
-        <div className="exp-panel--empty">No skills actively training.</div>
-      )}
+      <div className="exp-panel-body">
+        <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
+          {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+        </ExpGroup>
+        <ExpGroup label="Mind Locked" count={locked.length} locked defaultExpanded={false}>
+          {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+        </ExpGroup>
+        {active.length === 0 && (
+          <div className="exp-panel--empty">No skills actively training.</div>
+        )}
+      </div>
+      <ExpFooter skills={skills} />
     </div>
   )
 }

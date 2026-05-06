@@ -239,10 +239,10 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
 | `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel — shown under "Creatures" section when non-empty |
 | `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel — shown under "Extra" section when non-empty |
-| `<component id='exp rexp' text="..."/>` | Raw experience earned toward next rank | Exp panel footer *(not yet displayed — backlog)* |
-| `<component id='exp tdp' text="..."/>` | Total Development Points available | Exp panel footer *(not yet displayed — backlog)* |
-| `<component id='exp favor' text="..."/>` | Immortal favor balance | Exp panel footer *(not yet displayed — backlog)* |
-| `<component id='exp sleep' text="..."/>` | Sleep experience multiplier | Exp panel footer *(not yet displayed — backlog)* |
+| `<component id='exp rexp'>Rested EXP Stored: 4:01 hours Usable This Cycle: 35 minutes Cycle Refreshes: 3:31 hours</component>` | Rested EXP pool — stored hours, usable this cycle (minutes), cycle refresh time | Exp panel footer — parsed to `RXP 35m / 4:01h` (usable / stored); refresh time dropped from display |
+| `<component id='exp tdp'> TDPs: 59616</component>` | Total Development Points available | Exp panel footer — `TDP 59616` |
+| `<component id='exp favor'> Favors: 37</component>` | Immortal favor balance | Exp panel footer — `Fav 37` |
+| `<component id='exp sleep'></component>` | Sleep state — empty = awake; level 1 contains "relaxed…state of rest"; level 2 contains "fully relaxed…deep sleep" | Exp panel footer — empty: nothing shown; level 1: italic `Resting` (`--exp-sleep-1` blue); level 2: italic `Deep Sleep` (`--exp-sleep-2` purple) |
 | `<streamWindow id="LichScripts" title="Lich Scripts"/>` | Declares a named stream and its display title before any content is pushed | Stream discovery — emits `stream-declare` event; panel becomes available in Panel Manager at login |
 | `<d cmd='go south'>text</d>` | Inline clickable command link with explicit command | Rendered as dotted-underline clickable span; click sends `cmd` to game |
 | `<d>south</d>` | Bare exit label or help command — text content IS the command | Same dotted-underline rendering; text content sent directly as command on click |
