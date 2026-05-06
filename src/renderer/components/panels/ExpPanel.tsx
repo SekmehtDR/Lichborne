@@ -1,8 +1,9 @@
+import { useState } from 'react'
+
 interface Props {
   skills: Record<string, string>
 }
 
-// Ordered mindstates 0–34. Index / 34 * 100 = bar fill %.
 const MINDSTATES = [
   'clear', 'dabbling', 'perusing', 'learning', 'thoughtful',
   'thinking', 'considering', 'pondering', 'ruminating', 'concentrating',
@@ -19,7 +20,6 @@ interface ParsedExp {
   mindstateIdx: number
 }
 
-// Parses "Engineering: 1750 00% clear" → { rank, pctStr, mindstateIdx }
 function parseExp(text: string): ParsedExp {
   const m = text.match(/:\s*(\d+)\s+(\d+)%/)
   const rank   = m?.[1] ?? '—'
@@ -32,44 +32,77 @@ function parseExp(text: string): ParsedExp {
   return { rank, pctStr, mindstateIdx }
 }
 
-export default function ExpPanel({ skills }: Props) {
-  const entries = Object.entries(skills).filter(([, text]) => {
-    const { mindstateIdx } = parseExp(text)
-    return mindstateIdx > 0
-  })
-
-  if (entries.length === 0) {
-    return <div className="exp-panel exp-panel--empty">No skills actively training.</div>
+function SkillRow({ skill, text }: { skill: string; text: string }) {
+  const { rank, pctStr, mindstateIdx } = parseExp(text)
+  const barPct  = Math.round((mindstateIdx / 34) * 100)
+  const locked  = mindstateIdx === 34
+  const hue     = Math.round(220 * (1 - mindstateIdx / 34))
+  const barStyle = {
+    width: `${barPct}%`,
+    background: `linear-gradient(90deg, hsl(${hue},65%,25%), hsl(${hue},80%,45%))`,
   }
+  const mindstateName = MINDSTATES[mindstateIdx] ?? 'clear'
+
+  return (
+    <div className={`exp-row${locked ? ' exp-row--locked' : ''}`}>
+      <div className="exp-line">
+        <span className="exp-skill">{skill}</span>
+        <span className="exp-rank">{rank}</span>
+        <span className="exp-pct">{pctStr}</span>
+        <span className="exp-mindstate">{mindstateName}</span>
+        <span className="exp-rate">({mindstateIdx}/34)</span>
+      </div>
+      <div className="exp-bar-wrap">
+        <div className="exp-bar" style={barStyle} />
+      </div>
+    </div>
+  )
+}
+
+interface GroupProps {
+  label: string
+  count: number
+  locked?: boolean
+  defaultExpanded: boolean
+  children: React.ReactNode
+}
+
+function ExpGroup({ label, count, locked = false, defaultExpanded, children }: GroupProps) {
+  const [expanded, setExpanded] = useState(defaultExpanded)
+
+  return (
+    <div className="exp-group">
+      <button
+        className={`exp-group-header${locked ? ' exp-group-header--locked' : ''}`}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <span className={`exp-chevron${expanded ? ' exp-chevron--open' : ''}`}>▶</span>
+        {label} <span className="exp-group-count">({count})</span>
+      </button>
+      {expanded && <div className="exp-group-body">{children}</div>}
+    </div>
+  )
+}
+
+export default function ExpPanel({ skills }: Props) {
+  const active = Object.entries(skills).filter(([, text]) => parseExp(text).mindstateIdx > 0)
+
+  const locked   = active.filter(([, t]) => parseExp(t).mindstateIdx === 34)
+  const learning = active
+    .filter(([, t]) => parseExp(t).mindstateIdx < 34)
+    .sort(([, a], [, b]) => parseExp(b).mindstateIdx - parseExp(a).mindstateIdx)
 
   return (
     <div className="exp-panel">
-      {entries.map(([skill, text]) => {
-        const { rank, pctStr, mindstateIdx } = parseExp(text)
-        const barPct  = Math.round((mindstateIdx / 34) * 100)
-        const locked  = mindstateIdx === 34
-        const hue     = Math.round(220 * (1 - mindstateIdx / 34))
-        const barStyle = {
-          width: `${barPct}%`,
-          background: `linear-gradient(90deg, hsl(${hue},65%,25%), hsl(${hue},80%,45%))`,
-        }
-        const mindstateName = MINDSTATES[mindstateIdx] ?? 'clear'
-
-        return (
-          <div key={skill} className={`exp-row${locked ? ' exp-row--locked' : ''}`}>
-            <div className="exp-line">
-              <span className="exp-skill">{skill}</span>
-              <span className="exp-rank">{rank}</span>
-              <span className="exp-pct">{pctStr}</span>
-              <span className="exp-mindstate">{mindstateName}</span>
-              <span className="exp-rate">({mindstateIdx}/34)</span>
-            </div>
-            <div className="exp-bar-wrap">
-              <div className="exp-bar" style={barStyle} />
-            </div>
-          </div>
-        )
-      })}
+      <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
+        {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+      </ExpGroup>
+      <ExpGroup label="Mind Locked" count={locked.length} locked defaultExpanded={false}>
+        {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+      </ExpGroup>
+      {active.length === 0 && (
+        <div className="exp-panel--empty">No skills actively training.</div>
+      )}
     </div>
   )
 }
