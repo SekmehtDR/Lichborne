@@ -24,6 +24,17 @@
   box-sizing: border-box;
 }
 
+.cmd-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.cmd-link:hover {
+  text-decoration-style: solid;
+}
+
 /* ============================================================
    Room panel
    ============================================================ */

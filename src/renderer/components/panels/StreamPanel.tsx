@@ -13,9 +13,10 @@ interface Props {
   onClear?: () => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
+  onSendCommand?: (cmd: string) => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger }: Props) {
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -72,8 +73,8 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
         return (
           <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
             {line.segments.map((seg, i) => hasExtras
-              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick)
-              : renderSegment(seg, i)
+              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand)
+              : renderSegment(seg, i, onSendCommand)
             )}
           </div>
         )

@@ -228,6 +228,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
+  const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
 
   const { rt, ct, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
 
@@ -484,6 +485,12 @@ export default function GameWindow({ onDisconnect }: Props) {
             if (evt.stream === 'room-players') roomUpdates.players = ''
             if (evt.stream === 'room-exits')   roomUpdates.exits   = []
             if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
+            break
+          case 'stream-declare':
+            newDiscovered.push(evt.stream)
+            if (evt.title && evt.title !== evt.stream) {
+              setStreamTitles(prev => prev[evt.stream] === evt.title ? prev : { ...prev, [evt.stream]: evt.title })
+            }
             break
           case 'stream-push':
             newDiscovered.push(evt.stream)
@@ -812,6 +819,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     onHighlight: openHighlightEditor,
     onTrigger: openTriggerEditor,
     discoveredStreams,
+    streamTitles,
     unreadIds: unreadStreams,
   }
 
@@ -970,6 +978,7 @@ export default function GameWindow({ onDisconnect }: Props) {
           topTabs={topTabs} midTabs={midTabs} bottomTabs={bottomTabs}
           allTypes={ALL_PANEL_TYPES} labels={PANEL_LABELS}
           discoveredStreams={discoveredStreams}
+          streamTitles={streamTitles}
           onMoveTab={moveTabToZone}
           onRemoveTab={removeTab}
           onAddToZone={addToZone}

@@ -12,6 +12,7 @@ interface Props {
   allTypes: PanelType[]
   labels: Record<PanelType, string>
   discoveredStreams: string[]
+  streamTitles?: Record<string, string>
   onMoveTab: (tab: TabDef, toZone: Zone) => void
   onRemoveTab: (tab: TabDef) => void
   onAddToZone: (typeOrId: string, zone: Zone) => void
@@ -21,7 +22,7 @@ interface Props {
 
 export default function PanelManager({
   topTabs, midTabs, bottomTabs, allTypes, labels,
-  discoveredStreams, onMoveTab, onRemoveTab, onAddToZone, onResetLayout, onClose,
+  discoveredStreams, streamTitles = {}, onMoveTab, onRemoveTab, onAddToZone, onResetLayout, onClose,
 }: Props) {
   const allTabs = [...topTabs, ...midTabs, ...bottomTabs]
   const openTypes = new Set(allTabs.filter(t => t.type !== 'custom').map(t => t.type))
@@ -76,15 +77,19 @@ export default function PanelManager({
                   ))}
                 </Row>
               ))}
-              {availableCustom.map(id => (
-                <Row key={id} label={id}>
-                  {zones.map(z => (
-                    <button key={z.key} onClick={() => onAddToZone(id, z.key)}>
-                      + {ZONE_LABELS[z.key].split(' ')[0]}
-                    </button>
-                  ))}
-                </Row>
-              ))}
+              {availableCustom.map(id => {
+                const raw   = streamTitles[id] ?? id
+                const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+                return (
+                  <Row key={id} label={label}>
+                    {zones.map(z => (
+                      <button key={z.key} onClick={() => onAddToZone(id, z.key)}>
+                        + {ZONE_LABELS[z.key].split(' ')[0]}
+                      </button>
+                    ))}
+                  </Row>
+                )
+              })}
             </Section>
           )}
         </div>

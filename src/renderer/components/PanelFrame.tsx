@@ -62,6 +62,7 @@ interface Props {
   onTabsChange: (tabs: TabDef[]) => void
   onActiveChange: (id: string) => void
   discoveredStreams?: string[]
+  streamTitles?: Record<string, string>
   unreadIds?: Set<string>
 }
 
@@ -69,7 +70,7 @@ export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
   tabs, activeId, onTabsChange, onActiveChange,
-  discoveredStreams = [], unreadIds,
+  discoveredStreams = [], streamTitles = {}, unreadIds,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
@@ -105,7 +106,8 @@ export default function PanelFrame({
   }
 
   function addDiscoveredTab(streamId: string) {
-    const label = streamId.charAt(0).toUpperCase() + streamId.slice(1)
+    const raw   = streamTitles[streamId] ?? streamId
+    const label = raw.charAt(0).toUpperCase() + raw.slice(1)
     const tab: TabDef = { id: streamId, type: 'custom', label }
     onTabsChange([...tabs, tab])
     onActiveChange(tab.id)
@@ -193,15 +195,15 @@ export default function PanelFrame({
                     {PANEL_LABELS[type]}
                   </div>
                 ))}
-                {availableDiscovered.map(id => (
-                  <div
-                    key={id}
-                    className="panel-add-item"
-                    onClick={() => addDiscoveredTab(id)}
-                  >
-                    {id.charAt(0).toUpperCase() + id.slice(1)}
-                  </div>
-                ))}
+                {availableDiscovered.map(id => {
+                  const raw   = streamTitles[id] ?? id
+                  const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+                  return (
+                    <div key={id} className="panel-add-item" onClick={() => addDiscoveredTab(id)}>
+                      {label}
+                    </div>
+                  )
+                })}
               </div>
               <div className="panel-add-footer">
                 {showNameInput ? (
@@ -254,18 +256,25 @@ function renderPanel(
   onTrigger?: (pattern: string) => void,
 ) {
   const clr = (id: string) => () => onClearStream(id)
+  const sp = (id: string, lines: TextLine[]) => (
+    <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} />
+  )
   switch (tab.type) {
     case 'room':          return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
-    case 'thoughts':      return <StreamPanel lines={streamLines.thoughts      ?? []} onClear={clr('thoughts')}      onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'arrivals':      return <StreamPanel lines={streamLines.arrivals      ?? []} onClear={clr('arrivals')}      onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'conversations': return <StreamPanel lines={streamLines.conversations ?? []} onClear={clr('conversations')} onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'deaths':        return <StreamPanel lines={streamLines.deaths    ?? []} onClear={clr('deaths')}   onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'spells':        return <StreamPanel lines={streamLines.spells    ?? []} onClear={clr('spells')}   onHighlight={onHighlight} onTrigger={onTrigger} />
+    case 'thoughts':      return sp('thoughts',      streamLines.thoughts      ?? [])
+    case 'arrivals':      return sp('arrivals',      streamLines.arrivals      ?? [])
+    case 'conversations': return sp('conversations', streamLines.conversations ?? [])
+    case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
+    case 'spells':        return sp('spells',        streamLines.spells        ?? [])
     case 'exp':           return <ExpPanel skills={expSkills} />
-    case 'familiar':      return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'inv':           return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')}       onHighlight={onHighlight} onTrigger={onTrigger} />
+    case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
+    case 'inv':           return sp('inv',           streamLines.inv           ?? [])
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} />
-    case 'log':           return <StreamPanel lines={streamLines.log       ?? []} onClear={clr('log')}       onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'custom':        return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)}     onHighlight={onHighlight} onTrigger={onTrigger} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
+    case 'log':           return sp('log',           streamLines.log           ?? [])
+    case 'custom':        return (
+      <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
+        onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand}
+        emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
+    )
   }
 }

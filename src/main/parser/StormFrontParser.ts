@@ -33,16 +33,13 @@ const STREAM_MAP: Record<string, StreamTarget> = {
   inv:          'inv',
   room:         'room',
   moonWindow:   'moonWindow',
-  LichScripts:  'raw',           // Lich internal stream — discard
+  LichScripts:  'LichScripts',   // script-watch: live list of running Lich scripts
   talk:         'conversations', // in-game speech/yell/whisper channel
   combat:       'combat',        // combat messages
   atmospherics: 'atmospherics',  // ambient/weather text
   group:        'group',         // group channel
   percWindow:   'spells',        // active spells (alias)
 }
-
-// Streams that are state displays — each push is a full refresh, not an append
-const REPLACE_ON_PUSH = new Set(['moonwindow'])
 
 // Default preset to apply to unstyled segments when emitted on these streams.
 // Needed because the protocol sends thoughts/arrivals/deaths as raw text with
@@ -63,8 +60,8 @@ const COMPONENT_STREAM: Record<string, StreamTarget> = {
 // Known protocol tags that carry no display content — drop silently rather than
 // emitting unknown events that pollute the display.
 const SILENT_TAGS = new Set([
-  // Clickable command links — text inside renders normally, tag itself is UI chrome
-  'd', 'a',
+  // Clickable command links — 'a' is UI chrome; 'd' is handled in tagStart for cmd support
+  'a',
   // Connection/session metadata
   'app', 'output', 'launchurl', 'dialogdata', 'settingsinfo', 'identity', 'slot',
   // Generic layout/formatting wrappers
@@ -112,6 +109,7 @@ export class StormFrontParser {
   private colorStack: Array<{ fg?: string; bg?: string }> = []
 
   private compassDirs: string[] = []
+  private linkCmd: string | undefined = undefined
 
   private pendingSegments: TextSegment[] = []
   private events: GameEvent[] = []
@@ -146,6 +144,7 @@ export class StormFrontParser {
     this.captureCtx    = null
     this.captureBuf    = ''
     this.compassDirs   = []
+    this.linkCmd       = undefined
     this.lastMainText  = ''
     this.rtExpires     = 0
     this.stance        = ''
@@ -203,6 +202,7 @@ export class StormFrontParser {
       ...(this.currentPreset     ? { preset: this.currentPreset } : {}),
       ...(topColor?.fg           ? { fg: topColor.fg }            : {}),
       ...(topColor?.bg           ? { bg: topColor.bg }            : {}),
+      ...(this.linkCmd           ? { cmd: this.linkCmd }          : {}),
     })
   }
 
@@ -215,10 +215,6 @@ export class StormFrontParser {
         const target = STREAM_MAP[id] ?? id
         this.streamStack.push(this.activeStream)
         this.activeStream = target
-        // Streams that are state displays — clear on each push so content replaces rather than appends
-        if (REPLACE_ON_PUSH.has(id.toLowerCase())) {
-          this.events.push({ type: 'clear-stream', stream: target })
-        }
         // Always emit stream-push so the renderer can discover new streams
         if (id) this.events.push({ type: 'stream-push', stream: target })
         break
@@ -349,16 +345,30 @@ export class StormFrontParser {
         break
 
       case 'streamwindow': {
-        if ((attrs.id ?? '').toLowerCase() === 'main' && attrs.subtitle) {
-          const titleMatch = attrs.subtitle.match(/\[([^\]]+)\]/)
-          const idMatch    = attrs.subtitle.match(/\((\d+)\)/)
-          if (titleMatch) {
-            this.events.push({
-              type: 'room-title',
-              title: titleMatch[1],
-              roomId: idMatch ? parseInt(idMatch[1], 10) : undefined,
-            })
+        const id    = attrs.id ?? ''
+        const lower = id.toLowerCase()
+        if (lower === 'main') {
+          // Extract room title from subtitle — only 'main' carries this
+          if (attrs.subtitle) {
+            const titleMatch = attrs.subtitle.match(/\[([^\]]+)\]/)
+            const idMatch    = attrs.subtitle.match(/\((\d+)\)/)
+            if (titleMatch) {
+              this.events.push({
+                type: 'room-title',
+                title: titleMatch[1],
+                roomId: idMatch ? parseInt(idMatch[1], 10) : undefined,
+              })
+            }
           }
+        } else if (id) {
+          // Any other streamWindow is a stream declaration — translate the ID
+          // the same way pushStream does so that declare and push use the same target.
+          const target = STREAM_MAP[id] ?? id
+          this.events.push({
+            type: 'stream-declare',
+            stream: target,
+            title: attrs.title || id,
+          })
         }
         break
       }
@@ -399,6 +409,12 @@ export class StormFrontParser {
         if (!selfClosing) { this.captureCtx = { tag: 'left' }; this.captureBuf = '' }
         break
 
+      case 'd':
+        // <d cmd='...'> — clickable command link (script-watch pause/unpause, etc.)
+        // <d>south</d>  — plain exit label, no cmd attr, text flows through unstyled
+        if (!selfClosing && attrs.cmd) this.linkCmd = attrs.cmd
+        break
+
       case 'prompt':
         this.captureCtx = { tag: 'prompt' }
         this.captureBuf = ''
@@ -421,6 +437,11 @@ export class StormFrontParser {
 
     if (name === 'color') {
       this.colorStack.pop()
+      return
+    }
+
+    if (name === 'd') {
+      this.linkCmd = undefined
       return
     }
 
@@ -519,6 +540,7 @@ export class StormFrontParser {
         // Lich script that forgot to close its color tag).
         this.currentPreset = undefined
         this.colorStack    = []
+        this.linkCmd       = undefined
         if (prompt !== this.lastMainText) {
           this.lastMainText = prompt
           this.events.push({

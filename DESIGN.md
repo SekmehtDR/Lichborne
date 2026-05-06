@@ -192,6 +192,8 @@ The main text window has one job: never lose game text, never lose your place.
 
 Text streams are routed by the server using `<pushStream id="..."/>` / `<popStream/>` tags. Each maps to an internal stream target and a default panel.
 
+The server declares all streams it intends to use via `<streamWindow id="..." title="..."/>` tags sent at login. The client emits a `stream-declare` event for each, making every stream available in the panel manager before any content arrives. The `title` attribute is used as the panel label.
+
 | Server Stream ID | Internal Target | Description | Default Panel |
 |---|---|---|---|
 | `main` | `main` | Primary game output | `main` |
@@ -199,6 +201,9 @@ Text streams are routed by the server using `<pushStream id="..."/>` / `<popStre
 | `death` | `deaths` | Death announcements | Center-Right |
 | `logons` | `arrivals` | Arrivals and departures | Center-Right |
 | `talk` | `conversations` | In-game speech, yell, whisper | Top-Right |
+| `whispers` | `whispers` | Direct whispers (separate channel) | discoverable |
+| `conversation` | `conversation` | Conversation channel | discoverable |
+| `ooc` | `ooc` | Out-of-character channel | discoverable |
 | `familiar` | `familiar` | Familiar link output | `familiar` |
 | `percWindow` | `spells` | Active spells / buffs | Center-Right |
 | `inv` | `inv` | Inventory updates | `inv` |
@@ -206,6 +211,11 @@ Text streams are routed by the server using `<pushStream id="..."/>` / `<popStre
 | `combat` | `combat` | Combat messages | `main` |
 | `atmospherics` | `atmospherics` | Ambient / weather text | `main` |
 | `group` | `group` | Group channel | `main` |
+| `assess` | `assess` | Weapon/armor appraisal results | discoverable |
+| `moonWindow` | `moonWindow` | Moon phase tracker (replace-on-push) | discoverable |
+| `LichScripts` | `LichScripts` | Running Lich scripts — live list from `script-watch.lic` (replace-on-push) | discoverable |
+
+**Replace-on-push streams** (moonWindow, LichScripts, experience, inv) have their producers send `<clearStream id="X"/>` before each push. This wipes the panel and replaces it with fresh content — no stacking. Append streams (thoughts, deaths, arrivals, etc.) never send `<clearStream>`, so content accumulates as a scrolling log. The client does not hardcode this distinction — it is entirely XML-driven.
 
 All named streams use a **fallback to main** when no panel tab is open for them. Once the player opens a panel for that stream, new text routes there instead. This ensures no game text is ever silently lost — the main window is always the safety net.
 
@@ -227,8 +237,16 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<compass><dir value="n"/><dir value="sw"/></compass>` | Exit directions as abbreviated values (n/ne/e/se/s/sw/w/nw/up/dn/out) | Room panel — clickable buttons |
 | `<component id='room objs'>...</component>` | Objects in the room | Room panel |
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
+| `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel *(not yet wired — backlog)* |
+| `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel *(not yet wired — backlog)* |
+| `<component id='exp rexp' text="..."/>` | Raw experience earned toward next rank | Exp panel footer *(not yet displayed — backlog)* |
+| `<component id='exp tdp' text="..."/>` | Total Development Points available | Exp panel footer *(not yet displayed — backlog)* |
+| `<component id='exp favor' text="..."/>` | Immortal favor balance | Exp panel footer *(not yet displayed — backlog)* |
+| `<component id='exp sleep' text="..."/>` | Sleep experience multiplier | Exp panel footer *(not yet displayed — backlog)* |
+| `<streamWindow id="LichScripts" title="Lich Scripts"/>` | Declares a named stream and its display title before any content is pushed | Stream discovery — emits `stream-declare` event; panel becomes available in Panel Manager at login |
+| `<d cmd='go south'>text</d>` | Inline clickable command link embedded in text stream content | Rendered as dotted-underline clickable span; click sends `cmd` to game *(implemented)* |
 
-**The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it use the same abbreviations the room panel buttons display (n, ne, e, se, s, sw, w, nw, up, dn, out). The `<d>` tag marks inline interactive command links in the main text stream — clicking them sends the `cmd` attribute to the game.
+**The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it use the same abbreviations the room panel buttons display (n, ne, e, se, s, sw, w, nw, up, dn, out).
 
 **Inline color** is applied via `<color fg="ff0000" bg="000000">text</color>` — the parser maintains a color stack and attaches fg/bg hex values to text segments.
 

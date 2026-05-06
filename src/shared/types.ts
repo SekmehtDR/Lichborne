@@ -52,6 +52,7 @@ export interface TextSegment {
   bold?: boolean
   fg?: string  // hex color without '#', e.g. 'ff0000'
   bg?: string  // hex color without '#'
+  cmd?: string // clickable command link (from <d cmd='...'>)
 }
 
 // --- Typed game events ---
@@ -70,6 +71,7 @@ export type GameEvent =
   | StreamPushEvent
   | StreamPopEvent
   | ClearStreamEvent
+  | StreamDeclareEvent
   | ExitsEvent
   | UnknownEvent
 
@@ -150,6 +152,14 @@ export interface StreamPopEvent {
 export interface ClearStreamEvent {
   type: 'clear-stream'
   stream: StreamTarget
+}
+
+// Emitted when the server declares a stream via <streamWindow> — carries the
+// human-readable title so the renderer can label panels correctly.
+export interface StreamDeclareEvent {
+  type: 'stream-declare'
+  stream: StreamTarget  // translated via STREAM_MAP (same ID used by stream-push)
+  title: string         // from the title attribute, falls back to stream ID
 }
 
 export interface ExitsEvent {

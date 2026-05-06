@@ -18,6 +18,7 @@
 **Bug Fix Pass — Complete ✅ (Right-click prefill wiring, stale modal state)**
 **UI Polish — Context Menu Separators ✅**
 **Debug Panel — Raw XML Tab ✅**
+**XML Parser Audit & Stream Discovery Overhaul ✅**
 
 ---
 
@@ -226,7 +227,7 @@ The text attribute is **not** just the current value — it contains `"current m
 - [x] Adding a discovered stream creates a custom tab with the stream ID as key
 - [x] `+` menu rendered via React portal — no longer clipped by overflow:hidden ancestors
 - [x] `+` menu has max-height with scrollable list + fixed "New panel…" footer
-- [x] moonWindow (and similar state-display streams) clear on each push — replace not append
+- [x] moonWindow (and similar state-display streams) clear on each push — replace not append (later refactored: REPLACE_ON_PUSH removed; behavior now XML-driven via producer's explicit `<clearStream>` before each push)
 - [x] Panel tab layout (all three zones + active IDs) persisted to localStorage
 - [x] Reset Layout button resets tabs back to default Room+Thoughts as well as sizes
 - [x] Tab close `×` always visible regardless of tab count
@@ -487,6 +488,28 @@ Bugs identified via thorough code audit; all fixed in one pass.
 
 ---
 
+## XML Parser Audit & Stream Discovery Overhaul ✅
+
+Full audit of live DR login XML against the parser. All items resolved.
+
+### Completed
+
+- [x] **LichScripts stream** — was hardcoded to `'raw'` (discarded); mapping changed to `'LichScripts'`; content now routes and displays correctly
+- [x] **`<d cmd='...'>` clickable links** — `d` removed from `SILENT_TAGS`; `linkCmd` state tracked in parser; `cmd?: string` field added to `TextSegment`; renders as dotted-underline clickable spans in all `StreamPanel` instances; clicking sends the command via `onSendCommand`; `</d>` and prompt boundaries clear `linkCmd`; plain `<d>south</d>` (no `cmd`) renders as plain text unchanged
+- [x] **Dynamic stream discovery via `<streamWindow>`** — parser now emits `stream-declare` events (new `GameEvent` type) for every non-`main` `<streamWindow>` tag; ID translated via `STREAM_MAP` before emit so `declare` and `push` always use the same target; `title` attribute captured; streams appear in panel manager at login without waiting for first `<pushStream>`
+- [x] **Stream titles** — `title` from `<streamWindow>` stored in `streamTitles` state in `GameWindow`; flows through `sharedFrameProps` → `PanelFrame` → `PanelManager`; all panel labels use server-provided title instead of raw ID capitalization
+- [x] **`REPLACE_ON_PUSH` removed** — was a client-side hardcode for `moonwindow` only; replace-vs-append behavior is now entirely XML-driven: producers that want replace send `<clearStream>` before each push (moonwatch, script-watch, experience); producers that want append just push; works for all current and future streams without code changes
+
+### Open Items (Backlog)
+
+- [ ] **`room creatures` + `room extra` not in `COMPONENT_STREAM`** — BUG: when in a room with creatures, `<component id='room creatures'>` has no capture context; text falls through to `this.text()` and emits as raw text on the active stream (likely `main`). Fix: add both to `COMPONENT_STREAM`, add `room-creatures` and `room-extra` stream targets, wire in `RoomPanel`
+- [ ] **Settings block + metadata tags emit `unknown` events** — `<mode id="GAME"/>`, `<playerID id='...'>`, and ~20 settings block tag types (`settings`, `presets`, `p`, `macros`, `keys`, `k`, `palette`, `i`, `stream`, `w`, `font`, `cmdline`, `strings`, `names`, `ignores`, `vars`, `scripts`, `dialog`, `builtin`, `panels`, `group`, `toggles`, `s`, `misc`, `m`, `display`, `options`, `o`) all hit the `default` case on every login. Fix: bulk-add to `SILENT_TAGS`
+- [ ] **`exp rexp/tdp/favor/sleep` not visible in ExpPanel** — parser correctly emits these as `exp-component` events but `ExpPanel` filters by `mindstateIdx > 0`; rested exp, TDPs, and favors are useful data. Fix: add a footer section to `ExpPanel` that renders these four keys separately from skill rows
+- [ ] **`<app char="Agan">` character name discarded** — `app` tag is silenced but carries the logged-in character name. Fix: emit a `char-name` GameEvent from the `app` tag and display character name in the toolbar
+- [ ] **Room title `roomId` undefined after Lich map load** — before Lich: `subtitle=" - [Room Name] (2102551)"` → `roomId=2102551`; after Lich map: `subtitle=" - [Room Name - 14393]"` → no `(N)` match → `roomId=undefined`. Low priority unless numeric ID is used downstream
+
+---
+
 ## Phase 9 — Packaging & Distribution
 *Not started.*
 
@@ -646,3 +669,8 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-05 | onSaved propagated to all panels — TriggersPanel and MacrosPanel had no onSaved prop; added to both; AutomationsPanel forwards it to all four inline panels; GameWindow reloads all four rule sets from localStorage on any inline save so live engine state stays current without closing the modal |
 | 2026-05-05 | Context menu separators — `ContextMenu` Item type extended to union (action \| separator); items built as three named groups (Highlights, Triggers, Clear), filtered to remove empty ones, joined with `<hr class="ctx-menu-sep">` only between non-empty groups; right-clicking blank space (no word) renders no orphan separators |
 | 2026-05-06 | Debug panel gains Raw XML tab — two-tab layout (Events / Raw XML) replaces single-view panel; raw lines sent via dedicated `raw-xml` IPC channel before parsing so the tab shows exactly what the server sent; both tabs auto-scroll and pin independently; Clear button scoped to active tab; docked Debug panel in PanelFrame updated identically |
+| 2026-05-06 | LichScripts STREAM_MAP entry changed from `'raw'` (discard) to `'LichScripts'` — `script-watch.lic` periodically pushes running script list; stream is now discoverable and displayable as a panel |
+| 2026-05-06 | `<d cmd='...'>` clickable command links implemented — `d` removed from `SILENT_TAGS`; `linkCmd` field in parser tracks active cmd; `cmd` added to `TextSegment`; `renderSegment` renders as `.cmd-link` span when `onSendCommand` provided; prompt and `</d>` both clear `linkCmd`; plain `<d>south</d>` exit labels unaffected (no `cmd` attr) |
+| 2026-05-06 | `stream-declare` GameEvent added — emitted from `<streamWindow>` for every non-`main` stream; uses same STREAM_MAP translation as `pushStream` so declared and pushed IDs always match; carries `title` attr; streams discoverable at login without waiting for content |
+| 2026-05-06 | Stream titles stored in `streamTitles` Record in GameWindow — sourced from `<streamWindow title='...'>` attr; threaded through `sharedFrameProps` to `PanelFrame` and `PanelManager`; panel labels now use server-provided title (e.g. "Field Experience", "Active Spells") instead of raw stream ID capitalization |
+| 2026-05-06 | `REPLACE_ON_PUSH` hardcode removed — was client-side workaround for `moonwindow` only; replace-vs-append is now fully XML-driven via explicit `<clearStream>` from producers; works generically for all current and future streams |

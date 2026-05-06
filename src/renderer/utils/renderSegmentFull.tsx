@@ -15,10 +15,11 @@ export function renderSegmentFull(
   nameRegex: RegExp | null,
   matchRules: CompiledRule[],
   onContactClick?: (id: string, x: number, y: number) => void,
+  onSendCommand?: (cmd: string) => void,
 ): React.ReactNode {
   const text = seg.text
-  if (!text) return renderSegment(seg, segKey)
-  if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey)
+  if (!text) return renderSegment(seg, segKey, onSendCommand)
+  if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey, onSendCommand)
 
   const ranges: MatchRange[] = []
 
@@ -44,7 +45,7 @@ export function renderSegmentFull(
     }
   }
 
-  if (ranges.length === 0) return renderSegment(seg, segKey)
+  if (ranges.length === 0) return renderSegment(seg, segKey, onSendCommand)
 
   // Sort by start; contacts beat highlights on ties
   ranges.sort((a, b) => a.start !== b.start ? a.start - b.start : (a.kind === 'contact' ? -1 : 1))
@@ -66,7 +67,7 @@ export function renderSegmentFull(
 
   for (const r of selected) {
     if (r.start > lastIndex) {
-      parts.push(renderSegment({ ...seg, text: text.slice(lastIndex, r.start) }, k()))
+      parts.push(renderSegment({ ...seg, text: text.slice(lastIndex, r.start) }, k(), onSendCommand))
     }
 
     const matchText = text.slice(r.start, r.end)
@@ -119,7 +120,7 @@ export function renderSegmentFull(
   }
 
   if (lastIndex < text.length) {
-    parts.push(renderSegment({ ...seg, text: text.slice(lastIndex) }, k()))
+    parts.push(renderSegment({ ...seg, text: text.slice(lastIndex) }, k(), onSendCommand))
   }
 
   return <span key={segKey}>{parts}</span>
