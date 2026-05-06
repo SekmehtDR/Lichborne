@@ -233,7 +233,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
   const [injuryState, setInjuryState]             = useState<InjuryState>({})
 
-  const { rt, ct, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
+  const { rt, ct, rtMax, ctMax, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
 
   // ── Trigger engine ────────────────────────────────────────────────────────
 
@@ -932,12 +932,27 @@ export default function GameWindow({ onDisconnect }: Props) {
           </div>
           {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
           <form className="command-bar" onSubmit={handleCommand}>
-            {rt > 0 && <div className="cmd-timer cmd-timer--rt" style={{ width: `${rtPct}%` }} />}
-            {ct > 0 && <div className="cmd-timer cmd-timer--ct" style={{ width: `${ctPct}%` }} />}
             <span className="prompt-marker">&gt;</span>
-            <input ref={inputRef} type="text" value={command}
-              onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
-              onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+            <div className="cmd-input-wrap">
+              {settings.timerStyle === 'chips' ? (<>
+                {rt > 0 && (
+                  <div className="cmd-chips cmd-chips--rt">
+                    {Array.from({ length: Math.min(Math.ceil(rt), Math.round(rtMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--rt" />)}
+                  </div>
+                )}
+                {ct > 0 && (
+                  <div className="cmd-chips cmd-chips--ct">
+                    {Array.from({ length: Math.min(Math.ceil(ct), Math.round(ctMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--ct" />)}
+                  </div>
+                )}
+              </>) : (<>
+                {rt > 0 && <div className="cmd-bar cmd-bar--rt" style={{ width: `${rtPct}%` }} />}
+                {ct > 0 && <div className="cmd-bar cmd-bar--ct" style={{ width: `${ctPct}%` }} />}
+              </>)}
+              <input ref={inputRef} type="text" value={command}
+                onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
+                onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+            </div>
             <button type="submit" className="btn-send">Send</button>
           </form>
         </div>

@@ -326,21 +326,36 @@ Displayed alongside or below the vitals. All state comes from `<indicator>` XML 
 
 ### 5.4 RT and Cast Time Bars in the Command Bar
 
-Roundtime and cast time are displayed as **thin progress strips embedded in the command bar**, draining as time expires. This keeps timing information visible at the exact point of focus — the place where your eyes already are when you type commands.
+Roundtime and cast time are displayed as **strips embedded inside the command input box**, along the top and bottom edges respectively. This keeps timing information visible at the exact point of focus — the place where your eyes already are when you type commands.
 
+Two display styles are available (Settings → RT / CT Timer Style):
+
+**Bar style** — a single draining strip that shrinks left-to-right as time expires:
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← RT strip (top edge, amber)
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← RT bar (top edge, amber)
 │ >  _                                              [Send] │
-│ ▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← CT strip (bottom edge, blue)
+│ ▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  ← CT bar (bottom edge, blue)
 └──────────────────────────────────────────────────────────┘
 ```
 
-- **RT strip**: amber/orange — 3px strip along the top edge of the command bar
-- **CT strip**: blue/purple — 3px strip along the bottom edge of the command bar
+**Chip style** — one fixed-width block per second; chips disappear from the right as time counts down:
+```
+┌──────────────────────────────────────────────────────────┐
+│ ■ ■ ■ ■ ■ ■ ■ ■ ■ ■                                    │  ← 10 RT chips (top edge, amber)
+│ >  _                                              [Send] │
+│ ■ ■ ■ ■ ■ ■                                             │  ← 6 CT chips (bottom edge, blue)
+└──────────────────────────────────────────────────────────┘
+```
+
+- **RT**: amber/orange — top edge of the input box
+- **CT**: blue/purple — bottom edge of the input box
 - Both are completely hidden when inactive — no wasted space, no layout shift
-- Colors are theme-aware (`--rt-start/end/glow`, `--ct-start/end/glow`)
-- Respects Epilepsy Safe mode — pulse animation disabled, bar still drains
+- Strips live inside `.cmd-input-wrap` (6px tall, `overflow: hidden` clips long chip rows naturally)
+- Colors are theme-aware (`--rt-end`, `--ct-end` from ThemeEditor HUD tab)
+- Chip gap: 6px; chip size: 8×6px; chips overflow-clip for very long RTs (30+ seconds)
+- Pulse animation: `brightness(1) → brightness(0.85)` at 1.1s ease-in-out
+- Respects Epilepsy Safe mode — pulse animation disabled, bar/chips still drain
 
 ### 5.5 Vitals Bar Position
 

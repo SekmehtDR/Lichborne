@@ -198,6 +198,16 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
             ]}
           />
 
+          <RadioGroup
+            label="RT / CT Timer Style"
+            value={settings.timerStyle}
+            onChange={v => set('timerStyle', v)}
+            options={[
+              { value: 'chips', label: 'Chips', description: 'One chip per second — chips disappear as time counts down' },
+              { value: 'bar',   label: 'Bar',   description: 'Classic draining strip that shrinks with remaining time' },
+            ]}
+          />
+
         </div>
       </div>
     </div>,

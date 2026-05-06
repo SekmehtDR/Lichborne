@@ -23,8 +23,10 @@ export function useTimers(rtExpires: number, ctExpires: number) {
 
   const rt = rtExpires > 0 ? Math.max(0, (rtExpires - now) / 1000) : 0
   const ct = ctExpires > 0 ? Math.max(0, (ctExpires - now) / 1000) : 0
-  const rtPct = rtMaxRef.current > 0 ? (rt / rtMaxRef.current) * 100 : 0
-  const ctPct = ctMaxRef.current > 0 ? (ct / ctMaxRef.current) * 100 : 0
+  const rtMax = rtMaxRef.current
+  const ctMax = ctMaxRef.current
+  const rtPct = rtMax > 0 ? (rt / rtMax) * 100 : 0
+  const ctPct = ctMax > 0 ? (ct / ctMax) * 100 : 0
 
-  return { rt, ct, rtPct, ctPct }
+  return { rt, ct, rtMax, ctMax, rtPct, ctPct }
 }

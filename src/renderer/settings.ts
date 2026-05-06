@@ -10,6 +10,7 @@ export interface AppSettings {
   epilepsySafe: boolean
   vitalsBarPosition: 'top' | 'bottom'
   iconBarPosition: 'top' | 'bottom'
+  timerStyle: 'bar' | 'chips'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -22,6 +23,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   epilepsySafe: false,
   vitalsBarPosition: 'bottom',
   iconBarPosition: 'top',
+  timerStyle: 'chips',
 }
 
 export const FONT_FAMILIES: Record<string, string> = {
