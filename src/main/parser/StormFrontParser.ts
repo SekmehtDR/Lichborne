@@ -389,6 +389,12 @@ export class StormFrontParser {
         break
       }
 
+      case 'app':
+        if (attrs.char) {
+          this.events.push({ type: 'player-info', char: attrs.char, game: attrs.game ?? '' })
+        }
+        break
+
       case 'nav':
         this.events.push({ type: 'clear-stream', stream: 'room' })
         this.events.push({ type: 'clear-stream', stream: 'room-objects' })

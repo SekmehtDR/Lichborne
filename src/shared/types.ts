@@ -74,6 +74,7 @@ export type GameEvent =
   | StreamDeclareEvent
   | ExitsEvent
   | InjuryUpdateEvent
+  | PlayerInfoEvent
   | UnknownEvent
 
 export interface StreamTextEvent {
@@ -179,6 +180,12 @@ export type InjuryState = Record<string, BodyPartState>
 export interface InjuryUpdateEvent {
   type: 'injury-update'
   parts: InjuryState
+}
+
+export interface PlayerInfoEvent {
+  type: 'player-info'
+  char: string  // character name from <app char="Agan" .../>
+  game: string  // game code from <app ... game="DR" .../>
 }
 
 export interface UnknownEvent {

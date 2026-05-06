@@ -23,6 +23,7 @@
 **XML Parser Audit Round 3 — ExpPanel footer (rexp/tdp/favor/sleep) ✅**
 **RT/CT Timer Polish — Chip style, bar/chip parity, visual tuning ✅**
 **ExpPanel — Mind Locked section moved above Learning ✅**
+**Window Title Bar — Character name + game code from `<app>` XML ✅**
 
 ---
 
@@ -701,3 +702,4 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-06 | Chip/bar pulse animation tuned — brightness dims to 0.85 (was 0.4, then 0.7); subtle flicker that keeps hue without going dark |
 | 2026-05-06 | Settings: RT/CT Timer Style toggle — Chips (default) or Bar; chips preferred as default for visual clarity |
 | 2026-05-06 | ExpPanel section order: Mind Locked now renders above Learning — locked skills are higher-priority information during active play; both sections retain their existing collapsed/expanded defaults |
+| 2026-05-06 | Window title bar shows character identity — parser handles `<app char="Agan" game="DR"/>` sent at login and emits `PlayerInfoEvent`; `GameWindow` sets `document.title` to `"CharName · GAME — Lichborne"`; before connect the title remains `"Lichborne — DragonRealms"` (set in `main.ts` at window creation); essential for distinguishing multiple instances running different characters |

@@ -1234,6 +1234,21 @@ Each character profile independently remembers:
 - Command history
 - Highlight and trigger rules (Phase 7)
 
+### 13.11 Window Title Bar (Implemented)
+
+> Status: Implemented 2026-05-06.
+
+Each Electron window title identifies the character and game so players can distinguish multiple instances from the taskbar or OS window switcher.
+
+**Title format:** `CharName · GAME — Lichborne`
+**Example:** `Agan · DR — Lichborne`
+
+**Lifecycle:**
+- At window creation (before connect): `Lichborne — DragonRealms` — set statically in `main.ts`
+- After login: the server sends `<app char="Agan" game="DR" title="..."/>` early in the login XML stream; the parser emits a `PlayerInfoEvent`; `GameWindow` calls `document.title` to update the title bar
+
+**Source tag:** `<app char="CharName" game="GAMECODE" .../>` — arrives once per session during the initial settings/handshake block, before gameplay begins.
+
 ---
 
 ## 14. Highlights & Triggers
