@@ -79,29 +79,23 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
         )
       })}
       <div ref={bottomRef} />
-      {ctxMenu && (
-        <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}
-          items={[
-            ...(onHighlight && ctxMenu.word ? [{
-              label: `Highlight "${ctxMenu.word}"`,
-              onClick: () => onHighlight(newHighlight(ctxMenu.word!, 'match'), ctxMenu.lineText ?? undefined),
-            }] : []),
-            ...(onHighlight && ctxMenu.lineText ? [{
-              label: 'Highlight this line',
-              onClick: () => onHighlight(newHighlight(ctxMenu.lineText!, 'line'), ctxMenu.lineText ?? undefined),
-            }] : []),
-            ...(onTrigger && ctxMenu.word ? [{
-              label: `Trigger for "${ctxMenu.word}"`,
-              onClick: () => onTrigger(ctxMenu.word!),
-            }] : []),
-            ...(onTrigger && ctxMenu.lineText ? [{
-              label: 'Trigger for this line',
-              onClick: () => onTrigger(ctxMenu.lineText!),
-            }] : []),
-            ...(onClear ? [{ label: 'Clear', onClick: onClear }] : []),
-          ]}
-        />
-      )}
+      {ctxMenu && (() => {
+        const sep = { label: null as null }
+        const hlGroup = [
+          ...(onHighlight && ctxMenu.word ? [{ label: `Highlight "${ctxMenu.word}"`, onClick: () => onHighlight(newHighlight(ctxMenu.word!, 'match'), ctxMenu.lineText ?? undefined) }] : []),
+          ...(onHighlight && ctxMenu.lineText ? [{ label: 'Highlight this line', onClick: () => onHighlight(newHighlight(ctxMenu.lineText!, 'line'), ctxMenu.lineText ?? undefined) }] : []),
+        ]
+        const trGroup = [
+          ...(onTrigger && ctxMenu.word ? [{ label: `Trigger for "${ctxMenu.word}"`, onClick: () => onTrigger(ctxMenu.word!) }] : []),
+          ...(onTrigger && ctxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => onTrigger(ctxMenu.lineText!) }] : []),
+        ]
+        const clGroup = onClear ? [{ label: 'Clear', onClick: onClear }] : []
+        const groups = [hlGroup, trGroup, clGroup].filter(g => g.length > 0)
+        const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
+        return (
+          <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} items={items} />
+        )
+      })()}
     </div>
   )
 }

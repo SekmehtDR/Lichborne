@@ -99,6 +99,12 @@
   color: var(--text-primary);
 }
 
+.ctx-menu-sep {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 3px 0;
+}
+
 .game-main {
   flex: 1;
   overflow: hidden;

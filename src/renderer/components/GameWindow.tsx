@@ -937,35 +937,23 @@ export default function GameWindow({ onDisconnect }: Props) {
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand} />
       )}
 
-      {mainCtxMenu && (
-        <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)}
-          items={[
-            ...(mainCtxMenu.word ? [{
-              label: `Highlight "${mainCtxMenu.word}"`,
-              onClick: () => openHighlightEditor(
-                newHighlight(mainCtxMenu.word!, 'match'),
-                mainCtxMenu.lineText ?? undefined,
-              ),
-            }] : []),
-            ...(mainCtxMenu.lineText ? [{
-              label: 'Highlight this line',
-              onClick: () => openHighlightEditor(
-                newHighlight(mainCtxMenu.lineText!, 'line'),
-                mainCtxMenu.lineText ?? undefined,
-              ),
-            }] : []),
-            ...(mainCtxMenu.word ? [{
-              label: `Trigger for "${mainCtxMenu.word}"`,
-              onClick: () => openTriggerEditor(mainCtxMenu.word!),
-            }] : []),
-            ...(mainCtxMenu.lineText ? [{
-              label: 'Trigger for this line',
-              onClick: () => openTriggerEditor(mainCtxMenu.lineText!),
-            }] : []),
-            { label: 'Clear', onClick: clearLines },
-          ]}
-        />
-      )}
+      {mainCtxMenu && (() => {
+        const sep = { label: null as null }
+        const hlGroup = [
+          ...(mainCtxMenu.word ? [{ label: `Highlight "${mainCtxMenu.word}"`, onClick: () => openHighlightEditor(newHighlight(mainCtxMenu.word!, 'match'), mainCtxMenu.lineText ?? undefined) }] : []),
+          ...(mainCtxMenu.lineText ? [{ label: 'Highlight this line', onClick: () => openHighlightEditor(newHighlight(mainCtxMenu.lineText!, 'line'), mainCtxMenu.lineText ?? undefined) }] : []),
+        ]
+        const trGroup = [
+          ...(mainCtxMenu.word ? [{ label: `Trigger for "${mainCtxMenu.word}"`, onClick: () => openTriggerEditor(mainCtxMenu.word!) }] : []),
+          ...(mainCtxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => openTriggerEditor(mainCtxMenu.lineText!) }] : []),
+        ]
+        const clGroup = [{ label: 'Clear', onClick: clearLines }]
+        const groups = [hlGroup, trGroup, clGroup].filter(g => g.length > 0)
+        const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
+        return (
+          <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)} items={items} />
+        )
+      })()}
 
       {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}
 

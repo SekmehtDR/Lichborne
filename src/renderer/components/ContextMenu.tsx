@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
-interface Item {
-  label: string
-  onClick: () => void
-}
+type Item =
+  | { label: string; onClick: () => void }
+  | { label: null }
 
 interface Props {
   x: number
@@ -33,12 +32,14 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
 
   return createPortal(
     <div ref={menuRef} className="ctx-menu" style={{ left: x, top: y }}>
-      {items.map(item => (
-        <button key={item.label} className="ctx-menu-item"
-          onClick={() => { item.onClick(); onClose() }}>
-          {item.label}
-        </button>
-      ))}
+      {items.map((item, i) =>
+        item.label === null
+          ? <hr key={i} className="ctx-menu-sep" />
+          : <button key={item.label} className="ctx-menu-item"
+              onClick={() => { item.onClick(); onClose() }}>
+              {item.label}
+            </button>
+      )}
     </div>,
     document.body
   )

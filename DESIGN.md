@@ -894,7 +894,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [~] Theme preset coverage audit — deferred; all themes inherit preset vars from darkBase for now
 - [x] Auto-copy on text selection — highlight any text in any panel and release; clipboard updated automatically; skips inputs/textareas
 - [x] Stream panel preset coverage — StreamPanel uses renderSegment + panels.css global; presets apply in all stream panels
-- [x] Right-click context menu — "Clear" in main text window and all stream/debug panels; portal-rendered, closes on outside click or Escape
+- [x] Right-click context menu — "Clear" in main text window and all stream/debug panels; portal-rendered, closes on outside click or Escape; visual separators between Highlight / Trigger / Clear groups; separators only inserted between non-empty groups so no orphan rules when right-clicking blank space
 - [x] Text selection styling — ::selection uses color-mix(accent, transparent) to adapt to every theme automatically
 - [x] Stream mapping expansion — `talk`→`conversations`, `combat`, `atmospherics`, `group` added; `conversations` is a built-in panel type
 - [x] Stream fallback system — streams without an open panel fall back to `main`; `combat`/`atmospherics`/`group` default to main fallback
