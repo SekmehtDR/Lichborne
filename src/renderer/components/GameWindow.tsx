@@ -9,6 +9,7 @@ import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, type TriggerGameState } from '../hooks/useTriggerEngine'
+import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
@@ -22,6 +23,7 @@ import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
 import HighlightsPanel from './HighlightsPanel'
 import TriggersPanel from './TriggersPanel'
+import MacrosPanel from './MacrosPanel'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -184,6 +186,9 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers())
   const [showTriggers, setShowTriggers]       = useState(false)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
+  const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases())
+  const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros())
+  const [showMacros, setShowMacros] = useState(false)
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
@@ -242,6 +247,22 @@ export default function GameWindow({ onDisconnect }: Props) {
   useEffect(() => { processLineRef.current = processLine }, [processLine])
   const cancelPendingRef = useRef(cancelPending)
   useEffect(() => { cancelPendingRef.current = cancelPending }, [cancelPending])
+
+  // Alias + macro refs — always current without re-registering document listeners
+  const aliasesRef = useRef(aliases)
+  useEffect(() => { aliasesRef.current = aliases }, [aliases])
+  const macrosRef  = useRef(macros)
+  useEffect(() => { macrosRef.current = macros }, [macros])
+
+  // Pending timer handles for alias/macro command sequences — cancelled on disconnect
+  const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  // True whenever any modal is open — prevents macros firing into editor fields
+  const anyModalOpenRef = useRef(false)
+  useEffect(() => {
+    anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
+      showSettings || showContacts || showHighlights || showTriggers || showMacros
+  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showHighlights, showTriggers, showMacros])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
   const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
@@ -545,10 +566,18 @@ export default function GameWindow({ onDisconnect }: Props) {
       if (e.key === 'End' && document.activeElement !== inputRef.current) {
         e.preventDefault(); scrollToBottom()
       }
+      // Global macro key bindings — suppressed when any modal is open
+      if (!anyModalOpenRef.current) {
+        const resolved = resolveMacro(e, macrosRef.current, buildMacroVars())
+        if (resolved && resolved.commands.length > 0) {
+          e.preventDefault()
+          sendCommandSequence(resolved.commands, resolved.delayMs)
+        }
+      }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag resize ───────────────────────────────────────────────────────────
 
@@ -658,6 +687,37 @@ export default function GameWindow({ onDisconnect }: Props) {
     if (zone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id) }
   }
 
+  // ── Macro/alias helpers ───────────────────────────────────────────────────
+
+  function buildMacroVars(): Record<string, string> {
+    const s = triggerCtxRef.current
+    return {
+      health:        String(s.vitals.health?.current        ?? 0),
+      mana:          String(s.vitals.mana?.current          ?? 0),
+      stamina:       String(s.vitals.stamina?.current       ?? 0),
+      spirit:        String(s.vitals.spirit?.current        ?? 0),
+      concentration: String(s.vitals.concentration?.current ?? 0),
+      rt:            String(Math.ceil(s.rtSeconds)),
+      stance:        s.stance,
+      spell:         s.spell,
+      left:          s.leftHand,
+      right:         s.rightHand,
+      room:          s.roomTitle,
+      ...s.variables,
+    }
+  }
+
+  function sendCommandSequence(commands: string[], delayMs: number) {
+    if (delayMs > 0) {
+      commands.forEach((cmd, i) => {
+        const h = setTimeout(() => window.api.sendCommand(cmd), i * delayMs)
+        macroTimersRef.current.add(h)
+      })
+    } else {
+      commands.forEach(cmd => window.api.sendCommand(cmd))
+    }
+  }
+
   // ── Command bar ───────────────────────────────────────────────────────────
 
   function handleCommand(e: React.FormEvent) {
@@ -666,7 +726,22 @@ export default function GameWindow({ onDisconnect }: Props) {
     historyRef.current = [command, ...historyRef.current].slice(0, 200)
     historyIdxRef.current = -1
     setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }] }])
-    window.api.sendCommand(command)
+
+    const resolved = resolveAlias(command, aliasesRef.current, buildMacroVars())
+    if (resolved) {
+      sendCommandSequence(resolved.commands, resolved.delayMs)
+      if (resolved.passThrough) {
+        const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
+        if (delay > 0) {
+          const h = setTimeout(() => window.api.sendCommand(command), delay)
+          macroTimersRef.current.add(h)
+        } else {
+          window.api.sendCommand(command)
+        }
+      }
+    } else {
+      window.api.sendCommand(command)
+    }
     setCommand('')
   }
 
@@ -697,6 +772,8 @@ export default function GameWindow({ onDisconnect }: Props) {
     if (disconnecting) return
     setDisconnecting(true)
     cancelPendingRef.current()
+    for (const h of macroTimersRef.current) clearTimeout(h)
+    macroTimersRef.current.clear()
     window.api.disconnect()
   }
 
@@ -759,6 +836,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
         <button className="btn-highlights" onClick={() => { setHighlightPrefill(undefined); setShowHighlights(v => !v) }}>Highlights</button>
         <button className="btn-triggers" onClick={() => { setTriggerPrefillPattern(undefined); setShowTriggers(v => !v) }}>Triggers</button>
+        <button className="btn-macros" onClick={() => setShowMacros(v => !v)}>Macros</button>
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
@@ -946,6 +1024,12 @@ export default function GameWindow({ onDisconnect }: Props) {
         <TriggersPanel
           prefillPattern={triggerPrefillPattern}
           onClose={() => { setShowTriggers(false); setTriggerPrefillPattern(undefined); setTriggers(loadTriggers()) }}
+        />
+      )}
+
+      {showMacros && (
+        <MacrosPanel
+          onClose={() => { setShowMacros(false); setAliases(loadAliases()); setMacros(loadMacros()) }}
         />
       )}
 

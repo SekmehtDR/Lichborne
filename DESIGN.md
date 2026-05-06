@@ -31,6 +31,7 @@
 15. [Smart Names / Contacts](#15-smart-names--contacts)
 16. [Login Screen](#16-login-screen)
 17. [Automations, Groups & Modes](#17-automations-groups--modes)
+18. [Macros & Aliases](#18-macros--aliases)
 
 ---
 
@@ -548,12 +549,10 @@ What the client must do:
 - **No mouse-only interactions** — all panel controls (close, float, resize) have keyboard equivalents
 - **Large click targets** — panel drag handles and control buttons are large enough to hit intentionally
 
-What will help these players the most (planned for later phases):
-- **Macro system** — pre-set commands bound to a single key, reducing the number of keystrokes per action
-- **Command aliases** — short inputs that expand to longer commands
+What will help these players the most:
+- **Macro system** ✅ — pre-set commands bound to a single key (F1–F12, Ctrl/Alt combos), reducing the number of keystrokes per action; see Section 18
+- **Command aliases** ✅ — short inputs that expand to longer commands or multi-step sequences; see Section 18
 - **Saved command sets** — load a profile of common commands for a specific activity (combat, crafting, socializing)
-
-The macro system is in the backlog. When we build it, sip-and-puff usability should be an explicit consideration in its design.
 
 ---
 
@@ -918,18 +917,18 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Auto-detection from arrivals/tells/room desc — candidate queue + dismissible banner (6D stretch)
 
 ### Phase 7 — Highlights, Triggers & Macros
-> Full spec: Section 14. 7A and 7B complete; 7C not started.
+> Full spec: Section 14 (H/T), Section 18 (Macros & Aliases). All of 7A, 7B, and 7C complete.
 
 - [x] Highlight rules engine — Text (word-by-word `\b`), Phrase (exact substring), Regex; Line and Match scope; FG + BG + bold + glow; overlap resolution (contacts beat highlights on ties, first-position wins)
 - [x] Highlight editor UI — toolbar button; sidebar list with enable toggle, color swatch, scope badge; detail form with pattern field, mode toggle, `Aa` case sensitivity, style pickers, live preview with test input; right-click "Highlight word / line" from game text and all stream panels
 - [x] Trigger system — WHEN→THEN visual model; 6 action types (Command, Echo, Notify, Sound, Webhook, Variable); per-gate AND/OR connectors; cooldown + one-shot; `$var` interpolation; `triggerCtxRef` updated synchronously in event loop; right-click "Trigger for word/line" from game text and all stream panels
+- [x] Aliases — prefix match + `$1 $2 $rest` argument capture; multi-command sequences with optional delay; pass-through option; case-insensitive by default (Section 18)
+- [x] Key Bindings (Macros) — global key combo firing; Record button capture; multi-command sequences with delay; modal-suppressed; `$var` game-state interpolation (Section 18)
 - [ ] Highlight groups — Danger, Alerts, Info, Social; named toggleable sets (Section 14.6)
 - [ ] Highlight Wizard — paste text → keyword analysis → match suggestions (Section 14.0)
 - [ ] Global + per-character rule scoping (Section 14.8)
 - [ ] Rule import / export (JSON)
 - [ ] Eval triggers — game-state condition expressions (Section 14.11)
-- [ ] Command aliases — short names that expand to full commands
-- [ ] Macro system — key bindings to commands or sequences
 
 ### Phase 8 — Packaging & Distribution
 - [ ] Packaged installer (electron-builder)
@@ -1202,7 +1201,7 @@ Each character profile independently remembers:
 
 ## 14. Highlights & Triggers
 
-> Status: Phase 7A (highlights) and 7B (triggers) complete. Groups, Wizard, eval triggers, and macros remain. This section is the full design spec for what's remaining.
+> Status: Phase 7A (highlights) and 7B (triggers) complete. Groups, Wizard, eval triggers, and import/export remain. Macros & Aliases are complete — see Section 18. This section is the full design spec for what's remaining.
 
 ### 14.0 Highlight Wizard
 
