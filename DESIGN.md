@@ -237,14 +237,18 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<compass><dir value="n"/><dir value="sw"/></compass>` | Exit directions as abbreviated values (n/ne/e/se/s/sw/w/nw/up/dn/out) | Room panel — clickable buttons |
 | `<component id='room objs'>...</component>` | Objects in the room | Room panel |
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
-| `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel *(not yet wired — backlog)* |
-| `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel *(not yet wired — backlog)* |
+| `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel — shown under "Creatures" section when non-empty |
+| `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel — shown under "Extra" section when non-empty |
 | `<component id='exp rexp' text="..."/>` | Raw experience earned toward next rank | Exp panel footer *(not yet displayed — backlog)* |
 | `<component id='exp tdp' text="..."/>` | Total Development Points available | Exp panel footer *(not yet displayed — backlog)* |
 | `<component id='exp favor' text="..."/>` | Immortal favor balance | Exp panel footer *(not yet displayed — backlog)* |
 | `<component id='exp sleep' text="..."/>` | Sleep experience multiplier | Exp panel footer *(not yet displayed — backlog)* |
 | `<streamWindow id="LichScripts" title="Lich Scripts"/>` | Declares a named stream and its display title before any content is pushed | Stream discovery — emits `stream-declare` event; panel becomes available in Panel Manager at login |
-| `<d cmd='go south'>text</d>` | Inline clickable command link embedded in text stream content | Rendered as dotted-underline clickable span; click sends `cmd` to game *(implemented)* |
+| `<d cmd='go south'>text</d>` | Inline clickable command link with explicit command | Rendered as dotted-underline clickable span; click sends `cmd` to game |
+| `<d>south</d>` | Bare exit label or help command — text content IS the command | Same dotted-underline rendering; text content sent directly as command on click |
+| `<dialogData id="injuries"><image id="head" name="head" height="0" width="0"/>…</dialogData>` | Per-body-part wound state — 15 parts (head, neck, chest, abdomen, back, rightArm/Hand, leftArm/Hand, rightLeg/Foot, leftLeg, rightEye, leftEye, nsys); `height=0/width=0` = no wound; non-zero = wound present; severity in `name` suffix (e.g. `"head1"` = light, `"head3"` = severe) | Injuries panel — grouped by section, color-coded by severity; "No active wounds." when clear |
+| `<dialogData id="injuries"><progressBar id="health2" …/>` | Secondary health bar within the injury diagram UI | Parsed but currently not displayed separately (main health bar is authoritative) |
+| `<nav/>` | Frame marker sent before room-change data arrives | Silently consumed — room state updates when new component data arrives |
 
 **The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it use the same abbreviations the room panel buttons display (n, ne, e, se, s, sw, w, nw, up, dn, out).
 

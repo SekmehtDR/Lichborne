@@ -20,7 +20,7 @@ const DIR_LABELS: Record<string, string> = {
 }
 
 export default function RoomPanel({ room, onSendCommand }: Props) {
-  const hasContent = room.title || room.desc || room.exits.length > 0 || room.objects || room.players
+  const hasContent = room.title || room.desc || room.exits.length > 0 || room.objects || room.creatures || room.players || room.extra
 
   if (!hasContent) {
     return <div className="room-panel room-panel--empty">Waiting for room data…</div>
@@ -53,10 +53,22 @@ export default function RoomPanel({ room, onSendCommand }: Props) {
           <div className="room-panel-objects">{room.objects}</div>
         </>
       )}
+      {room.creatures && (
+        <>
+          <div className="room-panel-section-label">Creatures</div>
+          <div className="room-panel-creatures">{room.creatures}</div>
+        </>
+      )}
       {room.players && (
         <>
           <div className="room-panel-section-label">Players</div>
           <div className="room-panel-players">{room.players}</div>
+        </>
+      )}
+      {room.extra && (
+        <>
+          <div className="room-panel-section-label">Extra</div>
+          <div className="room-panel-extra">{room.extra}</div>
         </>
       )}
     </div>

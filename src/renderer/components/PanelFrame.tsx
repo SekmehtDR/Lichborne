@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { GameEvent, TextLine, RoomState } from '../../shared/types'
+import type { GameEvent, TextLine, RoomState, InjuryState } from '../../shared/types'
 import type { HighlightRule } from '../highlights'
 import type { TriggerRule } from '../triggers'
 import RoomPanel from './panels/RoomPanel'
 import StreamPanel from './panels/StreamPanel'
 import ExpPanel from './panels/ExpPanel'
+import InjuriesPanel from './panels/InjuriesPanel'
 import DebugPanel from './DebugPanel'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'debug' | 'log' | 'custom'
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'custom'
 
 export interface TabDef {
   id: string
@@ -27,13 +28,14 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   exp:           'Experience',
   familiar:      'Familiar',
   inv:           'Inventory',
+  injuries:      'Injuries',
   debug:         'Debug',
   log:           'Log',
   custom:        'Custom',
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'debug', 'log',
+  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -57,6 +59,7 @@ interface Props {
   onClearStream?: (streamId: string) => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
+  injuryState?: InjuryState
   tabs: TabDef[]
   activeId: string
   onTabsChange: (tabs: TabDef[]) => void
@@ -69,6 +72,7 @@ interface Props {
 export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
+  injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], streamTitles = {}, unreadIds,
 }: Props) {
@@ -145,7 +149,7 @@ export default function PanelFrame({
           activeTab, streamLines, roomState, expSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
-          onClearStream ?? (() => {}), onHighlight, onTrigger,
+          onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
         )}
       </div>
 
@@ -254,6 +258,7 @@ function renderPanel(
   onClearStream: (streamId: string) => void,
   onHighlight?: (rule: HighlightRule, testText?: string) => void,
   onTrigger?: (pattern: string) => void,
+  injuryState: InjuryState = {},
 ) {
   const clr = (id: string) => () => onClearStream(id)
   const sp = (id: string, lines: TextLine[]) => (
@@ -267,6 +272,7 @@ function renderPanel(
     case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
     case 'spells':        return sp('spells',        streamLines.spells        ?? [])
     case 'exp':           return <ExpPanel skills={expSkills} />
+    case 'injuries':      return <InjuriesPanel parts={injuryState} />
     case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
     case 'inv':           return sp('inv',           streamLines.inv           ?? [])
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} />

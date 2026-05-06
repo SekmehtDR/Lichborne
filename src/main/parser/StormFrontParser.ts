@@ -51,10 +51,12 @@ const STREAM_DEFAULT_PRESET: Partial<Record<string, string>> = {
 }
 
 const COMPONENT_STREAM: Record<string, StreamTarget> = {
-  'room objs':     'room-objects',
-  'room players':  'room-players',
-  'room exits':    'room-exits',
-  'room desc':     'room',
+  'room objs':      'room-objects',
+  'room players':   'room-players',
+  'room exits':     'room-exits',
+  'room desc':      'room',
+  'room creatures': 'room-creatures',
+  'room extra':     'room-extra',
 }
 
 // Known protocol tags that carry no display content — drop silently rather than
@@ -66,8 +68,10 @@ const SILENT_TAGS = new Set([
   'app', 'output', 'launchurl', 'dialogdata', 'settingsinfo', 'identity', 'slot',
   // Generic layout/formatting wrappers
   'container', 'inv', 'opendialog',
-  // Genie/StormFront UI chrome — body diagram, quickbars, links, layout
-  'skin', 'image', 'radio', 'link', 'switchquickbar', 'endsetup', 'resource', 'exposestream',
+  // Genie/StormFront UI chrome — quickbars, links, layout (image handled separately for injuries)
+  'skin', 'radio', 'link', 'switchquickbar', 'endsetup', 'resource', 'exposestream',
+  // Movement navigation frame marker — no display content
+  'nav',
 ])
 
 interface ParsedTag {
@@ -110,6 +114,10 @@ export class StormFrontParser {
 
   private compassDirs: string[] = []
   private linkCmd: string | undefined = undefined
+  private linkCmdIsText = false  // true when <d> has no cmd attr; first text node becomes the cmd
+
+  private inInjuriesDialog = false
+  private injuryBuf: Array<{ id: string; name: string; height: number; width: number }> = []
 
   private pendingSegments: TextSegment[] = []
   private events: GameEvent[] = []
@@ -143,9 +151,12 @@ export class StormFrontParser {
     this.events        = []
     this.captureCtx    = null
     this.captureBuf    = ''
-    this.compassDirs   = []
-    this.linkCmd       = undefined
-    this.lastMainText  = ''
+    this.compassDirs       = []
+    this.linkCmd           = undefined
+    this.linkCmdIsText     = false
+    this.inInjuriesDialog  = false
+    this.injuryBuf         = []
+    this.lastMainText      = ''
     this.rtExpires     = 0
     this.stance        = ''
     this.isHidden      = false
@@ -195,6 +206,11 @@ export class StormFrontParser {
     }
     const cleaned = decodeEntities(value.replace(/\r/g, '').replace(/\n$/, ''))
     if (!cleaned.trim()) return  // skip whitespace-only tokens; blank lines handled by isBlankLine
+    // <d>TEXT</d> with no cmd attr — first non-empty text node becomes the command
+    if (this.linkCmdIsText && !this.linkCmd) {
+      const candidate = cleaned.trim()
+      if (candidate) this.linkCmd = candidate
+    }
     const topColor = this.colorStack[this.colorStack.length - 1]
     this.pendingSegments.push({
       text: cleaned,
@@ -410,9 +426,34 @@ export class StormFrontParser {
         break
 
       case 'd':
-        // <d cmd='...'> — clickable command link (script-watch pause/unpause, etc.)
-        // <d>south</d>  — plain exit label, no cmd attr, text flows through unstyled
-        if (!selfClosing && attrs.cmd) this.linkCmd = attrs.cmd
+        if (!selfClosing) {
+          if (attrs.cmd) {
+            this.linkCmd       = attrs.cmd
+            this.linkCmdIsText = false
+          } else {
+            // No cmd attr — the text content IS the command (e.g. <d>south</d>)
+            this.linkCmd       = undefined
+            this.linkCmdIsText = true
+          }
+        }
+        break
+
+      case 'dialogdata':
+        if (attrs.id === 'injuries') {
+          this.inInjuriesDialog = true
+          this.injuryBuf = []
+        }
+        break
+
+      case 'image':
+        if (this.inInjuriesDialog) {
+          this.injuryBuf.push({
+            id:     attrs.id     ?? '',
+            name:   attrs.name   ?? '',
+            height: parseInt(attrs.height ?? '0', 10),
+            width:  parseInt(attrs.width  ?? '0', 10),
+          })
+        }
         break
 
       case 'prompt':
@@ -441,7 +482,20 @@ export class StormFrontParser {
     }
 
     if (name === 'd') {
-      this.linkCmd = undefined
+      this.linkCmd       = undefined
+      this.linkCmdIsText = false
+      return
+    }
+
+    if (name === 'dialogdata') {
+      if (this.inInjuriesDialog && this.injuryBuf.length > 0) {
+        this.events.push({
+          type: 'injury-update',
+          parts: Object.fromEntries(this.injuryBuf.map(p => [p.id, p])),
+        })
+      }
+      this.inInjuriesDialog = false
+      this.injuryBuf = []
       return
     }
 
@@ -541,6 +595,7 @@ export class StormFrontParser {
         this.currentPreset = undefined
         this.colorStack    = []
         this.linkCmd       = undefined
+        this.linkCmdIsText = false
         if (prompt !== this.lastMainText) {
           this.lastMainText = prompt
           this.events.push({

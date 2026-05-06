@@ -73,6 +73,7 @@ export type GameEvent =
   | ClearStreamEvent
   | StreamDeclareEvent
   | ExitsEvent
+  | InjuryUpdateEvent
   | UnknownEvent
 
 export interface StreamTextEvent {
@@ -167,6 +168,19 @@ export interface ExitsEvent {
   directions: string[]  // abbreviated: 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw', 'up', 'dn', 'out'
 }
 
+export interface BodyPartState {
+  height: number
+  width: number
+  name: string  // skin name; numeric suffix encodes severity (e.g. "head1" = light)
+}
+
+export type InjuryState = Record<string, BodyPartState>
+
+export interface InjuryUpdateEvent {
+  type: 'injury-update'
+  parts: InjuryState
+}
+
 export interface UnknownEvent {
   type: 'unknown'
   raw: string
@@ -184,5 +198,7 @@ export interface RoomState {
   desc: string
   objects: string
   players: string
+  creatures: string
+  extra: string
   exits: string[]
 }

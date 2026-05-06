@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment } from '../../shared/types'
+import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState } from '../../shared/types'
 import { renderSegment } from '../utils/renderSegment'
 import { renderSegmentFull, getLineHighlightStyle } from '../utils/renderSegmentFull'
 import { buildNameRegex } from '../utils/renderWithContacts'
@@ -48,13 +48,15 @@ const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
 const MAX_RAW_XML_LINES = 500
 
-const ROOM_STREAMS = new Set(['room', 'room-objects', 'room-players', 'room-exits'])
+const ROOM_STREAMS = new Set([
+  'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
+])
 
 // Stream IDs that should never appear as user-discoverable streams —
 // either handled internally or aliased to a built-in panel type.
 const NEVER_DISCOVER = new Set([
   'main', 'raw',
-  'room', 'room-objects', 'room-players', 'room-exits',
+  'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
   // Aliases the game sends that map to built-in panel types
   'experience', // → exp panel
   'thoughts', 'thought',
@@ -129,7 +131,7 @@ function removeFromZone(
 export default function GameWindow({ onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
-  const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', exits: [] })
+  const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
   const [expSkills, setExpSkills] = useState<Record<string, string>>({})
 
   const [command, setCommand] = useState('')
@@ -203,7 +205,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
   const contactsRef   = useRef(contacts)
-  const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', exits: [] })
+  const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
 
   // Live game state for the trigger engine — updated directly in the event loop
   // so triggers always see the current values within the same event batch.
@@ -229,6 +231,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
+  const [injuryState, setInjuryState]             = useState<InjuryState>({})
 
   const { rt, ct, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
 
@@ -424,6 +427,10 @@ export default function GameWindow({ onDisconnect }: Props) {
               roomUpdates.objects = lineText
             } else if (stream === 'room-players') {
               roomUpdates.players = lineText
+            } else if (stream === 'room-creatures') {
+              roomUpdates.creatures = lineText
+            } else if (stream === 'room-extra') {
+              roomUpdates.extra = lineText
             } else {
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
@@ -480,11 +487,16 @@ export default function GameWindow({ onDisconnect }: Props) {
             break
           case 'exp-component': expUpdates[evt.skill] = evt.text; break
           case 'clear-stream':
-            if (evt.stream === 'room')         roomUpdates.desc    = ''
-            if (evt.stream === 'room-objects') roomUpdates.objects = ''
-            if (evt.stream === 'room-players') roomUpdates.players = ''
-            if (evt.stream === 'room-exits')   roomUpdates.exits   = []
+            if (evt.stream === 'room')           roomUpdates.desc      = ''
+            if (evt.stream === 'room-objects')   roomUpdates.objects   = ''
+            if (evt.stream === 'room-players')   roomUpdates.players   = ''
+            if (evt.stream === 'room-creatures') roomUpdates.creatures = ''
+            if (evt.stream === 'room-extra')     roomUpdates.extra     = ''
+            if (evt.stream === 'room-exits')     roomUpdates.exits     = []
             if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
+            break
+          case 'injury-update':
+            setInjuryState(evt.parts)
             break
           case 'stream-declare':
             newDiscovered.push(evt.stream)
@@ -820,6 +832,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     onTrigger: openTriggerEditor,
     discoveredStreams,
     streamTitles,
+    injuryState,
     unreadIds: unreadStreams,
   }
 
