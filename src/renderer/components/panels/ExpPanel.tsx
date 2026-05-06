@@ -132,11 +132,11 @@ export default function ExpPanel({ skills }: Props) {
   return (
     <div className="exp-panel">
       <div className="exp-panel-body">
-        <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
-          {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
-        </ExpGroup>
         <ExpGroup label="Mind Locked" count={locked.length} locked defaultExpanded={false}>
           {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+        </ExpGroup>
+        <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
+          {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
         </ExpGroup>
         {active.length === 0 && (
           <div className="exp-panel--empty">No skills actively training.</div>

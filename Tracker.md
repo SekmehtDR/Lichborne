@@ -22,6 +22,7 @@
 **XML Parser Audit Round 2 — Injuries, Exits, room creatures/extra ✅**
 **XML Parser Audit Round 3 — ExpPanel footer (rexp/tdp/favor/sleep) ✅**
 **RT/CT Timer Polish — Chip style, bar/chip parity, visual tuning ✅**
+**ExpPanel — Mind Locked section moved above Learning ✅**
 
 ---
 
@@ -699,3 +700,4 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-06 | RT/CT bar style updated to match chip visual treatment — solid `var(--rt-end)` / `var(--ct-end)` color (no gradient, no glow), 6px height matching chip height |
 | 2026-05-06 | Chip/bar pulse animation tuned — brightness dims to 0.85 (was 0.4, then 0.7); subtle flicker that keeps hue without going dark |
 | 2026-05-06 | Settings: RT/CT Timer Style toggle — Chips (default) or Bar; chips preferred as default for visual clarity |
+| 2026-05-06 | ExpPanel section order: Mind Locked now renders above Learning — locked skills are higher-priority information during active play; both sections retain their existing collapsed/expanded defaults |
