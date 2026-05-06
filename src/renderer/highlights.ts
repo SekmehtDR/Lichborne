@@ -16,6 +16,8 @@ export interface HighlightRule {
   scope: 'match' | 'line'
   style: HighlightStyle
   priority: number
+  groupIds: string[]
+  allGroups: boolean
 }
 
 const STORAGE_KEY = 'klient67.highlights'
@@ -86,5 +88,7 @@ export function newHighlight(pattern = '', scope: 'match' | 'line' = 'line'): Hi
       glowColor: '#e8c840',
     },
     priority: 0,
+    groupIds: [],
+    allGroups: false,
   }
 }

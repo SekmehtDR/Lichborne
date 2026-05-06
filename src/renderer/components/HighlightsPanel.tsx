@@ -5,7 +5,9 @@ import {
   buildHighlightRegex, isValidRegex,
   loadHighlights, saveHighlights, newHighlight,
 } from '../highlights'
+import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
+import '../styles/groups.css'
 
 const PREVIEW_TEXT = "You notice Torgin has a deep cut that is bleeding profusely."
 
@@ -24,9 +26,10 @@ interface Props {
   onSaved?: () => void
   prefill?: HighlightRule
   initialTestText?: string
+  inline?: boolean
 }
 
-export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText }: Props) {
+export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, inline = false }: Props) {
   const [rules, setRules]       = useState<HighlightRule[]>(loadHighlights)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]       = useState<HighlightRule | null>(null)
@@ -179,15 +182,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const modal = (
-    <div className="hp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="hp-modal">
-
-        <div className="hp-header">
-          <span className="hp-title">Highlights</span>
-          <button className="hp-close" onClick={onClose}>✕</button>
-        </div>
-
+  const body = (
         <div className="hp-body">
 
           {/* Sidebar */}
@@ -240,6 +235,23 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                     onChange={e => setDraft({ ...draft, name: e.target.value })}
                     placeholder="e.g. Bleeding alert (optional)"
                   />
+                </div>
+
+                <div className="hp-field">
+                  <label className="hp-label">Groups</label>
+                  <div className="grp-row">
+                    <button
+                      type="button"
+                      className={`grp-all-btn${draft.allGroups ? ' grp-all-btn--on' : ''}`}
+                      onClick={() => setDraft({ ...draft, allGroups: !draft.allGroups, groupIds: [] })}
+                    >All Groups</button>
+                    {!draft.allGroups && (
+                      <GroupPicker
+                        groupIds={draft.groupIds ?? []}
+                        onChange={groupIds => setDraft({ ...draft, groupIds })}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div className="hp-field">
@@ -424,6 +436,18 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
           </div>
 
         </div>
+  )
+
+  if (inline) return body
+
+  const modal = (
+    <div className="hp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="hp-modal">
+        <div className="hp-header">
+          <span className="hp-title">Highlights</span>
+          <button className="hp-close" onClick={onClose}>✕</button>
+        </div>
+        {body}
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import {
   type TriggerRule, type TriggerAction, type StateGate, type GateOperator,
   buildTriggerRegex, interpolate,
 } from '../triggers'
+import { isRuleActive } from '../groups'
 
 export interface TriggerGameState {
   vitals: Record<string, { current: number; max: number }>
@@ -189,6 +190,7 @@ export function useTriggerEngine(
   rules: TriggerRule[],
   stateRef: React.MutableRefObject<TriggerGameState>,
   callbacks: TriggerCallbacks,
+  activeGroupStatesRef: React.MutableRefObject<Record<string, boolean>>,
 ): { processLine: (stream: string, lineText: string) => void; cancelPending: () => void } {
   // Compiled regexes — recompiled whenever rules change
   const compiledRef = useRef<{ rule: TriggerRule; regex: RegExp | null }[]>([])
@@ -217,6 +219,7 @@ export function useTriggerEngine(
 
     for (const { rule, regex } of compiledRef.current) {
       if (!rule.enabled || !regex) continue
+      if (!isRuleActive(rule.groupIds ?? [], activeGroupStatesRef.current, rule.allGroups ?? false)) continue
 
       // Stream scope filter
       if (rule.watchStream !== 'any' && rule.watchStream !== stream) continue

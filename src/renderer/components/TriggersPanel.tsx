@@ -9,7 +9,9 @@ import {
   GATE_VARIABLES, NUMERIC_OPERATORS, STRING_OPERATORS,
   INTERPOLATABLE_VARS, WATCH_STREAM_OPTIONS,
 } from '../triggers'
+import GroupPicker from './GroupPicker'
 import '../styles/triggers.css'
+import '../styles/groups.css'
 
 const ACTION_LABELS: Record<ActionType, string> = {
   command:  '⌨ Command',
@@ -25,6 +27,7 @@ const ACTION_TYPES: ActionType[] = ['command', 'echo', 'notify', 'sound', 'webho
 interface Props {
   onClose: () => void
   prefillPattern?: string
+  inline?: boolean
 }
 
 // ── VarPicker ─────────────────────────────────────────────────────────────────
@@ -325,7 +328,7 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TriggersPanel({ onClose, prefillPattern }: Props) {
+export default function TriggersPanel({ onClose, prefillPattern, inline = false }: Props) {
   const [rules, setRules]       = useState<TriggerRule[]>(loadTriggers)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]       = useState<TriggerRule | null>(null)
@@ -475,15 +478,7 @@ export default function TriggersPanel({ onClose, prefillPattern }: Props) {
 
   const testResult = draft ? computeTest() : null
 
-  const modal = (
-    <div className="tp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="tp-modal">
-
-        <div className="tp-header">
-          <span className="tp-title">Triggers</span>
-          <button className="tp-close" onClick={onClose}>✕</button>
-        </div>
-
+  const body = (
         <div className="tp-body">
 
           {/* Sidebar */}
@@ -548,6 +543,23 @@ export default function TriggersPanel({ onClose, prefillPattern }: Props) {
                         onChange={e => setDraft({ ...draft, name: e.target.value })}
                         placeholder="e.g. Foraging find (optional)"
                       />
+                    </div>
+
+                    <div className="tp-field">
+                      <label className="tp-label">Groups</label>
+                      <div className="grp-row">
+                        <button
+                          type="button"
+                          className={`grp-all-btn${draft.allGroups ? ' grp-all-btn--on' : ''}`}
+                          onClick={() => setDraft({ ...draft, allGroups: !draft.allGroups, groupIds: [] })}
+                        >All Groups</button>
+                        {!draft.allGroups && (
+                          <GroupPicker
+                            groupIds={draft.groupIds ?? []}
+                            onChange={groupIds => setDraft({ ...draft, groupIds })}
+                          />
+                        )}
+                      </div>
                     </div>
 
                     <div className="tp-field">
@@ -760,6 +772,18 @@ export default function TriggersPanel({ onClose, prefillPattern }: Props) {
           </div>
 
         </div>
+  )
+
+  if (inline) return body
+
+  const modal = (
+    <div className="tp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="tp-modal">
+        <div className="tp-header">
+          <span className="tp-title">Triggers</span>
+          <button className="tp-close" onClick={onClose}>✕</button>
+        </div>
+        {body}
       </div>
     </div>
   )

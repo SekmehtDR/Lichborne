@@ -7,12 +7,16 @@ import {
   formatKeyCombo,
   ALIAS_VARS, MACRO_VARS,
 } from '../macros'
+import GroupPicker from './GroupPicker'
 import '../styles/macros.css'
+import '../styles/groups.css'
 
 type Tab = 'aliases' | 'macros'
 
 interface Props {
-  onClose: () => void
+  onClose:      () => void
+  inline?:      boolean
+  initialTab?:  'aliases' | 'macros'
 }
 
 // ── Var Picker ────────────────────────────────────────────────────────────────
@@ -129,7 +133,7 @@ interface KeyBindingFieldProps {
   onChange: (v: string) => void
 }
 
-function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
+export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
   const [recording, setRecording] = useState(false)
 
   useEffect(() => {
@@ -171,8 +175,8 @@ function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export default function MacrosPanel({ onClose }: Props) {
-  const [tab, setTab]           = useState<Tab>('aliases')
+export default function MacrosPanel({ onClose, inline = false, initialTab }: Props) {
+  const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
   const [aliases, setAliases]   = useState<AliasRule[]>(loadAliases)
   const [macros,  setMacros]    = useState<MacroRule[]>(loadMacros)
 
@@ -322,31 +326,7 @@ export default function MacrosPanel({ onClose }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
-  const modal = (
-    <div className="ma-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="ma-modal">
-
-        {/* Header */}
-        <div className="ma-header">
-          <span className="ma-title">MACROS</span>
-          <div className="ma-tab-group">
-            <button
-              className={`ma-tab${tab === 'aliases' ? ' ma-tab--active' : ''}`}
-              onClick={() => switchTab('aliases')}
-            >
-              Aliases{aliases.length > 0 && <span className="ma-tab-count">{aliases.length}</span>}
-            </button>
-            <button
-              className={`ma-tab${tab === 'macros' ? ' ma-tab--active' : ''}`}
-              onClick={() => switchTab('macros')}
-            >
-              Key Bindings{macros.length > 0 && <span className="ma-tab-count">{macros.length}</span>}
-            </button>
-          </div>
-          <button className="ma-close" onClick={onClose}>✕</button>
-        </div>
-
-        {/* Body */}
+  const body = (
         <div className="ma-body">
 
           {/* ── ALIASES TAB ─────────────────────────────────────────────────── */}
@@ -401,6 +381,23 @@ export default function MacrosPanel({ onClose }: Props) {
                         onChange={e => setAliasDraft({ ...aliasDraft, name: e.target.value })}
                         placeholder="e.g. Quick hunt (optional)"
                       />
+                    </div>
+
+                    <div className="ma-section">
+                      <label className="ma-section-label">Groups</label>
+                      <div className="grp-row">
+                        <button
+                          type="button"
+                          className={`grp-all-btn${aliasDraft.allGroups ? ' grp-all-btn--on' : ''}`}
+                          onClick={() => setAliasDraft({ ...aliasDraft, allGroups: !aliasDraft.allGroups, groupIds: [] })}
+                        >All Groups</button>
+                        {!aliasDraft.allGroups && (
+                          <GroupPicker
+                            groupIds={aliasDraft.groupIds ?? []}
+                            onChange={groupIds => setAliasDraft({ ...aliasDraft, groupIds })}
+                          />
+                        )}
+                      </div>
                     </div>
 
                     <div className="ma-section">
@@ -549,6 +546,23 @@ export default function MacrosPanel({ onClose }: Props) {
                     </div>
 
                     <div className="ma-section">
+                      <label className="ma-section-label">Groups</label>
+                      <div className="grp-row">
+                        <button
+                          type="button"
+                          className={`grp-all-btn${macroDraft.allGroups ? ' grp-all-btn--on' : ''}`}
+                          onClick={() => setMacroDraft({ ...macroDraft, allGroups: !macroDraft.allGroups, groupIds: [] })}
+                        >All Groups</button>
+                        {!macroDraft.allGroups && (
+                          <GroupPicker
+                            groupIds={macroDraft.groupIds ?? []}
+                            onChange={groupIds => setMacroDraft({ ...macroDraft, groupIds })}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="ma-section">
                       <label className="ma-section-label">Key Binding</label>
                       <KeyBindingField
                         value={macroDraft.key}
@@ -613,6 +627,32 @@ export default function MacrosPanel({ onClose }: Props) {
           )}
 
         </div>
+  )
+
+  if (inline) return body
+
+  const modal = (
+    <div className="ma-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="ma-modal">
+        <div className="ma-header">
+          <span className="ma-title">MACROS</span>
+          <div className="ma-tab-group">
+            <button
+              className={`ma-tab${tab === 'aliases' ? ' ma-tab--active' : ''}`}
+              onClick={() => switchTab('aliases')}
+            >
+              Aliases{aliases.length > 0 && <span className="ma-tab-count">{aliases.length}</span>}
+            </button>
+            <button
+              className={`ma-tab${tab === 'macros' ? ' ma-tab--active' : ''}`}
+              onClick={() => switchTab('macros')}
+            >
+              Key Bindings{macros.length > 0 && <span className="ma-tab-count">{macros.length}</span>}
+            </button>
+          </div>
+          <button className="ma-close" onClick={onClose}>✕</button>
+        </div>
+        {body}
       </div>
     </div>
   )

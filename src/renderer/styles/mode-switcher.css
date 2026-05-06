@@ -1,0 +1,101 @@
+/* ── Mode Switcher toolbar button ────────────────────────────────────────── */
+
+.btn-mode-switcher {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-mode-switcher:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.btn-mode-switcher--active {
+  border-color: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ── Mode switcher popover ───────────────────────────────────────────────── */
+
+.ms-menu {
+  position: fixed;
+  z-index: 500;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 0;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+.ms-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ms-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+.ms-item--active { color: var(--accent); }
+.ms-item--active:hover { color: var(--accent); }
+
+.ms-item--clear { color: var(--text-dim); }
+.ms-item--manage {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.ms-dot {
+  font-size: 0.7rem;
+  width: 12px;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.ms-name { flex: 1; }
+
+.ms-hotkey {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  font-family: monospace;
+}
+
+.ms-modified {
+  font-size: 0.68rem;
+  color: var(--accent-dim);
+  border: 1px solid var(--accent-bg);
+  border-radius: 3px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.ms-divider {
+  height: 1px;
+  background: var(--border-faint);
+  margin: 3px 0;
+}
+
+.ms-empty {
+  padding: 8px 14px;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-style: italic;
+}

@@ -12,6 +12,8 @@ export interface AliasRule {
   commands: string[]     // ordered list of commands to send; supports $1 $2 $rest $health etc.
   delayMs: number        // ms between each command in the sequence (0 = instant)
   passThrough: boolean   // also send the original typed input after alias commands
+  groupIds: string[]
+  allGroups: boolean
 }
 
 // ── Macro Rule ──────────────────────────────────────────────────────────────
@@ -24,6 +26,8 @@ export interface MacroRule {
   key: string            // combo string e.g. "F1", "Ctrl+F5", "Alt+1", "Ctrl+Shift+F2"
   commands: string[]     // supports $health $mana $stance $spell $left $right $room $rt
   delayMs: number
+  groupIds: string[]
+  allGroups: boolean
 }
 
 // ── Storage ──────────────────────────────────────────────────────────────────
@@ -67,6 +71,8 @@ export function newAlias(input = ''): AliasRule {
     commands: [''],
     delayMs: 0,
     passThrough: false,
+    groupIds: [],
+    allGroups: false,
   }
 }
 
@@ -78,6 +84,8 @@ export function newMacro(key = ''): MacroRule {
     key,
     commands: [''],
     delayMs: 0,
+    groupIds: [],
+    allGroups: false,
   }
 }
 

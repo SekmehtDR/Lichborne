@@ -52,6 +52,8 @@ export interface TriggerRule {
   cooldownSeconds: number
   oneShot: boolean
   actions: TriggerAction[]
+  groupIds: string[]
+  allGroups: boolean
 }
 
 const STORAGE_KEY = 'klient67.triggers'
@@ -133,6 +135,8 @@ export function newTrigger(pattern = ''): TriggerRule {
     cooldownSeconds: 0,
     oneShot: false,
     actions: [newTriggerAction('command')],
+    groupIds: [],
+    allGroups: false,
   }
 }
 

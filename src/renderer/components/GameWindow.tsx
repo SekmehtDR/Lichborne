@@ -9,7 +9,7 @@ import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, type TriggerGameState } from '../hooks/useTriggerEngine'
-import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, type AliasRule, type MacroRule } from '../macros'
+import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
@@ -21,9 +21,10 @@ import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
 import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
-import HighlightsPanel from './HighlightsPanel'
-import TriggersPanel from './TriggersPanel'
-import MacrosPanel from './MacrosPanel'
+import AutomationsPanel from './AutomationsPanel'
+import ModeSwitcher from './ModeSwitcher'
+import { useGroups } from './GroupsContext'
+import { isRuleActive } from '../groups'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
@@ -174,7 +175,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [showSettings,    setShowSettings]      = useState(false)
   const [showContacts,    setShowContacts]      = useState(false)
-  const [showHighlights,    setShowHighlights]    = useState(false)
+  const [showAutomations,   setShowAutomations]   = useState(false)
+  const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'groups'>('highlights')
   const [highlightPrefill,  setHighlightPrefill]  = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText, setHighlightTestText] = useState<string | undefined>(undefined)
 
@@ -182,13 +184,17 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
   const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights())
-  const { matchRules, lineRules } = useCompiledHighlights(highlights)
+  const { activeGroupStates, modes, applyMode } = useGroups()
+  const activeGroupStatesRef = useRef(activeGroupStates)
+  useEffect(() => { activeGroupStatesRef.current = activeGroupStates }, [activeGroupStates])
+  const modesRef = useRef(modes)
+  useEffect(() => { modesRef.current = modes }, [modes])
+  const applyModeRef = useRef(applyMode)
+  useEffect(() => { applyModeRef.current = applyMode }, [applyMode])
+  const { matchRules, lineRules } = useCompiledHighlights(highlights, activeGroupStates)
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers())
-  const [showTriggers, setShowTriggers]       = useState(false)
-  const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases())
   const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros())
-  const [showMacros, setShowMacros] = useState(false)
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
@@ -242,7 +248,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     }),
   }), [echoToStream])
 
-  const { processLine, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks)
+  const { processLine, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
   const processLineRef = useRef(processLine)
   useEffect(() => { processLineRef.current = processLine }, [processLine])
   const cancelPendingRef = useRef(cancelPending)
@@ -261,8 +267,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const anyModalOpenRef = useRef(false)
   useEffect(() => {
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
-      showSettings || showContacts || showHighlights || showTriggers || showMacros
-  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showHighlights, showTriggers, showMacros])
+      showSettings || showContacts || showAutomations
+  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
   const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
@@ -568,7 +574,16 @@ export default function GameWindow({ onDisconnect }: Props) {
       }
       // Global macro key bindings — suppressed when any modal is open
       if (!anyModalOpenRef.current) {
-        const resolved = resolveMacro(e, macrosRef.current, buildMacroVars())
+        // Mode hotkeys
+        for (const mode of modesRef.current) {
+          if (mode.hotkey && matchKeyCombo(mode.hotkey, e)) {
+            e.preventDefault()
+            applyModeRef.current(mode.id)
+            return
+          }
+        }
+        const activeMacros = macrosRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
+        const resolved = resolveMacro(e, activeMacros, buildMacroVars())
         if (resolved && resolved.commands.length > 0) {
           e.preventDefault()
           sendCommandSequence(resolved.commands, resolved.delayMs)
@@ -727,7 +742,8 @@ export default function GameWindow({ onDisconnect }: Props) {
     historyIdxRef.current = -1
     setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }] }])
 
-    const resolved = resolveAlias(command, aliasesRef.current, buildMacroVars())
+    const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
+    const resolved = resolveAlias(command, activeAliases, buildMacroVars())
     if (resolved) {
       sendCommandSequence(resolved.commands, resolved.delayMs)
       if (resolved.passThrough) {
@@ -816,12 +832,14 @@ export default function GameWindow({ onDisconnect }: Props) {
   function openHighlightEditor(rule: HighlightRule, testText?: string) {
     setHighlightPrefill(rule)
     setHighlightTestText(testText)
-    setShowHighlights(true)
+    setAutomationsTab('highlights')
+    setShowAutomations(true)
   }
 
   function openTriggerEditor(pattern: string) {
-    setTriggerPrefillPattern(pattern)
-    setShowTriggers(true)
+    setHighlightPrefill(undefined)
+    setAutomationsTab('triggers')
+    setShowAutomations(true)
   }
 
   return (
@@ -834,9 +852,8 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
-        <button className="btn-highlights" onClick={() => { setHighlightPrefill(undefined); setShowHighlights(v => !v) }}>Highlights</button>
-        <button className="btn-triggers" onClick={() => { setTriggerPrefillPattern(undefined); setShowTriggers(v => !v) }}>Triggers</button>
-        <button className="btn-macros" onClick={() => setShowMacros(v => !v)}>Macros</button>
+        <button className="btn-automations" onClick={() => setShowAutomations(v => !v)}>Automations</button>
+        <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
@@ -1011,25 +1028,18 @@ export default function GameWindow({ onDisconnect }: Props) {
         ) : null
       })()}
 
-      {showHighlights && (
-        <HighlightsPanel
-          prefill={highlightPrefill}
-          initialTestText={highlightTestText}
-          onClose={() => { setShowHighlights(false); setHighlightPrefill(undefined); setHighlightTestText(undefined) }}
-          onSaved={() => setHighlights(loadHighlights())}
-        />
-      )}
-
-      {showTriggers && (
-        <TriggersPanel
-          prefillPattern={triggerPrefillPattern}
-          onClose={() => { setShowTriggers(false); setTriggerPrefillPattern(undefined); setTriggers(loadTriggers()) }}
-        />
-      )}
-
-      {showMacros && (
-        <MacrosPanel
-          onClose={() => { setShowMacros(false); setAliases(loadAliases()); setMacros(loadMacros()) }}
+      {showAutomations && (
+        <AutomationsPanel
+          initialTab={automationsTab}
+          onClose={() => {
+            setShowAutomations(false)
+            setHighlightPrefill(undefined)
+            setHighlightTestText(undefined)
+            setHighlights(loadHighlights())
+            setTriggers(loadTriggers())
+            setAliases(loadAliases())
+            setMacros(loadMacros())
+          }}
         />
       )}
 
