@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { type HighlightRule } from '../highlights'
 import HighlightsPanel from './HighlightsPanel'
@@ -23,6 +23,7 @@ export default function AutomationsPanel({
   highlightPrefill, highlightTestText, triggerPrefillPattern,
 }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab)
+  useEffect(() => { setTab(initialTab) }, [initialTab])
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'highlights', label: 'Highlights' },
@@ -65,10 +66,11 @@ export default function AutomationsPanel({
             <TriggersPanel
               onClose={() => {}} inline
               prefillPattern={triggerPrefillPattern}
+              onSaved={onSaved}
             />
           )}
-          {tab === 'macros'   && <MacrosPanel onClose={() => {}} inline initialTab="macros" />}
-          {tab === 'aliases'  && <MacrosPanel onClose={() => {}} inline initialTab="aliases" />}
+          {tab === 'macros'   && <MacrosPanel onClose={() => {}} inline initialTab="macros"   onSaved={onSaved} />}
+          {tab === 'aliases'  && <MacrosPanel onClose={() => {}} inline initialTab="aliases"  onSaved={onSaved} />}
           {tab === 'groups'   && <GroupsModesTab />}
         </div>
 

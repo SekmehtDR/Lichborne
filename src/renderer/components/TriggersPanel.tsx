@@ -26,6 +26,7 @@ const ACTION_TYPES: ActionType[] = ['command', 'echo', 'notify', 'sound', 'webho
 
 interface Props {
   onClose: () => void
+  onSaved?: () => void
   prefillPattern?: string
   inline?: boolean
 }
@@ -328,7 +329,7 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TriggersPanel({ onClose, prefillPattern, inline = false }: Props) {
+export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline = false }: Props) {
   const [rules, setRules]       = useState<TriggerRule[]>(loadTriggers)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]       = useState<TriggerRule | null>(null)
@@ -345,7 +346,7 @@ export default function TriggersPanel({ onClose, prefillPattern, inline = false 
     setSelectedId(r.id)
     setIsPendingNew(true)
     setTimeout(() => nameInputRef.current?.focus(), 0)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefillPattern]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Test result ──────────────────────────────────────────────────────────
 
@@ -410,6 +411,7 @@ export default function TriggersPanel({ onClose, prefillPattern, inline = false 
     }
     setRules(updated)
     saveTriggers(updated)
+    onSaved?.()
     setDraft(trimmed)
     setIsPendingNew(false)
   }
@@ -431,6 +433,7 @@ export default function TriggersPanel({ onClose, prefillPattern, inline = false 
     const updated = rules.filter(r => r.id !== selectedId)
     setRules(updated)
     saveTriggers(updated)
+    onSaved?.()
     setSelectedId(null)
     setDraft(null)
     setIsPendingNew(false)
@@ -441,6 +444,7 @@ export default function TriggersPanel({ onClose, prefillPattern, inline = false 
     const updated = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setRules(updated)
     saveTriggers(updated)
+    onSaved?.()
     if (draft?.id === id) setDraft(prev => prev ? { ...prev, enabled: !prev.enabled } : prev)
   }
 

@@ -177,8 +177,9 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showContacts,    setShowContacts]      = useState(false)
   const [showAutomations,   setShowAutomations]   = useState(false)
   const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'groups'>('highlights')
-  const [highlightPrefill,  setHighlightPrefill]  = useState<HighlightRule | undefined>(undefined)
-  const [highlightTestText, setHighlightTestText] = useState<string | undefined>(undefined)
+  const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
+  const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
+  const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
 
   const [contacts,  setContacts]  = useState(() => loadContacts())
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
@@ -838,6 +839,7 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   function openTriggerEditor(pattern: string) {
     setHighlightPrefill(undefined)
+    setTriggerPrefillPattern(pattern)
     setAutomationsTab('triggers')
     setShowAutomations(true)
   }
@@ -1031,10 +1033,20 @@ export default function GameWindow({ onDisconnect }: Props) {
       {showAutomations && (
         <AutomationsPanel
           initialTab={automationsTab}
+          highlightPrefill={highlightPrefill}
+          highlightTestText={highlightTestText}
+          triggerPrefillPattern={triggerPrefillPattern}
+          onSaved={() => {
+            setHighlights(loadHighlights())
+            setTriggers(loadTriggers())
+            setAliases(loadAliases())
+            setMacros(loadMacros())
+          }}
           onClose={() => {
             setShowAutomations(false)
             setHighlightPrefill(undefined)
             setHighlightTestText(undefined)
+            setTriggerPrefillPattern(undefined)
             setHighlights(loadHighlights())
             setTriggers(loadTriggers())
             setAliases(loadAliases())

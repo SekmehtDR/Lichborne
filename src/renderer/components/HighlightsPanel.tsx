@@ -44,7 +44,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
     setSelectedId(prefill.id)
     setIsPendingNew(true)
     setTimeout(() => nameInputRef.current?.focus(), 0)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefill?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Live preview ─────────────────────────────────────────────────────────
 

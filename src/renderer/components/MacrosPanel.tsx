@@ -15,6 +15,7 @@ type Tab = 'aliases' | 'macros'
 
 interface Props {
   onClose:      () => void
+  onSaved?:     () => void
   inline?:      boolean
   initialTab?:  'aliases' | 'macros'
 }
@@ -175,7 +176,7 @@ export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export default function MacrosPanel({ onClose, inline = false, initialTab }: Props) {
+export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab }: Props) {
   const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
   const [aliases, setAliases]   = useState<AliasRule[]>(loadAliases)
   const [macros,  setMacros]    = useState<MacroRule[]>(loadMacros)
@@ -228,6 +229,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
       : aliases.map(r => r.id === trimmed.id ? trimmed : r)
     setAliases(updated)
     saveAliases(updated)
+    onSaved?.()
     setAliasDraft(trimmed)
     setIsPendingNew(false)
   }
@@ -247,6 +249,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
     const updated = aliases.filter(r => r.id !== selectedId)
     setAliases(updated)
     saveAliases(updated)
+    onSaved?.()
     setSelectedId(null); setAliasDraft(null)
     setIsPendingNew(false); setDeleteConfirm(false)
   }
@@ -255,6 +258,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
     const updated = aliases.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setAliases(updated)
     saveAliases(updated)
+    onSaved?.()
     if (aliasDraft?.id === id) setAliasDraft(p => p ? { ...p, enabled: !p.enabled } : p)
   }
 
@@ -289,6 +293,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
       : macros.map(r => r.id === trimmed.id ? trimmed : r)
     setMacros(updated)
     saveMacros(updated)
+    onSaved?.()
     setMacroDraft(trimmed)
     setIsPendingNew(false)
   }
@@ -308,6 +313,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
     const updated = macros.filter(r => r.id !== selectedId)
     setMacros(updated)
     saveMacros(updated)
+    onSaved?.()
     setSelectedId(null); setMacroDraft(null)
     setIsPendingNew(false); setDeleteConfirm(false)
   }
@@ -316,6 +322,7 @@ export default function MacrosPanel({ onClose, inline = false, initialTab }: Pro
     const updated = macros.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setMacros(updated)
     saveMacros(updated)
+    onSaved?.()
     if (macroDraft?.id === id) setMacroDraft(p => p ? { ...p, enabled: !p.enabled } : p)
   }
 
