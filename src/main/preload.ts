@@ -6,6 +6,7 @@ const CH = {
   SEND_COMMAND:      'send-command',
   DISCONNECT:        'disconnect',
   GAME_EVENT:        'game-event',
+  RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error'
 } as const
@@ -36,6 +37,12 @@ contextBridge.exposeInMainWorld('api', {
     const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
     ipcRenderer.on(CH.ERROR, listener)
     return () => ipcRenderer.removeListener(CH.ERROR, listener)
+  },
+
+  onRawXml: (cb: (line: string) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, line: string) => cb(line)
+    ipcRenderer.on(CH.RAW_XML, listener)
+    return () => ipcRenderer.removeListener(CH.RAW_XML, listener)
   },
 
   browseFile: (filters: { name: string; extensions: string[] }[]) =>

@@ -52,6 +52,8 @@ interface Props {
   onSendCommand: (cmd: string) => void
   debugEvents?: GameEvent[]
   onClearDebug?: () => void
+  rawXmlLines?: string[]
+  onClearRawXml?: () => void
   onClearStream?: (streamId: string) => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
@@ -65,7 +67,7 @@ interface Props {
 
 export default function PanelFrame({
   streamLines, roomState, expSkills, onSendCommand,
-  debugEvents, onClearDebug, onClearStream, onHighlight, onTrigger,
+  debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], unreadIds,
 }: Props) {
@@ -140,6 +142,7 @@ export default function PanelFrame({
         {activeTab && renderPanel(
           activeTab, streamLines, roomState, expSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
+          rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger,
         )}
       </div>
@@ -244,6 +247,8 @@ function renderPanel(
   onSendCommand: (cmd: string) => void,
   debugEvents: GameEvent[],
   onClearDebug: () => void,
+  rawXmlLines: string[],
+  onClearRawXml: () => void,
   onClearStream: (streamId: string) => void,
   onHighlight?: (rule: HighlightRule, testText?: string) => void,
   onTrigger?: (pattern: string) => void,
@@ -259,7 +264,7 @@ function renderPanel(
     case 'exp':           return <ExpPanel skills={expSkills} />
     case 'familiar':      return <StreamPanel lines={streamLines.familiar  ?? []} onClear={clr('familiar')} onHighlight={onHighlight} onTrigger={onTrigger} />
     case 'inv':           return <StreamPanel lines={streamLines.inv       ?? []} onClear={clr('inv')}       onHighlight={onHighlight} onTrigger={onTrigger} />
-    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} />
+    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} />
     case 'log':           return <StreamPanel lines={streamLines.log       ?? []} onClear={clr('log')}       onHighlight={onHighlight} onTrigger={onTrigger} />
     case 'custom':        return <StreamPanel lines={streamLines[tab.id]   ?? []} onClear={clr(tab.id)}     onHighlight={onHighlight} onTrigger={onTrigger} emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
   }

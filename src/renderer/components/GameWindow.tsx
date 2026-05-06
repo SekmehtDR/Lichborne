@@ -46,6 +46,7 @@ function isExpReadout(segments: TextSegment[]): boolean {
 const MAX_LINES       = 2000
 const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
+const MAX_RAW_XML_LINES = 500
 
 const ROOM_STREAMS = new Set(['room', 'room-objects', 'room-players', 'room-exits'])
 
@@ -139,6 +140,8 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showDebug, setShowDebug]     = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
   const clearDebugEvents = () => setDebugEvents([])
+  const [rawXmlLines, setRawXmlLines] = useState<string[]>([])
+  const clearRawXmlLines = () => setRawXmlLines([])
   const clearLines       = () => setLines([])
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
@@ -543,8 +546,12 @@ export default function GameWindow({ onDisconnect }: Props) {
       if (!s.connected && s.message === 'Disconnected') onDisconnect()
     })
 
+    const unsubRawXml = window.api.onRawXml((line: string) => {
+      setRawXmlLines(prev => [...prev.slice(-(MAX_RAW_XML_LINES - 1)), line])
+    })
+
     inputRef.current?.focus()
-    return () => { unsubEvents(); unsubStatus(); cancelPendingRef.current() }
+    return () => { unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current() }
   }, [onDisconnect])
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -800,6 +807,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     streamLines, roomState, expSkills,
     onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
     debugEvents, onClearDebug: clearDebugEvents,
+    rawXmlLines, onClearRawXml: clearRawXmlLines,
     onClearStream: clearStream,
     onHighlight: openHighlightEditor,
     onTrigger: openTriggerEditor,
@@ -955,7 +963,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} />}
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} />}
 
       {showPanelManager && (
         <PanelManager

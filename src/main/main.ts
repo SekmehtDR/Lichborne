@@ -9,6 +9,7 @@ const CH = {
   SEND_COMMAND:      'send-command',
   DISCONNECT:        'disconnect',
   GAME_EVENT:        'game-event',
+  RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error'
 } as const
@@ -21,6 +22,7 @@ connection.on('status', (msg: string) => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
 })
 connection.on('line', (line: string) => {
+  mainWindow?.webContents.send(CH.RAW_XML, line)
   const events = parser.parse(line)
   if (events.length > 0) {
     mainWindow?.webContents.send(CH.GAME_EVENT, events)

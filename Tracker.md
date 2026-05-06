@@ -17,6 +17,7 @@
 **Phase 8 — Complete ✅ (Automations, Groups & Modes)**
 **Bug Fix Pass — Complete ✅ (Right-click prefill wiring, stale modal state)**
 **UI Polish — Context Menu Separators ✅**
+**Debug Panel — Raw XML Tab ✅**
 
 ---
 
@@ -474,6 +475,18 @@ Bugs identified via thorough code audit; all fixed in one pass.
 
 ---
 
+## Debug Panel — Raw XML Tab ✅
+
+- [x] `raw-xml` IPC channel added — main process sends each raw socket line to renderer before parsing
+- [x] `onRawXml` exposed on `window.api` via preload bridge
+- [x] Debug panel converted to two-tab layout: **Events** (parsed GameEvent stream) and **Raw XML** (raw pre-parse server lines)
+- [x] Tab selector in debug toolbar; Clear button clears whichever tab is active
+- [x] Each tab maintains independent scroll/pin state — switching tabs does not lose scroll position
+- [x] Capped at 500 lines (same as Events); same auto-scroll/pin behavior
+- [x] Works both as the toolbar overlay and when Debug is docked as a panel via PanelFrame
+
+---
+
 ## Phase 9 — Packaging & Distribution
 *Not started.*
 
@@ -632,3 +645,4 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-05 | Prefill effect dependencies: HighlightsPanel depends on prefill?.id, TriggersPanel on prefillPattern — newHighlight/newTrigger always generate fresh UUIDs so each right-click is guaranteed to be a new id and the effect re-fires |
 | 2026-05-05 | onSaved propagated to all panels — TriggersPanel and MacrosPanel had no onSaved prop; added to both; AutomationsPanel forwards it to all four inline panels; GameWindow reloads all four rule sets from localStorage on any inline save so live engine state stays current without closing the modal |
 | 2026-05-05 | Context menu separators — `ContextMenu` Item type extended to union (action \| separator); items built as three named groups (Highlights, Triggers, Clear), filtered to remove empty ones, joined with `<hr class="ctx-menu-sep">` only between non-empty groups; right-clicking blank space (no word) renders no orphan separators |
+| 2026-05-06 | Debug panel gains Raw XML tab — two-tab layout (Events / Raw XML) replaces single-view panel; raw lines sent via dedicated `raw-xml` IPC channel before parsing so the tab shows exactly what the server sent; both tabs auto-scroll and pin independently; Clear button scoped to active tab; docked Debug panel in PanelFrame updated identically |

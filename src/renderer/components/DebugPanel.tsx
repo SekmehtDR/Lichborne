@@ -6,46 +6,87 @@ import ContextMenu from './ContextMenu'
 interface Props {
   events: GameEvent[]
   onClear: () => void
+  rawXmlLines: string[]
+  onClearRawXml: () => void
 }
 
-export default function DebugPanel({ events, onClear }: Props) {
-  const bottomRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const pinnedRef = useRef(true)
+export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml }: Props) {
+  const [tab, setTab] = useState<'events' | 'rawxml'>('events')
+
+  const eventsBottomRef = useRef<HTMLDivElement>(null)
+  const eventsScrollRef = useRef<HTMLDivElement>(null)
+  const eventsPinnedRef = useRef(true)
+
+  const rawBottomRef = useRef<HTMLDivElement>(null)
+  const rawScrollRef = useRef<HTMLDivElement>(null)
+  const rawPinnedRef = useRef(true)
+
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
-  function handleScroll() {
-    const el = scrollRef.current
+  function handleEventsScroll() {
+    const el = eventsScrollRef.current
     if (!el) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-    pinnedRef.current = atBottom
+    eventsPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
+  function handleRawScroll() {
+    const el = rawScrollRef.current
+    if (!el) return
+    rawPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
   }
 
   useEffect(() => {
-    if (pinnedRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' })
-    }
+    if (eventsPinnedRef.current) eventsBottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [events])
+
+  useEffect(() => {
+    if (rawPinnedRef.current) rawBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [rawXmlLines])
+
+  const activeOnClear = tab === 'events' ? onClear : onClearRawXml
 
   return (
     <div className="debug-panel">
       <div className="debug-toolbar">
-        <span className="debug-title">Debug — Event Stream ({events.length})</span>
-        <button className="debug-clear" onClick={onClear}>Clear</button>
+        <div className="debug-tabs">
+          <button className={`debug-tab ${tab === 'events' ? 'debug-tab--active' : ''}`} onClick={() => setTab('events')}>
+            Events ({events.length})
+          </button>
+          <button className={`debug-tab ${tab === 'rawxml' ? 'debug-tab--active' : ''}`} onClick={() => setTab('rawxml')}>
+            Raw XML ({rawXmlLines.length})
+          </button>
+        </div>
+        <button className="debug-clear" onClick={activeOnClear}>Clear</button>
       </div>
-      <div className="debug-scroll" ref={scrollRef} onScroll={handleScroll}
-        onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
-        {events.map((evt, i) => (
-          <div key={i} className={`debug-event debug-event--${evt.type}`}>
-            <span className="debug-type">{evt.type}</span>
-            <span className="debug-body">{JSON.stringify(evt)}</span>
-          </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
+
+      {tab === 'events' && (
+        <div className="debug-scroll" ref={eventsScrollRef} onScroll={handleEventsScroll}
+          onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          {events.map((evt, i) => (
+            <div key={i} className={`debug-event debug-event--${evt.type}`}>
+              <span className="debug-type">{evt.type}</span>
+              <span className="debug-body">{JSON.stringify(evt)}</span>
+            </div>
+          ))}
+          <div ref={eventsBottomRef} />
+        </div>
+      )}
+
+      {tab === 'rawxml' && (
+        <div className="debug-scroll" ref={rawScrollRef} onScroll={handleRawScroll}
+          onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          {rawXmlLines.map((line, i) => (
+            <div key={i} className="rawxml-line">
+              <span className="rawxml-body">{line}</span>
+            </div>
+          ))}
+          <div ref={rawBottomRef} />
+        </div>
+      )}
+
       {ctxMenu && (
         <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}
-          items={[{ label: 'Clear', onClick: onClear }]}
+          items={[{ label: 'Clear', onClick: activeOnClear }]}
         />
       )}
     </div>

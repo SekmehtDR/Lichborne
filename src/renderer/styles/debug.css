@@ -12,15 +12,37 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 3px 8px;
+  padding: 0 8px 0 0;
   background: var(--bg-base);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-.debug-title {
+.debug-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.debug-tab {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
   color: var(--text-muted);
+  padding: 4px 10px;
   font-size: 0.79rem;
+  cursor: pointer;
+  font-family: var(--game-font-family);
+}
+
+.debug-tab:hover {
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+}
+
+.debug-tab--active {
+  background: var(--bg-sunken);
+  color: #9cdcfe;
+  border-bottom: 2px solid #9cdcfe;
 }
 
 .debug-clear {
@@ -86,4 +108,26 @@
   color: #d4d4d4;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* RAW XML panel */
+.rawxml-line {
+  padding: 1px 8px;
+  border-bottom: 1px solid var(--bg-sunken);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rawxml-line:hover {
+  background: var(--bg-base);
+  white-space: normal;
+  overflow: visible;
+  word-break: break-all;
+}
+
+.rawxml-body {
+  color: #9cdcfe;
+  font-family: var(--game-font-family);
 }

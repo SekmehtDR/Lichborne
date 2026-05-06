@@ -147,7 +147,7 @@ A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows
 | `inv` | Floatable | Inventory |
 | `vitalsbar` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
-| `debug` | Hidden by default | Raw incoming data, for troubleshooting |
+| `debug` | Hidden by default | Two-tab panel: **Events** (parsed GameEvent stream) and **Raw XML** (raw server lines pre-parse); toggled via "Debug" toolbar button |
 
 ### 2.7 User-Created Panels
 
