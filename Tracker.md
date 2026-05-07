@@ -25,6 +25,7 @@
 **ExpPanel — Mind Locked section moved above Learning ✅**
 **Window Title Bar — Character name + game code from `<app>` XML ✅**
 **Stream Timestamps — Per-stream [HH:MM] toggle via right-click context menu ✅**
+**Packaging & Auto-Update — Portable exe via electron-builder, GitHub Releases, electron-updater ✅**
 
 ---
 
@@ -704,4 +705,6 @@ Items removed from active phase scope — too large for current pass, require de
 | 2026-05-06 | Settings: RT/CT Timer Style toggle — Chips (default) or Bar; chips preferred as default for visual clarity |
 | 2026-05-06 | ExpPanel section order: Mind Locked now renders above Learning — locked skills are higher-priority information during active play; both sections retain their existing collapsed/expanded defaults |
 | 2026-05-06 | Window title bar shows character identity — parser handles `<app char="Agan" game="DR"/>` sent at login and emits `PlayerInfoEvent`; `GameWindow` sets `document.title` to `"CharName · GAME — Lichborne"`; before connect the title remains `"Lichborne — DragonRealms"` (set in `main.ts` at window creation); essential for distinguishing multiple instances running different characters |
+| 2026-05-07 | Packaging: portable exe chosen over NSIS installer — no code signing (SmartScreen warning accepted for small test group); `release/` added to `.gitignore`; `npm run dist` builds via electron-builder; `npm run dist -- --publish always` uploads to GitHub Releases with `GH_TOKEN` env var; `latest.yml` generated alongside exe for updater version checks |
+| 2026-05-07 | Auto-update: `electron-updater` checks GitHub Releases 3s after launch (production only — `app.isPackaged` guard); `autoDownload: false` so user controls timing; renderer shows green banner with Download → Downloading… → Restart & Install flow; banner lives in `App.tsx` so it appears on both login and game screens |
 | 2026-05-06 | Per-stream timestamps — right-click any stream panel to toggle `[HH:MM]` prefix; `timestamp: number` stored on every `TextLine` at receive time; display controlled by `streamTimestamps` Record in `GameWindow` persisted to localStorage; toggling applies retroactively to all buffered lines; `.ts-prefix` span styled muted/dim, non-selectable; applies to all stream panels including custom/discovered streams |

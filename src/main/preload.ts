@@ -47,4 +47,19 @@ contextBridge.exposeInMainWorld('api', {
 
   browseFile: (filters: { name: string; extensions: string[] }[]) =>
     ipcRenderer.invoke('browse-file', filters),
+
+  onUpdateAvailable: (cb: (version: string) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, version: string) => cb(version)
+    ipcRenderer.on('update-available', listener)
+    return () => ipcRenderer.removeListener('update-available', listener)
+  },
+
+  onUpdateDownloaded: (cb: () => void) => {
+    const listener = () => cb()
+    ipcRenderer.on('update-downloaded', listener)
+    return () => ipcRenderer.removeListener('update-downloaded', listener)
+  },
+
+  downloadUpdate: () => ipcRenderer.send('download-update'),
+  installUpdate:  () => ipcRenderer.send('install-update'),
 })

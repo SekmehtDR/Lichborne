@@ -24,6 +24,10 @@ export const IPC = {
   GAME_EVENT:        'game-event',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error',
+  UPDATE_AVAILABLE:  'update-available',
+  UPDATE_DOWNLOADED: 'update-downloaded',
+  DOWNLOAD_UPDATE:   'download-update',
+  INSTALL_UPDATE:    'install-update',
 } as const
 
 // --- Stream routing ---

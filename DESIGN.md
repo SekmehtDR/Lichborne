@@ -31,7 +31,7 @@
 15. [Smart Names / Contacts](#15-smart-names--contacts)
 16. [Login Screen](#16-login-screen)
 17. [Automations, Groups & Modes](#17-automations-groups--modes)
-18. [Macros & Aliases](#18-macros--aliases)
+18. [Packaging & Distribution](#18-packaging--distribution)
 
 ---
 
@@ -981,9 +981,9 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Rule import / export (JSON)
 - [ ] Eval triggers — game-state condition expressions (Section 14.11)
 
-### Phase 8 — Packaging & Distribution
-- [ ] Packaged installer (electron-builder)
-- [ ] Auto-update
+### Phase 8 — Packaging & Distribution ✅
+- [x] Portable exe (electron-builder, Windows x64)
+- [x] Auto-update via GitHub Releases (electron-updater)
 
 ### Future / Unscheduled
 - [ ] Multi-monitor floating panel support
@@ -2102,3 +2102,70 @@ Existing rule storage keys (`lichborne.highlights`, `lichborne.triggers`, `lichb
 9. ✅ **Automations panel shell** (`AutomationsPanel.tsx`) — tabbed container (Contacts-style header); hosts all four rule editors inline + Groups & Modes tab; accepts prefill props for right-click open-to
 10. ✅ **Consolidate toolbar** — removed `btn-highlights`, `btn-triggers`, `btn-macros`; added `btn-automations` + ModeSwitcher
 
+---
+
+## 18. Packaging & Distribution
+
+> Status: **Complete** — implemented 2026-05-07.
+
+### 18.1 Build Target
+
+**Portable Windows x64 exe** — no installer, no code signing. Players run `Lichborne.exe` directly from any folder. Windows SmartScreen will show an "unknown publisher" warning on first launch; testers click "More info → Run anyway". Acceptable for a small trusted group; code signing can be added later if needed.
+
+Build command:
+```powershell
+$env:GH_TOKEN = "your_token"
+npm run dist -- --publish always
+```
+
+Local-only build (no publish):
+```powershell
+npm run dist
+```
+
+Output: `release/Lichborne X.Y.Z.exe`
+
+### 18.2 electron-builder Config
+
+Defined in `package.json` under the `"build"` key:
+
+| Field | Value |
+|---|---|
+| `appId` | `com.lichborne.app` |
+| `productName` | `Lichborne` |
+| `win.target` | `portable` (x64) |
+| `portable.requestExecutionLevel` | `user` (no UAC prompt) |
+| `publish.provider` | `github` |
+| `publish.owner` | `SekmehtDR` |
+| `publish.repo` | `Lichborne` |
+| Output dir | `release/` (gitignored) |
+
+### 18.3 Releasing a New Version
+
+1. Bump `"version"` in `package.json` (e.g. `0.1.0` → `0.2.0`)
+2. Set `GH_TOKEN` env var (fine-grained PAT with Contents: read+write on the Lichborne repo)
+3. Run `npm run dist -- --publish always`
+4. Go to **github.com/SekmehtDR/Lichborne → Releases** → find the draft → click **Publish release**
+
+electron-builder uploads two files per release:
+- `Lichborne X.Y.Z.exe` — the portable executable
+- `latest.yml` — version metadata consumed by `electron-updater`
+
+### 18.4 Auto-Update Flow
+
+Powered by `electron-updater`. Only runs when the app is packaged (`app.isPackaged` guard — never fires in dev).
+
+**On launch (3s delay):** `autoUpdater.checkForUpdates()` fetches `latest.yml` from the GitHub release and compares versions silently.
+
+**Update states (managed in `App.tsx`):**
+
+| State | Banner | Action |
+|---|---|---|
+| `idle` | Hidden | — |
+| `available` | "Update vX.Y.Z available" | Download button → triggers `autoUpdater.downloadUpdate()` |
+| `downloading` | "Downloading update…" | No action (wait) |
+| `ready` | "Update ready to install" | Restart & Install → `autoUpdater.quitAndInstall()` |
+
+The banner is rendered at the `App` level (above both login and game screens) so it's visible regardless of connection state. It uses a green-tinted dark palette that reads clearly across all themes without importing theme CSS vars.
+
+**`autoDownload: false`** — the user always initiates the download. The app never downloads without consent.

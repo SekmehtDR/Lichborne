@@ -11,6 +11,10 @@ declare global {
       onError: (cb: (message: string) => void) => () => void
       onRawXml: (cb: (line: string) => void) => () => void
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
+      onUpdateAvailable: (cb: (version: string) => void) => () => void
+      onUpdateDownloaded: (cb: () => void) => () => void
+      downloadUpdate: () => void
+      installUpdate: () => void
     }
   }
 }

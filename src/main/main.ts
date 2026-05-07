@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as path from 'path'
+import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
 import type { LoginCredentials } from '../shared/types'
@@ -89,6 +90,9 @@ ipcMain.handle('browse-file', async (_event, filters: { name: string; extensions
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
+ipcMain.on('download-update', () => autoUpdater.downloadUpdate())
+ipcMain.on('install-update',  () => autoUpdater.quitAndInstall())
+
 ipcMain.on(CH.DISCONNECT, () => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnecting...' })
   connection.gracefulDisconnect().then(() => {
@@ -96,7 +100,22 @@ ipcMain.on(CH.DISCONNECT, () => {
   })
 })
 
-app.whenReady().then(createWindow)
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false
+  autoUpdater.on('update-available', (info) => {
+    mainWindow?.webContents.send('update-available', info.version)
+  })
+  autoUpdater.on('update-downloaded', () => {
+    mainWindow?.webContents.send('update-downloaded')
+  })
+  // Silently check 3s after launch so startup isn't blocked
+  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
+}
+
+app.whenReady().then(() => {
+  createWindow()
+  if (app.isPackaged) setupAutoUpdater()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

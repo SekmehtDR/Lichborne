@@ -8,7 +8,28 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:main": "node build-main.mjs",
     "build:renderer": "vite build",
-    "start": "npm run build:main && npm run build:renderer && electron ."
+    "start": "npm run build:main && npm run build:renderer && electron .",
+    "dist": "npm run build && electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.lichborne.app",
+    "productName": "Lichborne",
+    "files": ["dist/**/*"],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }]
+    },
+    "portable": {
+      "requestExecutionLevel": "user"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "SekmehtDR",
+      "repo": "Lichborne"
+    }
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -17,11 +38,13 @@
     "@vitejs/plugin-react": "^4.0.0",
     "concurrently": "^8.0.0",
     "electron": "^31.0.0",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0",
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "electron-updater": "^6.8.3",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   }

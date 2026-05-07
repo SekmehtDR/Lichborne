@@ -30,3 +30,35 @@ body {
   background: color-mix(in srgb, var(--accent) 38%, transparent);
   color: var(--text-primary);
 }
+
+.update-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: #1a2e1a;
+  border-bottom: 1px solid #2d5a2d;
+  color: #7dbb7d;
+  font-size: 0.8rem;
+}
+
+.update-btn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #2d5a2d;
+  background: #1f3a1f;
+  color: #7dbb7d;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.update-btn:hover { background: #284a28; }
+
+.update-btn--install {
+  border-color: #4caf50;
+  color: #4caf50;
+}
+
+.update-btn--install:hover { background: #1f4a1f; }
