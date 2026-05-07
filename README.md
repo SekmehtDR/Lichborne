@@ -87,6 +87,52 @@ npm run build:main
 npm run build:renderer
 ```
 
+---
+
+## Building a Release
+
+Releases are distributed as a portable Windows x64 exe and published to GitHub Releases. The running client checks for updates automatically on launch.
+
+### Prerequisites
+
+- A GitHub **fine-grained personal access token** with **Contents: Read and write** permission on this repository
+  - GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+
+### Steps
+
+**1. Bump the version** in `package.json`:
+```json
+"version": "0.2.0"
+```
+
+**2. Set your GitHub token** in PowerShell:
+```powershell
+$env:GH_TOKEN = "your_token_here"
+```
+
+**3. Build and publish:**
+```powershell
+npm run dist -- --publish always
+```
+
+This builds the app and uploads two files to a GitHub Release draft:
+- `Lichborne X.Y.Z.exe` — the portable executable
+- `latest.yml` — version metadata used by the auto-updater
+
+**4. Publish the release** on GitHub:
+- Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases)
+- Find the draft → click **Publish release**
+
+Once published, any running client will show an update banner within 3 seconds of next launch.
+
+### Local build only (no publish)
+
+```powershell
+npm run dist
+```
+
+Output goes to `release/` (gitignored).
+
 The project structure:
 
 ```
@@ -104,4 +150,8 @@ src/
 
 ## Current Status
 
-Phase 1 (connection) and Phase 2A (XML parsing, typed events, debug panel) are complete. Phase 2B (status bar — vitals, roundtime, indicators) is next.
+All core phases complete. The client is feature-complete for initial testing:
+- Full XML parsing, vitals, room, exp, injuries, spells panels
+- Highlights, triggers, macros, aliases, automations, groups & modes
+- Theming (17 themes), settings, contacts, stream timestamps, per-stream right-click menus
+- Packaged as a portable exe with auto-update via GitHub Releases
