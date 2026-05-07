@@ -146,6 +146,14 @@ export default function GameWindow({ onDisconnect }: Props) {
   const clearRawXmlLines = () => setRawXmlLines([])
   const clearLines       = () => setLines([])
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
+  const [streamTimestamps, setStreamTimestamps] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('lichborne.streamTimestamps') ?? '{}') } catch { return {} }
+  })
+  const toggleStreamTimestamp = (id: string) => setStreamTimestamps(prev => {
+    const next = { ...prev, [id]: !prev[id] }
+    localStorage.setItem('lichborne.streamTimestamps', JSON.stringify(next))
+    return next
+  })
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
@@ -238,7 +246,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   // ── Trigger engine ────────────────────────────────────────────────────────
 
   const echoToStream = useCallback((stream: string, text: string) => {
-    const line = { id: lineId++, segments: [{ text, preset: 'echo' as const }] }
+    const line = { id: lineId++, segments: [{ text, preset: 'echo' as const }], timestamp: Date.now() }
     setStreamLines(prev => ({
       ...prev,
       [stream]: [...(prev[stream] ?? []).slice(-(MAX_STREAM_LINES - 1)), line],
@@ -417,7 +425,7 @@ export default function GameWindow({ onDisconnect }: Props) {
             const { stream, segments } = evt as StreamTextEvent
             const lineText = segments.map(s => s.text).join('')
             if (stream === 'main') {
-              if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
+              if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments, timestamp: Date.now() })
               processLineRef.current('main', lineText)
             } else if (stream === 'raw') {
               // discard
@@ -436,10 +444,10 @@ export default function GameWindow({ onDisconnect }: Props) {
                 ? STREAM_FALLBACK[stream]
                 : stream
               if (target === 'main') {
-                if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments })
+                if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments, timestamp: Date.now() })
               } else {
                 if (!newStream[target]) newStream[target] = []
-                newStream[target].push({ id: lineId++, segments })
+                newStream[target].push({ id: lineId++, segments, timestamp: Date.now() })
               }
               // Use original stream name for trigger matching (not the fallback target)
               processLineRef.current(stream, lineText)
@@ -770,7 +778,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     if (!command.trim()) return
     historyRef.current = [command, ...historyRef.current].slice(0, 200)
     historyIdxRef.current = -1
-    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }] }])
+    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
 
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
     const resolved = resolveAlias(command, activeAliases, buildMacroVars())
@@ -837,6 +845,8 @@ export default function GameWindow({ onDisconnect }: Props) {
     streamTitles,
     injuryState,
     unreadIds: unreadStreams,
+    streamTimestamps,
+    onToggleTimestamp: toggleStreamTimestamp,
   }
 
   const handleContactClick = useCallback((contactId: string, x: number, y: number) => {

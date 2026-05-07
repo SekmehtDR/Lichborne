@@ -67,6 +67,8 @@ interface Props {
   discoveredStreams?: string[]
   streamTitles?: Record<string, string>
   unreadIds?: Set<string>
+  streamTimestamps?: Record<string, boolean>
+  onToggleTimestamp?: (streamId: string) => void
 }
 
 export default function PanelFrame({
@@ -75,6 +77,7 @@ export default function PanelFrame({
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], streamTitles = {}, unreadIds,
+  streamTimestamps = {}, onToggleTimestamp,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
@@ -150,6 +153,7 @@ export default function PanelFrame({
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
+          streamTimestamps, onToggleTimestamp,
         )}
       </div>
 
@@ -259,10 +263,14 @@ function renderPanel(
   onHighlight?: (rule: HighlightRule, testText?: string) => void,
   onTrigger?: (pattern: string) => void,
   injuryState: InjuryState = {},
+  streamTimestamps: Record<string, boolean> = {},
+  onToggleTimestamp?: (streamId: string) => void,
 ) {
   const clr = (id: string) => () => onClearStream(id)
   const sp = (id: string, lines: TextLine[]) => (
-    <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} />
+    <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger}
+      onSendCommand={onSendCommand} showTimestamp={!!streamTimestamps[id]}
+      onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(id) : undefined} />
   )
   switch (tab.type) {
     case 'room':          return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
@@ -280,6 +288,8 @@ function renderPanel(
     case 'custom':        return (
       <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand}
+        showTimestamp={!!streamTimestamps[tab.id]}
+        onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(tab.id) : undefined}
         emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
     )
   }

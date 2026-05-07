@@ -198,6 +198,7 @@ export interface UnknownEvent {
 export interface TextLine {
   id: number
   segments: TextSegment[]
+  timestamp: number  // Date.now() at receive time; used for per-stream timestamp display
 }
 
 export interface RoomState {

@@ -14,9 +14,16 @@ interface Props {
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
   onSendCommand?: (cmd: string) => void
+  showTimestamp?: boolean
+  onToggleTimestamp?: () => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand }: Props) {
+function fmtTimestamp(ts: number): string {
+  const d = new Date(ts)
+  return `[${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}] `
+}
+
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, showTimestamp, onToggleTimestamp }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -72,6 +79,9 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
         const lineStyle = getLineHighlightStyle(line.segments, lineRules)
         return (
           <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
+            {showTimestamp && line.timestamp && (
+              <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
+            )}
             {line.segments.map((seg, i) => hasExtras
               ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand)
               : renderSegment(seg, i, onSendCommand)
@@ -90,8 +100,9 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
           ...(onTrigger && ctxMenu.word ? [{ label: `Trigger for "${ctxMenu.word}"`, onClick: () => onTrigger(ctxMenu.word!) }] : []),
           ...(onTrigger && ctxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => onTrigger(ctxMenu.lineText!) }] : []),
         ]
+        const tsGroup = onToggleTimestamp ? [{ label: showTimestamp ? 'Disable Timestamps' : 'Enable Timestamps', onClick: onToggleTimestamp }] : []
         const clGroup = onClear ? [{ label: 'Clear', onClick: onClear }] : []
-        const groups = [hlGroup, trGroup, clGroup].filter(g => g.length > 0)
+        const groups = [hlGroup, trGroup, tsGroup, clGroup].filter(g => g.length > 0)
         const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
         return (
           <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} items={items} />

@@ -260,7 +260,21 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 
 **Experience components** are pushed by the server whenever a mindstate changes. The exp panel is a live view of a clean structured data feed — not a text scraper.
 
-### 4.3 Text Styles (Presets)
+### 4.3 Stream Timestamps
+
+> Status: Implemented 2026-05-06.
+
+Any stream panel can display a `[HH:MM]` wall-clock prefix on each line. The toggle is per-stream, accessible via right-click → **Enable/Disable Timestamps**. Settings persist to localStorage so each stream remembers its preference across sessions.
+
+**Implementation details:**
+- Every `TextLine` carries a `timestamp: number` (Date.now() at receive time) — stored regardless of toggle state
+- Display is render-time only — toggling applies immediately and retroactively to all buffered lines in the panel
+- Prefix styled as `.ts-prefix`: muted (`--text-dim`), 0.8em, non-selectable — recedes visually without hiding the value
+- Scope: stream panels only; main text window excluded (too noisy for continuous output)
+
+**Target streams:** Deaths, Arrivals, Thoughts, Spells, Conversations — any stream where knowing *when* something happened matters more than the continuous flow of text.
+
+### 4.4 Text Styles (Presets)
 
 StormFront `<preset>` tags map to visual styles:
 

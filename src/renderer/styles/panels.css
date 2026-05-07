@@ -24,6 +24,13 @@
   box-sizing: border-box;
 }
 
+.ts-prefix {
+  color: var(--text-dim);
+  font-size: 0.8em;
+  user-select: none;
+  margin-right: 2px;
+}
+
 .cmd-link {
   cursor: pointer;
   text-decoration: underline;
