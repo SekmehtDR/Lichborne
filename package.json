@@ -30,9 +30,7 @@
       "owner": "SekmehtDR",
       "repo": "Lichborne"
     },
-    "releaseInfo": {
-      "releaseNotesFile": "release-notes.md"
-    }
+    "releaseInfo": {}
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

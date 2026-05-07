@@ -6,21 +6,15 @@ const releaseNotes = readFileSync('release-notes.md', 'utf-8')
 await build({
   publish: 'always',  // 'always' | 'onTag' | 'onTagOrDraft' | 'never'
   config: {
-    // Override the productName from package.json (default: "Lichborne")
-    productName: null,
-
-    // Override the version from package.json — useful to avoid editing package.json for a hotfix
+    // Override the version from package.json — useful for a hotfix without editing package.json
     // extraMetadata: { version: '0.1.2' },
 
     releaseInfo: {
       // The markdown body of the GitHub release. Read from file above.
       releaseNotes,
 
-      // Custom release title — defaults to the version string (e.g. "0.1.1") if null
-      releaseName: null,
-
-      // Override the release date — defaults to now if null
-      releaseDate: null,
+      // Custom release title — defaults to the version string (e.g. "0.1.1") if omitted
+      // releaseName: 'v0.1.1 — Timestamps & Title Bar',
     },
 
     publish: {
@@ -31,10 +25,10 @@ await build({
 
     win: {
       // Path to a .ico file — defaults to build/icon.ico if present, otherwise Electron default
-      icon: null,
+      // icon: 'build/icon.ico',
 
       // Output filename pattern — tokens: ${productName}, ${version}, ${arch}
-      artifactName: null, // default: '${productName} ${version}.exe'
+      // artifactName: '${productName}-${version}.exe',
     },
   },
 })
