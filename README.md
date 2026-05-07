@@ -110,16 +110,18 @@ Releases are distributed as a portable Windows x64 exe and published to GitHub R
 $env:GH_TOKEN = "your_token_here"
 ```
 
-**3. Build and publish:**
+**3. Update `release-notes.md`** with what's new in this version.
+
+**4. Build and publish:**
 ```powershell
-npm run dist -- --publish always
+node publish.mjs
 ```
 
-This builds the app and uploads two files to a GitHub Release draft:
+This reads `release-notes.md` and uses the electron-builder API to build the app, attach release notes, and upload two files to a GitHub Release draft:
 - `Lichborne X.Y.Z.exe` — the portable executable
 - `latest.yml` — version metadata used by the auto-updater
 
-**4. Publish the release** on GitHub:
+**5. Publish the release** on GitHub:
 - Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases)
 - Find the draft → click **Publish release**
 
@@ -130,6 +132,8 @@ Once published, any running client will show an update banner within 3 seconds o
 ```powershell
 npm run dist
 ```
+
+> `publish.mjs` uses the electron-builder programmatic API to inject `release-notes.md` content directly — this is more reliable than the `releaseNotesFile` config option, which has inconsistent support across versions.
 
 Output goes to `release/` (gitignored).
 

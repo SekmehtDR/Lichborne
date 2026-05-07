@@ -2112,16 +2112,18 @@ Existing rule storage keys (`lichborne.highlights`, `lichborne.triggers`, `lichb
 
 **Portable Windows x64 exe** — no installer, no code signing. Players run `Lichborne.exe` directly from any folder. Windows SmartScreen will show an "unknown publisher" warning on first launch; testers click "More info → Run anyway". Acceptable for a small trusted group; code signing can be added later if needed.
 
-Build command:
+Build command (with release notes):
 ```powershell
 $env:GH_TOKEN = "your_token"
-npm run dist -- --publish always
+node publish.mjs
 ```
 
 Local-only build (no publish):
 ```powershell
 npm run dist
 ```
+
+`publish.mjs` uses the electron-builder programmatic API to read `release-notes.md` and pass the content directly as `releaseNotes` — more reliable than `releaseNotesFile` config which has inconsistent electron-builder support.
 
 Output: `release/Lichborne X.Y.Z.exe`
 
@@ -2143,9 +2145,10 @@ Defined in `package.json` under the `"build"` key:
 ### 18.3 Releasing a New Version
 
 1. Bump `"version"` in `package.json` (e.g. `0.1.0` → `0.2.0`)
-2. Set `GH_TOKEN` env var (fine-grained PAT with Contents: read+write on the Lichborne repo)
-3. Run `npm run dist -- --publish always`
-4. Go to **github.com/SekmehtDR/Lichborne → Releases** → find the draft → click **Publish release**
+2. Update `release-notes.md` with what's new in this version
+3. Set `GH_TOKEN` env var (fine-grained PAT with Contents: read+write on the Lichborne repo)
+4. Run `node publish.mjs`
+5. Go to **github.com/SekmehtDR/Lichborne → Releases** → find the draft → click **Publish release**
 
 electron-builder uploads two files per release:
 - `Lichborne X.Y.Z.exe` — the portable executable
