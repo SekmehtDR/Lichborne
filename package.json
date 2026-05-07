@@ -28,7 +28,8 @@
     "publish": {
       "provider": "github",
       "owner": "SekmehtDR",
-      "repo": "Lichborne"
+      "repo": "Lichborne",
+      "releaseType": "draft"
     },
     "releaseInfo": {}
   },

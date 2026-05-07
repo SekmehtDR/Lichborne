@@ -19,16 +19,10 @@ console.log(`Building and publishing ${tag}...`)
 await build({
   publish: 'always',
   config: {
-    publish: {
-      // 'draft' = review and click Publish manually on GitHub before it goes live
-      // 'prerelease' | 'release' to skip manual review
-      releaseType: 'draft',
-    },
-    win: {
-      // icon: 'build/icon.ico',
-      // artifactName: '${productName}-${version}.exe',
-    },
-    // extraMetadata: { version: '0.1.2' },  // override version without editing package.json
+    // Uncomment to override per-release without editing package.json:
+    // win: { icon: 'build/icon.ico', artifactName: '${productName}-${version}.exe' },
+    // extraMetadata: { version: '0.1.2' },
+    // publish: { releaseType: 'prerelease' },
   },
 })
 
