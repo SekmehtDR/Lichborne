@@ -1,14 +1,11 @@
-## What's new in v0.1.1
+## What's new in v0.1.2
 
-- Version number now shown on the login screen and in the window title bar
-- Window title updates with your character name and game after connecting (e.g. `Agan · DR — Lichborne v0.1.1`) — makes it easy to tell windows apart when running multiple characters
-- Stream panels now support timestamps — right-click any panel and choose **Enable Timestamps** to show `[HH:MM]` on each line; persists per stream across sessions
-- New application menu with **File → Open Data Folder** — opens the folder where all your settings, highlights, triggers, and themes are stored locally
-- Developer tools no longer open automatically on launch
+- Fixed auto-update: `latest.yml` is now correctly included in releases so the client can detect future updates
+- Release notes now appear on GitHub releases
 
 ## How to install
 
-1. Download `Lichborne-0.1.1.exe` below
+1. Download `Lichborne-0.1.2.exe` below
 2. Run it directly — no installation needed
 3. On first launch Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -34,4 +31,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.0...v0.1.1
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.1...v0.1.2
