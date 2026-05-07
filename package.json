@@ -29,6 +29,9 @@
       "provider": "github",
       "owner": "SekmehtDR",
       "repo": "Lichborne"
+    },
+    "releaseInfo": {
+      "releaseNotesFile": "release-notes.md"
     }
   },
   "devDependencies": {
