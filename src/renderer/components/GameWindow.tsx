@@ -516,7 +516,7 @@ export default function GameWindow({ onDisconnect }: Props) {
             newDiscovered.push(evt.stream)
             break
           case 'player-info':
-            document.title = `${evt.char} · ${evt.game} — Lichborne`
+            document.title = `${evt.char} · ${evt.game} — Lichborne v${__APP_VERSION__}`
             break
           case 'unknown':
             break

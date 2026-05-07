@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import * as path from 'path'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
@@ -43,7 +43,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
-    title: 'Lichborne — DragonRealms',
+    title: `Lichborne v${app.getVersion()} — DragonRealms`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -59,7 +59,7 @@ function createWindow() {
     mainWindow.loadFile(rendererPath)
   }
 
-  mainWindow.webContents.openDevTools()
+  if (!app.isPackaged) mainWindow.webContents.openDevTools()
 
   mainWindow.on('closed', () => {
     connection.forceDisconnect()
@@ -112,8 +112,61 @@ function setupAutoUpdater() {
   setTimeout(() => autoUpdater.checkForUpdates(), 3000)
 }
 
+function setupMenu() {
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Data Folder',
+          click: () => shell.openPath(app.getPath('userData')),
+        },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
+        { type: 'separator' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+      ],
+    },
+  ])
+  Menu.setApplicationMenu(menu)
+}
+
 app.whenReady().then(() => {
   createWindow()
+  setupMenu()
   if (app.isPackaged) setupAutoUpdater()
 })
 

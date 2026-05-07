@@ -2169,3 +2169,36 @@ Powered by `electron-updater`. Only runs when the app is packaged (`app.isPackag
 The banner is rendered at the `App` level (above both login and game screens) so it's visible regardless of connection state. It uses a green-tinted dark palette that reads clearly across all themes without importing theme CSS vars.
 
 **`autoDownload: false`** — the user always initiates the download. The app never downloads without consent.
+
+### 18.5 Version Display
+
+The version string is injected at build time from `package.json` via Vite's `define` (`__APP_VERSION__`). It appears in three places — all read from the same source, no manual sync needed:
+
+| Location | Format |
+|---|---|
+| Login screen | `v0.1.0` below "DRAGONREALMS CLIENT" subtitle, dimmer/smaller |
+| Window title (before login) | `Lichborne v0.1.0 — DragonRealms` |
+| Window title (after login) | `Agan · DR — Lichborne v0.1.0` |
+
+### 18.6 Application Menu
+
+A custom native menu replaces Electron's default. Built with `Menu.buildFromTemplate` in `main.ts`.
+
+| Menu | Items |
+|---|---|
+| **File** | Open Data Folder (`shell.openPath(app.getPath('userData'))`), Quit |
+| **Edit** | Undo, Redo, Cut, Copy, Paste, Delete, Select All |
+| **View** | Reload, Force Reload, Toggle DevTools, zoom controls, Fullscreen |
+| **Window** | Minimize, Close |
+
+**Open Data Folder** opens `app.getPath('userData')` in the OS file explorer — resolves dynamically regardless of OS or user profile. On Windows this is typically `%APPDATA%\lichborne`, which contains all localStorage data (settings, highlights, triggers, themes, etc.).
+
+**DevTools** are closed by default in packaged builds (`app.isPackaged` guard on `openDevTools()`). In dev (`npm start`) they open automatically. Players can still open them manually via View → Toggle Developer Tools.
+
+### 18.7 Versioning Convention
+
+| Pattern | Meaning |
+|---|---|
+| `0.1.x` | Bug fixes and polish |
+| `0.2.0` | Next meaningful feature batch |
+| `1.0.0` | Stable public release |

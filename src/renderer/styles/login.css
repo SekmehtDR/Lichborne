@@ -39,6 +39,14 @@
   text-transform: uppercase;
 }
 
+.login-version {
+  color: #444 !important;
+  font-size: 0.68rem !important;
+  letter-spacing: 1px !important;
+  text-transform: none !important;
+  margin-top: 6px !important;
+}
+
 .login-form {
   display: flex;
   flex-direction: column;

@@ -20,3 +20,7 @@ declare global {
 }
 
 export {}
+
+declare global {
+  const __APP_VERSION__: string
+}

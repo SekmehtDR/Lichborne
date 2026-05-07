@@ -120,6 +120,7 @@ export default function LoginScreen({ onConnected }: Props) {
         <div className="login-logo">
           <h1>Lichborne</h1>
           <p>DragonRealms Client</p>
+          <p className="login-version">v{__APP_VERSION__}</p>
         </div>
 
         {connecting ? (
