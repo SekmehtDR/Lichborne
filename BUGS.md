@@ -11,6 +11,9 @@
 | B01 | `<a href>` links render as plain text | Legiro, Binu | Website links at login (Simucoin Store, Elanthipedia, etc.) not parsed; need `<a href='...'>text</a>` support in StormFrontParser |
 | B02 | No disconnect reason shown | Legiro | On death, timeout, or server drop, client just returns to login screen with no explanation of why |
 | B03 | Page Up/Down doesn't scroll main story window | Legiro | Keyboard scroll keys have no effect in the main text panel |
+| B04 | Stat column alignment breaks when stats are buffed | Binu | Buffed stats add "+20" to the left column value, shifting right column text out of alignment (e.g. "Strength : 100 +20Reflex : 100 +20" runs together); likely a fixed-width formatting assumption in the parser |
+| B05 | Mana bar should be hidden for NMUs | Binu | Non-Mana Users (e.g. Barbarians, Thieves) don't have mana; mana bar should not appear in the vitals bar for these characters |
+| B06 | ExpBrief mode breaks exp window | Binu | When `EXPBRIEF` is enabled in-game the exp panel stops working; ExpBrief changes the XML format of experience components and the parser doesn't handle it |
 
 ---
 
