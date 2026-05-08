@@ -2,6 +2,7 @@
 
 > Tracks where we are in active development.
 > DESIGN.md tracks ideas and spec. This file tracks build progress.
+> BUGS.md tracks open bugs and feature requests from testers.
 
 ---
 
