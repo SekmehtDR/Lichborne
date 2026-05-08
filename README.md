@@ -119,12 +119,15 @@ node publish.mjs
 
 This script does everything in sequence:
 1. Runs `npm run build` — compiles main + renderer so the version number is baked in
-2. Packages and uploads to a GitHub Release draft via electron-builder
-3. Patches the release body with your `release-notes.md` via the GitHub API
+2. Packages and uploads the exe to a GitHub Release draft via electron-builder
+3. Generates `latest.yml` from the exe's SHA-512 hash and uploads it via the GitHub API
+4. Patches the release body with your `release-notes.md` via the GitHub API
 
 Two files are uploaded per release:
 - `Lichborne X.Y.Z.exe` — the portable executable
 - `latest.yml` — version metadata used by the auto-updater
+
+> **Note:** `latest.yml` is generated manually by `publish.mjs` because electron-builder does not produce it for portable builds. Do not use `npm run dist -- --publish always` directly — `latest.yml` will be missing and the auto-updater will not work.
 
 **5. Publish the release** on GitHub:
 - Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases)

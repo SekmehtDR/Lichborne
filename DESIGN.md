@@ -2118,10 +2118,11 @@ $env:GH_TOKEN = "your_token"
 node publish.mjs
 ```
 
-`publish.mjs` does three things in sequence:
+`publish.mjs` does four things in sequence:
 1. `npm run build` — compiles main + renderer; bakes `__APP_VERSION__` from `package.json` into the renderer
-2. electron-builder — packages the `dist/` output and uploads exe + `latest.yml` to a GitHub Release draft
-3. GitHub REST API PATCH — sets the release body from `release-notes.md`
+2. electron-builder — packages the `dist/` output and uploads the exe to a GitHub Release draft
+3. GitHub REST API upload — generates `latest.yml` from the exe's SHA-512 hash and uploads it as a release asset (electron-builder does not produce this for portable builds)
+4. GitHub REST API PATCH — sets the release body from `release-notes.md`
 
 Local-only build (no publish):
 ```powershell
@@ -2156,9 +2157,9 @@ Defined in `package.json` under the `"build"` key:
 
 `publish.mjs` uploads two files per release:
 - `Lichborne X.Y.Z.exe` — the portable executable
-- `latest.yml` — version metadata consumed by `electron-updater`
+- `latest.yml` — version metadata consumed by `electron-updater`; generated manually from the exe's SHA-512 hash because electron-builder does not produce it for portable builds
 
-**Important:** `publish.mjs` runs `npm run build` internally. Never run electron-builder directly for a release — the version baked into the exe will be wrong if the renderer wasn't rebuilt after bumping `package.json`.
+**Important:** Always use `node publish.mjs` for releases — never `electron-builder` directly. Running electron-builder directly will produce the exe but not `latest.yml`, and the version number in the app will be wrong if the renderer wasn't rebuilt first.
 
 ### 18.4 Auto-Update Flow
 
