@@ -22,6 +22,7 @@ declare global {
       installUpdate: () => void
       checkForUpdates: () => void
       onUpdaterLog: (cb: (msg: string) => void) => () => void
+      openUrl: (url: string) => void
     }
   }
 }

@@ -44,7 +44,7 @@ This builds the main process, builds the renderer, and launches the Electron app
 
 ## Login
 
-1. Enter your **Simutronics account name**, **password**, and **character name**
+1. Enter your **Simutronics account name**, **password**, and **character name** — your account name is saved and will be pre-filled on next launch
 2. Open **Advanced / Lich Settings** if you need to adjust paths or connection options
 3. Click **Connect via Lich** (or **Connect Direct** if not using Lich)
 
@@ -65,6 +65,21 @@ Enable **statusprompt** in DragonRealms for the best experience — this causes 
 ```
 SET PROMPT STATUS
 ```
+
+The **EXPBRIEF** in-game toggle is supported in both states. With EXPBRIEF ON, the exp panel uses bracket notation (`[16/34]`) to determine mindstate; with EXPBRIEF OFF it uses the full mindstate name. Either works — use whichever you prefer.
+
+---
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `PageUp` | Scroll text window up one page |
+| `PageDown` | Scroll text window down one page |
+| `Home` | Jump to top of text history |
+| `End` | Jump to bottom and resume auto-scroll |
+
+These keys are active whenever the command input is not focused.
 
 ---
 

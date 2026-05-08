@@ -43,6 +43,10 @@
   --scrollbar-thumb:       #444444;
   --scrollbar-thumb-hover: #666666;
 
+  /* ── Links ────────────────────────────────────────────────────── */
+  --link-color:     #6a9fd8;
+  --cmd-link-color: inherit;
+
   /* ── Game text presets ────────────────────────────────────────── */
   --preset-speech:       #d4af37;
   --preset-whisper:      #b09848;   /* improved from #907830 — better contrast */

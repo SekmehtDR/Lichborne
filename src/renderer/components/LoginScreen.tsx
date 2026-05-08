@@ -6,7 +6,8 @@ const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
 const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
 const DEFAULT_LICH_PORT = 11024
 
-const ADV_KEY = 'lichborne.advancedSettings'
+const ADV_KEY     = 'lichborne.advancedSettings'
+const ACCOUNT_KEY = 'lichborne.account'
 
 interface AdvancedSettings {
   useLich: boolean
@@ -50,7 +51,7 @@ interface Props {
 }
 
 export default function LoginScreen({ onConnected }: Props) {
-  const [account, setAccount] = useState('')
+  const [account, setAccount] = useState(() => localStorage.getItem(ACCOUNT_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [character, setCharacter] = useState('')
 
@@ -156,7 +157,7 @@ export default function LoginScreen({ onConnected }: Props) {
             <input
               type="text"
               value={account}
-              onChange={e => setAccount(e.target.value)}
+              onChange={e => { setAccount(e.target.value); localStorage.setItem(ACCOUNT_KEY, e.target.value) }}
               autoComplete="username"
               autoFocus
               required

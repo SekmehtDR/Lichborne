@@ -62,12 +62,11 @@ const COMPONENT_STREAM: Record<string, StreamTarget> = {
 // Known protocol tags that carry no display content — drop silently rather than
 // emitting unknown events that pollute the display.
 const SILENT_TAGS = new Set([
-  // Clickable command links — 'a' is UI chrome; 'd' is handled in tagStart for cmd support
-  'a',
+  // 'd' is handled in tagStart for cmd support; 'a' is handled separately for href links
   // Connection/session metadata
-  'app', 'output', 'launchurl', 'dialogdata', 'settingsinfo', 'identity', 'slot',
-  // Generic layout/formatting wrappers
-  'container', 'inv', 'opendialog',
+  'app', 'dialogdata', 'settingsinfo', 'identity', 'slot', 'playerid', 'mode',
+  // Generic layout/formatting wrappers (self-closing; no text content to suppress)
+  'container', 'opendialog', 'exposecontainer', 'clearcontainer',
   // Genie/StormFront UI chrome — quickbars, links, layout (image handled separately for injuries)
   'skin', 'radio', 'link', 'switchquickbar', 'endsetup', 'resource', 'exposestream',
   // Movement navigation frame marker — no display content
@@ -115,6 +114,9 @@ export class StormFrontParser {
   private compassDirs: string[] = []
   private linkCmd: string | undefined = undefined
   private linkCmdIsText = false  // true when <d> has no cmd attr; first text node becomes the cmd
+  private linkHref: string | undefined = undefined
+
+  private monoMode = false
 
   private inInjuriesDialog = false
   private injuryBuf: Array<{ id: string; name: string; height: number; width: number }> = []
@@ -154,6 +156,8 @@ export class StormFrontParser {
     this.compassDirs       = []
     this.linkCmd           = undefined
     this.linkCmdIsText     = false
+    this.linkHref          = undefined
+    this.monoMode          = false
     this.inInjuriesDialog  = false
     this.injuryBuf         = []
     this.lastMainText      = ''
@@ -199,27 +203,63 @@ export class StormFrontParser {
     return this.events
   }
 
+  private static readonly URL_RE = /https?:\/\/[^\s<>"']+/g
+
+  private pushSegment(text: string, extra: Partial<TextSegment> = {}) {
+    const topColor = this.colorStack[this.colorStack.length - 1]
+    this.pendingSegments.push({
+      text,
+      ...(this.boldDepth > 0 ? { bold: true }                 : {}),
+      ...(this.currentPreset ? { preset: this.currentPreset } : {}),
+      ...(topColor?.fg       ? { fg: topColor.fg }            : {}),
+      ...(topColor?.bg       ? { bg: topColor.bg }            : {}),
+      ...(this.linkCmd       ? { cmd: this.linkCmd }           : {}),
+      ...(this.linkHref      ? { href: this.linkHref }         : {}),
+      ...extra,
+    })
+  }
+
   private text(value: string) {
     if (this.captureCtx) {
       this.captureBuf += decodeEntities(value.replace(/\r/g, ''))
       return
     }
     const cleaned = decodeEntities(value.replace(/\r/g, '').replace(/\n$/, ''))
-    if (!cleaned.trim()) return  // skip whitespace-only tokens; blank lines handled by isBlankLine
+    if (!cleaned) return
+    // Skip leading whitespace-only tokens (start of line), but preserve spaces that
+    // appear between segments on the same line (e.g. between adjacent <a href> links).
+    if (!cleaned.trim() && this.pendingSegments.length === 0) return
     // <d>TEXT</d> with no cmd attr — first non-empty text node becomes the command
     if (this.linkCmdIsText && !this.linkCmd) {
       const candidate = cleaned.trim()
       if (candidate) this.linkCmd = candidate
     }
-    const topColor = this.colorStack[this.colorStack.length - 1]
-    this.pendingSegments.push({
-      text: cleaned,
-      ...(this.boldDepth > 0     ? { bold: true }                 : {}),
-      ...(this.currentPreset     ? { preset: this.currentPreset } : {}),
-      ...(topColor?.fg           ? { fg: topColor.fg }            : {}),
-      ...(topColor?.bg           ? { bg: topColor.bg }            : {}),
-      ...(this.linkCmd           ? { cmd: this.linkCmd }          : {}),
-    })
+    // Inside an explicit link — emit as-is
+    if (this.linkHref || this.linkCmd) {
+      this.pushSegment(cleaned)
+      return
+    }
+    // Auto-detect bare URLs in plain text and split into href segments
+    StormFrontParser.URL_RE.lastIndex = 0
+    if (StormFrontParser.URL_RE.test(cleaned)) {
+      StormFrontParser.URL_RE.lastIndex = 0
+      let last = 0
+      let m: RegExpExecArray | null
+      while ((m = StormFrontParser.URL_RE.exec(cleaned)) !== null) {
+        // Strip trailing sentence punctuation that is almost never part of the URL
+        const url = m[0].replace(/[.,;:!?)\]'"]+$/, '')
+        if (!url) continue
+        if (m.index > last) this.pushSegment(cleaned.slice(last, m.index))
+        this.pushSegment(url, { href: url, autoHref: true })
+        // Any stripped trailing punctuation becomes plain text
+        const stripped = m[0].slice(url.length)
+        if (stripped) this.pushSegment(stripped)
+        last = m.index + m[0].length
+      }
+      if (last < cleaned.length) this.pushSegment(cleaned.slice(last))
+      return
+    }
+    this.pushSegment(cleaned)
   }
 
   private tagStart(name: string, attrs: Record<string, string>, selfClosing: boolean) {
@@ -389,6 +429,19 @@ export class StormFrontParser {
         break
       }
 
+      case 'launchurl': {
+        const src = attrs.src ?? ''
+        if (src) {
+          const url = src.startsWith('http') ? src : `https://www.play.net${src}`
+          this.events.push({ type: 'launch-url', url })
+        }
+        break
+      }
+
+      case 'output':
+        this.monoMode = (attrs.class === 'mono')
+        break
+
       case 'app':
         if (attrs.char) {
           this.events.push({ type: 'player-info', char: attrs.char, game: attrs.game ?? '' })
@@ -419,6 +472,12 @@ export class StormFrontParser {
         break
       }
 
+      case 'inv':
+        // <inv id='stow'>item name</inv> — container contents routed to a panel in
+        // Stormfront. We have no container panel, so absorb and discard the text.
+        if (!selfClosing) { this.captureCtx = { tag: 'inv' }; this.captureBuf = '' }
+        break
+
       case 'spell':
         if (!selfClosing) { this.captureCtx = { tag: 'spell' }; this.captureBuf = '' }
         break
@@ -429,6 +488,12 @@ export class StormFrontParser {
 
       case 'left':
         if (!selfClosing) { this.captureCtx = { tag: 'left' }; this.captureBuf = '' }
+        break
+
+      case 'a':
+        if (!selfClosing && attrs.href) {
+          this.linkHref = attrs.href
+        }
         break
 
       case 'd':
@@ -487,6 +552,11 @@ export class StormFrontParser {
       return
     }
 
+    if (name === 'a') {
+      this.linkHref = undefined
+      return
+    }
+
     if (name === 'd') {
       this.linkCmd       = undefined
       this.linkCmdIsText = false
@@ -530,18 +600,22 @@ export class StormFrontParser {
 
     if (name !== this.captureCtx.tag) return
 
-    const ctx  = this.captureCtx
-    const text = this.captureBuf.trim()
+    const ctx    = this.captureCtx
+    const rawBuf = this.captureBuf
+    const text   = rawBuf.trim()
     this.captureCtx = null
     this.captureBuf = ''
 
     switch (ctx.tag) {
       case 'preset': {
+        // In mono mode preserve leading/trailing spaces — they carry column alignment.
+        // Outside mono mode trim normally so stray whitespace doesn't pollute display.
+        const content = this.monoMode ? rawBuf.replace(/[\r\n]/g, '') : text
         // Emit captured text with preset style into current stream
-        if (text) {
+        if (content) {
           const topColor = this.colorStack[this.colorStack.length - 1]
           this.pendingSegments.push({
-            text,
+            text: content,
             preset: this.currentPreset,
             ...(this.boldDepth > 0 ? { bold: true }     : {}),
             ...(topColor?.fg       ? { fg: topColor.fg } : {}),
@@ -639,6 +713,7 @@ export class StormFrontParser {
       stream: this.activeStream,
       segments,
       timestamp: Date.now(),
+      ...(this.monoMode ? { mono: true } : {}),
     }
     if (this.activeStream === 'main') {
       this.lastMainText = this.pendingSegments.map(s => s.text).join('')

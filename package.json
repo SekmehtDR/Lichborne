@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "DragonRealms game client with Lich support and AI features",
   "main": "dist/main/main.js",
   "scripts": {
@@ -31,6 +31,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
+    "extraResources": [
+      { "from": "build/app-update.yml", "to": "app-update.yml" }
+    ],
     "publish": {
       "provider": "github",
       "owner": "SekmehtDR",

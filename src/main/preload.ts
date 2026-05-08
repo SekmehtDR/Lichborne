@@ -75,4 +75,6 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('updater-log', listener)
     return () => ipcRenderer.removeListener('updater-log', listener)
   },
+
+  openUrl: (url: string) => ipcRenderer.send('open-url', url),
 })

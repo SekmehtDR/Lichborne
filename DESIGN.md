@@ -180,9 +180,45 @@ The main text window has one job: never lose game text, never lose your place.
 
 - **Append-only rendering** — new lines push to the bottom; the DOM above is never rewritten
 - **Virtualized list** — only the visible lines (~60) are in the DOM at any time, regardless of how many lines are in memory. 2000 lines in memory = ~60 nodes rendered. No exceptions.
-- **Smart scroll anchor** — scrolling up pauses auto-scroll silently. A **"▼ N new lines"** badge appears at the bottom edge. Clicking it or pressing End resumes auto-scroll and jumps to the bottom. The player decides when to return; the client never forces them.
+- **Smart scroll anchor** — scrolling up pauses auto-scroll silently. A **"▼ N new lines"** badge appears at the bottom edge. Clicking it or pressing `End` resumes auto-scroll and jumps to the bottom. The player decides when to return; the client never forces them.
+- **Keyboard scroll** — `PageUp`/`PageDown` scroll the text window by one screen; `Home` jumps to the top of history; `End` returns to the bottom and re-pins auto-scroll. All four keys are suppressed when the command input is focused so they don't interfere with typing.
+- **Scrollbar arrows** — up/down arrow buttons rendered via `::-webkit-scrollbar-button` with SVG data-URI triangles (Chromium removes native arrows by default). Clicking scrolls one line; hover darkens the button background for feedback.
 - **Scroll pinning implementation** — `useLayoutEffect` (not `useEffect`) fires the scroll-to-bottom synchronously after DOM mutation, before the browser paints or fires scroll events. Combined with `overflow-anchor: none` on the scroll container to prevent Chrome's native scroll anchoring from competing. Together these eliminate the race condition where large text bursts could unpin the scroll.
 - **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line
+
+### 2.9 Link Rendering
+
+The parser and renderer cooperate to make in-game links clickable without leaving the client.
+
+**`<a href>` tags** — `StormFrontParser` tracks a `linkHref` state. On `<a href='...'>` the URL is stored; all text segments emitted while `linkHref` is set carry `href` on the `TextSegment`. On `</a>` the state is cleared. The renderer checks `seg.href` and renders a `.url-link` span; clicking calls `window.api.openUrl(href)` which sends an `open-url` IPC message to main — `shell.openExternal` opens the URL in the OS default browser.
+
+**`<LaunchURL src='...'>` tags** — server-initiated browser launches. The parser emits a `launch-url` event. In `main.ts`, before forwarding events to the renderer, any `launch-url` events are intercepted and handed directly to `shell.openExternal`. The renderer never sees this event type.
+
+**Auto-detected URLs** — the parser also scans every plain-text segment for bare `http://` / `https://` URLs using a static regex. Each match is split into its own segment with `href` set and `autoHref: true`. Trailing punctuation (`.,;:!?)\]'"`) is stripped from the URL to avoid capturing sentence-ending characters. The `autoHref` flag lets the renderer respect the user's **Auto-link URLs** setting toggle — if the toggle is off, `autoHref` segments render as plain text while explicit `<a href>` links still work.
+
+**CSS** — `.url-link` uses `var(--link-color)` (default `#6a9fd8`). `.cmd-link` (for `<d cmd>` command links) uses `var(--cmd-link-color)` (default `inherit`). Both variables are exposed in ThemeEditor under the Game Text → Links group.
+
+### 2.10 Monospace / Pre-formatted Blocks
+
+The server wraps fixed-width content (stat displays, stance output, Lich script echoes) in `<output class="mono"/>` … `<output class=""/>` tags. These blocks rely on multiple consecutive spaces for column alignment and must not be collapsed by the browser.
+
+**Parser**: `StormFrontParser` tracks a `monoMode` boolean. `<output class="mono"/>` sets it true; `<output class=""/>` clears it. Both tags are self-closing and handled in `tagStart` only. Lines flushed while `monoMode` is active carry `mono: true` on the emitted `StreamTextEvent`.
+
+**Preset captures in mono mode**: When the server highlights a stat (e.g. a buffed value), it wraps the text in `<preset id="speech">...</preset>` within the mono block. The parser's normal behavior trims captured preset text; in mono mode this must be suppressed — leading spaces in the preset content carry column position. The parser uses the raw buffer (newlines stripped, spaces preserved) when `monoMode` is active at capture close time.
+
+**Renderer**: `TextLine` has an optional `mono` boolean. When true, both the main window and `StreamPanel` apply `white-space: pre` inline style to that line's container `<div>`. This preserves the server's spacing exactly without requiring a separate element type or CSS class.
+
+---
+
+### 2.11 Disconnect Behavior
+
+When the connection drops for any reason (user-initiated QUIT, server timeout, death, Lich shutdown, socket error), the client stays on the game screen rather than navigating away. This lets the player see what happened before returning to the login flow.
+
+**Toolbar button**: changes from `Disconnect` → `Login` (styled in accent color). Clicking `Login` calls `onDisconnect` to return to the login screen.
+
+**Debug panel**: auto-opens on disconnect so the Raw XML tab is immediately visible, showing the last received server traffic.
+
+**State**: a `dropped` boolean in `GameWindow` is set `true` on any disconnect. While `dropped` is true the Disconnect button is disabled only momentarily (it becomes `Login` immediately). There is no separate "user-initiated vs. unexpected" distinction — all disconnects are treated the same way.
 
 ---
 
@@ -484,6 +520,8 @@ DragonRealms has two exp display modes:
 Lichborne is an XML client — expbrief is the natural mode and gives us the structured data the exp panel needs for free. On login, the client sends `expbrief` to ensure the game is in the right state, matching StormFront's behavior.
 
 **Lich mode:** Lich may handle the expbrief toggle itself on login. In Lich mode, the client does not send the `expbrief` command — Lich owns the session setup. The exp panel still works identically either way since the data arrives as the same XML regardless of who toggled the mode.
+
+**In-game EXPBRIEF toggle:** Within XML/expbrief mode, a player can further toggle `EXPBRIEF` in-game. This controls whether individual `<component>` updates include the mindstate name in text form. With EXPBRIEF OFF (default), updates look like: `<preset id='whisper'><d cmd='skill Evasion'> Evasion</d>: 1173 29% mind lock [34/34]</preset>` — mindstate name present. With EXPBRIEF ON, updates are abbreviated: `<d cmd='skill Evasion'> Evasion</d>: 1173 29% [34/34]` — mindstate name omitted, only `[x/34]` bracket notation remains. `parseExp` handles both: string matching for the verbose form, bracket index parsing as fallback for the brief form.
 
 If a player switches back to a standard exp display in-game for any reason, the exp panel will stop receiving structured updates and show stale data. The panel will display a subtle indicator when no exp updates have been received for an extended period.
 
@@ -794,7 +832,7 @@ The Display section includes a **live font preview** — a bordered box showing 
 
 | Section | Contains |
 |---|---|
-| **Display & Accessibility** | Font family, font size, line height, live preview, large print, high contrast, epilepsy safe, colorblind picker |
+| **Display & Accessibility** | Font family, font size, line height, live preview, large print, high contrast, auto-link URLs, epilepsy safe, colorblind picker |
 | **Theme** | Theme picker, theme editor, My Themes, import/export |
 | **Panels & Layout** | Status bar position, icon bar position, RT bars in command bar, panel defaults |
 | **Command Bar** | RT display, cast time display, command history size |

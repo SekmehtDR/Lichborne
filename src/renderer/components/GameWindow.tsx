@@ -139,6 +139,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const historyIdxRef = useRef(-1)
   const [status, setStatus]           = useState('Connected')
   const [disconnecting, setDisconnecting] = useState(false)
+  const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
   const clearDebugEvents = () => setDebugEvents([])
@@ -156,10 +157,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   })
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
-  const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({
-    health: { current: 0, max: 0 }, mana: { current: 0, max: 0 },
-    concentration: { current: 0, max: 0 }, stamina: { current: 0, max: 0 }, spirit: { current: 0, max: 0 },
-  })
+  const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({})
   const [vitalLabels, setVitalLabels] = useState<Record<string, string>>({})
   const [rtExpires, setRtExpires]   = useState(0)
   const [ctExpires, setCtExpires]   = useState(0)
@@ -422,10 +420,11 @@ export default function GameWindow({ onDisconnect }: Props) {
       for (const evt of events) {
         switch (evt.type) {
           case 'stream-text': {
-            const { stream, segments } = evt as StreamTextEvent
+            const { stream, segments, mono } = evt as StreamTextEvent
             const lineText = segments.map(s => s.text).join('')
+            const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}) })
             if (stream === 'main') {
-              if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments, timestamp: Date.now() })
+              if (!isExpReadout(segments)) newMain.push(mkLine())
               processLineRef.current('main', lineText)
             } else if (stream === 'raw') {
               // discard
@@ -444,10 +443,10 @@ export default function GameWindow({ onDisconnect }: Props) {
                 ? STREAM_FALLBACK[stream]
                 : stream
               if (target === 'main') {
-                if (!isExpReadout(segments)) newMain.push({ id: lineId++, segments, timestamp: Date.now() })
+                if (!isExpReadout(segments)) newMain.push(mkLine())
               } else {
                 if (!newStream[target]) newStream[target] = []
-                newStream[target].push({ id: lineId++, segments, timestamp: Date.now() })
+                newStream[target].push(mkLine())
               }
               // Use original stream name for trigger matching (not the fallback target)
               processLineRef.current(stream, lineText)
@@ -573,7 +572,11 @@ export default function GameWindow({ onDisconnect }: Props) {
     const unsubStatus = window.api.onConnectionStatus((s) => {
       setStatus(s.message)
       if (s.message === 'Disconnecting...') setDisconnecting(true)
-      if (!s.connected && s.message === 'Disconnected') onDisconnect()
+      if (!s.connected && s.message === 'Disconnected') {
+        setDropped(true)
+        setStatus('Connection lost')
+        setShowDebug(true)
+      }
     })
 
     const unsubRawXml = window.api.onRawXml((line: string) => {
@@ -582,7 +585,7 @@ export default function GameWindow({ onDisconnect }: Props) {
 
     inputRef.current?.focus()
     return () => { unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current() }
-  }, [onDisconnect])
+  }, [])
 
   // ── Scroll ────────────────────────────────────────────────────────────────
 
@@ -607,8 +610,12 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'End' && document.activeElement !== inputRef.current) {
-        e.preventDefault(); scrollToBottom()
+      if (document.activeElement !== inputRef.current) {
+        const el = scrollRef.current
+        if (e.key === 'End')     { e.preventDefault(); scrollToBottom() }
+        if (e.key === 'Home')    { e.preventDefault(); if (el) el.scrollTop = 0 }
+        if (e.key === 'PageUp')  { e.preventDefault(); if (el) el.scrollTop -= el.clientHeight }
+        if (e.key === 'PageDown'){ e.preventDefault(); if (el) el.scrollTop += el.clientHeight }
       }
       // Global macro key bindings — suppressed when any modal is open
       if (!anyModalOpenRef.current) {
@@ -823,7 +830,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   function handleBottomActive(id: string) { setBottomActiveId(id); clearUnread(id) }
 
   function handleDisconnect() {
-    if (disconnecting) return
+    if (disconnecting || dropped) return
     setDisconnecting(true)
     cancelPendingRef.current()
     for (const h of macroTimersRef.current) clearTimeout(h)
@@ -836,6 +843,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const sharedFrameProps = {
     streamLines, roomState, expSkills,
     onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
+    autoLinkUrls: settings.autoLinkUrls,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
     onClearStream: clearStream,
@@ -900,8 +908,12 @@ export default function GameWindow({ onDisconnect }: Props) {
         <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
-        <button className="btn-disconnect" onClick={handleDisconnect} disabled={disconnecting}>
-          {disconnecting ? 'Disconnecting…' : 'Disconnect'}
+        <button
+          className={`btn-disconnect${dropped ? ' btn-disconnect--login' : ''}`}
+          onClick={dropped ? onDisconnect : handleDisconnect}
+          disabled={disconnecting && !dropped}
+        >
+          {dropped ? 'Login' : disconnecting ? 'Disconnecting…' : 'Disconnect'}
         </button>
       </div>
 
@@ -924,12 +936,13 @@ export default function GameWindow({ onDisconnect }: Props) {
               }}>
               {lines.map(line => {
                 const lineStyle = getLineHighlightStyle(line.segments, lineRules)
+                const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre' as const } : lineStyle
                 const hasExtras = nameRegex || matchRules.length > 0
                 return (
-                  <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
+                  <div key={line.id} className="text-line" style={monoStyle ?? undefined}>
                     {line.segments.map((seg, i) => hasExtras
-                      ? renderSegmentFull(seg, i, contacts, contactTemplates, nameRegex, matchRules, handleContactClick)
-                      : renderSegment(seg, i)
+                      ? renderSegmentFull(seg, i, contacts, contactTemplates, nameRegex, matchRules, handleContactClick, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
+                      : renderSegment(seg, i, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
                     )}
                   </div>
                 )

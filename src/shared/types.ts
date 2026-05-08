@@ -56,7 +56,9 @@ export interface TextSegment {
   bold?: boolean
   fg?: string  // hex color without '#', e.g. 'ff0000'
   bg?: string  // hex color without '#'
-  cmd?: string // clickable command link (from <d cmd='...'>)
+  cmd?: string      // clickable command link (from <d cmd='...'>)
+  href?: string     // clickable URL link (from <a href='...'>)
+  autoHref?: boolean // true when href was auto-detected in plain text (not from <a href>)
 }
 
 // --- Typed game events ---
@@ -79,6 +81,7 @@ export type GameEvent =
   | ExitsEvent
   | InjuryUpdateEvent
   | PlayerInfoEvent
+  | LaunchUrlEvent
   | UnknownEvent
 
 export interface StreamTextEvent {
@@ -86,6 +89,7 @@ export interface StreamTextEvent {
   stream: StreamTarget
   segments: TextSegment[]
   timestamp: number
+  mono?: boolean
 }
 
 // Vitals — current and max both provided by the server text attribute ("72 100")
@@ -192,6 +196,11 @@ export interface PlayerInfoEvent {
   game: string  // game code from <app ... game="DR" .../>
 }
 
+export interface LaunchUrlEvent {
+  type: 'launch-url'
+  url: string
+}
+
 export interface UnknownEvent {
   type: 'unknown'
   raw: string
@@ -203,6 +212,7 @@ export interface TextLine {
   id: number
   segments: TextSegment[]
   timestamp: number  // Date.now() at receive time; used for per-stream timestamp display
+  mono?: boolean     // true when line was emitted inside <output class="mono"/> block
 }
 
 export interface RoomState {

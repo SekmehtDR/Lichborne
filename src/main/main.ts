@@ -26,8 +26,12 @@ connection.on('status', (msg: string) => {
 connection.on('line', (line: string) => {
   mainWindow?.webContents.send(CH.RAW_XML, line)
   const events = parser.parse(line)
-  if (events.length > 0) {
-    mainWindow?.webContents.send(CH.GAME_EVENT, events)
+  for (const evt of events) {
+    if (evt.type === 'launch-url') shell.openExternal(evt.url)
+  }
+  const rendererEvents = events.filter(e => e.type !== 'launch-url')
+  if (rendererEvents.length > 0) {
+    mainWindow?.webContents.send(CH.GAME_EVENT, rendererEvents)
   }
 })
 connection.on('disconnect', () => {
@@ -138,6 +142,7 @@ ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich:
   return result
 })
 
+ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
 ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())

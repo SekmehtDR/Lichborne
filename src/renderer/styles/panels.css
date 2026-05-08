@@ -33,6 +33,7 @@
 
 .cmd-link {
   cursor: pointer;
+  color: var(--cmd-link-color);
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 2px;
@@ -40,6 +41,17 @@
 
 .cmd-link:hover {
   text-decoration-style: solid;
+}
+
+.url-link {
+  cursor: pointer;
+  color: var(--link-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.url-link:hover {
+  opacity: 0.8;
 }
 
 /* ── Injuries Panel ───────────────────────────────────────── */

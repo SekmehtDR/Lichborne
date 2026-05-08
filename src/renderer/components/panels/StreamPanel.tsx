@@ -14,6 +14,7 @@ interface Props {
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
   onSendCommand?: (cmd: string) => void
+  autoLinkUrls?: boolean
   showTimestamp?: boolean
   onToggleTimestamp?: () => void
 }
@@ -23,7 +24,7 @@ function fmtTimestamp(ts: number): string {
   return `[${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}] `
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, showTimestamp, onToggleTimestamp }: Props) {
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, showTimestamp, onToggleTimestamp }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -77,14 +78,15 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
       )}
       {lines.map(line => {
         const lineStyle = getLineHighlightStyle(line.segments, lineRules)
+        const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre' as const } : lineStyle
         return (
-          <div key={line.id} className="text-line" style={lineStyle ?? undefined}>
+          <div key={line.id} className="text-line" style={monoStyle ?? undefined}>
             {showTimestamp && line.timestamp && (
               <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
             )}
             {line.segments.map((seg, i) => hasExtras
-              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand)
-              : renderSegment(seg, i, onSendCommand)
+              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls)
+              : renderSegment(seg, i, onSendCommand, autoLinkUrls)
             )}
           </div>
         )

@@ -78,6 +78,10 @@ const TABS: EditorTab[] = [
         p('Store / item',     '--preset-store',    '--preset-store-bg'),
         p('Command echo',     '--preset-cmd',      '--preset-cmd-bg'),
       ]},
+      { label: 'Links', fields: [
+        c('--link-color',     'URL link color'),
+        c('--cmd-link-color', 'Command link color'),
+      ]},
     ],
   },
   {

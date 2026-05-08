@@ -1,0 +1,5 @@
+owner: SekmehtDR
+repo: Lichborne
+provider: github
+releaseType: release
+updaterCacheDirName: lichborne-updater

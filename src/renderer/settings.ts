@@ -11,6 +11,7 @@ export interface AppSettings {
   vitalsBarPosition: 'top' | 'bottom'
   iconBarPosition: 'top' | 'bottom'
   timerStyle: 'bar' | 'chips'
+  autoLinkUrls: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vitalsBarPosition: 'bottom',
   iconBarPosition: 'top',
   timerStyle: 'chips',
+  autoLinkUrls: true,
 }
 
 export const FONT_FAMILIES: Record<string, string> = {

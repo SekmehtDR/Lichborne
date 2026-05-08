@@ -29,7 +29,7 @@ export default function VitalsBar({ vitals, labels }: Props) {
   return (
     <div className="vitals-strip">
       <div className="vitals-row">
-        {VITAL_ORDER.map(id => {
+        {VITAL_ORDER.filter(id => vitals[id] !== undefined).map(id => {
           const v = vitals[id]
           const pct = v.max > 0 ? (v.current / v.max) * 100 : 0
           const label = labels?.[id] ?? VITAL_LABELS[id]

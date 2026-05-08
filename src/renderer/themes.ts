@@ -44,6 +44,9 @@ export const darkBase: ThemeVars = {
   '--scrollbar-thumb':       '#444444',
   '--scrollbar-thumb-hover': '#666666',
 
+  '--link-color':     '#6a9fd8',
+  '--cmd-link-color': 'inherit',
+
   '--preset-speech':   '#d4af37',
   '--preset-whisper':  '#b09848',
   '--preset-thought':  '#5bc8c8',
@@ -262,6 +265,7 @@ const slate: ThemeVars = {
 }
 
 const ivory: ThemeVars = {
+  '--link-color': '#1a5a9a',
   '--bg-app':    '#ffffff',
   '--bg-base':   '#f5f5f5',
   '--bg-raised': '#efefef',
@@ -420,6 +424,7 @@ const ivory: ThemeVars = {
 }
 
 const mist: ThemeVars = {
+  '--link-color': '#1a5aa0',
   '--bg-app':    '#e6eaef',
   '--bg-base':   '#ebeef3',
   '--bg-raised': '#f0f3f6',
@@ -578,6 +583,7 @@ const mist: ThemeVars = {
 }
 
 const parchment: ThemeVars = {
+  '--link-color': '#2a4a9a',
   '--bg-app':    '#f0ead8',
   '--bg-base':   '#ede5cf',
   '--bg-raised': '#e8dfc8',
@@ -715,6 +721,7 @@ const parchment: ThemeVars = {
 }
 
 const terminal: ThemeVars = {
+  '--link-color': '#00cc66',
   '--bg-app':    '#000000',
   '--bg-base':   '#030e03',
   '--bg-raised': '#050d05',

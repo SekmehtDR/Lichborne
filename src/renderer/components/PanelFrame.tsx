@@ -52,6 +52,7 @@ interface Props {
   roomState: RoomState
   expSkills: Record<string, string>
   onSendCommand: (cmd: string) => void
+  autoLinkUrls?: boolean
   debugEvents?: GameEvent[]
   onClearDebug?: () => void
   rawXmlLines?: string[]
@@ -72,7 +73,7 @@ interface Props {
 }
 
 export default function PanelFrame({
-  streamLines, roomState, expSkills, onSendCommand,
+  streamLines, roomState, expSkills, onSendCommand, autoLinkUrls = true,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
@@ -153,7 +154,7 @@ export default function PanelFrame({
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
-          streamTimestamps, onToggleTimestamp,
+          streamTimestamps, onToggleTimestamp, autoLinkUrls,
         )}
       </div>
 
@@ -265,11 +266,12 @@ function renderPanel(
   injuryState: InjuryState = {},
   streamTimestamps: Record<string, boolean> = {},
   onToggleTimestamp?: (streamId: string) => void,
+  autoLinkUrls = true,
 ) {
   const clr = (id: string) => () => onClearStream(id)
   const sp = (id: string, lines: TextLine[]) => (
     <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger}
-      onSendCommand={onSendCommand} showTimestamp={!!streamTimestamps[id]}
+      onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} showTimestamp={!!streamTimestamps[id]}
       onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(id) : undefined} />
   )
   switch (tab.type) {
@@ -287,7 +289,7 @@ function renderPanel(
     case 'log':           return sp('log',           streamLines.log           ?? [])
     case 'custom':        return (
       <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
-        onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand}
+        onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls}
         showTimestamp={!!streamTimestamps[tab.id]}
         onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(tab.id) : undefined}
         emptyMessage={`Waiting for content on stream "${tab.id}"…`} />

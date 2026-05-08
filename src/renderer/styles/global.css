@@ -21,10 +21,28 @@ body {
   line-height: 1.5;
 }
 
-::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar { width: 12px; }
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+::-webkit-scrollbar-button:vertical:decrement,
+::-webkit-scrollbar-button:vertical:increment {
+  display: block;
+  height: 14px;
+  background-color: var(--scrollbar-track);
+  background-repeat: no-repeat;
+  background-position: center;
+}
+::-webkit-scrollbar-button:vertical:decrement {
+  background-image: url("data:image/svg+xml;charset=utf-8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='14'><polygon points='6,4 11,10 1,10' fill='%23888'/></svg>");
+}
+::-webkit-scrollbar-button:vertical:increment {
+  background-image: url("data:image/svg+xml;charset=utf-8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='14'><polygon points='6,10 11,4 1,4' fill='%23888'/></svg>");
+}
+::-webkit-scrollbar-button:vertical:decrement:hover,
+::-webkit-scrollbar-button:vertical:increment:hover {
+  background-color: var(--scrollbar-thumb);
+}
 
 ::selection {
   background: color-mix(in srgb, var(--accent) 38%, transparent);

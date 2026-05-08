@@ -160,6 +160,13 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
           />
 
           <Toggle
+            label="Auto-link URLs"
+            description="Detect http/https URLs in game text and make them clickable"
+            checked={settings.autoLinkUrls}
+            onChange={v => set('autoLinkUrls', v)}
+          />
+
+          <Toggle
             label="Epilepsy Safe Mode"
             description="Disables all pulsing animations (RT bar, status indicators)"
             checked={settings.epilepsySafe}

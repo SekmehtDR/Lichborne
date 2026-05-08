@@ -75,6 +75,16 @@
   color: var(--color-danger);
 }
 
+.btn-disconnect--login {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.btn-disconnect--login:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  opacity: 0.85;
+}
+
 /* ── Context menu ────────────────────────────────────────────────── */
 
 .ctx-menu {

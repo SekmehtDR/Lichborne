@@ -29,6 +29,11 @@ function parseExp(text: string): ParsedExp {
   for (let i = MINDSTATES.length - 1; i >= 0; i--) {
     if (lower.includes(MINDSTATES[i])) { mindstateIdx = i; break }
   }
+  // ExpBrief mode omits mindstate names and uses [x/34] bracket notation instead
+  if (mindstateIdx === 0) {
+    const bm = text.match(/[\[(]\s*(\d+)\/34[\])]/)
+    if (bm) mindstateIdx = Math.min(34, parseInt(bm[1], 10))
+  }
   return { rank, pctStr, mindstateIdx }
 }
 
