@@ -15,6 +15,9 @@
     "appId": "com.lichborne.app",
     "productName": "Lichborne",
     "files": ["dist/**/*"],
+    "extraResources": [
+      { "from": "build/app-update.yml", "to": "app-update.yml" }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
