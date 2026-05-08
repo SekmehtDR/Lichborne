@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
 import * as path from 'path'
+import * as fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
@@ -88,6 +89,53 @@ ipcMain.on(CH.SEND_COMMAND, (_event, command: string) => {
 ipcMain.handle('browse-file', async (_event, filters: { name: string; extensions: string[] }[]) => {
   const result = await dialog.showOpenDialog({ properties: ['openFile'], filters })
   return result.canceled ? null : result.filePaths[0] ?? null
+})
+
+ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich: string) => {
+  const result = {
+    rubyPath:         null as string | null,
+    lichPath:         null as string | null,
+    rubyAlreadyValid: false,
+    lichAlreadyValid: false,
+    baseFolderExists: false,
+    isWindows:        process.platform === 'win32',
+  }
+
+  if (!result.isWindows) return result
+
+  const base = 'C:\\Ruby4Lich5'
+  result.baseFolderExists   = fs.existsSync(base)
+  result.rubyAlreadyValid   = fs.existsSync(currentRuby)
+  result.lichAlreadyValid   = fs.existsSync(currentLich)
+
+  if (!result.baseFolderExists) return result
+
+  if (!result.rubyAlreadyValid) {
+    try {
+      const versionDirs = fs.readdirSync(base, { withFileTypes: true })
+        .filter(e => e.isDirectory() && /^\d+\.\d+\.\d+$/.test(e.name))
+        .map(e => e.name)
+        .sort((a, b) => {
+          const pa = a.split('.').map(Number)
+          const pb = b.split('.').map(Number)
+          for (let i = 0; i < 3; i++) {
+            if (pa[i] !== pb[i]) return pb[i] - pa[i]
+          }
+          return 0
+        })
+      for (const v of versionDirs) {
+        const candidate = path.join(base, v, 'bin', 'ruby.exe')
+        if (fs.existsSync(candidate)) { result.rubyPath = candidate; break }
+      }
+    } catch {}
+  }
+
+  if (!result.lichAlreadyValid) {
+    const candidate = path.join(base, 'Lich5', 'lich.rbw')
+    if (fs.existsSync(candidate)) result.lichPath = candidate
+  }
+
+  return result
 })
 
 ipcMain.on('download-update', () => autoUpdater.downloadUpdate())

@@ -64,7 +64,21 @@ export default function LoginScreen({ onConnected }: Props) {
   const [connecting, setConnecting] = useState(false)
   const statusLogRef = useRef<HTMLDivElement>(null)
 
+  type DiscoveryResult = Awaited<ReturnType<typeof window.api.discoverLichPaths>> | null
+  const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
+
   useEffect(() => { saveAdvanced(adv) }, [adv])
+
+  async function runDiscovery() {
+    const found = await window.api.discoverLichPaths(rubyPath, lichPath)
+    setDiscoveryResult(found)
+    if (found.rubyPath) setAdv1('rubyPath', found.rubyPath)
+    if (found.lichPath) setAdv1('lichPath', found.lichPath)
+  }
+
+  useEffect(() => {
+    if (!showAdvanced) setDiscoveryResult(null)
+  }, [showAdvanced])
 
   useEffect(() => {
     const el = statusLogRef.current
@@ -190,8 +204,58 @@ export default function LoginScreen({ onConnected }: Props) {
 
           {showAdvanced && (
             <div className="advanced-panel">
-              {useLich && (
-                <>
+              {!useLich && (
+                <p className="advanced-direct-note">No advanced settings for connecting directly.</p>
+              )}
+              {useLich && (() => {
+                  const dr = discoveryResult?.isWindows ? discoveryResult : null
+                  const rubyOk = dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
+                  const lichOk  = dr ? (dr.lichAlreadyValid  || dr.lichPath  !== null) : null
+
+                  let statusEl: React.ReactNode = null
+                  if (dr) {
+                    const rubyNew = dr.rubyPath !== null
+                    const lichNew = dr.lichPath !== null
+                    let type: 'ok' | 'warn' | 'error'
+                    let msg: string
+                    if (!dr.baseFolderExists) {
+                      type = 'error'
+                      msg = 'No C:\\Ruby4Lich5 folder found — please browse to your Ruby and Lich5 file locations manually.'
+                    } else if (rubyOk && lichOk) {
+                      if (rubyNew || lichNew) {
+                        const found = [rubyNew && 'Ruby', lichNew && 'Lich5'].filter(Boolean).join(' and ')
+                        type = 'ok'
+                        msg = `${found} path${rubyNew && lichNew ? 's' : ''} auto-discovered — verify before connecting.`
+                      } else {
+                        type = 'ok'
+                        msg = 'Both paths verified successfully.'
+                      }
+                    } else if (!rubyOk && !lichOk) {
+                      type = 'warn'
+                      msg = 'Ruby and Lich5 files not found in C:\\Ruby4Lich5 — ensure Lich5 is properly installed, or browse to the correct file locations.'
+                    } else if (!rubyOk) {
+                      type = 'warn'
+                      msg = 'Ruby (ruby.exe) not found — ensure Ruby for Lich5 is installed, or browse to the correct location.'
+                    } else {
+                      type = 'warn'
+                      msg = 'Lich5 (lich.rbw) not found — ensure Lich5 is installed at C:\\Ruby4Lich5\\Lich5\\, or browse to the file manually.'
+                    }
+                    statusEl = (
+                      <div className={`lich-discovery-status lich-discovery-status--${type}`}>
+                        <span className="lich-discovery-icon">{type === 'ok' ? '✓' : type === 'warn' ? '⚠' : '✕'}</span>
+                        <span>{msg}</span>
+                      </div>
+                    )
+                  }
+
+                  return (
+                  <>
+                  <div className="lich-detect-row">
+                    <button type="button" className="btn-auto-detect" onClick={runDiscovery}>
+                      ↺ Auto Detect
+                    </button>
+                  </div>
+                  {statusEl}
                   <label>
                     Ruby Path (ruby.exe)
                     <div className="path-input-row">
@@ -210,6 +274,8 @@ export default function LoginScreen({ onConnected }: Props) {
                           if (p) setAdv1('rubyPath', p)
                         }}
                       >Browse</button>
+                      {rubyOk === true  && <span className="path-status-icon path-status-icon--valid">✓</span>}
+                      {rubyOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
                     </div>
                   </label>
                   <label>
@@ -230,6 +296,8 @@ export default function LoginScreen({ onConnected }: Props) {
                           if (p) setAdv1('lichPath', p)
                         }}
                       >Browse</button>
+                      {lichOk === true  && <span className="path-status-icon path-status-icon--valid">✓</span>}
+                      {lichOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
                     </div>
                   </label>
                   <div className="advanced-row">
@@ -309,8 +377,9 @@ export default function LoginScreen({ onConnected }: Props) {
                     />
                     Hide Lich window (run as background process)
                   </label>
-                </>
-              )}
+                  </>
+                  )
+                })()}
             </div>
           )}
 

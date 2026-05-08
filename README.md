@@ -117,7 +117,12 @@ $env:GH_TOKEN = "your_token_here"
 node publish.mjs
 ```
 
-This reads `release-notes.md` and uses the electron-builder API to build the app, attach release notes, and upload two files to a GitHub Release draft:
+This script does everything in sequence:
+1. Runs `npm run build` — compiles main + renderer so the version number is baked in
+2. Packages and uploads to a GitHub Release draft via electron-builder
+3. Patches the release body with your `release-notes.md` via the GitHub API
+
+Two files are uploaded per release:
 - `Lichborne X.Y.Z.exe` — the portable executable
 - `latest.yml` — version metadata used by the auto-updater
 
@@ -133,7 +138,7 @@ Once published, any running client will show an update banner within 3 seconds o
 npm run dist
 ```
 
-> `publish.mjs` uses the electron-builder programmatic API to inject `release-notes.md` content directly — this is more reliable than the `releaseNotesFile` config option, which has inconsistent support across versions.
+> `publish.mjs` runs `npm run build` first so the version number is always baked into the exe, then uses the electron-builder programmatic API + GitHub REST API to package, upload, and attach release notes in one step.
 
 Output goes to `release/` (gitignored).
 

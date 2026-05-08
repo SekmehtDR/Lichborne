@@ -2118,12 +2118,15 @@ $env:GH_TOKEN = "your_token"
 node publish.mjs
 ```
 
+`publish.mjs` does three things in sequence:
+1. `npm run build` — compiles main + renderer; bakes `__APP_VERSION__` from `package.json` into the renderer
+2. electron-builder — packages the `dist/` output and uploads exe + `latest.yml` to a GitHub Release draft
+3. GitHub REST API PATCH — sets the release body from `release-notes.md`
+
 Local-only build (no publish):
 ```powershell
 npm run dist
 ```
-
-`publish.mjs` uses the electron-builder programmatic API to read `release-notes.md` and pass the content directly as `releaseNotes` — more reliable than `releaseNotesFile` config which has inconsistent electron-builder support.
 
 Output: `release/Lichborne X.Y.Z.exe`
 
@@ -2144,15 +2147,18 @@ Defined in `package.json` under the `"build"` key:
 
 ### 18.3 Releasing a New Version
 
-1. Bump `"version"` in `package.json` (e.g. `0.1.0` → `0.2.0`)
-2. Update `release-notes.md` with what's new in this version
-3. Set `GH_TOKEN` env var (fine-grained PAT with Contents: read+write on the Lichborne repo)
-4. Run `node publish.mjs`
-5. Go to **github.com/SekmehtDR/Lichborne → Releases** → find the draft → click **Publish release**
+1. Bump `"version"` in `package.json`
+2. Update `release-notes.md` with what's new
+3. Commit both files
+4. Set `GH_TOKEN` env var (fine-grained PAT with Contents: read+write on the Lichborne repo)
+5. Run `node publish.mjs` — builds, packages, uploads, and patches release notes automatically
+6. Go to **github.com/SekmehtDR/Lichborne → Releases** → find the draft → click **Publish release**
 
-electron-builder uploads two files per release:
+`publish.mjs` uploads two files per release:
 - `Lichborne X.Y.Z.exe` — the portable executable
 - `latest.yml` — version metadata consumed by `electron-updater`
+
+**Important:** `publish.mjs` runs `npm run build` internally. Never run electron-builder directly for a release — the version baked into the exe will be wrong if the renderer wasn't rebuilt after bumping `package.json`.
 
 ### 18.4 Auto-Update Flow
 

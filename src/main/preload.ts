@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('api', {
   browseFile: (filters: { name: string; extensions: string[] }[]) =>
     ipcRenderer.invoke('browse-file', filters),
 
+  discoverLichPaths: (currentRuby: string, currentLich: string): Promise<{
+    rubyPath: string | null; lichPath: string | null
+    rubyAlreadyValid: boolean; lichAlreadyValid: boolean
+    baseFolderExists: boolean; isWindows: boolean
+  }> => ipcRenderer.invoke('discover-lich-paths', currentRuby, currentLich),
+
   onUpdateAvailable: (cb: (version: string) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, version: string) => cb(version)
     ipcRenderer.on('update-available', listener)

@@ -1,5 +1,6 @@
 import { build } from 'electron-builder'
 import { readFileSync } from 'fs'
+import { execSync } from 'child_process'
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf-8'))
 const version = pkg.version
@@ -14,8 +15,12 @@ if (!token) {
   process.exit(1)
 }
 
-// Step 1: build and publish via electron-builder (creates draft, uploads exe + latest.yml)
-console.log(`Building and publishing ${tag}...`)
+// Step 1: compile main + renderer so __APP_VERSION__ and app.getVersion() reflect the new version
+console.log('Building main and renderer...')
+execSync('npm run build', { stdio: 'inherit' })
+
+// Step 2: package and publish via electron-builder (creates draft, uploads exe + latest.yml)
+console.log(`Packaging and publishing ${tag}...`)
 await build({
   publish: 'always',
   config: {
@@ -26,7 +31,7 @@ await build({
   },
 })
 
-// Step 2: find the draft release electron-builder just created and set the release body
+// Step 3: find the draft release electron-builder just created and set the release body
 console.log('Patching release notes...')
 const listRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
   headers: { Authorization: `token ${token}`, 'User-Agent': 'publish.mjs' },

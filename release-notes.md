@@ -1,17 +1,18 @@
-## What's new in v0.1.2
+## What's new in v0.1.3
 
-- Fixed auto-update: `latest.yml` is now correctly included in releases so the client can detect future updates
-- Release notes now appear on GitHub releases
+- **Login screen stability** — the login card no longer resizes while connection log messages scroll in
+- **Lich path auto-detection** — click **↺ Auto Detect** in Advanced / Lich Settings to automatically locate Ruby and Lich5 on Windows; shows ✓ or ✕ per path with a status message indicating what was found or what's missing
+- **Direct connection clarity** — Advanced / Lich Settings now shows a message when "Connect via Lich" is unchecked instead of an empty panel
 
 ## How to install
 
-1. Download `Lichborne-0.1.2.exe` below
+1. Download `Lichborne-0.1.3.exe` below
 2. Run it directly — no installation needed
 3. On first launch Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
 ## Connecting
 
-- **Lich (recommended):** set your Ruby and Lich paths in Advanced Settings
+- **Lich (recommended):** set your Ruby and Lich paths in Advanced Settings, then click ↺ Auto Detect to find them automatically
 - **Direct:** uncheck "Connect via Lich"
 
 ## What's in this release
@@ -31,4 +32,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.1...v0.1.2
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.2...v0.1.3

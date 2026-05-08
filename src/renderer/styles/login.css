@@ -9,6 +9,7 @@
 
 .login-card {
   width: 460px;
+  min-height: 460px;
   max-height: 92vh;
   overflow-y: auto;
   background: #1c1c24;
@@ -16,6 +17,7 @@
   border-radius: 8px;
   padding: 24px 28px;
   box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  box-sizing: border-box;
 }
 
 .login-logo {
@@ -123,6 +125,74 @@
   gap: 8px;
 }
 
+.advanced-direct-note {
+  color: #666;
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 4px 0;
+}
+
+.lich-detect-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-auto-detect {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  height: 22px;
+  background: #1a1a26;
+  border: 1px solid #3a3a4a;
+  border-radius: 11px;
+  color: #777;
+  font-size: 0.7rem;
+  font-family: inherit;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.btn-auto-detect:hover {
+  border-color: #8b6914;
+  color: #c9a850;
+}
+
+.lich-discovery-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.lich-discovery-icon {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  margin-top: 1px;
+}
+
+.lich-discovery-status--ok {
+  background: #0c1f0c;
+  border: 1px solid #1d3d1d;
+  color: #72b872;
+}
+
+.lich-discovery-status--warn {
+  background: #1e1800;
+  border: 1px solid #3d3000;
+  color: #c0962a;
+}
+
+.lich-discovery-status--error {
+  background: #1e1010;
+  border: 1px solid #3d1c1c;
+  color: #b06060;
+}
+
 .advanced-row {
   display: grid;
   grid-template-columns: 72px 108px 1fr;
@@ -204,6 +274,17 @@
   flex: 1;
   min-width: 0;
 }
+
+.path-status-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  width: 16px;
+}
+
+.path-status-icon--valid  { color: #5a9e5a; }
+.path-status-icon--invalid { color: #9e4a4a; }
 
 .btn-browse {
   flex-shrink: 0;
@@ -325,8 +406,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 14px;
-  padding: 20px 0;
+  min-height: 300px;
   color: #888;
 }
 
