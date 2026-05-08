@@ -20,7 +20,8 @@
       "output": "release"
     },
     "win": {
-      "target": [{ "target": "portable", "arch": ["x64"] }]
+      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}.exe"
     },
     "portable": {
       "requestExecutionLevel": "user"

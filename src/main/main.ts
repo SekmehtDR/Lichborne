@@ -156,7 +156,15 @@ function setupAutoUpdater() {
   autoUpdater.on('update-downloaded', () => {
     mainWindow?.webContents.send('update-downloaded')
   })
-  // Silently check 3s after launch so startup isn't blocked
+  autoUpdater.on('error', (err) => {
+    console.error('[auto-updater] error:', err?.message ?? err)
+  })
+  autoUpdater.on('update-not-available', () => {
+    console.log('[auto-updater] no update available')
+  })
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[auto-updater] checking...')
+  })
   setTimeout(() => autoUpdater.checkForUpdates(), 3000)
 }
 
