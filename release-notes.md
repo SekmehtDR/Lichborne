@@ -5,9 +5,9 @@
 
 ## How to install
 
-1. Download `Lichborne-0.1.6.exe` below
-2. Run it directly — no installation needed
-3. On first launch Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
+1. Download `Lichborne-0.1.6-setup.exe` below
+2. Run the installer — installs to your user profile, no admin rights needed
+3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
 ## Connecting
 
@@ -26,8 +26,8 @@
 ## Known limitations
 
 - Windows only (x64)
-- No code signing — SmartScreen warning on first launch is expected
-- Multiple characters require launching the exe multiple times
+- No code signing — SmartScreen warning on first install is expected
+- Multiple characters require launching the app multiple times
 
 ## Full Changelog
 

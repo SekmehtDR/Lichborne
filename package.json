@@ -9,25 +9,27 @@
     "build:main": "node build-main.mjs",
     "build:renderer": "vite build",
     "start": "npm run build:main && npm run build:renderer && electron .",
-    "dist": "npm run build && electron-builder --win portable"
+    "dist": "npm run build && electron-builder --win nsis"
   },
   "build": {
     "appId": "com.lichborne.app",
     "productName": "Lichborne",
     "files": ["dist/**/*"],
-    "extraResources": [
-      { "from": "build/app-update.yml", "to": "app-update.yml" }
-    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
     },
     "win": {
-      "target": [{ "target": "portable", "arch": ["x64"] }],
-      "artifactName": "${productName}-${version}.exe"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "artifactName": "${productName}-${version}-setup.exe"
     },
-    "portable": {
-      "requestExecutionLevel": "user"
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
     },
     "publish": {
       "provider": "github",
