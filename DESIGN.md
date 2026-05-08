@@ -2118,11 +2118,12 @@ $env:GH_TOKEN = "your_token"
 node publish.mjs
 ```
 
-`publish.mjs` does four things in sequence:
-1. `npm run build` — compiles main + renderer; bakes `__APP_VERSION__` from `package.json` into the renderer
-2. electron-builder — packages the `dist/` output and uploads the exe to a GitHub Release draft
-3. GitHub REST API upload — generates `latest.yml` from the exe's SHA-512 hash and uploads it as a release asset (electron-builder does not produce this for portable builds)
-4. GitHub REST API PATCH — sets the release body from `release-notes.md`
+`publish.mjs` does five things in sequence:
+1. **Clean `release/`** — deletes all `.exe` and `.yml` files so stale files from prior runs can't corrupt the `latest.yml` filename lookup
+2. `npm run build` — compiles main + renderer; bakes `__APP_VERSION__` from `package.json` into the renderer
+3. electron-builder — packages the `dist/` output and uploads the exe to a GitHub Release draft
+4. GitHub REST API upload — generates `latest.yml` from the exe's SHA-512 hash and uploads it as a release asset (electron-builder does not produce this for portable builds)
+5. GitHub REST API PATCH — sets the release body from `release-notes.md`
 
 Local-only build (no publish):
 ```powershell
@@ -2171,14 +2172,22 @@ Powered by `electron-updater`. Only runs when the app is packaged (`app.isPackag
 
 | State | Banner | Action |
 |---|---|---|
-| `idle` | Hidden | — |
+| `idle` | Hidden — Check for Updates button shown on login screen | — |
 | `available` | "Update vX.Y.Z available" | Download button → triggers `autoUpdater.downloadUpdate()` |
 | `downloading` | "Downloading update…" | No action (wait) |
 | `ready` | "Update ready to install" | Restart & Install → `autoUpdater.quitAndInstall()` |
 
 The banner is rendered at the `App` level (above both login and game screens) so it's visible regardless of connection state. It uses a green-tinted dark palette that reads clearly across all themes without importing theme CSS vars.
 
+**Dismissable:** The banner has a ✕ button so players can dismiss and install at their own pace after safely logging out. The dismissed state resets if a new update event fires.
+
+**Check for Updates button:** Shown only on the login screen (not in-game) in a thin bar at the top right. Subtle muted style. Shows "Checking…" while in flight, then "You're up to date" if no update is found. Disappears when the update banner takes over.
+
 **`autoDownload: false`** — the user always initiates the download. The app never downloads without consent.
+
+**`app-update.yml`** — must be bundled manually via `extraResources` in `package.json`. electron-builder does not generate it for portable builds; without it `electron-updater` cannot find its GitHub config and fails silently.
+
+**Diagnostics:** `updater-log` IPC channel forwards checking/error/no-update events to the renderer console. Open DevTools → Console to see `[auto-updater]` messages ~3 seconds after launch.
 
 ### 18.5 Version Display
 

@@ -65,7 +65,7 @@ export default function App() {
             <button className="update-dismiss" onClick={() => setUpdateDismissed(true)} title="Dismiss">✕</button>
           </div>
         )}
-        {(updateState === 'idle' || updateDismissed) && (
+        {screen === 'login' && (updateState === 'idle' || updateDismissed) && (
           <div className="update-check-bar">
             {upToDate && <span className="update-up-to-date">You're up to date</span>}
             <button className="update-btn-check" onClick={handleCheckForUpdates} disabled={checking}>
