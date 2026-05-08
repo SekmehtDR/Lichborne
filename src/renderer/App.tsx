@@ -27,10 +27,12 @@ export default function App() {
     window.api.downloadUpdate()
   }
 
+  const [updateDismissed, setUpdateDismissed] = useState(false)
+
   return (
     <GroupsProvider>
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {updateState !== 'idle' && (
+        {updateState !== 'idle' && !updateDismissed && (
           <div className="update-banner">
             {updateState === 'available' && (
               <>
@@ -47,6 +49,7 @@ export default function App() {
                 <button className="update-btn update-btn--install" onClick={() => window.api.installUpdate()}>Restart &amp; Install</button>
               </>
             )}
+            <button className="update-dismiss" onClick={() => setUpdateDismissed(true)} title="Dismiss">✕</button>
           </div>
         )}
         <div style={{ flex: 1, overflow: 'hidden' }}>

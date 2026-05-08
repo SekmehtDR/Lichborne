@@ -1,12 +1,10 @@
-## What's new in v0.1.3
+## What's new in v0.1.4
 
-- **Login screen stability** — the login card no longer resizes while connection log messages scroll in
-- **Lich path auto-detection** — click **↺ Auto Detect** in Advanced / Lich Settings to automatically locate Ruby and Lich5 on Windows; shows ✓ or ✕ per path with a status message indicating what was found or what's missing
-- **Direct connection clarity** — Advanced / Lich Settings now shows a message when "Connect via Lich" is unchecked instead of an empty panel
+- **Dismissable update banner** — when a new version is available, you can now close the update notification with ✕ and install at your own pace after safely logging out your character
 
 ## How to install
 
-1. Download `Lichborne-0.1.3.exe` below
+1. Download `Lichborne-0.1.4.exe` below
 2. Run it directly — no installation needed
 3. On first launch Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -32,4 +30,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.2...v0.1.3
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.3...v0.1.4

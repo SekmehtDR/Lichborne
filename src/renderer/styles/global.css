@@ -62,3 +62,17 @@ body {
 }
 
 .update-btn--install:hover { background: #1f4a1f; }
+
+.update-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #7dbb7d;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  opacity: 0.6;
+  line-height: 1;
+}
+
+.update-dismiss:hover { opacity: 1; }
