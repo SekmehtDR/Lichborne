@@ -12,6 +12,7 @@ export default function App() {
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateDismissed, setUpdateDismissed] = useState(false)
   const [checking, setChecking] = useState(false)
+  const [upToDate, setUpToDate] = useState(false)
 
   useEffect(() => {
     const unsubAvailable = window.api.onUpdateAvailable((version) => {
@@ -26,6 +27,7 @@ export default function App() {
     const unsubLog = window.api.onUpdaterLog((msg) => {
       console.log('[auto-updater]', msg)
       setChecking(false)
+      if (msg === 'No update available') setUpToDate(true)
     })
     return () => { unsubAvailable(); unsubDownloaded(); unsubLog() }
   }, [])
@@ -37,6 +39,7 @@ export default function App() {
 
   function handleCheckForUpdates() {
     setChecking(true)
+    setUpToDate(false)
     setUpdateDismissed(false)
     window.api.checkForUpdates()
   }
@@ -64,6 +67,7 @@ export default function App() {
         )}
         {(updateState === 'idle' || updateDismissed) && (
           <div className="update-check-bar">
+            {upToDate && <span className="update-up-to-date">You're up to date</span>}
             <button className="update-btn-check" onClick={handleCheckForUpdates} disabled={checking}>
               {checking ? 'Checking…' : 'Check for Updates'}
             </button>

@@ -98,3 +98,9 @@ body {
 
 .update-btn-check:hover:not(:disabled) { color: #7dbb7d; }
 .update-btn-check:disabled { opacity: 0.4; cursor: default; }
+
+.update-up-to-date {
+  color: #555;
+  font-size: 0.72rem;
+  margin-right: 8px;
+}
