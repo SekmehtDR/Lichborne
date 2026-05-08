@@ -20,6 +20,8 @@ declare global {
       onUpdateDownloaded: (cb: () => void) => () => void
       downloadUpdate: () => void
       installUpdate: () => void
+      checkForUpdates: () => void
+      onUpdaterLog: (cb: (msg: string) => void) => () => void
     }
   }
 }

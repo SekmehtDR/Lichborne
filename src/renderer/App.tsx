@@ -10,16 +10,24 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
+  const [updateDismissed, setUpdateDismissed] = useState(false)
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => {
     const unsubAvailable = window.api.onUpdateAvailable((version) => {
       setUpdateVersion(version)
       setUpdateState('available')
+      setUpdateDismissed(false)
     })
     const unsubDownloaded = window.api.onUpdateDownloaded(() => {
       setUpdateState('ready')
+      setUpdateDismissed(false)
     })
-    return () => { unsubAvailable(); unsubDownloaded() }
+    const unsubLog = window.api.onUpdaterLog((msg) => {
+      console.log('[auto-updater]', msg)
+      setChecking(false)
+    })
+    return () => { unsubAvailable(); unsubDownloaded(); unsubLog() }
   }, [])
 
   function handleDownload() {
@@ -27,12 +35,16 @@ export default function App() {
     window.api.downloadUpdate()
   }
 
-  const [updateDismissed, setUpdateDismissed] = useState(false)
+  function handleCheckForUpdates() {
+    setChecking(true)
+    setUpdateDismissed(false)
+    window.api.checkForUpdates()
+  }
 
   return (
     <GroupsProvider>
       <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {updateState !== 'idle' && !updateDismissed && (
+        {(updateState !== 'idle' && !updateDismissed) && (
           <div className="update-banner">
             {updateState === 'available' && (
               <>
@@ -40,9 +52,7 @@ export default function App() {
                 <button className="update-btn" onClick={handleDownload}>Download</button>
               </>
             )}
-            {updateState === 'downloading' && (
-              <span>Downloading update…</span>
-            )}
+            {updateState === 'downloading' && <span>Downloading update…</span>}
             {updateState === 'ready' && (
               <>
                 <span>Update ready to install</span>
@@ -50,6 +60,13 @@ export default function App() {
               </>
             )}
             <button className="update-dismiss" onClick={() => setUpdateDismissed(true)} title="Dismiss">✕</button>
+          </div>
+        )}
+        {(updateState === 'idle' || updateDismissed) && (
+          <div className="update-check-bar">
+            <button className="update-btn-check" onClick={handleCheckForUpdates} disabled={checking}>
+              {checking ? 'Checking…' : 'Check for Updates'}
+            </button>
           </div>
         )}
         <div style={{ flex: 1, overflow: 'hidden' }}>

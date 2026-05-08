@@ -66,6 +66,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('update-downloaded', listener)
   },
 
-  downloadUpdate: () => ipcRenderer.send('download-update'),
-  installUpdate:  () => ipcRenderer.send('install-update'),
+  downloadUpdate:   () => ipcRenderer.send('download-update'),
+  installUpdate:    () => ipcRenderer.send('install-update'),
+  checkForUpdates:  () => ipcRenderer.send('check-for-updates'),
+
+  onUpdaterLog: (cb: (msg: string) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, msg: string) => cb(msg)
+    ipcRenderer.on('updater-log', listener)
+    return () => ipcRenderer.removeListener('updater-log', listener)
+  },
 })

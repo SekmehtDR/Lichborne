@@ -76,3 +76,25 @@ body {
 }
 
 .update-dismiss:hover { opacity: 1; }
+
+.update-check-bar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 3px 10px;
+  background: #111;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.update-btn-check {
+  background: none;
+  border: none;
+  color: #555;
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 2px 4px;
+}
+
+.update-btn-check:hover:not(:disabled) { color: #7dbb7d; }
+.update-btn-check:disabled { opacity: 0.4; cursor: default; }

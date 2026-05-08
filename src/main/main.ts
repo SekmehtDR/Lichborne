@@ -138,8 +138,9 @@ ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich:
   return result
 })
 
-ipcMain.on('download-update', () => autoUpdater.downloadUpdate())
-ipcMain.on('install-update',  () => autoUpdater.quitAndInstall())
+ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
+ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
+ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())
 
 ipcMain.on(CH.DISCONNECT, () => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnecting...' })
@@ -157,13 +158,15 @@ function setupAutoUpdater() {
     mainWindow?.webContents.send('update-downloaded')
   })
   autoUpdater.on('error', (err) => {
-    console.error('[auto-updater] error:', err?.message ?? err)
+    const msg = err?.message ?? String(err)
+    console.error('[auto-updater] error:', msg)
+    mainWindow?.webContents.send('updater-log', `ERROR: ${msg}`)
   })
   autoUpdater.on('update-not-available', () => {
-    console.log('[auto-updater] no update available')
+    mainWindow?.webContents.send('updater-log', 'No update available')
   })
   autoUpdater.on('checking-for-update', () => {
-    console.log('[auto-updater] checking...')
+    mainWindow?.webContents.send('updater-log', 'Checking for update...')
   })
   setTimeout(() => autoUpdater.checkForUpdates(), 3000)
 }

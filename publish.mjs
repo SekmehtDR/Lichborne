@@ -1,5 +1,5 @@
 import { build } from 'electron-builder'
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'fs'
+import { readFileSync, readdirSync, statSync, writeFileSync, rmSync } from 'fs'
 import { execSync } from 'child_process'
 import { createHash } from 'crypto'
 
@@ -16,7 +16,16 @@ if (!token) {
   process.exit(1)
 }
 
-// Step 1: compile main + renderer so __APP_VERSION__ and app.getVersion() reflect the new version
+// Step 1: clean release/ so no leftover exes or ymls from prior runs get picked up
+console.log('Cleaning release folder...')
+for (const f of readdirSync('release')) {
+  if (f.endsWith('.exe') || f.endsWith('.yml')) {
+    rmSync(`release/${f}`)
+    console.log(`  deleted release/${f}`)
+  }
+}
+
+// Step 2: compile main + renderer so __APP_VERSION__ and app.getVersion() reflect the new version
 console.log('Building main and renderer...')
 execSync('npm run build', { stdio: 'inherit' })
 

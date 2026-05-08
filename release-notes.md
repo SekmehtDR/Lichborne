@@ -1,10 +1,12 @@
-## What's new in v0.1.4
+## What's new in v0.1.5
 
-- **Dismissable update banner** — when a new version is available, you can now close the update notification with ✕ and install at your own pace after safely logging out your character
+- **Check for Updates button** — a subtle button at the top right lets you manually check for updates at any time
+- **Dismissable update banner** — when a new version is available, close the notification with ✕ and install at your own pace after safely logging out your character
+- **Auto-updater diagnostics** — update check status is now visible in DevTools console for troubleshooting
 
 ## How to install
 
-1. Download `Lichborne-0.1.4.exe` below
+1. Download `Lichborne-0.1.5.exe` below
 2. Run it directly — no installation needed
 3. On first launch Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -30,4 +32,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.3...v0.1.4
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.4...v0.1.5
