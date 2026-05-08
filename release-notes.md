@@ -7,6 +7,7 @@
   - **Inventory spam at login** — the full inventory list no longer appears in the main story window at startup
   - **Mana bar for non-mana users** — Thieves and other NMUs no longer show a mana bar; Barbarians correctly show "Inner Fire"
 - **Account name saved** — your account name is remembered between sessions so you don't have to retype it every launch
+- **Text word-wrap fix** — main story window no longer shows a horizontal scrollbar; text wraps correctly at the window edge
 
 ## How to install
 

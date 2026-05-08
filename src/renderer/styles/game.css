@@ -149,6 +149,7 @@
 .text-window {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   overflow-anchor: none;
   padding: 8px 12px;
   cursor: text;

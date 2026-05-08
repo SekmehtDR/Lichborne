@@ -34,3 +34,4 @@
 | F02 | Script-watch status panel | Binu | Resolved: Binu located the correct Lich script (script-watch) that already provides this functionality |
 | F04 | Flag toggle buttons | Binu | Resolved: `<d cmd="flag X on/off">` links render as clickable and send the command to the game — no additional work needed |
 | F01 | Save login credentials | Legiro | Resolved: account name persists via `localStorage` (`lichborne.account` key); password intentionally blank on every launch |
+| B08 | Horizontal scrollbar appears in main text window; text doesn't word-wrap | — | Fixed: `overflow-y: auto` on `.text-window` implicitly set `overflow-x: auto`; added `overflow-x: hidden` to force word-wrap at window boundary |
