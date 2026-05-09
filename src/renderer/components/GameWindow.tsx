@@ -321,6 +321,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const bottomRef        = useRef<HTMLDivElement>(null)
   const scrollRef        = useRef<HTMLDivElement>(null)
   const pinnedRef        = useRef(true)
+  const newLineCountRef  = useRef(0)
   const inputRef         = useRef<HTMLInputElement>(null)
   const panelColumnRef   = useRef<HTMLDivElement>(null)
   const panelWidthRef    = useRef(panelWidth)
@@ -352,7 +353,8 @@ export default function GameWindow({ onDisconnect }: Props) {
       const anchor = sel.anchorNode
       const el = anchor instanceof Element ? anchor : anchor?.parentElement
       if (el?.closest('input, textarea')) return
-      navigator.clipboard.writeText(text).catch(() => {})
+      window.api.writeClipboard(text)
+      sel.removeAllRanges()
     }
     document.addEventListener('mouseup', onMouseUp)
     return () => document.removeEventListener('mouseup', onMouseUp)
@@ -563,10 +565,28 @@ export default function GameWindow({ onDisconnect }: Props) {
       }
 
       if (newMain.length > 0) {
-        const el = scrollRef.current
-        if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
-        if (!pinnedRef.current) setNewLineCount(prev => prev + newMain.length)
+        // Stale-true guard (B16): re-check DOM position when already pinned.
+        if (pinnedRef.current) {
+          const el = scrollRef.current
+          if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+        }
+        if (pinnedRef.current) {
+          // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
+          setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+        } else {
+          // Unpinned: append without trimming so content at the top stays visible.
+          newLineCountRef.current += newMain.length
+          if (newLineCountRef.current >= MAX_LINES * 3) {
+            // Hard cap: buffer is very large; resume auto-scroll and trim.
+            pinnedRef.current = true
+            newLineCountRef.current = 0
+            setNewLineCount(0)
+            setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+          } else {
+            setNewLineCount(newLineCountRef.current)
+            setLines(prev => [...prev, ...newMain])
+          }
+        }
       }
 
       if (Object.keys(newStream).length > 0 || clearedStreams.size > 0) {
@@ -640,7 +660,9 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   function scrollToBottom() {
     pinnedRef.current = true
+    newLineCountRef.current = 0
     setNewLineCount(0)
+    setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
     bottomRef.current?.scrollIntoView({ behavior: 'auto' })
     inputRef.current?.focus()
   }
@@ -648,9 +670,11 @@ export default function GameWindow({ onDisconnect }: Props) {
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-    if (atBottom && !pinnedRef.current) setNewLineCount(0)
-    pinnedRef.current = atBottom
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    // Only un-pin here. Re-pinning is exclusively via scrollToBottom() (badge click
+    // or End key). This prevents Chromium's CSS Scroll Anchoring from firing a
+    // scroll event after MAX_LINES trim and accidentally re-pinning the view.
+    if (dist > 40) pinnedRef.current = false
   }
 
   useLayoutEffect(() => {
@@ -659,11 +683,13 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (document.activeElement !== inputRef.current) {
+      const active = document.activeElement
+      const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
+      if (active !== inputRef.current && !inTextField) {
         const el = scrollRef.current
         if (e.key === 'End')     { e.preventDefault(); scrollToBottom() }
-        if (e.key === 'Home')    { e.preventDefault(); if (el) el.scrollTop = 0 }
-        if (e.key === 'PageUp')  { e.preventDefault(); if (el) el.scrollTop -= el.clientHeight }
+        if (e.key === 'Home')    { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop = 0 }
+        if (e.key === 'PageUp')  { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop -= el.clientHeight }
         if (e.key === 'PageDown'){ e.preventDefault(); if (el) el.scrollTop += el.clientHeight }
       }
       // Global macro key bindings — suppressed when any modal is open
@@ -976,6 +1002,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <div className="text-window-wrap">
           <div className="text-area">
             <div className="text-window" ref={scrollRef} onScroll={handleScroll}
+              onWheel={e => { if (e.deltaY < 0) pinnedRef.current = false }}
               onClick={() => inputRef.current?.focus()}
               onContextMenu={e => {
                 e.preventDefault()
@@ -999,7 +1026,10 @@ export default function GameWindow({ onDisconnect }: Props) {
               <div ref={bottomRef} />
             </div>
             {newLineCount > 0 && (
-              <div className="scroll-anchor-badge" onClick={scrollToBottom}>
+              <div
+                className={`scroll-anchor-badge${newLineCount > 3500 ? ' scroll-anchor-badge--danger' : newLineCount > MAX_LINES / 2 ? ' scroll-anchor-badge--warn' : ''}`}
+                onClick={scrollToBottom}
+              >
                 ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
               </div>
             )}

@@ -77,4 +77,5 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
+  writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 })

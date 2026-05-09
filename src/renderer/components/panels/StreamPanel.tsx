@@ -34,15 +34,19 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
 
   const hasExtras = nameRegex || matchRules.length > 0
 
-  // Snapshot scroll position during render (before commit) so the layout effect
-  // sees the pre-update pinned state even if the scroll event hasn't fired yet.
-  const scrollEl = scrollRef.current
-  if (scrollEl) pinnedRef.current = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40
+  // Re-check DOM position only when already pinned — catches stale-true from the
+  // B16 race. When already unpinned, trust it: DOM reads are unreliable while
+  // the MAX_STREAM_LINES trim is removing nodes and scroll anchoring hasn't settled.
+  if (pinnedRef.current) {
+    const scrollEl = scrollRef.current
+    if (scrollEl) pinnedRef.current = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40
+  }
 
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (dist > 40) pinnedRef.current = false
   }
 
   function getWordAtPoint(x: number, y: number): string | null {

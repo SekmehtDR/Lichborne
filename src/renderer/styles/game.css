@@ -185,6 +185,28 @@
   color: #e8c850;
 }
 
+.scroll-anchor-badge--warn {
+  border-color: #c0622a;
+  color: #e07840;
+}
+
+.scroll-anchor-badge--warn:hover {
+  background: rgba(40, 18, 8, 0.97);
+  border-color: #e07840;
+  color: #e89060;
+}
+
+.scroll-anchor-badge--danger {
+  border-color: #a02020;
+  color: #e04040;
+}
+
+.scroll-anchor-badge--danger:hover {
+  background: rgba(40, 8, 8, 0.97);
+  border-color: #e04040;
+  color: #f06060;
+}
+
 .panel-divider {
   width: 4px;
   flex-shrink: 0;

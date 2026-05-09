@@ -1,12 +1,13 @@
-## What's new in v0.1.9
+## What's new in v0.1.10
 
-- **Font size & line height apply everywhere** — the font size and line height sliders in Settings now scale all game content: main window, stream panels, room panel, experience panel, injuries panel, panel tab labels, and the toolbar
-- **System font picker** — font family now shows your full list of installed fonts in a scrollable inline picker with a search filter and a Monospace-only filter; defaults to Consolas 12px Compact
-- **Graceful logout on close** — closing the window (X button, File → Quit, or Window → Close) now sends QUIT to the game server before exiting so your character logs out cleanly instead of timing out
+- **Scroll lock fixed** — scrolling up to read during combat or travel now holds your position reliably, even through thousands of new lines. The window no longer drifts forward while you're reading. New lines append freely while you're scrolled up; clicking the badge or pressing End returns you to the bottom
+- **Scroll badge warning tiers** — the "▼ N new lines" badge turns orange past 1000 new lines and red past 3500 so you can see how much you've missed at a glance
+- **Auto-copy on text selection** — highlighting text and releasing the mouse copies it to the clipboard again (was broken in v0.1.9 due to a permission conflict with the font picker)
+- **Home / End in automation fields** — the Home and End keys now work correctly inside text fields in the Automations panel instead of being intercepted by the scroll handler
 
 ## How to install
 
-1. Download `Lichborne-0.1.9-setup.exe` below
+1. Download `Lichborne-0.1.10-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -32,4 +33,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.8...v0.1.9
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.9...v0.1.10

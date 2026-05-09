@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, clipboard } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { autoUpdater } from 'electron-updater'
@@ -162,6 +162,7 @@ ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich:
   return result
 })
 
+ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
@@ -253,9 +254,7 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'local-fonts')
   })
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    return permission === 'local-fonts'
-  })
+  session.defaultSession.setPermissionCheckHandler(() => true)
   createWindow()
   setupMenu()
   if (app.isPackaged) setupAutoUpdater()

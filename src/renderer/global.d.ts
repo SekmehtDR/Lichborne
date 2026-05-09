@@ -23,6 +23,7 @@ declare global {
       checkForUpdates: () => void
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       openUrl: (url: string) => void
+      writeClipboard: (text: string) => void
     }
   }
 }
