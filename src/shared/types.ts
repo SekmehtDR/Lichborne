@@ -82,6 +82,7 @@ export type GameEvent =
   | InjuryUpdateEvent
   | PlayerInfoEvent
   | LaunchUrlEvent
+  | GameExitEvent
   | UnknownEvent
 
 export interface StreamTextEvent {
@@ -148,6 +149,7 @@ export interface ExpComponentEvent {
   type: 'exp-component'
   skill: string
   text: string
+  rankUp?: boolean  // true when content was wrapped in <b> — server's rank-gain signal
 }
 
 export interface StreamPushEvent {
@@ -199,6 +201,10 @@ export interface PlayerInfoEvent {
 export interface LaunchUrlEvent {
   type: 'launch-url'
   url: string
+}
+
+export interface GameExitEvent {
+  type: 'game-exit'
 }
 
 export interface UnknownEvent {

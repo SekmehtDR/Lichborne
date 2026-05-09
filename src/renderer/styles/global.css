@@ -22,8 +22,8 @@ body {
 }
 
 ::-webkit-scrollbar { width: 12px; }
-::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); cursor: default; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; cursor: default; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 ::-webkit-scrollbar-button:vertical:decrement,
 ::-webkit-scrollbar-button:vertical:increment {

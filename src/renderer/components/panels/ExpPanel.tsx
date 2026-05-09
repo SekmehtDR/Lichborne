@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 interface Props {
   skills: Record<string, string>
+  rankUpSkills?: Set<string>
 }
 
 const MINDSTATES = [
@@ -37,7 +38,7 @@ function parseExp(text: string): ParsedExp {
   return { rank, pctStr, mindstateIdx }
 }
 
-function SkillRow({ skill, text }: { skill: string; text: string }) {
+function SkillRow({ skill, text, rankUp }: { skill: string; text: string; rankUp?: boolean }) {
   const { rank, pctStr, mindstateIdx } = parseExp(text)
   const barPct  = Math.round((mindstateIdx / 34) * 100)
   const locked  = mindstateIdx === 34
@@ -47,9 +48,14 @@ function SkillRow({ skill, text }: { skill: string; text: string }) {
     background: `linear-gradient(90deg, hsl(${hue},65%,25%), hsl(${hue},80%,45%))`,
   }
   const mindstateName = MINDSTATES[mindstateIdx] ?? 'clear'
+  const cls = [
+    'exp-row',
+    locked   ? 'exp-row--locked'  : '',
+    rankUp   ? 'exp-row--rank-up' : '',
+  ].filter(Boolean).join(' ')
 
   return (
-    <div className={`exp-row${locked ? ' exp-row--locked' : ''}`}>
+    <div className={cls}>
       <div className="exp-line">
         <span className="exp-skill">{skill}</span>
         <span className="exp-rank">{rank}</span>
@@ -95,12 +101,14 @@ function ExpFooter({ skills }: { skills: Record<string, string> }) {
   const rexp  = skills['rexp'] ?? ''
   const sleepRaw = (skills['sleep'] ?? '').trim()
   const sleepLevel = !sleepRaw ? 0 : /deep sleep/i.test(sleepRaw) ? 2 : 1
+  const deathsSting = rexp.startsWith("[Because of Death's Sting")
 
-  const rexpStored  = rexp.match(/Stored:\s*([\d:]+)\s*hour/i)?.[1]
-  const rexpUsable  = rexp.match(/Usable.*?:\s*(\d+)\s*min/i)?.[1]
-  const rexpRefresh = rexp.match(/Refreshes:\s*([\d:]+)\s*hour/i)?.[1]
+  const rexpStored     = !deathsSting ? rexp.match(/Stored:\s*([\d:]+)\s*hour/i)?.[1] : undefined
+  const rexpUsableMin  = !deathsSting ? rexp.match(/Usable.*?:\s*(\d+)\s*min/i)?.[1] : undefined
+  const rexpUsableHr   = !deathsSting ? rexp.match(/Usable.*?:\s*([\d:]+)\s*hour/i)?.[1] : undefined
+  const rexpUsable     = rexpUsableMin != null ? `${rexpUsableMin}m` : rexpUsableHr != null ? `${rexpUsableHr}h` : undefined
 
-  if (!tdp && !favor && !rexpStored && !sleepLevel) return null
+  if (!tdp && !favor && !rexpStored && !sleepLevel && !deathsSting) return null
 
   return (
     <div className="exp-footer">
@@ -110,8 +118,11 @@ function ExpFooter({ skills }: { skills: Record<string, string> }) {
         {(rexpUsable || rexpStored) && (
           <span className="exp-footer-item exp-footer-rest">
             <span className="exp-footer-label">RXP</span>
-            {rexpUsable ? `${rexpUsable}m` : '—'}{rexpStored ? ` / ${rexpStored}h` : ''}
+            {rexpUsable ?? '—'}{rexpStored ? ` / ${rexpStored}h` : ''}
           </span>
+        )}
+        {deathsSting && (
+          <span className="exp-footer-item exp-footer-sting">Death's Sting</span>
         )}
         {sleepLevel > 0 && (
           <span className={`exp-footer-item exp-footer-sleep exp-footer-sleep--${sleepLevel}`}>
@@ -123,7 +134,7 @@ function ExpFooter({ skills }: { skills: Record<string, string> }) {
   )
 }
 
-export default function ExpPanel({ skills }: Props) {
+export default function ExpPanel({ skills, rankUpSkills }: Props) {
   const active = Object.entries(skills).filter(([k, text]) =>
     k !== 'rexp' && k !== 'tdp' && k !== 'favor' && k !== 'sleep' &&
     parseExp(text).mindstateIdx > 0
@@ -138,10 +149,10 @@ export default function ExpPanel({ skills }: Props) {
     <div className="exp-panel">
       <div className="exp-panel-body">
         <ExpGroup label="Mind Locked" count={locked.length} locked defaultExpanded={false}>
-          {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+          {locked.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} rankUp={rankUpSkills?.has(skill)} />)}
         </ExpGroup>
         <ExpGroup label="Learning" count={learning.length} defaultExpanded={true}>
-          {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} />)}
+          {learning.map(([skill, text]) => <SkillRow key={skill} skill={skill} text={text} rankUp={rankUpSkills?.has(skill)} />)}
         </ExpGroup>
         {active.length === 0 && (
           <div className="exp-panel--empty">No skills actively training.</div>

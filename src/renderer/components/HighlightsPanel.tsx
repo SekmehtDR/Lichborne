@@ -173,9 +173,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
   // ── Sidebar list item ─────────────────────────────────────────────────────
 
   function listItemSwatch(r: HighlightRule): React.CSSProperties {
-    const color = r.scope === 'line'
-      ? (r.style.bgColor && r.style.bgColor !== 'transparent' ? r.style.bgColor : r.style.textColor)
-      : (r.style.textColor && r.style.textColor !== 'transparent' ? r.style.textColor : r.style.bgColor)
+    const color = (r.style.bgColor && r.style.bgColor !== 'transparent') ? r.style.bgColor : r.style.textColor
     if (!color || color === 'transparent') return { background: 'var(--border)', opacity: 0.4 }
     return { background: color }
   }

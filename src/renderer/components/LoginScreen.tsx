@@ -69,6 +69,7 @@ export default function LoginScreen({ onConnected }: Props) {
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
 
   useEffect(() => { saveAdvanced(adv) }, [adv])
+  useEffect(() => { document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}` }, [])
 
   async function runDiscovery() {
     const found = await window.api.discoverLichPaths(rubyPath, lichPath)

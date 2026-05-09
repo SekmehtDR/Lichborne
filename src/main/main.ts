@@ -19,6 +19,7 @@ const CH = {
 let mainWindow: BrowserWindow | null = null
 const connection = new ConnectionManager()
 const parser = new StormFrontParser()
+let cleanDisconnect = false
 
 connection.on('status', (msg: string) => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
@@ -28,6 +29,7 @@ connection.on('line', (line: string) => {
   const events = parser.parse(line)
   for (const evt of events) {
     if (evt.type === 'launch-url') shell.openExternal(evt.url)
+    if (evt.type === 'game-exit') cleanDisconnect = true
   }
   const rendererEvents = events.filter(e => e.type !== 'launch-url')
   if (rendererEvents.length > 0) {
@@ -35,7 +37,9 @@ connection.on('line', (line: string) => {
   }
 })
 connection.on('disconnect', () => {
-  mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected' })
+  const wasClean = cleanDisconnect
+  cleanDisconnect = false
+  mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected', clean: wasClean })
 })
 connection.on('error', (err: Error) => {
   mainWindow?.webContents.send(CH.ERROR, err.message)
@@ -48,7 +52,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
-    title: `Lichborne v${app.getVersion()} — DragonRealms`,
+    title: `Lichborne v${app.getVersion()} | DragonRealms`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -87,6 +91,8 @@ ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
 })
 
 ipcMain.on(CH.SEND_COMMAND, (_event, command: string) => {
+  const trimmed = command.trim().toLowerCase()
+  if (trimmed === 'quit' || trimmed === 'exit') cleanDisconnect = true
   connection.send(command)
 })
 
@@ -148,9 +154,10 @@ ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
 ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())
 
 ipcMain.on(CH.DISCONNECT, () => {
+  cleanDisconnect = true
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnecting...' })
   connection.gracefulDisconnect().then(() => {
-    mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected' })
+    mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected', clean: true })
   })
 })
 

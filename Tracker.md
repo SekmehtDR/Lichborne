@@ -40,6 +40,10 @@
 **Login Screen — card height stabilized; no more resize while connection log scrolls ✅**
 **Lich Path Auto-Detect — ↺ button scans C:\Ruby4Lich5 for Ruby version folders and Lich5; ✓/✕ icons per path; status message for partial/missing/no-folder cases; Windows only ✅**
 **Direct Connection — Advanced panel shows message instead of empty box when Lich is unchecked ✅**
+**Disconnect Handling — clean disconnect tracked in main process (`cleanDisconnect` flag); set by: `quit`/`exit` command sent (Lich path), Disconnect button IPC, or `<exit/>` XML tag (direct path); `clean` bool passed in status payload — no cross-channel race; debug panel no longer auto-opens on intentional disconnects (B11 partial fix ✅)**
+**Toolbar & Title Polish — disconnected status in accent color; window title uses pipe separator; title tracks connection state: `DR [Not connected]` → `CharName · GAME [Connected]` → `CharName · GAME [Disconnected]`; "Connection closed." injected into main text on disconnect with blank line above and timestamp ✅**
+**Debug Panel — B11: `autoFocus` on command input prevents debug button stealing focus at startup ✅; B12: tab-switch `useEffect` scrolls Raw XML to bottom on first open ✅; F06: Copy All button (toolbar + right-click) copies active tab content to clipboard; raw XML lines trimmed before join to prevent blank lines in pasted output ✅; F09: `showDebugRef` gates `setDebugEvents` and `setRawXmlLines` — no re-renders from debug collection while panel is closed ✅; B14: Events tab scroll lock fixed — stable `key={eventBaseRef+i}` prevents content shifts when buffer rolls over ✅**
+**Exp Panel — F10: rank-gain detection via `CaptureContext.hasBold` in parser; `rankUpSkills` state + 3s timers in GameWindow; skill rows bold for 3s on rank gain ✅; F11: Death's Sting badge in footer — detected from second `exp rexp` component overwriting first in same batch; red italic badge; RXP data hidden while active ✅; B15: RXP usable regex updated to handle both `minutes` and `hours` formats; ExpBrief sends empty rexp component — RXP row correctly hidden ✅**
 
 ---
 

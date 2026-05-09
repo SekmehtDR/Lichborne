@@ -51,6 +51,7 @@ interface Props {
   streamLines: Record<string, TextLine[]>
   roomState: RoomState
   expSkills: Record<string, string>
+  rankUpSkills?: Set<string>
   onSendCommand: (cmd: string) => void
   autoLinkUrls?: boolean
   debugEvents?: GameEvent[]
@@ -73,7 +74,7 @@ interface Props {
 }
 
 export default function PanelFrame({
-  streamLines, roomState, expSkills, onSendCommand, autoLinkUrls = true,
+  streamLines, roomState, expSkills, rankUpSkills, onSendCommand, autoLinkUrls = true,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
@@ -150,7 +151,7 @@ export default function PanelFrame({
     <div className="panel-frame">
       <div className="panel-frame-body">
         {activeTab && renderPanel(
-          activeTab, streamLines, roomState, expSkills, onSendCommand,
+          activeTab, streamLines, roomState, expSkills, rankUpSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
@@ -255,6 +256,7 @@ function renderPanel(
   streamLines: Record<string, TextLine[]>,
   roomState: RoomState,
   expSkills: Record<string, string>,
+  rankUpSkills: Set<string> | undefined,
   onSendCommand: (cmd: string) => void,
   debugEvents: GameEvent[],
   onClearDebug: () => void,
@@ -281,7 +283,7 @@ function renderPanel(
     case 'conversations': return sp('conversations', streamLines.conversations ?? [])
     case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
     case 'spells':        return sp('spells',        streamLines.spells        ?? [])
-    case 'exp':           return <ExpPanel skills={expSkills} />
+    case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} />
     case 'injuries':      return <InjuriesPanel parts={injuryState} />
     case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
     case 'inv':           return sp('inv',           streamLines.inv           ?? [])

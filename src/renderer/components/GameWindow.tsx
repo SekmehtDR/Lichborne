@@ -132,7 +132,9 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
-  const [expSkills, setExpSkills] = useState<Record<string, string>>({})
+  const [expSkills, setExpSkills]       = useState<Record<string, string>>({})
+  const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
+  const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   const [command, setCommand] = useState('')
   const historyRef    = useRef<string[]>([])
@@ -141,10 +143,13 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [disconnecting, setDisconnecting] = useState(false)
   const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
+  const showDebugRef                  = useRef(false)
+  const debugEventsBufRef             = useRef<GameEvent[]>([])
+  const rawXmlBufRef                  = useRef<string[]>([])
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
-  const clearDebugEvents = () => setDebugEvents([])
+  const clearDebugEvents = () => { debugEventsBufRef.current = []; setDebugEvents([]) }
   const [rawXmlLines, setRawXmlLines] = useState<string[]>([])
-  const clearRawXmlLines = () => setRawXmlLines([])
+  const clearRawXmlLines = () => { rawXmlBufRef.current = []; setRawXmlLines([]) }
   const clearLines       = () => setLines([])
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
   const [streamTimestamps, setStreamTimestamps] = useState<Record<string, boolean>>(() => {
@@ -164,6 +169,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [indicators, setIndicators] = useState<Record<string, boolean>>({})
   const [stance, setStance]         = useState('')
   const [spell, setSpell]           = useState('')
+  const playerTitleRef              = useRef('')
   const [rightHand, setRightHand]   = useState('Empty')
   const [leftHand, setLeftHand]     = useState('Empty')
   const [exits, setExits]           = useState<string[]>([])
@@ -276,6 +282,24 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   // Pending timer handles for alias/macro command sequences — cancelled on disconnect
   const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  useEffect(() => {
+    showDebugRef.current = showDebug
+    if (showDebug) {
+      setDebugEvents([...debugEventsBufRef.current])
+      setRawXmlLines([...rawXmlBufRef.current])
+    }
+  }, [showDebug])
+
+  useEffect(() => {
+    if (!dropped) return
+    const now = new Date()
+    const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    setLines(prev => [...prev.slice(-MAX_LINES),
+      { id: lineId++, segments: [{ text: '' }], timestamp: Date.now() },
+      { id: lineId++, segments: [{ text: `[${ts}] Connection closed.`, preset: 'internal-system' }], timestamp: Date.now() },
+    ])
+  }, [dropped])
 
   // True whenever any modal is open — prevents macros firing into editor fields
   const anyModalOpenRef = useRef(false)
@@ -492,7 +516,20 @@ export default function GameWindow({ onDisconnect }: Props) {
             roomUpdates.title = evt.title
             triggerCtxRef.current.roomTitle = evt.title
             break
-          case 'exp-component': expUpdates[evt.skill] = evt.text; break
+          case 'exp-component':
+            expUpdates[evt.skill] = evt.text
+            if (evt.rankUp) {
+              const skill = evt.skill
+              const existing = rankUpTimersRef.current.get(skill)
+              if (existing) clearTimeout(existing)
+              setRankUpSkills(prev => new Set([...prev, skill]))
+              const t = setTimeout(() => {
+                setRankUpSkills(prev => { const next = new Set(prev); next.delete(skill); return next })
+                rankUpTimersRef.current.delete(skill)
+              }, 3000)
+              rankUpTimersRef.current.set(skill, t)
+            }
+            break
           case 'clear-stream':
             if (evt.stream === 'room')           roomUpdates.desc      = ''
             if (evt.stream === 'room-objects')   roomUpdates.objects   = ''
@@ -515,7 +552,10 @@ export default function GameWindow({ onDisconnect }: Props) {
             newDiscovered.push(evt.stream)
             break
           case 'player-info':
-            document.title = `${evt.char} · ${evt.game} — Lichborne v${__APP_VERSION__}`
+            playerTitleRef.current = `${evt.char} · ${evt.game}`
+            document.title = `${playerTitleRef.current} [Connected] | Lichborne v${__APP_VERSION__}`
+            break
+          case 'game-exit':
             break
           case 'unknown':
             break
@@ -566,21 +606,28 @@ export default function GameWindow({ onDisconnect }: Props) {
       if (newStance !== null) setStance(newStance)
       if (newSpell !== null)  setSpell(newSpell)
 
-      setDebugEvents(prev => [...prev.slice(-(MAX_DEBUG_EVENTS - events.length)), ...events])
+      debugEventsBufRef.current.push(...events)
+      if (debugEventsBufRef.current.length > MAX_DEBUG_EVENTS) debugEventsBufRef.current.splice(0, debugEventsBufRef.current.length - MAX_DEBUG_EVENTS)
+      if (showDebugRef.current) setDebugEvents([...debugEventsBufRef.current])
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
       setStatus(s.message)
-      if (s.message === 'Disconnecting...') setDisconnecting(true)
+      if (s.message === 'Disconnecting...') {
+        setDisconnecting(true)
+      }
       if (!s.connected && s.message === 'Disconnected') {
         setDropped(true)
-        setStatus('Connection lost')
-        setShowDebug(true)
+        setStatus(s.clean ? 'Disconnected' : 'Connection lost')
+        if (!s.clean) setShowDebug(true)
+        document.title = `${playerTitleRef.current} [Disconnected] | Lichborne v${__APP_VERSION__}`
       }
     })
 
     const unsubRawXml = window.api.onRawXml((line: string) => {
-      setRawXmlLines(prev => [...prev.slice(-(MAX_RAW_XML_LINES - 1)), line])
+      rawXmlBufRef.current.push(line)
+      if (rawXmlBufRef.current.length > MAX_RAW_XML_LINES) rawXmlBufRef.current.shift()
+      if (showDebugRef.current) setRawXmlLines([...rawXmlBufRef.current])
     })
 
     inputRef.current?.focus()
@@ -783,7 +830,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   function handleCommand(e: React.FormEvent) {
     e.preventDefault()
     if (!command.trim()) return
-    historyRef.current = [command, ...historyRef.current].slice(0, 200)
+    if (historyRef.current[0] !== command) historyRef.current = [command, ...historyRef.current].slice(0, 200)
     historyIdxRef.current = -1
     setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
 
@@ -841,7 +888,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   // ── Shared PanelFrame props ───────────────────────────────────────────────
 
   const sharedFrameProps = {
-    streamLines, roomState, expSkills,
+    streamLines, roomState, expSkills, rankUpSkills,
     onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
     autoLinkUrls: settings.autoLinkUrls,
     debugEvents, onClearDebug: clearDebugEvents,
@@ -900,7 +947,7 @@ export default function GameWindow({ onDisconnect }: Props) {
     <div className="game-layout">
       <div className="game-toolbar">
         <span className="toolbar-title"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
-        <span className="toolbar-status">{status}</span>
+        <span className={`toolbar-status${dropped ? ' toolbar-status--disconnected' : ''}`}>{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
@@ -910,7 +957,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button
           className={`btn-disconnect${dropped ? ' btn-disconnect--login' : ''}`}
-          onClick={dropped ? onDisconnect : handleDisconnect}
+          onClick={dropped ? () => { playerTitleRef.current = ''; onDisconnect() } : handleDisconnect}
           disabled={disconnecting && !dropped}
         >
           {dropped ? 'Login' : disconnecting ? 'Disconnecting…' : 'Disconnect'}
@@ -975,7 +1022,7 @@ export default function GameWindow({ onDisconnect }: Props) {
                 {rt > 0 && <div className="cmd-bar cmd-bar--rt" style={{ width: `${rtPct}%` }} />}
                 {ct > 0 && <div className="cmd-bar cmd-bar--ct" style={{ width: `${ctPct}%` }} />}
               </>)}
-              <input ref={inputRef} type="text" value={command}
+              <input ref={inputRef} type="text" autoFocus value={command}
                 onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
                 onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
             </div>

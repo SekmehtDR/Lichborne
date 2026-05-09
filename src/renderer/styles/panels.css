@@ -10,8 +10,9 @@
 [data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: bold; }
 [data-preset="expiry"]       { color: var(--preset-expiry);   background-color: var(--preset-expiry-bg); }
 [data-preset="store"]        { color: var(--preset-store);    background-color: var(--preset-store-bg); }
-[data-preset="command-echo"] { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
-[data-preset="echo"]         { color: var(--text-dim); font-style: italic; }
+[data-preset="command-echo"]   { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
+[data-preset="echo"]           { color: var(--text-dim); font-style: italic; }
+[data-preset="internal-system"] { color: var(--text-dim); font-style: italic; }
 
 /* ============================================================
    Stream panel — generic scrolling text
@@ -308,6 +309,12 @@
 .exp-row--locked .exp-mindstate { color: var(--exp-locked-mind); }
 .exp-row--locked .exp-rate      { color: var(--exp-locked-rate); }
 
+.exp-row--rank-up .exp-skill,
+.exp-row--rank-up .exp-rank,
+.exp-row--rank-up .exp-pct,
+.exp-row--rank-up .exp-mindstate,
+.exp-row--rank-up .exp-rate { font-weight: bold; }
+
 .exp-bar-wrap {
   height: 3px;
   background: var(--exp-bar-bg);
@@ -359,6 +366,11 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.exp-footer-sting {
+  color: #c0392b;
+  font-style: italic;
 }
 
 .exp-footer-sleep {

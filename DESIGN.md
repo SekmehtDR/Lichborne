@@ -216,9 +216,13 @@ When the connection drops for any reason (user-initiated QUIT, server timeout, d
 
 **Toolbar button**: changes from `Disconnect` → `Login` (styled in accent color). Clicking `Login` calls `onDisconnect` to return to the login screen.
 
-**Debug panel**: auto-opens on disconnect so the Raw XML tab is immediately visible, showing the last received server traffic.
+**Debug panel**: auto-opens only on *unexpected* disconnects (network drop, Lich crash). Clean disconnects (QUIT command, Disconnect button) do not open it.
 
-**State**: a `dropped` boolean in `GameWindow` is set `true` on any disconnect. While `dropped` is true the Disconnect button is disabled only momentarily (it becomes `Login` immediately). There is no separate "user-initiated vs. unexpected" distinction — all disconnects are treated the same way.
+**Clean vs unexpected detection**: a `cleanDisconnect` flag in `main.ts` is set when: (1) `quit` or `exit` is sent via `SEND_COMMAND` IPC, (2) the Disconnect button fires the `DISCONNECT` IPC handler, or (3) the parser sees `<exit/>` (direct connection). The flag is read and reset in `connection.on('disconnect')` and passed as `clean: boolean` in the status payload — no cross-channel race possible.
+
+**"Connection closed." message**: injected into the main text window via a `useEffect` on `dropped` (fires after all pending game text has rendered), with a blank line above and a `[HH:MM]` timestamp — matching Genie's behavior.
+
+**State**: a `dropped` boolean in `GameWindow` is set `true` on any disconnect. The toolbar status text changes color (accent) to make the disconnected state visually obvious.
 
 ---
 
@@ -275,10 +279,12 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
 | `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel — shown under "Creatures" section when non-empty |
 | `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel — shown under "Extra" section when non-empty |
-| `<component id='exp rexp'>Rested EXP Stored: 4:01 hours Usable This Cycle: 35 minutes Cycle Refreshes: 3:31 hours</component>` | Rested EXP pool — stored hours, usable this cycle (minutes), cycle refresh time | Exp panel footer — parsed to `RXP 35m / 4:01h` (usable / stored); refresh time dropped from display |
+| `<component id='exp rexp'>Rested EXP Stored: 4:01 hours Usable This Cycle: 35 minutes Cycle Refreshes: 3:31 hours</component>` | Rested EXP pool — stored hours, usable this cycle in **minutes** (small pool) or **hours** (large pool), cycle refresh time | Exp panel footer — `RXP 35m / 4:01h` (minutes format) or `RXP 5:56h / 4:20h` (hours format); unit auto-detected; refresh time dropped from display; ExpBrief mode sends empty component — RXP row hidden |
 | `<component id='exp tdp'> TDPs: 59616</component>` | Total Development Points available | Exp panel footer — `TDP 59616` |
 | `<component id='exp favor'> Favors: 37</component>` | Immortal favor balance | Exp panel footer — `Fav 37` |
 | `<component id='exp sleep'></component>` | Sleep state — empty = awake; level 1 contains "relaxed…state of rest"; level 2 contains "fully relaxed…deep sleep" | Exp panel footer — empty: nothing shown; level 1: italic `Resting` (`--exp-sleep-1` blue); level 2: italic `Deep Sleep` (`--exp-sleep-2` purple) |
+| `<component id='exp rexp'>[Because of Death's Sting, your rested exp is currently not being used.]</component>` | Death's Sting active — fires as a SECOND `exp rexp` component in every exp batch while active, overwriting the normal rested exp summary in `skills['rexp']` | Exp panel footer — red italic `Death's Sting` badge; RXP data hidden while active; clears when next batch has only the normal rexp summary (second component stops appearing) |
+| `<component id='exp SkillName'><b> SkillName: 991 00% dabbling </b></component>` | Rank gain — `<b>` wrapper is the server's signal; fires once at the moment of the rank, not on subsequent updates | Exp panel — skill row renders bold for 3 seconds via `exp-row--rank-up` class; detected via `CaptureContext.hasBold` in parser, propagated as `rankUp: true` on `ExpComponentEvent` |
 | `<streamWindow id="LichScripts" title="Lich Scripts"/>` | Declares a named stream and its display title before any content is pushed | Stream discovery — emits `stream-declare` event; panel becomes available in Panel Manager at login |
 | `<d cmd='go south'>text</d>` | Inline clickable command link with explicit command | Rendered as dotted-underline clickable span; click sends `cmd` to game |
 | `<d>south</d>` | Bare exit label or help command — text content IS the command | Same dotted-underline rendering; text content sent directly as command on click |
@@ -507,6 +513,8 @@ The exp panel is a live skill tracker driven entirely by `<component id='exp Ski
 - `⚠` badge on mind-locked skills — player is getting no XP and should switch activities
 - Bar fill represents mindstate progress from clear → mind lock
 - Updates live as the server pushes new exp components
+- **Rank gain**: when the server wraps the exp component in `<b>`, the skill row goes bold for 3 seconds (`exp-row--rank-up`); timer resets if another rank fires before it clears
+- **Footer badges**: `TDP`, `Fav`, `RXP` shown when present; `Resting`/`Deep Sleep` when sleep state active; red italic `Death's Sting` when the second `exp rexp` component is present in the batch
 
 **expbrief mode:**
 
@@ -1290,16 +1298,23 @@ Each character profile independently remembers:
 
 > Status: Implemented 2026-05-06.
 
-Each Electron window title identifies the character and game so players can distinguish multiple instances from the taskbar or OS window switcher.
+Each Electron window title identifies the character, game, and connection state so players can distinguish multiple instances from the taskbar or OS window switcher — matching Genie Remix's title convention.
 
-**Title format:** `CharName · GAME — Lichborne`
-**Example:** `Agan · DR — Lichborne`
+**Title format:** `CharName · GAME [Status] | Lichborne vX.Y.Z`
+**Examples:**
+- Login screen: `DR [Not connected] | Lichborne v0.1.7`
+- Connected: `Sekmeht · DR [Connected] | Lichborne v0.1.7`
+- Disconnected: `Sekmeht · DR [Disconnected] | Lichborne v0.1.7`
 
 **Lifecycle:**
-- At window creation (before connect): `Lichborne — DragonRealms` — set statically in `main.ts`
-- After login: the server sends `<app char="Agan" game="DR" title="..."/>` early in the login XML stream; the parser emits a `PlayerInfoEvent`; `GameWindow` calls `document.title` to update the title bar
+- Login screen mount: `DR [Not connected] | Lichborne v${__APP_VERSION__}` — set via `useEffect` in `LoginScreen`
+- After `player-info` event: `CharName · GAME [Connected] | Lichborne v${__APP_VERSION__}` — `GameWindow` stores char/game in `playerTitleRef` and calls `document.title`
+- On disconnect: `CharName · GAME [Disconnected] | Lichborne v${__APP_VERSION__}` — set in `onConnectionStatus` when `message === 'Disconnected'`; character name persists from `playerTitleRef`
+- On return to login: `LoginScreen` mounts and its `useEffect` resets the title
 
 **Source tag:** `<app char="CharName" game="GAMECODE" .../>` — arrives once per session during the initial settings/handshake block, before gameplay begins.
+
+**Version:** Always reflects the running build via `__APP_VERSION__` (injected by Vite from `package.json`).
 
 ---
 

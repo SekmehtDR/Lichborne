@@ -23,6 +23,17 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
+  // Stable keys for events: track how many items have been removed from the front
+  // of the buffer so that key={base+i} stays consistent as the buffer rolls over.
+  // Without this, index-based keys cause all 500 DOM nodes to update their content
+  // when items are spliced from the front, making the view appear to scroll forward.
+  const eventBaseRef   = useRef(0)
+  const prevEventLenRef = useRef(0)
+  if (events.length < prevEventLenRef.current) {
+    eventBaseRef.current += prevEventLenRef.current - events.length
+  }
+  prevEventLenRef.current = events.length
+
   function handleEventsScroll() {
     const el = eventsScrollRef.current
     if (!el) return
@@ -43,7 +54,20 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
     if (rawPinnedRef.current) rawBottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [rawXmlLines])
 
+  // B12: scroll to bottom when switching tabs so first-open lands at latest content
+  useEffect(() => {
+    if (tab === 'events') eventsBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    if (tab === 'rawxml') rawBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [tab])
+
   const activeOnClear = tab === 'events' ? onClear : onClearRawXml
+
+  function handleCopy() {
+    const text = tab === 'events'
+      ? events.map(e => JSON.stringify(e)).join('\n')
+      : rawXmlLines.map(l => l.trimEnd()).join('\n')
+    navigator.clipboard.writeText(text)
+  }
 
   return (
     <div className="debug-panel">
@@ -56,6 +80,7 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
             Raw XML ({rawXmlLines.length})
           </button>
         </div>
+        <button className="debug-copy" onClick={handleCopy}>Copy All</button>
         <button className="debug-clear" onClick={activeOnClear}>Clear</button>
       </div>
 
@@ -63,7 +88,7 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
         <div className="debug-scroll" ref={eventsScrollRef} onScroll={handleEventsScroll}
           onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
           {events.map((evt, i) => (
-            <div key={i} className={`debug-event debug-event--${evt.type}`}>
+            <div key={eventBaseRef.current + i} className={`debug-event debug-event--${evt.type}`}>
               <span className="debug-type">{evt.type}</span>
               <span className="debug-body">{JSON.stringify(evt)}</span>
             </div>
@@ -86,7 +111,10 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
 
       {ctxMenu && (
         <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}
-          items={[{ label: 'Clear', onClick: activeOnClear }]}
+          items={[
+            { label: 'Copy All', onClick: handleCopy },
+            { label: 'Clear', onClick: activeOnClear },
+          ]}
         />
       )}
     </div>

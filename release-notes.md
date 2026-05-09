@@ -1,17 +1,13 @@
-## What's new in v0.1.7
+## What's new in v0.1.8
 
-- **Bug fixes from tester feedback** — several issues reported by Legiro and Binu resolved:
-  - **Stat column alignment** — buffed stats (highlighted in speech color) now display at the correct column position when you type `info`
-  - **ExpBrief support** — the experience panel now works correctly with the in-game EXPBRIEF toggle enabled
-  - **Disconnect behavior** — on any disconnect (drop, timeout, QUIT) the game screen stays open with a "Login" button instead of returning to the login screen immediately; the debug panel opens automatically so you can see what happened
-  - **Inventory spam at login** — the full inventory list no longer appears in the main story window at startup
-  - **Mana bar for non-mana users** — Thieves and other NMUs no longer show a mana bar; Barbarians correctly show "Inner Fire"
-- **Account name saved** — your account name is remembered between sessions so you don't have to retype it every launch
-- **Text word-wrap fix** — main story window no longer shows a horizontal scrollbar; text wraps correctly at the window edge
+- **Rank gain highlight** — when you gain a rank in a skill the row in the Experience panel goes bold for 3 seconds, matching the server's `<b>` signal
+- **Death's Sting indicator** — a red "Death's Sting" badge appears in the Experience panel footer while rested exp is suppressed; disappears automatically when the effect clears
+- **RXP display fix** — the RXP footer now correctly shows usable rested exp in hours (`5:56h`) when the pool is large; previously showed a dash
+- **Experience panel scroll fix** — the Events tab in the Debug panel now correctly locks scroll position when scrolled up; content no longer jumps forward as new events arrive
 
 ## How to install
 
-1. Download `Lichborne-0.1.7-setup.exe` below
+1. Download `Lichborne-0.1.8-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -37,4 +33,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.6...v0.1.7
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.7...v0.1.8

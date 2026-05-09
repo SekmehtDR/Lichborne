@@ -36,6 +36,11 @@
   flex: 1;
 }
 
+.toolbar-status--disconnected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .btn-debug,
 .btn-panel-manager,
 .btn-contacts,

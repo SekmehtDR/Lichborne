@@ -102,6 +102,7 @@ function parseTag(raw: string): ParsedTag {
 interface CaptureContext {
   tag: string
   id?: string
+  hasBold?: boolean
 }
 
 export class StormFrontParser {
@@ -290,7 +291,10 @@ export class StormFrontParser {
         break
 
       case 'b':
-        if (!selfClosing) this.boldDepth++
+        if (!selfClosing) {
+          this.boldDepth++
+          if (this.captureCtx) this.captureCtx.hasBold = true
+        }
         break
 
       case 'preset':
@@ -428,6 +432,12 @@ export class StormFrontParser {
         }
         break
       }
+
+      case 'exit':
+        // Server sends <exit/> after processing QUIT — signals a clean logout.
+        // Distinct from an unexpected socket close (network drop, Lich crash).
+        this.events.push({ type: 'game-exit' })
+        break
 
       case 'launchurl': {
         const src = attrs.src ?? ''
@@ -630,7 +640,7 @@ export class StormFrontParser {
       case 'compdef': {
         const id = ctx.id ?? ''
         if (id.startsWith('exp ')) {
-          this.events.push({ type: 'exp-component', skill: id.slice(4), text })
+          this.events.push({ type: 'exp-component', skill: id.slice(4), text, ...(ctx.hasBold ? { rankUp: true } : {}) })
         } else if (id === 'room exits') {
           // Compass XML is authoritative for directional exits.
           // Named exits like "go gate, climb ladder" don't map to direction buttons,

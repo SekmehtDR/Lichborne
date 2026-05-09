@@ -7,7 +7,7 @@ declare global {
       sendCommand: (command: string) => void
       disconnect: () => void
       onGameEvent: (cb: (events: GameEvent[]) => void) => () => void
-      onConnectionStatus: (cb: (status: { connected: boolean; message: string }) => void) => () => void
+      onConnectionStatus: (cb: (status: { connected: boolean; message: string; clean?: boolean }) => void) => () => void
       onError: (cb: (message: string) => void) => () => void
       onRawXml: (cb: (line: string) => void) => () => void
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
