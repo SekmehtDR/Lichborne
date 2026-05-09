@@ -212,6 +212,32 @@ export interface UnknownEvent {
   raw: string
 }
 
+// --- Map data shapes ---
+
+export interface MapArc {
+  exit: string        // direction label: 'north', 'go', 'none', etc.
+  move: string        // command to send: 'north', 'go trap door', etc.
+  destination: number // target node id
+}
+
+export interface MapNode {
+  id: number
+  name: string
+  note?: string       // pipe-separated aliases, e.g. "Town Green|TGN|Wanted Board"
+  color?: string      // hex color from XML color attr, e.g. "#00FFFF" — room type indicator
+  descriptions: string[]
+  x: number
+  y: number
+  z: number
+  arcs: MapArc[]
+}
+
+export interface MapZone {
+  id: string
+  name: string
+  nodes: MapNode[]
+}
+
 // --- Renderer-shared data shapes ---
 
 export interface TextLine {

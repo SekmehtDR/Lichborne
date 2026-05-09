@@ -8,9 +8,10 @@ import StreamPanel from './panels/StreamPanel'
 import ExpPanel from './panels/ExpPanel'
 import InjuriesPanel from './panels/InjuriesPanel'
 import DebugPanel from './DebugPanel'
+import MapPanel from './panels/MapPanel'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'custom'
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'custom'
 
 export interface TabDef {
   id: string
@@ -31,11 +32,12 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   injuries:      'Injuries',
   debug:         'Debug',
   log:           'Log',
+  map:           'Map',
   custom:        'Custom',
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log',
+  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -289,6 +291,7 @@ function renderPanel(
     case 'inv':           return sp('inv',           streamLines.inv           ?? [])
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} />
     case 'log':           return sp('log',           streamLines.log           ?? [])
+    case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} onSendCommand={onSendCommand} />
     case 'custom':        return (
       <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls}

@@ -46,6 +46,7 @@
 .btn-panel-manager,
 .btn-contacts,
 .btn-automations,
+.btn-map,
 .btn-theme,
 .btn-settings,
 .btn-disconnect {
@@ -64,6 +65,7 @@
 .btn-panel-manager:hover,
 .btn-contacts:hover,
 .btn-automations:hover,
+.btn-map:hover,
 .btn-theme:hover,
 .btn-settings:hover {
   border-color: var(--accent-dim);
@@ -74,6 +76,12 @@
   border-color: #569cd6;
   color: #9cdcfe;
   background: #1a2a3a;
+}
+
+.btn-map--active {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: #1a1a0e;
 }
 
 .btn-disconnect:hover {

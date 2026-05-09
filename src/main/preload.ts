@@ -78,4 +78,13 @@ contextBridge.exposeInMainWorld('api', {
 
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
+
+  browseFolder: (): Promise<string | null> =>
+    ipcRenderer.invoke('browse-folder'),
+
+  listMapDir: (dir: string): Promise<{ name: string; path: string }[]> =>
+    ipcRenderer.invoke('list-map-dir', dir),
+
+  readFile: (filePath: string): Promise<string | null> =>
+    ipcRenderer.invoke('read-file', filePath),
 })

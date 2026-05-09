@@ -1,4 +1,4 @@
-import type { LoginCredentials, GameEvent } from '../shared/types'
+import type { LoginCredentials, GameEvent, MapZone } from '../shared/types'
 
 declare global {
   interface Window {
@@ -24,6 +24,9 @@ declare global {
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       openUrl: (url: string) => void
       writeClipboard: (text: string) => void
+      browseFolder: () => Promise<string | null>
+      listMapDir: (dir: string) => Promise<{ name: string; path: string }[] | null>
+      readFile: (filePath: string) => Promise<string | null>
     }
   }
 }

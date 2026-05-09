@@ -8,6 +8,9 @@
 
 | # | Summary | Reporter | Notes |
 |---|---|---|---|
+| B28 | Advanced/Lich settings reset to defaults in new windows | Binu | Lich path, Ruby path, and related advanced fields persist correctly on the first instance but revert to defaults when a second window is opened — settings are likely being read from defaults instead of localStorage/persisted store on subsequent window loads |
+
+
 
 ---
 
@@ -102,6 +105,15 @@ Your body will decay beyond its ability to hold your soul in 250 minutes.
 
 | # | Summary | Resolved In | Notes |
 |---|---|---|---|
+| B30 | Map panel ignores theme on custom themes created before map theming | Binu | Fixed: `applyCustomTheme` was not merging with `darkBase` before applying; custom themes only set the vars they explicitly define, so newly-added `--map-*` vars were never set and the map fell back to stale/wrong colors. Fix: `applyCustomTheme` now does `{ ...darkBase, ...vars }` before applying — existing custom themes automatically receive correct map defaults without needing to be rebuilt |
+| B27 | Map walk sends blank command when arc has empty move | — | Fixed: exit-direction click and BFS walk were passing `arc.move` directly; added `arc.move &&` guard so empty-move arcs (malformed XML) are silently skipped |
+| B26 | Active walk timers keep firing after zone switch | — | Fixed: `loadZone` now calls `cancelWalk()` at the top before loading a new file, clearing any in-progress walk timer queue |
+| B25 | Indexing progress counter always showed 0 | — | Fixed: `allZonesRef.current.size` is a ref mutation — doesn't trigger re-renders; replaced with `indexedCount` state that increments every 5 files during `buildIndex`; toolbar now shows `indexing… (45/120)` |
+| B24 | `computeFit` map off-center when scale is clamped on zone load | — | Fixed: when no current room is known, `fit.x/fit.y` were computed at `fit.scale` then scale was overridden to `Math.max(0.5, fit.scale)` without recomputing offsets; now extracts center point `cx/cy` from the fit result and recomputes `x/y` for the actual scale |
+| B23 | `currentRoomId` prop declared and passed but never used | — | Fixed: removed from `MapPanel` interface, `PanelFrame` props/renderPanel signature, and `GameWindow` state; `setCurrentRoomId` call in the `room-title` event handler also removed |
+| B22 | `LabelMode` type declared inside component function body | — | Fixed: moved to module scope above the component |
+| B29 | Hide Lich Window checkbox has no effect | Binu | Fixed: Electron is a GUI app with no console — direct spawn with `windowsHide: false` produces no visible window because there is no parent console to inherit. Hidden path: direct spawn with `windowsHide: true` (unchanged). Visible path: `shell: true` routes through `cmd.exe` which creates its own visible console for Lich output |
+| B21 | Map panel never matches current room | Sekmeht | Fixed: game subtitle `[Room Name - NNNN]` had the Simutronics room number captured as part of the title; stripped with `/\s*-\s*\d+\s*$/` in `StormFrontParser` before emitting `room-title`; additionally the map was rendering upside-down (y-axis negated incorrectly — XML already uses screen-down y convention); both fixed |
 | B19 | Home/End keys don't move cursor in automation text fields | Sekmeht | Fixed: `onKeyDown` document listener in GameWindow intercepted Home/End for all elements except the command input, calling `e.preventDefault()` before the focused input could handle it; added `HTMLInputElement`/`HTMLTextAreaElement` guard so scroll-key handling is skipped whenever any text field has focus |
 | B18 | Auto-copy on mouse-up no longer works | Binu | Fixed: `setPermissionCheckHandler` added for Local Font Access in v0.1.9 blocked all other permissions, and even with `clipboard-write` whitelisted Electron's internal permission name didn't match, so `navigator.clipboard.writeText` silently failed. Fix: replaced web clipboard API with Electron's native `clipboard.writeText` via IPC (`write-clipboard` channel in main process, `window.api.writeClipboard` in renderer) — no permissions needed, synchronous, reliable. |
 | B20 | Scroll pin breaks after ~2000 new lines (combat and swimming) | Binu | Fixed: three layered causes. (1) Pre-`setLines` DOM check unconditionally overwrote `pinnedRef` — fixed to only re-check when already `true`. (2) `handleScroll` re-pinned on `dist < 2` — removed; `handleScroll` now only un-pins, re-pinning is exclusive to `scrollToBottom()`. (3) Root cause: `.text-window` has `overflow-anchor: none`, so trimming lines from the top does not adjust `scrollTop` — the view drifts forward toward newer content with every trim cycle while scrolled up. Fix: don't trim while unpinned; lines append freely when scrolled up; badge/End re-pins and trims to MAX_LINES; hard cap at 3×MAX_LINES (6000 lines) auto-resumes. Tested stable at 3600+ new lines. |

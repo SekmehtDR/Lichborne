@@ -32,6 +32,20 @@
 16. [Login Screen](#16-login-screen)
 17. [Automations, Groups & Modes](#17-automations-groups--modes)
 18. [Packaging & Distribution](#18-packaging--distribution)
+19. [Map System](#19-map-system)
+   - 19.1 Overview
+   - 19.2 Map File Format
+   - 19.3 Coordinate System
+   - 19.4 Room Matching
+   - 19.5 Cross-Zone Index
+   - 19.6 SVG Rendering
+   - 19.7 BFS Pathfinding
+   - 19.8 Node Colors & Room Legend
+   - 19.9 Location Unknown Indicator
+   - 19.10 Stale Path Handling
+   - 19.11 Label Modes
+   - 19.12 Future Work
+   - 19.14 Map Panel UI Layout
 
 ---
 
@@ -665,8 +679,8 @@ Themes work in two layers:
 
 ```
 Base Themes  (built-in, read-only starting points)
-  ├── General:  Dark, Darker, Slate, Parchment, Terminal
-  └── Guild:    Barbarian, Bard, Cleric, Empath, Moon Mage,
+  ├── General:  Dark, Darker, Slate, Ivory, Mist, Parchment, Terminal, Classic
+  └── Guild:    Barbarian, Bard, Cleric, Commoner, Empath, Moon Mage,
                 Necromancer, Paladin, Ranger, Thief, Trader, Warrior Mage
 
 My Themes  (player-owned copies, fully editable)
@@ -676,6 +690,8 @@ My Themes  (player-owned copies, fully editable)
 ```
 
 Base themes are never modified. Editing a base automatically creates a personal copy. Players can have as many custom themes as they want, each derived from any base.
+
+All themes — including custom themes — are applied by merging over `darkBase`. This guarantees that any newly-added CSS variables (such as `--map-*` added in a later build) are always present even if the custom theme predates them, preventing map and other panels from rendering with stale or missing variable values.
 
 ### 7.2 Theme Picker Flow
 
@@ -2278,3 +2294,220 @@ A custom native menu replaces Electron's default. Built with `Menu.buildFromTemp
 | `0.1.x` | Bug fixes and polish |
 | `0.2.0` | Next meaningful feature batch |
 | `1.0.0` | Stable public release |
+
+---
+
+## 19. Map System
+
+### 19.1 Overview
+
+The Map System is a spatially-aware map visualization built around the DragonRealms Lich XML map file format. It provides two surfaces: a full-screen overlay accessible via the "Maps" toolbar button, and an embeddable panel tab that can be placed alongside other panels in any zone.
+
+The approach is informed by Genie's Automapper (room matching algorithm, coordinate conventions) but the SVG rendering, UI, and cross-zone index are original.
+
+### 19.2 Map File Format
+
+Lich map files are XML, organized as:
+
+```
+<zone id="1" name="The Crossing">
+  <node id="335" name="The Crossing, Champions' Square" note="GL Barbarian|alias2">
+    <description>Room description text…</description>
+    <position x="300" y="-368" z="0" />
+    <arc exit="north" move="north" destination="1" />
+    <arc exit="go" move="go fros door" destination="302" />
+  </node>
+  …
+</zone>
+```
+
+**Key fields:**
+- `node.id` — local unique ID within the file
+- `node.name` — full room name including zone prefix, e.g. `"The Crossing, Champions' Square"`; this is what the game subtitle sends inside `[]`
+- `node.note` — pipe-delimited aliases (guild abbreviations, script keywords)
+- `position.x/y/z` — spatial coordinates; x increases east, y decreases north (negative y = screen up), z is floor level
+- `arc.exit` — direction label shown in UI; `"none"` means a hidden passage
+- `arc.move` — the actual command to send (may differ from exit, e.g. `"go fros door"`)
+- `arc.destination` — destination node ID within the same file
+
+### 19.3 Coordinate System
+
+The XML uses a **screen-native** coordinate system: x increases east, y increases south (same direction as screen y). This means:
+- Moving north → y decreases (more negative)
+- Moving south → y increases
+- No y-negation is needed when converting to SVG screen coordinates
+
+This matches Genie's `ConvertPoint` convention (direct `y * scale`, no flip). Our earlier implementation incorrectly negated y (`-node.y`), rendering every map upside-down.
+
+### 19.4 Room Matching
+
+The game sends the current room title in the `streamWindow` subtitle attribute: `subtitle=" - [Zone, Room Name - NNNN] (SimuID)"`.
+
+**Parsing pipeline:**
+1. Extract bracket content: `/\[([^\]]+)\]/`
+2. Strip trailing Simutronics room number: `/\s*-\s*\d+\s*$/` → `"Zone, Room Name"`
+3. Emit as `room-title` event; `roomId` (from `()`) stored separately but not used for map matching
+
+**Matching algorithm (mirrors Genie `Node.Compare`):**
+1. **Name + description** (primary) — `node.name === title` AND `normalizeDesc(node.descriptions[i]) === normalizeDesc(desc)` where normalize = collapse whitespace + lowercase; handles day/night description variants
+2. **Name only** (fallback) — if description is empty or no desc match found, and exactly one node has that name, return it
+
+### 19.5 Cross-Zone Index
+
+When a map directory is selected, all XML files are parsed in the background. The index lives in `allZonesRef` (a ref, not state — no re-renders on index updates). An `indexing` boolean state and `indexedCount` number state drive the toolbar indicator (`indexing… (45/120)`). `indexedCount` updates every 5 files during the loop so the counter is reactive without causing excessive re-renders.
+
+The auto-switch effect (`useEffect`) depends on `[roomTitle, roomDesc, zone, indexing]`:
+- Skips while `indexing` is true (avoids searching a partial index)
+- Fires when indexing completes — catches the case where the room title arrived before the index was ready
+- Checks current zone first; only searches the full index if no match is found locally
+- Calls `setSelectedPath` to load the matching zone, which triggers `loadZone` via the existing `selectedPath` effect
+
+### 19.6 SVG Rendering
+
+**Room markers** — fixed-pixel 10×10px squares at all zoom levels. Game-coordinate size = `px / scale`, so markers stay constant size as you zoom. A `useMemo` over `visibleNodes` renders all nodes with state-driven colours: default parchment-brown → search hit green → path gold → selected blue → hovered tan → current room bright green.
+
+**Current room indicator** — SMIL `<animate>` pulse ring (CSS `r` animation is unreliable in Chromium/Electron), inner glow border, and a crosshair dot visible at any zoom level.
+
+**Arc lines** — drawn center-to-center between visible nodes in the same z-level. Color-coded by exit type:
+
+| Exit type | Color |
+|---|---|
+| Cardinal (N/S/E/W/etc.) | Warm tan `#8a7050` |
+| Vertical (up/down) | Bright gold `#d4a020` |
+| Special go/climb exits | Sage green `#6a9060` |
+| Hidden (`exit="none"`) | Amber dashed `#8a6030` |
+
+**Pan/zoom** — wheel zoom uses an imperative `addEventListener('wheel', h, { passive: false })` instead of React's `onWheel` (which is passive in modern browsers and cannot call `preventDefault`). Drag captures `{tx, ty}` before the state-setter callback fires to avoid a null-ref race when mouseup nulls `dragRef` before the setter runs.
+
+### 19.7 BFS Pathfinding
+
+`bfsPath(nodeMap, fromId, toId)` does a standard breadth-first search over the arc graph. Each step emits the `arc.move` string. The auto-walk sends one command every 600 ms via `setTimeout` queued in `walkTimers`. All timers are cancelled on: Stop button click, zone change (`loadZone` calls `cancelWalk()` at the top), component unmount.
+
+Arcs with empty `move` strings are silently skipped — clicking them or encountering them during a walk does nothing rather than sending a blank command.
+
+The pathfinder only traverses the currently-loaded zone's arc graph. Cross-file arcs (where `destination` references a node ID in a different XML file) are not yet followed.
+
+### 19.8 Node Colors & Room Legend
+
+Each node may carry a `color` attribute (hex string, e.g. `#FF00FF`). These are user-defined in the Lich map files and follow an informal-but-consistent community standard for DragonRealms:
+
+| Color | Name | Meaning |
+|---|---|---|
+| `#FF00FF` | Fuchsia | Transport (portal, throughpoint) |
+| `#00FF00` | Lime | Interesting Room (economic, services) |
+| `#FF8000` | Orange | Guildleader |
+| `#00BF80` | Mint | Auto-Healer |
+| `#FF0000` | Red | Shop |
+| `#FFFF00` | Yellow | Stat Training |
+| `#0000FF` | Blue | Water (swimming required) |
+| `#000080` | Navy | Underwater (drowning possible) |
+| `#FFBF00` | Amber | Obstacle (roundtime) |
+| `#993300` | Sienna | Mining |
+| `#008000` | Green | Lumberjacking |
+| `#C2B280` | Sand | Ranger Trailhead |
+| `#00FFFF` | Aqua | Player Housing |
+| `#A6A3D9` | Periwinkle | Shrine (Pilgrim Badge) |
+| `#400040` | Eggplant | Depart Room |
+| `#800080` | Purple | Favor Altar |
+
+These are stored in the `COLOR_LEGEND` constant at module scope. Colors are normalized to uppercase at parse time (`#ff00ff` → `#FF00FF`) so lookups always match regardless of case in the source file. Some map files contain double-hash typos (`##400040`) which are stripped by `.replace(/^#+/, '#')` during parsing.
+
+**Rendering:** node color drives the SVG box fill. State overrides (current/selected/hovered/path/search) take full priority and replace the color fill entirely. Unknown colors (not in `COLOR_LEGEND`) still render on the map using their raw hex value — only the color legend panel filters them out.
+
+### 19.13 Map Theming
+
+The map panel is fully theme-aware via 18 CSS custom properties prefixed `--map-*`. These are defined in `darkBase` and overridden per-theme in `themes.ts`:
+
+| Variable | Role |
+|---|---|
+| `--map-bg` | Canvas and SVG background |
+| `--map-chrome-bg` | Toolbar, legend bar, detail panel backgrounds |
+| `--map-border` | Primary border color |
+| `--map-border-subtle` | Z-level bar and inner dividers |
+| `--map-text` | Button labels, node labels (hovered/selected), detail text |
+| `--map-text-muted` | Hints, search result metadata, ID badges, legend descriptions |
+| `--map-btn-bg` | Button and chip backgrounds |
+| `--map-btn-border` | Button and chip borders |
+| `--map-select-bg` | Dropdown and search input backgrounds |
+| `--map-select-color` | Dropdown text, legend name, accent elements |
+| `--map-node-fill` | Default room node fill (no XML color set) |
+| `--map-node-stroke` | Default room node border (no XML color set) |
+| `--map-arc-cardinal` | N/S/E/W arc line color |
+| `--map-arc-vertical` | Up/Down arc line color |
+| `--map-arc-special` | Special `go`/`climb` arc line color |
+| `--map-arc-hidden` | Hidden `exit="none"` arc line color (dashed) |
+| `--map-dot` | Background dot-grid pattern fill |
+| `--map-current-color` | Current room indicator: pulse ring, crosshair, inner border, center dot, label text |
+
+**XML node colors are never overridden by theme.** When a node carries a `color` attribute from the map XML, that color is used as-is for the box fill. The `--map-node-fill` and `--map-node-stroke` vars only apply to nodes without an explicit XML color. State overrides (current room, selected, hovered, search hit, walk path) always take priority over both XML color and the CSS vars.
+
+**Current room indicator** — all visual elements of the current-room indicator (SMIL pulse ring, inner rect border, crosshair lines, center dot, and the label text above the node) resolve from `--map-current-color`. Each theme sets this to a color that reads well against its background: green on dark/classic, gold on cleric/trader/commoner, blue on moonmage/paladin/slate, purple on bard, green-teal on empath/ranger, red-orange on barbarian/warriormage, etc.
+
+**Custom theme compatibility** — `applyCustomTheme` merges with `darkBase` before applying, so any custom theme created before the `--map-*` variables were introduced automatically receives the correct dark defaults. New custom themes can override any `--map-*` var explicitly.
+
+**Color legend panel:** toggled by the ▤ button in the bottom bar. Renders as an absolutely-positioned overlay in the top-left corner of the canvas — it floats over the map rather than pushing the canvas down, so compact layouts are unaffected. Only shows colors that appear in `COLOR_LEGEND` (unknown/custom colors are hidden). Each row shows a color swatch, the human-readable name, and the short description. The hex value is shown as a tooltip on hover. Rows are sorted by frequency (most rooms first). Max height is 50% of canvas height with scroll.
+
+### 19.9 Location Unknown Indicator
+
+When a room title is received from the game (player is connected and in a room) but no node is matched in the current zone or any indexed zone, a warm amber strip appears above the canvas:
+
+> ⚑ Location unknown — no room matched · *Room Name, Exact Subtitle*
+
+The strip is hidden while indexing is in progress (to avoid false positives during the initial load) and disappears immediately when a match is found. The `?` badge in the toolbar remains as a secondary indicator showing the unmatched title and description excerpt on hover for debugging.
+
+### 19.10 Stale Path Handling
+
+Map directory and selected file are persisted to `localStorage`. On startup they are restored and validated:
+
+- **Directory not found** — `list-map-dir` IPC returns `null` (instead of `[]`) when `fs.existsSync` fails. `loadDir` detects `null`, clears `mapDir` from state and localStorage, and shows the "Choose a maps folder" prompt.
+- **File not found** — `readFile` returns `null` for missing files. `loadZone` detects this, removes `lichborne.mapFile` from localStorage, and resets `selectedPath` to empty — no error overlay, just a silent return to the no-map state.
+- Empty directories (valid path, no XML files) still return `[]` and show "No .xml files found" normally.
+
+### 19.11 Label Modes
+
+| Mode | Content |
+|---|---|
+| `none` | No labels |
+| `short` | Last comma-segment of node name (e.g. `"Champions' Square"` from `"The Crossing, Champions' Square"`) |
+| `full` | Full node name |
+| `alias` | First alias from the `note` pipe-list; falls back to short name |
+| `id` | `#nodeId` |
+
+Labels render above the node rect at a constant 10px font size (scaled by `1/scale`). Labels are always shown for hovered, selected, and current-room nodes regardless of zoom level; for all other nodes they show only when `scale ≥ LABEL_ZOOM (1.2)`.
+
+### 19.14 Map Panel UI Layout
+
+The map panel uses a two-bar chrome layout with the canvas between them.
+
+**Top toolbar** — file management only:
+- 📂 browse folder button
+- ↺ refresh file list (animates while indexing)
+- Zone file select dropdown (`flex: 1` — takes remaining space)
+- `indexing… (N/M)` blink hint while cross-zone index builds
+- Search rooms input (expands on focus)
+
+**Bottom bar** — navigation and view controls, left to right:
+| Slot | Content | Condition |
+|---|---|---|
+| ◆ | Center-on-current-room button | zone loaded + current room matched |
+| badge | `#551` room ID badge (green = matched, red = ?) | in-game |
+| sep | thin vertical divider | when z-chips are present |
+| Floor chips | G / +1 / All z-level selector | zone has multiple floors |
+| spacer | `flex: 1` — pushes right-side items right | always |
+| Labels ▼ | Label mode dropdown (off/short/full/alias/#id) | always |
+| ⊡ | Fit map to view | zone loaded |
+| ▤ | Toggle color legend overlay | zone has colored rooms |
+| ■ | Stop auto-walk | while walking |
+
+**Current room label z-order** — the current room's label element is deferred to the end of the `nodeLabels` array regardless of where the current node appears in `visibleNodes`. SVG paints in array order, so this guarantees the green label is always on top of any overlapping neighbors.
+
+**Legend overlay** — the color legend is rendered as `position: absolute` inside `.map-canvas-wrap` (top-left, `z-index: 20`) rather than as a flex child above the canvas. This means it never affects the canvas height, making it safe to toggle in compact panel sizes.
+
+### 19.12 Future Work
+
+| Item | Notes |
+|---|---|
+| Exit stubs | Draw short stubs from room edge rather than center-to-center (Genie convention); cleaner at high zoom |
+| Cross-file pathfinding | Follow arcs whose destination lives in a different zone file |
+| Configurable walk delay | 600 ms/step is hardcoded; expose as a setting |
+| Room notes / bookmarks | Player-added per-room annotations persisted locally |

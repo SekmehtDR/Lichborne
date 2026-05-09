@@ -408,14 +408,17 @@ export class StormFrontParser {
         const id    = attrs.id ?? ''
         const lower = id.toLowerCase()
         if (lower === 'main') {
-          // Extract room title from subtitle — only 'main' carries this
+          // Extract room title from subtitle — only 'main' carries this.
+          // Strip trailing " - NNNN" Simutronics room number from inside the brackets
+          // before storing — the number is not present in the Lich XML node names.
           if (attrs.subtitle) {
             const titleMatch = attrs.subtitle.match(/\[([^\]]+)\]/)
             const idMatch    = attrs.subtitle.match(/\((\d+)\)/)
             if (titleMatch) {
+              const cleanTitle = titleMatch[1].replace(/\s*-\s*\d+\s*$/, '').trim()
               this.events.push({
                 type: 'room-title',
-                title: titleMatch[1],
+                title: cleanTitle,
                 roomId: idMatch ? parseInt(idMatch[1], 10) : undefined,
               })
             }

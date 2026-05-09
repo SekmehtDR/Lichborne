@@ -1,13 +1,13 @@
-## What's new in v0.1.10
+## What's new in v0.1.11
 
-- **Scroll lock fixed** — scrolling up to read during combat or travel now holds your position reliably, even through thousands of new lines. The window no longer drifts forward while you're reading. New lines append freely while you're scrolled up; clicking the badge or pressing End returns you to the bottom
-- **Scroll badge warning tiers** — the "▼ N new lines" badge turns orange past 1000 new lines and red past 3500 so you can see how much you've missed at a glance
-- **Auto-copy on text selection** — highlighting text and releasing the mouse copies it to the clipboard again (was broken in v0.1.9 due to a permission conflict with the font picker)
-- **Home / End in automation fields** — the Home and End keys now work correctly inside text fields in the Automations panel instead of being intercepted by the scroll handler
+- **Map panel redesign** — the toolbar is now just file management (folder, zone picker, search). All navigation and view controls move to a slim bottom bar: current room button, room ID badge, floor selector, label mode, fit, and legend toggle
+- **Map legend no longer squashes the map** — the color legend now floats as an overlay in the top-left corner of the map canvas instead of pushing it down, so it's safe to open in compact panel sizes
+- **Current room label always on top** — the green current-room label no longer gets painted behind neighboring room labels
+- **Custom theme map colors fixed (B30)** — custom themes created before map theming was added now correctly inherit all map color defaults instead of falling back to wrong colors on theme switch
 
 ## How to install
 
-1. Download `Lichborne-0.1.10-setup.exe` below
+1. Download `Lichborne-0.1.11-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -20,7 +20,7 @@
 
 - Full game text with highlights, triggers, macros, and aliases
 - Vitals, room, experience, injuries, and spell panels
-- 17 themes including Classic (Genie-style defaults)
+- 18 themes including Classic (Genie-style defaults) — all fully theme the map panel
 - Automations, groups, and modes system
 - Stream timestamps, clickable exits, contacts
 - Auto-update — the client will notify you when a new version is available
@@ -33,4 +33,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.9...v0.1.10
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.10...v0.1.11

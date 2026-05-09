@@ -52,6 +52,10 @@
 **B20 — Scroll pin breaks after ~2000 new lines ✅: root cause is `overflow-anchor: none` on `.text-window` — trimming lines from the top while scrolled up doesn't adjust `scrollTop`, so the view drifts forward toward newer content each trim cycle. Fix: don't trim while unpinned; lines append freely; badge/End re-pins and trims to MAX_LINES; hard cap at 6000 auto-resumes. Also removed `dist < 2` re-pin from `handleScroll` (only un-pins now) and stale-true guard on pre-`setLines` DOM check. Tested stable at 3600+ new lines. ✅**
 **B19 — Home/End in automation text fields ✅: document `onKeyDown` scroll handler was intercepting Home/End for all elements except the command input; added `HTMLInputElement`/`HTMLTextAreaElement` guard so the scroll-key handler is skipped whenever any text field has focus ✅**
 **B18 — Auto-copy restored via native clipboard IPC ✅: `navigator.clipboard.writeText` silently failed due to permission handler added for font picker in v0.1.9; even with `clipboard-write` whitelisted Electron's internal name didn't match; replaced with Electron native `clipboard.writeText` via `write-clipboard` IPC channel — synchronous, no permissions needed; `setPermissionCheckHandler` simplified to `() => true` ✅**
+**Map System Polish Pass ✅: B22–B27 internal bug fixes (LabelMode at module scope; unused currentRoomId prop removed throughout; computeFit center recalculated correctly when scale is clamped; indexing counter now reactive via indexedCount state; loadZone cancels active walk on zone switch; empty arc.move guarded in exit click and BFS); stale map path handling — list-map-dir returns null for missing directory (silently clears stored path), loadZone silently resets on missing file; Location Unknown strip shown above canvas when player is in a room with no node match; official 16-color room legend wired up (COLOR_LEGEND constant) — legend panel shows name + description for known colors, unknown colors still render on map but are hidden from the legend panel ✅**
+**B29 — Hide Lich Window ✅: Electron is a GUI process with no console — direct spawn with windowsHide:false produced no visible window as there was no parent console to inherit. Fix: hidden path keeps direct spawn with windowsHide:true; visible path uses shell:true to route through cmd.exe which creates its own console window for Lich output ✅**
+**Map Panel UI Reorganization ✅: Two-bar chrome layout — top toolbar is file management only (folder, refresh, zone select, search); bottom bar holds all navigation and view controls (◆ center, room ID badge, z-level chips, Labels dropdown, ⊡ fit, ▤ legend, ■ stop-walk); color legend converted from flex child to absolute overlay inside canvas wrap so it never squeezes the map in compact panel sizes; current room label deferred to end of nodeLabels array so it always paints on top of neighboring labels ✅**
+**Map Theming ✅: Map panel fully theme-aware via 18 CSS custom properties (--map-bg, --map-chrome-bg, --map-border, --map-border-subtle, --map-text, --map-text-muted, --map-btn-bg, --map-btn-border, --map-select-bg, --map-select-color, --map-node-fill, --map-node-stroke, --map-arc-cardinal, --map-arc-vertical, --map-arc-special, --map-arc-hidden, --map-dot, --map-current-color). All 18 built-in themes have per-theme overrides. XML-defined node colors are never overridden. Current room indicator (pulse ring, crosshair, label) resolves from --map-current-color. arcColor() returns var() strings so arc colors update live on theme switch. applyCustomTheme() now merges over darkBase before applying, so pre-existing custom themes automatically receive correct map defaults without needing to be rebuilt ✅**
 
 ---
 
@@ -70,6 +74,7 @@
 | `0.1.8` | 2026-05-08 | Released (pre-release) | F10: rank-gain highlight in exp panel; F11: Death's Sting indicator in exp footer; B15: RXP usable hours format fix; B16: scroll-pin race condition fix |
 | `0.1.9` | 2026-05-08 | Released (pre-release) | System font picker; font size/line height propagation to all panels and toolbar; graceful logout on window close |
 | `0.1.10` | 2026-05-09 | Released (pre-release) | B17: combat/swimming scroll-pin race fix (onWheel eager unpin); B18: auto-copy replaced with native Electron clipboard IPC; B19: Home/End keys work in automation text fields; B20: scroll pin fully fixed — no trim while unpinned (content at top stays visible), handleScroll only un-pins, badge/End re-pins and trims to MAX_LINES, hard cap at 6000 lines; tested stable at 3600+ new lines |
+| `0.1.11` | 2026-05-09 | In progress | Map panel UI reorganization: two-bar chrome layout, legend as canvas overlay, current room label z-order fix, B30 custom theme map var fix |
 
 ---
 
@@ -566,8 +571,39 @@ Full audit of live DR login XML against the parser. All items resolved.
 
 - [ ] **Settings block + metadata tags emit `unknown` events** — `<mode id="GAME"/>`, `<playerID id='...'>`, and ~20 settings block tag types (`settings`, `presets`, `p`, `macros`, `keys`, `k`, `palette`, `i`, `stream`, `w`, `font`, `cmdline`, `strings`, `names`, `ignores`, `vars`, `scripts`, `dialog`, `builtin`, `panels`, `group`, `toggles`, `s`, `misc`, `m`, `display`, `options`, `o`) all hit the `default` case on every login. Fix: bulk-add to `SILENT_TAGS`
 - [ ] **`<app char="Agan">` character name discarded** — `app` tag is silenced but carries the logged-in character name. Fix: emit a `char-name` GameEvent from the `app` tag and display character name in the toolbar
-- [ ] **Room title `roomId` undefined after Lich map load** — before Lich: `subtitle=" - [Room Name] (2102551)"` → `roomId=2102551`; after Lich map: `subtitle=" - [Room Name - 14393]"` → no `(N)` match → `roomId=undefined`. Low priority unless numeric ID is used downstream
+- [x] **Room title Simutronics number stripped** — subtitle `[Room Name - NNNN]` had the trailing ` - NNNN` captured as part of the title, breaking map room matching; `StormFrontParser` now strips `/\s*-\s*\d+\s*$/` from bracket content before emitting `room-title`; `roomId` (from `()`) is unaffected
 - [ ] **Injury severity encoding unconfirmed** — no wounded XML sample seen yet; severity inferred from numeric suffix in `name` attr (e.g. `"head1"` = light, `"head3"` = severe); verify against actual combat XML and adjust thresholds if the convention differs
+
+---
+
+## Map System — Automapper ✅
+
+Spatially-aware map visualization panel. Renders DragonRealms Lich XML map files as a navigable SVG map with automatic current-room tracking, cross-zone auto-switching, and BFS pathfinding. Inspired by Genie's Automapper; SVG rendering approach is original.
+
+- [x] **`MapZone`, `MapNode`, `MapArc` types** — added to `shared/types.ts`
+- [x] **IPC file system bridge** — `browse-folder`, `list-map-dir`, `read-file` channels in `main.ts`; preload bridge + `global.d.ts` declarations
+- [x] **XML parser** — browser `DOMParser` in renderer; parses `<zone>`, `<node>`, `<position>`, `<description>`, `<arc>` elements; note-field alias pipe-splitting
+- [x] **SVG map canvas** — pan (drag) + zoom (wheel, passive:false imperative listener); fixed-pixel 10×10px square room markers (size = px/scale so rooms stay constant size on screen regardless of zoom); coordinate system uses XML x/y directly — no y-negation (negative y = north = screen-up, matching Genie convention)
+- [x] **Arc rendering** — color-coded lines: cardinal (warm tan), vertical (bright gold), special go-exits (sage green), hidden arcs (amber dashed); one-way detection suppresses duplicate bidirectional lines
+- [x] **Current room matching** — `findCurrentNode()` matches `node.name` against room title extracted from `[]` in the game subtitle; description compared after whitespace-normalization (lowercase, collapsed spaces) for day/night variant tolerance; name-only fallback for unique names; Simutronics ` - NNNN` suffix stripped in `StormFrontParser` before matching so it never contaminates the title string
+- [x] **Cross-zone index** — all XML files in the selected directory are parsed in the background on folder load; `indexing…` indicator in toolbar; auto-switch effect fires when `roomTitle`, `roomDesc`, `zone`, or `indexing` changes — waits for full index before searching so no missed match on fast room transitions; `selectedPathRef` prevents redundant re-loads
+- [x] **Label modes** — None / Short (last comma segment) / Full / Alias (note pipe-split) / ID; dropdown in toolbar; persisted to localStorage; applies immediately (in `useMemo` deps)
+- [x] **Z-level floor filter** — floor chips (G, +1, -1, All); auto-switches to current room's floor on zone load and room change
+- [x] **Room search** — by name or alias; up to 50 results; click result to pan to it; `searchHitIds` drives green highlight on matching nodes
+- [x] **BFS pathfinding + auto-walk** — `bfsPath()` over arc graph; double-click a room to start walking; 600 ms/step command timing; path nodes highlighted gold; Stop button in toolbar cancels; timers cleared on unmount and disconnect
+- [x] **Room detail panel** — selected room shows name, aliases (from note field), description excerpt, clickable exit direction chips (each sends the move command), Walk here / Stop button with BFS step count
+- [x] **Current room indicators** — animated SMIL pulse ring, inner glow border, crosshair dot; green badge `#nodeId` in toolbar when matched, red `?` with debug tooltip (title, desc excerpt, zones indexed) when unmatched
+- [x] **Default zoom** — loads at scale 1.8–2.5 centred on current room (if known); fit-all with 0.5 minimum when no room is known
+- [x] **Full-screen overlay** — "Maps" toolbar button opens an overlay window (`map-overlay-backdrop` / `map-overlay-window`); Escape/backdrop click closes; same `MapPanel` with `large` prop
+- [x] **Panel tab** — `'map'` panel type in `PanelFrame`; embeddable as a tab alongside other panels
+- [x] **Toolbar button wiring** — `btn-map` added to shared selector list in `game.css`; `btn-map--active` state matches Debug/Automations style; duplicate definition removed from `map-panel.css`
+- [x] **Dot grid background** — subtle 30-unit dot pattern that pans with the map, giving a cartographic chart feel
+
+### Open Items
+
+- [ ] Exit stubs — draw short cardinal-direction stubs from room edge rather than center-to-center lines (Genie visual convention); deferred
+- [ ] Multi-file arc destinations — arcs that link across zone files (destination node lives in a different XML file) are not yet followed by the pathfinder
+- [ ] Walk delay configurable — 600 ms/step hardcoded; could be a setting
 
 ---
 

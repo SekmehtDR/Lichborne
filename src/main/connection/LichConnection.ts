@@ -18,11 +18,23 @@ export class LichConnection extends EventEmitter {
     return new Promise((resolve, reject) => {
       // Spawn ruby.exe directly so windowsHide applies to the ruby process itself.
       // Using cmd /C would hide cmd.exe but ruby.exe would still create its own window.
-      this.lichProcess = cp.spawn(rubyPath, [lichPath, mode, '--dragonrealms'], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: hideWindow,
-      })
+      if (hideWindow) {
+        // Direct spawn — no console, fully silent background process
+        this.lichProcess = cp.spawn(rubyPath, [lichPath, mode, '--dragonrealms'], {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+        })
+      } else {
+        // Shell spawn — cmd.exe creates its own visible console window for Lich output.
+        // Direct spawn from an Electron (GUI) parent has no console to show in.
+        this.lichProcess = cp.spawn(rubyPath, [lichPath, mode, '--dragonrealms'], {
+          detached: true,
+          stdio: 'ignore',
+          shell: true,
+          windowsHide: false,
+        })
+      }
 
       this.lichProcess.on('error', reject)
       this.lichProcess.unref() // don't hold our process open if Lich outlives us

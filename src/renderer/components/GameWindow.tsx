@@ -11,6 +11,7 @@ import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../tri
 import { useTriggerEngine, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
+import MapPanel from './panels/MapPanel'
 import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
 import IconBar from './IconBar'
@@ -31,6 +32,7 @@ import { THEMES, applyTheme, applyCustomTheme } from '../themes'
 import { useTimers } from '../hooks/useTimers'
 import '../styles/game.css'
 import '../styles/panels.css'
+import '../styles/map-panel.css'
 
 interface Props {
   onDisconnect: () => void
@@ -193,6 +195,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [showSettings,    setShowSettings]      = useState(false)
   const [showContacts,    setShowContacts]      = useState(false)
   const [showAutomations,   setShowAutomations]   = useState(false)
+  const [showMapOverlay,  setShowMapOverlay]    = useState(false)
   const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'groups'>('highlights')
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
@@ -305,7 +308,7 @@ export default function GameWindow({ onDisconnect }: Props) {
   const anyModalOpenRef = useRef(false)
   useEffect(() => {
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
-      showSettings || showContacts || showAutomations
+      showSettings || showContacts || showAutomations || showMapOverlay
   }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
@@ -978,6 +981,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         <span className={`toolbar-status${dropped ? ' toolbar-status--disconnected' : ''}`}>{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
+        <button className={`btn-map${showMapOverlay ? ' btn-map--active' : ''}`} onClick={() => setShowMapOverlay(v => !v)}>Maps</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
         <button className="btn-automations" onClick={() => setShowAutomations(v => !v)}>Automations</button>
         <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
@@ -1105,6 +1109,20 @@ export default function GameWindow({ onDisconnect }: Props) {
       })()}
 
       {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} />}
+
+      {showMapOverlay && (
+        <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>
+          <div className="map-overlay-window">
+            <div className="map-overlay-titlebar">
+              <span className="map-overlay-title">Maps</span>
+              <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
+            </div>
+            <div className="map-overlay-body">
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} onSendCommand={cmd => window.api.sendCommand(cmd)} large />
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPanelManager && (
         <PanelManager

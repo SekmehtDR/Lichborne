@@ -162,6 +162,24 @@ ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich:
   return result
 })
 
+ipcMain.handle('browse-folder', async () => {
+  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+  return result.canceled ? null : result.filePaths[0] ?? null
+})
+
+ipcMain.handle('list-map-dir', (_event, dir: string) => {
+  try {
+    if (!fs.existsSync(dir)) return null  // directory moved/deleted
+    return fs.readdirSync(dir)
+      .filter(f => f.toLowerCase().endsWith('.xml'))
+      .map(f => ({ name: f, path: path.join(dir, f) }))
+  } catch { return null }
+})
+
+ipcMain.handle('read-file', (_event, filePath: string) => {
+  try { return fs.readFileSync(filePath, 'utf-8') } catch { return null }
+})
+
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
