@@ -28,6 +28,7 @@
   /* overflow must stay visible so the add-menu popup isn't clipped */
   overflow: visible;
   position: relative;
+  font-size: var(--game-font-size);
 }
 
 .panel-tab-list {
@@ -51,7 +52,7 @@
   gap: 5px;
   padding: 5px 9px;
   cursor: pointer;
-  font-size: 0.7rem;
+  font-size: 0.93em;
   color: var(--text-muted);   /* was #4a4a4a — improved contrast */
   border-right: 1px solid var(--border-faint);
   white-space: nowrap;
@@ -215,6 +216,6 @@
 .stream-panel-empty {
   padding: 12px;
   color: var(--text-faint);
-  font-size: 0.8rem;
+  font-size: 1.07em;
   font-style: italic;
 }

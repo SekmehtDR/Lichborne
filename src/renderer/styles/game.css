@@ -14,12 +14,13 @@
   background: linear-gradient(180deg, var(--bg-raised), var(--bg-sunken));
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  font-size: var(--game-font-size);
 }
 
 .toolbar-title {
   font-weight: 700;
   letter-spacing: 2px;
-  font-size: 0.85rem;
+  font-size: 1.13em;
 }
 
 .toolbar-title-lich {
@@ -32,7 +33,7 @@
 
 .toolbar-status {
   color: var(--text-dim);
-  font-size: 0.8rem;
+  font-size: 1.07em;
   flex: 1;
 }
 
@@ -54,7 +55,7 @@
   border-radius: 4px;
   padding: 4px 10px;
   font-family: inherit;
-  font-size: 0.75rem;
+  font-size: 1.0em;
   cursor: pointer;
   transition: all 0.2s;
 }

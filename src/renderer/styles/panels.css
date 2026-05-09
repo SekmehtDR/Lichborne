@@ -23,6 +23,8 @@
   overflow-y: auto;
   padding: 6px 8px;
   box-sizing: border-box;
+  font-size: var(--game-font-size);
+  line-height: var(--game-line-height);
 }
 
 .ts-prefix {
@@ -59,7 +61,7 @@
 
 .injuries-panel {
   padding: 8px;
-  font-size: 0.85em;
+  font-size: var(--game-font-size);
   overflow-y: auto;
   height: 100%;
 }
@@ -112,11 +114,12 @@
   overflow-y: auto;
   padding: 8px 10px;
   box-sizing: border-box;
+  font-size: var(--game-font-size);
+  line-height: var(--game-line-height);
 }
 
 .room-panel--empty {
   color: var(--text-faint);
-  font-size: 0.78rem;
   font-style: italic;
   padding: 12px;
 }
@@ -124,17 +127,15 @@
 .room-panel-title {
   color: var(--room-title-color);
   font-weight: bold;
-  font-size: 0.82rem;
+  font-size: 1.09em;
   margin-bottom: 6px;
   padding-bottom: 5px;
   border-bottom: 1px solid var(--border-subtle);
-  line-height: 1.3;
 }
 
 .room-panel-desc {
   color: var(--room-desc-color);
-  font-size: 0.78rem;
-  line-height: 1.55;
+  font-size: 1.04em;
   margin-bottom: 8px;
 }
 
@@ -150,7 +151,7 @@
   border: 1px solid var(--exit-border);
   color: var(--exit-text);
   padding: 3px 9px;
-  font-size: 0.72rem;
+  font-size: 0.96em;
   border-radius: 3px;
   cursor: pointer;
   font-family: inherit;
@@ -165,7 +166,7 @@
 
 .room-panel-section-label {
   color: var(--room-section-color);
-  font-size: 0.66rem;
+  font-size: 0.88em;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-top: 8px;
@@ -175,8 +176,7 @@
 .room-panel-objects,
 .room-panel-players {
   color: var(--room-content-color);
-  font-size: 0.76rem;
-  line-height: 1.45;
+  font-size: 1.01em;
 }
 
 /* ============================================================
@@ -189,6 +189,7 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
+  font-size: var(--game-font-size);
 }
 
 .exp-panel-body {
@@ -199,7 +200,7 @@
 
 .exp-panel--empty {
   color: var(--text-faint);
-  font-size: 0.78rem;
+  font-size: 1.04em;
   font-style: italic;
   padding: 6px 0;
 }
@@ -216,7 +217,7 @@
   border-bottom: 1px solid var(--border-faint);
   border-radius: 0;
   font-family: inherit;
-  font-size: 0.65rem;
+  font-size: 0.87em;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
@@ -234,7 +235,7 @@
 .exp-group-header--locked:hover { color: var(--exp-locked-skill); opacity: 0.85; }
 
 .exp-chevron {
-  font-size: 0.55rem;
+  font-size: 0.84em;
   transition: transform 0.15s;
   flex-shrink: 0;
   display: inline-block;
@@ -263,7 +264,7 @@
 }
 
 .exp-skill {
-  font-size: 0.71rem;
+  font-size: 0.95em;
   color: var(--exp-skill-color);
   flex-shrink: 1;
   min-width: 0;
@@ -273,21 +274,21 @@
 }
 
 .exp-rank {
-  font-size: 0.68rem;
+  font-size: 0.91em;
   color: var(--exp-rank-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .exp-pct {
-  font-size: 0.68rem;
+  font-size: 0.91em;
   color: var(--exp-pct-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .exp-mindstate {
-  font-size: 0.68rem;
+  font-size: 0.91em;
   color: var(--exp-mindstate-color);
   text-transform: capitalize;
   flex-shrink: 1;
@@ -298,7 +299,7 @@
 }
 
 .exp-rate {
-  font-size: 0.65rem;
+  font-size: 0.87em;
   color: var(--exp-rate-color);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
@@ -340,7 +341,7 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  font-size: 0.65rem;
+  font-size: 0.87em;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -348,7 +349,7 @@
 
 .exp-footer-label {
   color: var(--text-dim);
-  font-size: 0.58rem;
+  font-size: 0.89em;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;

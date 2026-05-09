@@ -1,6 +1,21 @@
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
+import { FONT_FAMILIES, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import '../styles/settings.css'
+
+declare global {
+  interface Window {
+    queryLocalFonts?: () => Promise<{ family: string }[]>
+  }
+}
+
+// Transparent migration: legacy preset keys stored in settings → actual font name
+const LEGACY_KEYS: Record<string, string> = {
+  cascadia: 'Cascadia Code',
+  terminal: 'Lucida Console',
+  sansserif: 'Segoe UI',
+  serif:     'Georgia',
+}
 
 const PREVIEW_LINES = [
   { text: '[The Crossing, Town Square]',           cls: 'sp-preview-roomname' },
@@ -58,9 +73,50 @@ function RadioGroup<T extends string>({ label, value, options, onChange }: {
 }
 
 export default function SettingsPanel({ settings, onChange, onClose }: Props) {
+  const [systemFonts, setSystemFonts] = useState<string[]>([])
+  const [monoFonts,   setMonoFonts]   = useState<Set<string>>(new Set())
+  const [fontQuery,   setFontQuery]   = useState('')
+  const [fontFilter,  setFontFilter]  = useState<'all' | 'mono'>('all')
+  const fontListRef = useRef<HTMLDivElement>(null)
+
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
   }
+
+  // Migrate legacy preset key → font name on first open
+  useEffect(() => {
+    if (LEGACY_KEYS[settings.fontFamily]) set('fontFamily', LEGACY_KEYS[settings.fontFamily])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Enumerate installed system fonts and detect monospace via canvas width test
+  useEffect(() => {
+    window.queryLocalFonts?.()
+      .then(fonts => {
+        const families = [...new Set(fonts.map(f => f.family))].sort()
+        setSystemFonts(families)
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')!
+        const mono = new Set<string>()
+        for (const family of families) {
+          ctx.font = `16px '${family}'`
+          if (ctx.measureText('i').width === ctx.measureText('W').width) mono.add(family)
+        }
+        setMonoFonts(mono)
+      })
+      .catch(() => {})
+  }, [])
+
+  // Scroll selected font into view whenever the list loads, filter, or selection changes
+  useEffect(() => {
+    if (fontQuery) return
+    fontListRef.current?.querySelector('.sp-font-item--active')
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [settings.fontFamily, systemFonts, fontQuery, fontFilter])
+
+  const baseList = fontFilter === 'mono' ? systemFonts.filter(f => monoFonts.has(f)) : systemFonts
+  const filteredFonts = fontQuery
+    ? baseList.filter(f => f.toLowerCase().includes(fontQuery.toLowerCase()))
+    : baseList
 
   return createPortal(
     <div className="sp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -77,18 +133,36 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
           {/* ── Display ─────────────────────────────────────────── */}
           <div className="sp-section-label">Display</div>
 
-          <div className="sp-field-row">
-            <label className="sp-field-label" htmlFor="sp-font-family">Font family</label>
-            <select
-              id="sp-font-family"
-              className="sp-select"
-              value={settings.fontFamily}
-              onChange={e => set('fontFamily', e.target.value)}
-            >
-              {Object.entries(FONT_FAMILY_LABELS).map(([key, label]) => (
-                <option key={key} value={key}>{label}</option>
+          <div className="sp-font-picker">
+            <div className="sp-font-picker-header">
+              <span className="sp-field-label">Font family</span>
+              <span className="sp-font-current">{settings.fontFamily}</span>
+            </div>
+            <div className="sp-font-filters">
+              <button className={`sp-font-filter${fontFilter === 'all'  ? ' sp-font-filter--active' : ''}`} onClick={() => setFontFilter('all')}>All</button>
+              <button className={`sp-font-filter${fontFilter === 'mono' ? ' sp-font-filter--active' : ''}`} onClick={() => setFontFilter('mono')}>Monospace</button>
+            </div>
+            <input
+              type="text"
+              className="sp-font-search"
+              placeholder={systemFonts.length === 0 ? 'Loading fonts…' : 'Filter fonts…'}
+              value={fontQuery}
+              onChange={e => setFontQuery(e.target.value)}
+            />
+            <div className="sp-font-list" ref={fontListRef}>
+              {filteredFonts.map(name => (
+                <div
+                  key={name}
+                  className={`sp-font-item${name === settings.fontFamily ? ' sp-font-item--active' : ''}`}
+                  onClick={() => { set('fontFamily', name); setFontQuery('') }}
+                >
+                  {name}
+                </div>
               ))}
-            </select>
+              {filteredFonts.length === 0 && fontQuery && (
+                <div className="sp-font-empty">No matches</div>
+              )}
+            </div>
           </div>
 
           <div className="sp-field-row">
@@ -129,7 +203,7 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
             <div
               className="sp-preview-body"
               style={{
-                fontFamily: FONT_FAMILIES[settings.fontFamily] ?? FONT_FAMILIES.cascadia,
+                fontFamily: FONT_FAMILIES[settings.fontFamily] ?? `'${settings.fontFamily}'`,
                 fontSize: `${settings.largePrint ? 18 : settings.fontSize}px`,
                 lineHeight: settings.largePrint ? 1.8 : settings.lineHeight,
               }}

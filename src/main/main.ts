@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { autoUpdater } from 'electron-updater'
@@ -20,6 +20,7 @@ let mainWindow: BrowserWindow | null = null
 const connection = new ConnectionManager()
 const parser = new StormFrontParser()
 let cleanDisconnect = false
+let connected = false
 
 connection.on('status', (msg: string) => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
@@ -39,6 +40,7 @@ connection.on('line', (line: string) => {
 connection.on('disconnect', () => {
   const wasClean = cleanDisconnect
   cleanDisconnect = false
+  connected = false
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected', clean: wasClean })
 })
 connection.on('error', (err: Error) => {
@@ -70,6 +72,17 @@ function createWindow() {
 
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
 
+  mainWindow.on('close', (e) => {
+    if (connected) {
+      e.preventDefault()
+      connected = false
+      cleanDisconnect = true
+      connection.gracefulDisconnect().finally(() => {
+        mainWindow?.destroy()
+      })
+    }
+  })
+
   mainWindow.on('closed', () => {
     connection.forceDisconnect()
     mainWindow = null
@@ -83,6 +96,7 @@ ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
     } else {
       await connection.connectDirect(creds)
     }
+    connected = true
     mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: true, message: 'Connected' })
     return { ok: true }
   } catch (err) {
@@ -236,6 +250,12 @@ function setupMenu() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'local-fonts')
+  })
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return permission === 'local-fonts'
+  })
   createWindow()
   setupMenu()
   if (app.isPackaged) setupAutoUpdater()

@@ -1,13 +1,12 @@
-## What's new in v0.1.8
+## What's new in v0.1.9
 
-- **Rank gain highlight** — when you gain a rank in a skill the row in the Experience panel goes bold for 3 seconds, matching the server's `<b>` signal
-- **Death's Sting indicator** — a red "Death's Sting" badge appears in the Experience panel footer while rested exp is suppressed; disappears automatically when the effect clears
-- **RXP display fix** — the RXP footer now correctly shows usable rested exp in hours (`5:56h`) when the pool is large; previously showed a dash
-- **Experience panel scroll fix** — the Events tab in the Debug panel now correctly locks scroll position when scrolled up; content no longer jumps forward as new events arrive
+- **Font size & line height apply everywhere** — the font size and line height sliders in Settings now scale all game content: main window, stream panels, room panel, experience panel, injuries panel, panel tab labels, and the toolbar
+- **System font picker** — font family now shows your full list of installed fonts in a scrollable inline picker with a search filter and a Monospace-only filter; defaults to Consolas 12px Compact
+- **Graceful logout on close** — closing the window (X button, File → Quit, or Window → Close) now sends QUIT to the game server before exiting so your character logs out cleanly instead of timing out
 
 ## How to install
 
-1. Download `Lichborne-0.1.8-setup.exe` below
+1. Download `Lichborne-0.1.9-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -33,4 +32,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.7...v0.1.8
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.8...v0.1.9

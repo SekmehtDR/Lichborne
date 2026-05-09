@@ -2,7 +2,7 @@ import type { ThemeVars } from './themes'
 
 export interface AppSettings {
   fontSize: number       // game text size in px, 10–24
-  fontFamily: string     // key into FONT_FAMILIES
+  fontFamily: string     // legacy preset key OR raw installed font name
   lineHeight: number     // 1.2 / 1.5 / 1.8 / 2.0
   largePrint: boolean
   highContrast: boolean
@@ -15,9 +15,9 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  fontSize: 14,
-  fontFamily: 'cascadia',
-  lineHeight: 1.5,
+  fontSize: 12,
+  fontFamily: 'Consolas',
+  lineHeight: 1.2,
   largePrint: false,
   highContrast: false,
   colorBlind: 'none',
@@ -190,7 +190,7 @@ export function applySettingsToDOM(s: AppSettings): void {
   const lineHeight = s.largePrint ? 1.8 : s.lineHeight
   setVar('--game-font-size',   `${fontSize}px`)
   setVar('--game-line-height', `${lineHeight}`)
-  setVar('--game-font-family', FONT_FAMILIES[s.fontFamily] ?? FONT_FAMILIES.cascadia)
+  setVar('--game-font-family', FONT_FAMILIES[s.fontFamily] ?? `'${s.fontFamily}', monospace`)
 
   // Scale entire UI for large print
   root.style.fontSize = s.largePrint ? '16px' : ''

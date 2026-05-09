@@ -34,6 +34,11 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
 
   const hasExtras = nameRegex || matchRules.length > 0
 
+  // Snapshot scroll position during render (before commit) so the layout effect
+  // sees the pre-update pinned state even if the scroll event hasn't fired yet.
+  const scrollEl = scrollRef.current
+  if (scrollEl) pinnedRef.current = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40
+
   function handleScroll() {
     const el = scrollRef.current
     if (!el) return

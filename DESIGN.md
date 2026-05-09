@@ -183,7 +183,7 @@ The main text window has one job: never lose game text, never lose your place.
 - **Smart scroll anchor** — scrolling up pauses auto-scroll silently. A **"▼ N new lines"** badge appears at the bottom edge. Clicking it or pressing `End` resumes auto-scroll and jumps to the bottom. The player decides when to return; the client never forces them.
 - **Keyboard scroll** — `PageUp`/`PageDown` scroll the text window by one screen; `Home` jumps to the top of history; `End` returns to the bottom and re-pins auto-scroll. All four keys are suppressed when the command input is focused so they don't interfere with typing.
 - **Scrollbar arrows** — up/down arrow buttons rendered via `::-webkit-scrollbar-button` with SVG data-URI triangles (Chromium removes native arrows by default). Clicking scrolls one line; hover darkens the button background for feedback.
-- **Scroll pinning implementation** — `useLayoutEffect` (not `useEffect`) fires the scroll-to-bottom synchronously after DOM mutation, before the browser paints or fires scroll events. Combined with `overflow-anchor: none` on the scroll container to prevent Chrome's native scroll anchoring from competing. Together these eliminate the race condition where large text bursts could unpin the scroll.
+- **Scroll pinning implementation** — `useLayoutEffect` (not `useEffect`) fires the scroll-to-bottom synchronously after DOM mutation, before the browser paints or fires scroll events. Combined with `overflow-anchor: none` on the scroll container to prevent Chrome's native scroll anchoring from competing. A secondary race was also fixed: the `onScroll` DOM event that updates `pinnedRef` fires asynchronously, so if game lines arrived before it fired, `useLayoutEffect` would see a stale pinned state and scroll the window. Fix: `GameWindow` re-reads the scroll position directly from the DOM right before calling `setLines`; `StreamPanel` snapshots the position during the render phase (before React commits the new lines) so both always operate on the actual pre-update scroll state.
 - **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line
 
 ### 2.9 Link Rendering
@@ -595,9 +595,13 @@ This toggle exists because real players have asked for it. It is easy to find, c
 Font settings work at two levels: **global defaults** and **per-panel overrides**.
 
 **Global defaults** (Settings → Display & Accessibility):
-- Font family: monospace system font (Cascadia Code → Consolas → Courier New fallback)
-- Font size, weight, and line height — all configurable
-- These apply everywhere unless a panel overrides them
+- Font family: any font installed on the user's system, selected via a scrollable inline picker with live filter. The current selection is shown above the list; typing in the filter box narrows it instantly. The selected font is highlighted and auto-scrolled into view when the panel opens. A **Monospace** filter chip narrows the list to monospace fonts only, detected at enumeration time via a canvas width test (`i` vs `W`).
+- Font enumeration uses the **Local Font Access API** (`window.queryLocalFonts()`), available in Electron 21+ / Chromium 103+. The main process grants the `local-fonts` permission via `setPermissionRequestHandler` + `setPermissionCheckHandler` before the window loads. Results are deduplicated by family name and sorted alphabetically.
+- The stored value is the raw font family name (e.g. `"Cascadia Code"`). Legacy preset keys (`cascadia`, `terminal`, `sansserif`, `serif`) are transparently migrated to their font names the first time Settings is opened.
+- `applySettingsToDOM` applies the stored name as `'FontName', monospace` — monospace is the fallback if the font is later uninstalled. Legacy preset keys still resolve to their full fallback stacks (`'Cascadia Code', 'Fira Code', 'Consolas', monospace`) for any settings not yet migrated.
+- Default font: **Consolas 12px, Compact (1.2) line height**.
+- Font family propagates globally via `body { font-family: var(--game-font-family) }` — all panels inherit it automatically.
+- Font size and line height propagate to all game content panels via CSS vars `--game-font-size` and `--game-line-height` anchored on each content container: main text window (`.text-line`), stream panels, room panel, exp panel, injuries panel, panel tab labels, and the toolbar (buttons, title, status). Child elements within structured panels (room, exp) use `em` units so they scale proportionally with the container font size.
 
 **Per-panel overrides:**
 Every panel can have its own font family, size, and line height set independently. Right-click a panel header → Panel Settings → Font. Common uses:

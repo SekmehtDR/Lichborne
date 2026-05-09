@@ -563,6 +563,8 @@ export default function GameWindow({ onDisconnect }: Props) {
       }
 
       if (newMain.length > 0) {
+        const el = scrollRef.current
+        if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
         setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         if (!pinnedRef.current) setNewLineCount(prev => prev + newMain.length)
       }
