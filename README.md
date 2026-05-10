@@ -1,72 +1,68 @@
 # Lichborne
 
-A DragonRealms game client built with Electron, React, and TypeScript. Supports connecting via [Lich](https://github.com/elanthia-online/lich-5) (recommended) or direct to the game server.
+## What is it?
+
+Lichborne is a DragonRealms client inspired by StormFront, Genie, and Frostbite — built for players who've been around long enough to have opinions about all three. If you've used any of them, you'll feel right at home.
+
+It connects through [Lich5](https://github.com/elanthia-online/lich-5) (recommended) or direct to the game server.
+
+**Currently in alpha** — the core experience is solid and actively improving. A Discord server is coming soon for feedback, bug reports, and general chat.
+
+**Windows only (x64) · [Download the latest installer →](https://github.com/SekmehtDR/Lichborne/releases/latest)**
 
 ---
 
-## Prerequisites
+## Why is it better?
 
-Before you can build and run Lichborne, you need the following installed:
-
-- **[Node.js](https://nodejs.org/)** v18 or later (v24 recommended)
-- **npm** v9 or later (comes with Node.js)
-- A **DragonRealms** account at play.net
-
-### If connecting via Lich (recommended)
-
-- **[Ruby](https://rubyinstaller.org/)** — Lich5 requires Ruby 4.0. Install to `C:\Ruby4Lich5\4.0.0\` or update the path in Advanced Settings.
-- **[Lich5](https://github.com/elanthia-online/lich-5)** — install to `C:\Ruby4Lich5\Lich5\` or update the path in Advanced Settings.
+- **Your settings follow you** — every panel move, highlight tweak, and contact update saves automatically. Restart the client, switch characters, move to a new machine — everything is exactly where you left it
+- **Groups & Modes** — organize your highlights, triggers, macros, and contacts into groups. Switch modes from the toolbar and everything updates at once. One click to go from hunting mode to town mode
+- **Contacts that know context** — tag player names with colors, prefixes, and notes. Their name lights up everywhere it appears in game text. Enemy highlighting only in PVP mode, friend colors only in town — contacts respect your active mode
+- **Maps built in** — loads the same XML zone files that [Genie](https://github.com/elanthia-online/genie-client) uses. The map follows you as you move, click exits to walk, or use the pathfinder to go anywhere
+- **Auto-updates** — when a new version is ready, Lichborne tells you and installs it with one click. No re-downloading from scratch
 
 ---
 
-## Setup
+## Why does it matter to me?
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/SekmehtDR/Lichborne.git
-cd Lichborne
+If you've spent years tweaking Genie highlights or maintaining StormFront layouts, you know the pain of losing your setup or starting over on a new character. Lichborne saves everything automatically to plain YAML files — back them up, copy them to another machine, or share them with a friend. Your setup is yours and it goes where you go.
 
-# 2. Install dependencies
-npm install
-```
+If you're already running Lich for scripts, Lichborne slots right in alongside it — same installation, same paths, no conflict.
 
 ---
 
-## Running the Client
+## Getting Started
 
-```bash
-npm start
-```
+### Step 1 — Install
 
-This builds the main process, builds the renderer, and launches the Electron app in one step.
+Download `Lichborne-X.Y.Z-setup.exe` from the [Releases page](https://github.com/SekmehtDR/Lichborne/releases/latest) and run it. No admin rights needed. Windows may show a SmartScreen warning since we don't have a code signing certificate yet — click **More info → Run anyway**. It's safe.
 
----
+### Step 2 — Set up Lich (recommended)
 
-## Login
+Lich is a separate, community-maintained project — check out the [Lich5 repository](https://github.com/elanthia-online/lich-5) for installation instructions. It bundles the Ruby version it needs, so follow their setup guide and install to their default paths.
 
-1. Enter your **Simutronics account name**, **password**, and **character name** — your account name is saved and will be pre-filled on next launch
-2. Open **Advanced / Lich Settings** if you need to adjust paths or connection options
-3. Click **Connect via Lich** (or **Connect Direct** if not using Lich)
+If you already have Lich running for Genie or another client, you're already set — no reinstall needed.
 
-### Advanced / Lich Settings
+Once Lich is installed, open **Advanced / Lich Settings** in Lichborne and hit **↺ Auto Detect**. You'll see green checkmarks when everything's found.
 
-| Setting | Default | Description |
-|---|---|---|
-| Ruby Path | `C:\Ruby4Lich5\4.0.0\bin\ruby.exe` | Path to your Ruby executable |
-| Lich Path | `C:\Ruby4Lich5\Lich5\lich.rbw` | Path to lich.rbw |
-| Launch Delay | `5` seconds | How long to wait for Lich to start before connecting |
-| Port | `11024` | Lich proxy port |
-| Mode | `--stormfront` | Client handshake mode passed to Lich |
+### Step 3 — Log in
 
-### Recommended In-Game Settings
+1. Enter your **account name**, **password**, and **character name** — just like any other client
+2. Click **⚡ Connect via Lich**
+3. That's it — your account name and Lich settings are remembered for next time
 
-Enable **statusprompt** in DragonRealms for the best experience — this causes the game server to send your full status (hidden, stunned, roundtime, etc.) in the prompt, which Lichborne displays correctly.
+Prefer to connect direct without Lich? Uncheck "Connect via Lich" and click **⬡ Connect Direct**.
+
+### Step 4 — One-time in-game setup
+
+Run this command once after you log in:
 
 ```
 SET PROMPT STATUS
 ```
 
-The **EXPBRIEF** in-game toggle is supported in both states. With EXPBRIEF ON, the exp panel uses bracket notation (`[16/34]`) to determine mindstate; with EXPBRIEF OFF it uses the full mindstate name. Either works — use whichever you prefer.
+This tells DragonRealms to send your full status (hidden, stunned, roundtime, etc.) with every prompt. Lichborne uses that to keep your vitals and timers accurate. If you've used StormFront before, you've probably already done this.
+
+EXPBRIEF works either way — on or off, the experience panel handles both correctly.
 
 ---
 
@@ -76,109 +72,102 @@ The **EXPBRIEF** in-game toggle is supported in both states. With EXPBRIEF ON, t
 |---|---|
 | `PageUp` | Scroll text window up one page |
 | `PageDown` | Scroll text window down one page |
-| `Home` | Jump to top of text history |
-| `End` | Jump to bottom and resume auto-scroll |
+| `Home` | Jump to the top of your text history |
+| `End` | Jump back to the bottom and resume auto-scroll |
 
-These keys are active whenever the command input is not focused.
-
----
-
-## Debug Panel
-
-Click the **Debug** button in the toolbar while connected to open the event stream panel. This shows all parsed game events in real time — useful for troubleshooting.
+Macro hotkeys (F1–F12, Ctrl/Alt combos) are set up in the Automations panel.
 
 ---
 
-## Development
+## Known Limitations
 
-```bash
-# Build only (no launch)
-npm run build
-
-# Build main process only
-npm run build:main
-
-# Build renderer only
-npm run build:renderer
-```
+- Windows only (x64) for now
+- No code signing yet — the SmartScreen warning on first install is expected and safe to dismiss
+- Multiple characters require opening the app once per character
 
 ---
 
-## Building a Release
+## Credits
 
-Releases are distributed as a Windows x64 NSIS installer and published to GitHub Releases. The running client checks for updates automatically on launch and installs them silently in-place.
+| Role | Name |
+|---|---|
+| Developer | Sekmeht, Jimmy McClaude |
+| Design | Binu, Damiza, Legiro |
+| Contributors | Tirost |
+
+---
+
+## For Developers
 
 ### Prerequisites
 
-- A GitHub **fine-grained personal access token** with **Contents: Read and write** permission on this repository
-  - GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+- **[Node.js](https://nodejs.org/)** v18 or later (v24 recommended)
+- **npm** v9 or later (comes with Node.js)
 
-### Steps
+### Setup & Run
 
-**1. Bump the version** in `package.json`:
-```json
-"version": "0.2.0"
+```bash
+git clone https://github.com/SekmehtDR/Lichborne.git
+cd Lichborne
+npm install
+npm start
 ```
 
-**2. Set your GitHub token** in PowerShell:
-```powershell
-$env:GH_TOKEN = "your_token_here"
+`npm start` builds main + renderer and launches the Electron app in one step.
+
+### Build Commands
+
+```bash
+npm run build          # Build only (no launch)
+npm run build:main     # Main process only
+npm run build:renderer # Renderer only
+npm run dist           # Package installer locally (output → release/, gitignored)
 ```
 
-**3. Update `release-notes.md`** with what's new in this version.
-
-**4. Commit** your changes.
-
-**5. Build and publish:**
-```powershell
-node publish.mjs
-```
-
-This script does everything in sequence:
-1. Cleans the `release/` folder so no stale files from prior runs are picked up
-2. Runs `npm run build` — compiles main + renderer so the version number is baked in
-3. Packages the installer and uploads it to a GitHub Release draft via electron-builder
-4. Patches the release body with your `release-notes.md` via the GitHub API
-
-Two files are uploaded per release:
-- `Lichborne-X.Y.Z-setup.exe` — the NSIS installer
-- `latest.yml` — version metadata used by the auto-updater (generated automatically by electron-builder for NSIS builds)
-
-> **Note:** Do not create GitHub tags manually before running `publish.mjs` — electron-builder creates the `vX.Y.Z` tag automatically. Creating a tag first caused the `0.1.4` vs `v0.1.4` mismatch issue.
-
-**6. Publish the release** on GitHub:
-- Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases)
-- Find the draft → click **Publish release**
-
-Once published, any running client will show an update banner within 3 seconds of next launch. Updates install silently in-place — users stay at the same install location.
-
-### Local build only (no publish)
-
-```powershell
-npm run dist
-```
-
-Output goes to `release/` (gitignored).
-
-The project structure:
+### Project Structure
 
 ```
 src/
-  main/           # Electron main process (Node.js)
-    connection/   # SGE auth, Lich launch, ConnectionManager
-    parser/       # StormFront XML parser
-  renderer/       # React UI
-    components/   # GameWindow, LoginScreen, DebugPanel
-    styles/       # CSS
-  shared/         # types.ts — shared between main and renderer
+  main/               # Electron main process (Node.js)
+    connection/       # SGE auth, Lich launch, ConnectionManager
+    parser/           # StormFront XML parser
+    profiles.ts       # YAML file I/O for profile system
+  renderer/           # React UI
+    components/       # GameWindow, LoginScreen, panels/, GroupPicker, etc.
+    styles/           # CSS
+    profile.ts        # Build/export/import profile logic
+    profile-types.ts  # TypeScript interfaces for SharedProfile, CharacterProfile
+    contacts.ts       # Contact and ContactTemplate types + storage
+    groups.ts         # Group/mode types, isRuleActive, storage
+    highlights.ts     # Highlight rule types + storage
+    triggers.ts       # Trigger rule types + storage
+    macros.ts         # Macro + alias rule types + storage
+    themes.ts         # Built-in theme definitions + apply logic
+    myThemes.ts       # Custom theme CRUD + import/export
+  shared/             # types.ts — shared between main and renderer
+profiles/             # YAML profiles (gitignored — created at runtime)
 ```
 
----
+### Publishing a Release
 
-## Current Status
+Releases are distributed as a Windows x64 NSIS installer via GitHub Releases. The auto-updater picks up new releases automatically.
 
-All core phases complete. The client is feature-complete for initial testing:
-- Full XML parsing, vitals, room, exp, injuries, spells panels
-- Highlights, triggers, macros, aliases, automations, groups & modes
-- Theming (17 themes), settings, contacts, stream timestamps, per-stream right-click menus
-- Packaged as an NSIS installer with silent in-place auto-update via GitHub Releases
+**Prerequisites:** a GitHub fine-grained personal access token with **Contents: Read and write** on this repository (Settings → Developer settings → Personal access tokens → Fine-grained tokens).
+
+**Steps:**
+
+1. Bump `"version"` in `package.json`
+2. Update `release-notes.md`
+3. Commit your changes
+4. Set your token and publish:
+
+```powershell
+$env:GH_TOKEN = "your_token_here"
+node publish.mjs
+```
+
+`publish.mjs` cleans the release folder, runs `npm run build`, packages the installer, uploads it as a GitHub Release draft, and patches the release body from `release-notes.md`.
+
+5. Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases), find the draft, and click **Publish release**
+
+> **Note:** Do not create GitHub tags manually — electron-builder creates the `vX.Y.Z` tag automatically during publish.
