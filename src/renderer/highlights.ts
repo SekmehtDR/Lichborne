@@ -89,6 +89,6 @@ export function newHighlight(pattern = '', scope: 'match' | 'line' = 'line'): Hi
     },
     priority: 0,
     groupIds: [],
-    allGroups: false,
+    allGroups: true,
   }
 }

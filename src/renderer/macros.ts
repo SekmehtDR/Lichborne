@@ -72,7 +72,7 @@ export function newAlias(input = ''): AliasRule {
     delayMs: 0,
     passThrough: false,
     groupIds: [],
-    allGroups: false,
+    allGroups: true,
   }
 }
 
@@ -85,7 +85,7 @@ export function newMacro(key = ''): MacroRule {
     commands: [''],
     delayMs: 0,
     groupIds: [],
-    allGroups: false,
+    allGroups: true,
   }
 }
 

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { MapZone, MapNode } from '../../../shared/types'
+import { scheduleSharedProfileSave } from '../../profile'
 import '../../styles/map-panel.css'
 
 interface Props {
@@ -512,6 +513,7 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
     if (!dir) return
     setMapDir(dir)
     localStorage.setItem('lichborne.mapDir', dir)
+    scheduleSharedProfileSave()
     setSelectedPath('')
     setZone(null)
   }

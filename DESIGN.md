@@ -33,6 +33,17 @@
 17. [Automations, Groups & Modes](#17-automations-groups--modes)
 18. [Packaging & Distribution](#18-packaging--distribution)
 19. [Map System](#19-map-system)
+20. [Profile System](#20-profile-system)
+   - 20.1 Overview
+   - 20.2 Storage Structure
+   - 20.3 File Responsibilities
+   - 20.4 Authority Rules
+   - 20.5 Write Flow
+   - 20.6 Startup / Login Flow
+   - 20.7 Game Code and Authentication
+   - 20.8 Implementation Files
+   - 20.9 Portability
+   - 20.10 Implementation Phases
    - 19.1 Overview
    - 19.2 Map File Format
    - 19.3 Coordinate System
@@ -1710,15 +1721,18 @@ Stored in localStorage:
 
 Default templates shipped with the client:
 
-| Name | Text Color | Tag | Notes |
-|------|-----------|-----|-------|
-| Friends | `#a0d080` (soft green) | _(none)_ | |
-| Enemies | `#e05050` (red) | `[Enemy]` | |
-| Guild | `#60b8e0` (blue) | _(none)_ | |
-| Self | `#e8d070` (gold) | _(none)_ | For alt characters |
-| Merchant | `#c080e0` (purple) | _(none)_ | |
+| Name | Text Color | Tag | Groups |
+|------|-----------|-----|--------|
+| Friends | `#a0d080` (soft green) | _(none)_ | All Groups |
+| Enemies | `#e05050` (red) | `[Enemy]` | All Groups |
 
 Players can add, edit, and delete custom templates. Default templates cannot be deleted but can be edited.
+
+Each template has a **Groups** assignment (identical to highlight/trigger/macro group rules):
+- `allGroups: true` (default) — template styling applies regardless of active mode
+- Specific groups — styling only applies when at least one assigned group is active
+
+When a template's group condition is not met, the contact's name still renders as a clickable span but without color, tag, or bold — as if no template were assigned. This allows enemies to be highlighted only in PVP mode, friends only in social mode, etc.
 
 ### 15.4 Contacts Panel UI
 
@@ -1769,7 +1783,7 @@ Toolbar button "Contacts" opens a modal with two views: **Contacts** (default) a
 └─────────────────────────────────────────────────────────────┘
 ```
 
-Each row expands inline to edit: template name, text color picker, bg color picker, tag text field, tag color picker.
+Each row expands inline to edit: template name, text color picker, bg color picker, bold toggle, tag text field, tag color picker, tag BG picker, and a **Groups** row (All Groups button + GroupPicker — same pattern as highlight/trigger/macro editors).
 
 ### 15.6 In-Game Name Rendering (Phase 6B)
 
@@ -2072,7 +2086,7 @@ Each rule tab is the full editor for that system — identical to the standalone
 
 ### 17.8 Group Picker on Rules
 
-Each rule editor (highlight, trigger, macro, alias) has a **Groups** section:
+Each rule editor (highlight, trigger, macro, alias) and contact template has a **Groups** section:
 
 ```
 GROUPS
@@ -2087,7 +2101,7 @@ GROUPS
 [ All Groups ]  ■ Combat  ■ PVP  [ + Group ▾ ]
 ```
 
-No default pre-selected — uncategorized is the intentional starting state that reminds players to organize.
+All new rules and contact templates default to `allGroups: true` — active in every mode out of the box. Players narrow to specific groups after creation if needed.
 
 ### 17.9 Sidebar Group Filter
 
@@ -2511,3 +2525,248 @@ The map panel uses a two-bar chrome layout with the canvas between them.
 | Cross-file pathfinding | Follow arcs whose destination lives in a different zone file |
 | Configurable walk delay | 600 ms/step is hardcoded; expose as a setting |
 | Room notes / bookmarks | Player-added per-room annotations persisted locally |
+
+---
+
+## 20. Profile System
+
+### 20.1 Overview
+
+The profile system provides portable, file-based persistence for all character and application settings. Each character's configuration is stored in a YAML file inside a `profiles\` folder in the installation directory. Copying the installation folder to another machine carries all profiles with it.
+
+**Design principles:**
+- YAML files are the source of truth — `localStorage` is the live runtime working copy
+- Settings flow: YAML → `localStorage` on launch; `localStorage` → YAML on change/disconnect
+- Additive and safe — the system is purely read/write on top of existing `localStorage`; it does not replace or bypass any existing save logic
+
+---
+
+### 20.2 Storage Structure
+
+```
+<install-dir>\
+  profiles\
+    _shared.yaml       — machine-level, shared across all characters and accounts
+    Sekmeht.yaml       — per-character profile
+    Binu.yaml
+    ...
+```
+
+**Dev mode:** `profiles\` is relative to the project root (`app.getAppPath()`).
+**Production:** `profiles\` is relative to the directory containing the exe (`path.dirname(app.getPath('exe'))`). This ensures the folder is always writable and travels with the installation.
+**Git:** `profiles/` is listed in `.gitignore` — account names, Lich paths, and personal config never end up in the repository.
+
+---
+
+### 20.3 File Responsibilities
+
+#### `_shared.yaml`
+Machine-level and game-level config shared across all characters and accounts:
+
+```yaml
+account: FORTISSABROK   # last account name used; pre-fills the login form
+
+advancedSettings:
+  lichPath: C:\Ruby4Lich5\Lich5\lich.rbw
+  rubyPath: C:\Ruby4Lich5\4.0.0\bin\ruby.exe
+  lichClientFlag: --stormfront   # --stormfront | --genie | --wizard | --avalon | --frostbite
+  lichDelay: 5
+  hideLichWindow: false
+  lichPort: 11024
+  portLocked: true
+  modeLocked: true
+
+mapDir: C:\Users\...\maps
+
+games:
+  DR:
+    name: DragonRealms Prime
+    gameCode: DR
+    lichPort: 11024
+    lichArguments: --dragonrealms
+  DRT:
+    name: DragonRealms Prime Test
+    gameCode: DRT
+    lichPort: 11624
+    lichArguments: --test --dragonrealms
+  DRX:
+    name: DragonRealms Platinum
+    gameCode: DRX
+    lichPort: 11124
+    lichArguments: --platinum --dragonrealms
+  DRF:
+    name: DragonRealms The Fallen
+    gameCode: DRF
+    lichPort: 11324
+    lichArguments: --fallen
+
+myThemes:
+  - id: my-dark-gold
+    name: Dark Gold
+    vars: { ... }
+```
+
+**`lichClientFlag`** is combined with the game's `lichArguments` to form the full Lich launch command: `ruby lich.rbw --stormfront --dragonrealms`. Swapping the flag in one place updates it for all games. Adding a new game server requires only a new entry in the `games` table — no code changes needed; the login screen game dropdown is populated from this table at runtime.
+
+#### `CharacterName.yaml`
+Everything specific to one character:
+
+```yaml
+account: FORTISSABROK
+character: Sekmeht
+game: DR          # references games table in _shared.yaml for auth + lich config
+useLich: true
+
+theme: dark
+settings:
+  fontSize: 12
+  fontFamily: Consolas
+  lineHeight: 1.2
+  largePrint: false
+  highContrast: false
+  colorBlind: none
+  epilepsySafe: false
+  vitalsBarPosition: bottom
+  iconBarPosition: top
+  timerStyle: chips
+  autoLinkUrls: true
+
+layout:
+  panelWidth: 320
+  topPanelHeight: 200
+  midPanelHeight: 200
+  topTabs: [...]
+  topActiveId: room
+  midTabs: [...]
+  midActiveId: thoughts
+  bottomTabs: [...]
+  bottomActiveId: exp
+  streamTimestamps: { thoughts: true, arrivals: false }
+  mapLabelMode: short   # none | short | full | id | note
+
+automations:
+  highlights: [...]
+  triggers: [...]
+  macros: [...]
+  aliases: [...]
+  groups: [...]
+  modes: [...]
+  activeGroupStates: { grp-combat: true, ... }
+  activeModeId: mode-hunting
+
+contacts: [...]
+contactTemplates: [...]
+```
+
+**`localStorage` key → YAML field mapping:**
+
+| `localStorage` key | YAML location | Scope |
+|---|---|---|
+| `lichborne.account` | `_shared.account` | shared |
+| `lichborne.advancedSettings` (lichPath, rubyPath, lichMode, lichDelay, hideLichWindow, lichPort, portLocked, modeLocked) | `_shared.advancedSettings` | shared |
+| `lichborne.advancedSettings` (useLich) | `useLich` | character |
+| `lichborne.theme` | `theme` | character |
+| `lichborne.myThemes` | `_shared.myThemes` | shared |
+| `lichborne.settings` | `settings` | character |
+| `lichborne.highlights` | `automations.highlights` | character |
+| `lichborne.triggers` | `automations.triggers` | character |
+| `lichborne.macros` | `automations.macros` | character |
+| `lichborne.aliases` | `automations.aliases` | character |
+| `lichborne.groups` | `automations.groups` | character |
+| `lichborne.modes` | `automations.modes` | character |
+| `lichborne.activeGroupStates` | `automations.activeGroupStates` | character |
+| `lichborne.activeModeId` | `automations.activeModeId` | character |
+| `lichborne.contacts` | `contacts` | character |
+| `lichborne.contact-templates` | `contactTemplates` | character |
+| `lichborne.topTabs` / `midTabs` / `bottomTabs` + active IDs | `layout.*Tabs` / `*ActiveId` | character |
+| `lichborne.panelWidth` / `topPanelHeight` / `midPanelHeight` | `layout.*` | character |
+| `lichborne.streamTimestamps` | `layout.streamTimestamps` | character |
+| `lichborne.mapLabelMode` | `layout.mapLabelMode` | character |
+| `lichborne.mapDir` | `_shared.mapDir` | shared |
+| `lichborne.mapFile` | — (transient, not persisted to YAML) | — |
+
+---
+
+### 20.4 Authority Rules
+
+| Situation | Authority |
+|---|---|
+| YAML exists for this character | YAML overwrites `localStorage` on launch |
+| No YAML, `localStorage` has data | `localStorage` used as-is (new character) |
+| No YAML, no `localStorage` | App defaults (brand new install) |
+
+---
+
+### 20.5 Write Flow
+
+1. Any setting changes → `localStorage` immediately (existing behavior, unchanged)
+2. Debounced 2.5 seconds after last change → YAML written
+3. On disconnect (clean or dropped) → immediate final character write regardless of debounce state
+
+**Character profile debounce triggers** (`scheduleProfileSave` in `GameWindow`):
+- Settings panel `onChange`
+- Automations panel `onSaved` and `onClose`
+- Contacts panel `onSaved`
+- Contact last-seen auto-update timer (2s)
+- Mode switch (`activeModeId` watcher)
+
+**Shared profile debounce triggers** (`scheduleSharedProfileSave`):
+- Map folder selected (`browseMapsFolder` in `MapPanel`)
+- Theme picker `onMyThemesChange`
+
+---
+
+### 20.6 Startup / Login Flow
+
+1. Login screen mounts → `importSharedProfile()` reads `_shared.yaml` → writes to `localStorage` → pre-fills account name and Lich settings in the login form
+2. User enters account name and character; hits Connect
+3. On successful connection → `importCharacterProfile(character)` reads `CharacterName.yaml` → writes all saved settings to `localStorage`
+4. **Match found** → GameWindow renders with fully restored settings
+5. **No YAML yet** (new character) → import is a no-op; GameWindow uses current `localStorage` / defaults
+6. After import → `_shared.yaml` and `CharacterName.yaml` are both exported immediately (confirms state; creates YAML for new characters)
+7. From this point on YAML is the authority for that character on every subsequent login
+
+---
+
+### 20.7 Game Code and Authentication
+
+The `game:` field in a character YAML references a key in `_shared.yaml`'s `games` table. At connect time the app looks up that entry to get:
+- `gameCode` — passed to the SGE authentication handshake
+- `lichPort` — the local Lich port for that game instance
+- `lichArguments` — game-specific Lich flags (combined with `lichClientFlag`)
+
+This means adding a new game server (e.g. Briarmoon Cove) requires only a new entry in `_shared.yaml` — no code changes.
+
+---
+
+### 20.8 Implementation Files
+
+| File | Role |
+|---|---|
+| `src/renderer/profile-types.ts` | TypeScript interfaces (`SharedProfile`, `SharedAdvancedSettings`, `CharacterProfile`, `LayoutProfile`, `AutomationsProfile`, `GameDefinition`) |
+| `src/main/profiles.ts` | Main process YAML file I/O — `readSharedProfile`, `writeSharedProfile`, `readCharacterProfile`, `writeCharacterProfile`, `listCharacterProfiles` |
+| `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile`, `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile`, `scheduleProfileSave`, `scheduleSharedProfileSave` |
+| `src/main/main.ts` | IPC handlers: `profile:read-shared`, `profile:write-shared`, `profile:read-character`, `profile:write-character`, `profile:list` |
+| `src/main/preload.ts` | IPC bridge — exposes profile API to renderer |
+| `src/renderer/global.d.ts` | `window.api` type declarations for profile methods |
+
+---
+
+### 20.9 Portability
+
+- Copy `<install-dir>\` to any machine — all profiles, themes, and game config travel with it
+- Reinstall to the same path — `profiles\` is untouched
+- Back up one character — copy their YAML file
+- Migrate a character — drop their YAML into `profiles\` on the new machine
+- New game server — add one entry to `_shared.yaml`, appears in the game dropdown automatically *(once Phase 3 is implemented)*
+
+---
+
+### 20.10 Implementation Phases
+
+| Phase | Description | Status |
+|---|---|---|
+| 1 | Infrastructure + export: IPC, file I/O, `buildProfile`, write on connect/disconnect/change | ✅ Complete |
+| 2 | Import shared: `importSharedProfile()` on login screen mount; pre-fills account name and all Lich/port/mode settings | ✅ Complete |
+| 3 | Import character: `importCharacterProfile()` on connect before GameWindow renders; YAML is authority | ✅ Complete |
+| 4 | Game dropdown: populate login screen game selector from `games` table in `_shared.yaml` | Planned |

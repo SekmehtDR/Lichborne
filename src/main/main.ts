@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
 import type { LoginCredentials } from '../shared/types'
 
 const CH = {
@@ -179,6 +180,13 @@ ipcMain.handle('list-map-dir', (_event, dir: string) => {
 ipcMain.handle('read-file', (_event, filePath: string) => {
   try { return fs.readFileSync(filePath, 'utf-8') } catch { return null }
 })
+
+// ── Profile IPC ───────────────────────────────────────────────────────────────
+ipcMain.handle('profile:read-shared',               ()                               => readSharedProfile())
+ipcMain.handle('profile:write-shared',              (_e, data: unknown)              => writeSharedProfile(data))
+ipcMain.handle('profile:read-character',            (_e, character: string)          => readCharacterProfile(character))
+ipcMain.handle('profile:write-character',           (_e, character: string, data: unknown) => writeCharacterProfile(character, data))
+ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
 
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))

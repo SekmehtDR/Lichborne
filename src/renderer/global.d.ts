@@ -27,6 +27,12 @@ declare global {
       browseFolder: () => Promise<string | null>
       listMapDir: (dir: string) => Promise<{ name: string; path: string }[] | null>
       readFile: (filePath: string) => Promise<string | null>
+      // Profile I/O
+      readSharedProfile: () => Promise<unknown | null>
+      writeSharedProfile: (data: unknown) => Promise<void>
+      readCharacterProfile: (character: string) => Promise<unknown | null>
+      writeCharacterProfile: (character: string, data: unknown) => Promise<void>
+      listCharacterProfiles: () => Promise<string[]>
     }
   }
 }

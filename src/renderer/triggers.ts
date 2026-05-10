@@ -136,7 +136,7 @@ export function newTrigger(pattern = ''): TriggerRule {
     oneShot: false,
     actions: [newTriggerAction('command')],
     groupIds: [],
-    allGroups: false,
+    allGroups: true,
   }
 }
 

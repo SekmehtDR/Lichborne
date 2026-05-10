@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "DragonRealms game client with Lich support and AI features",
   "main": "dist/main/main.js",
   "scripts": {
@@ -14,13 +14,22 @@
   "build": {
     "appId": "com.lichborne.app",
     "productName": "Lichborne",
-    "files": ["dist/**/*"],
+    "files": [
+      "dist/**/*"
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release"
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "${productName}-${version}-setup.exe"
     },
     "nsis": {
@@ -32,7 +41,10 @@
       "createStartMenuShortcut": true
     },
     "extraResources": [
-      { "from": "build/app-update.yml", "to": "app-update.yml" }
+      {
+        "from": "build/app-update.yml",
+        "to": "app-update.yml"
+      }
     ],
     "publish": {
       "provider": "github",
@@ -43,6 +55,7 @@
     "releaseInfo": {}
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
@@ -56,6 +69,7 @@
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
+    "js-yaml": "^4.1.1",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   }

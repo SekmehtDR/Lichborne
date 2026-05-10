@@ -87,4 +87,11 @@ contextBridge.exposeInMainWorld('api', {
 
   readFile: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('read-file', filePath),
+
+  // ── Profile I/O ─────────────────────────────────────────────────────────────
+  readSharedProfile:    ():                                        Promise<unknown | null> => ipcRenderer.invoke('profile:read-shared'),
+  writeSharedProfile:   (data: unknown):                          Promise<void>           => ipcRenderer.invoke('profile:write-shared', data),
+  readCharacterProfile: (character: string):                      Promise<unknown | null> => ipcRenderer.invoke('profile:read-character', character),
+  writeCharacterProfile:(character: string, data: unknown):       Promise<void>           => ipcRenderer.invoke('profile:write-character', character, data),
+  listCharacterProfiles:():                                        Promise<string[]>       => ipcRenderer.invoke('profile:list'),
 })

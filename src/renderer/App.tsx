@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import LoginScreen from './components/LoginScreen'
+import LoginScreen, { type SessionInfo } from './components/LoginScreen'
 import GameWindow from './components/GameWindow'
 import { GroupsProvider } from './components/GroupsContext'
 
@@ -8,6 +8,7 @@ type UpdateState = 'idle' | 'available' | 'downloading' | 'ready'
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('login')
+  const [session, setSession] = useState<SessionInfo | null>(null)
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateDismissed, setUpdateDismissed] = useState(false)
@@ -75,10 +76,10 @@ export default function App() {
         )}
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {screen === 'login' && (
-            <LoginScreen onConnected={() => setScreen('game')} />
+            <LoginScreen onConnected={s => { setSession(s); setScreen('game') }} />
           )}
-          {screen === 'game' && (
-            <GameWindow onDisconnect={() => setScreen('login')} />
+          {screen === 'game' && session && (
+            <GameWindow session={session} onDisconnect={() => { setSession(null); setScreen('login') }} />
           )}
         </div>
       </div>

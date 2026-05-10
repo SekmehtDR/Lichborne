@@ -8,7 +8,9 @@ import {
   DR_GUILDS,
   formatLastSeen,
 } from '../contacts'
+import GroupPicker from './GroupPicker'
 import '../styles/contacts.css'
+import '../styles/groups.css'
 
 type Tab = 'contacts' | 'templates'
 
@@ -338,6 +340,22 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                           <input className="cp-input cp-input--hex" value={tplDraft!.tagBgColor}
                             onChange={e => setTplDraft({ ...tplDraft!, tagBgColor: e.target.value })}
                             placeholder="none" />
+                        </div>
+                        <div className="cp-tpl-edit-row">
+                          <label className="cp-label">Groups</label>
+                          <div className="grp-row">
+                            <button
+                              type="button"
+                              className={`grp-all-btn${tplDraft!.allGroups ? ' grp-all-btn--on' : ''}`}
+                              onClick={() => setTplDraft({ ...tplDraft!, allGroups: !tplDraft!.allGroups, groupIds: [] })}
+                            >All Groups</button>
+                            {!tplDraft!.allGroups && (
+                              <GroupPicker
+                                groupIds={tplDraft!.groupIds ?? []}
+                                onChange={groupIds => setTplDraft({ ...tplDraft!, groupIds })}
+                              />
+                            )}
+                          </div>
                         </div>
                         <div className="cp-tpl-edit-actions">
                           <button className="cp-btn cp-btn--delete" onClick={() => deleteTemplate(t.id)}>Delete</button>

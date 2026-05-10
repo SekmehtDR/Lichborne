@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
+import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile } from '../profile'
 import '../styles/login.css'
 
 const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
@@ -46,8 +47,22 @@ function saveAdvanced(s: AdvancedSettings) {
   localStorage.setItem(ADV_KEY, JSON.stringify(s))
 }
 
+export interface SessionInfo {
+  account: string
+  character: string
+  game: string
+  useLich: boolean
+}
+
+function gameCodeFromPort(port: number): string {
+  if (port === 11624) return 'DRT'
+  if (port === 11124) return 'DRX'
+  if (port === 11324) return 'DRF'
+  return 'DR'
+}
+
 interface Props {
-  onConnected: () => void
+  onConnected: (session: SessionInfo) => void
 }
 
 export default function LoginScreen({ onConnected }: Props) {
@@ -64,12 +79,26 @@ export default function LoginScreen({ onConnected }: Props) {
   const [error, setError] = useState('')
   const [connecting, setConnecting] = useState(false)
   const statusLogRef = useRef<HTMLDivElement>(null)
+  const accountRef = useRef(account)
+  const characterRef = useRef(character)
+  const advRef = useRef(adv)
+  useEffect(() => { accountRef.current = account }, [account])
+  useEffect(() => { characterRef.current = character }, [character])
+  useEffect(() => { advRef.current = adv }, [adv])
 
   type DiscoveryResult = Awaited<ReturnType<typeof window.api.discoverLichPaths>> | null
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
 
   useEffect(() => { saveAdvanced(adv) }, [adv])
   useEffect(() => { document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}` }, [])
+
+  // Load _shared.yaml on startup → refresh login form with saved account and Lich settings
+  useEffect(() => {
+    importSharedProfile().then(() => {
+      setAdv(loadAdvanced())
+      setAccount(localStorage.getItem(ACCOUNT_KEY) ?? '')
+    }).catch(console.error)
+  }, [])
 
   async function runDiscovery() {
     const found = await window.api.discoverLichPaths(rubyPath, lichPath)
@@ -90,7 +119,22 @@ export default function LoginScreen({ onConnected }: Props) {
   useEffect(() => {
     const unsub = window.api.onConnectionStatus((s) => {
       setStatusLog(prev => [...prev, s.message])
-      if (s.connected) onConnected()
+      if (s.connected) {
+        const acc = accountRef.current
+        const chr = characterRef.current.trim()
+        const curAdv = advRef.current
+        const game = gameCodeFromPort(curAdv.lichPort)
+        // Import character YAML first (restores saved settings into localStorage)
+        // then export (creates YAML for new characters, confirms state for existing ones)
+        importCharacterProfile(chr).catch(console.error).finally(() => {
+          Promise.all([
+            exportSharedProfile(),
+            exportCharacterProfile(acc, chr, game, curAdv.useLich),
+          ]).catch(console.error).finally(() => {
+            onConnected({ account: acc, character: chr, game, useLich: curAdv.useLich })
+          })
+        })
+      }
     })
     const unsubErr = window.api.onError((msg) => {
       setError(msg)

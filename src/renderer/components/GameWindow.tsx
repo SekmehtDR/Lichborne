@@ -29,12 +29,15 @@ import { isRuleActive } from '../groups'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
+import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
+import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
 import '../styles/game.css'
 import '../styles/panels.css'
 import '../styles/map-panel.css'
 
 interface Props {
+  session: SessionInfo
   onDisconnect: () => void
 }
 
@@ -130,7 +133,7 @@ function removeFromZone(
   if (activeId === tab.id && next.length > 0) setActiveId(next[Math.max(0, idx - 1)].id)
 }
 
-export default function GameWindow({ onDisconnect }: Props) {
+export default function GameWindow({ session, onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
@@ -205,13 +208,22 @@ export default function GameWindow({ onDisconnect }: Props) {
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
   const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights())
-  const { activeGroupStates, modes, applyMode } = useGroups()
+  const { activeGroupStates, modes, applyMode, activeModeId } = useGroups()
+  const activeContactTemplates = useMemo(
+    () => contactTemplates.filter(t => isRuleActive(t.groupIds ?? [], activeGroupStates, t.allGroups ?? true)),
+    [contactTemplates, activeGroupStates]
+  )
   const activeGroupStatesRef = useRef(activeGroupStates)
   useEffect(() => { activeGroupStatesRef.current = activeGroupStates }, [activeGroupStates])
   const modesRef = useRef(modes)
   useEffect(() => { modesRef.current = modes }, [modes])
   const applyModeRef = useRef(applyMode)
   useEffect(() => { applyModeRef.current = applyMode }, [applyMode])
+  const activeModeIdInitRef = useRef(false)
+  useEffect(() => {
+    if (!activeModeIdInitRef.current) { activeModeIdInitRef.current = true; return }
+    scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+  }, [activeModeId]) // eslint-disable-line react-hooks/exhaustive-deps
   const { matchRules, lineRules } = useCompiledHighlights(highlights, activeGroupStates)
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers())
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases())
@@ -403,6 +415,7 @@ export default function GameWindow({ onDisconnect }: Props) {
         saveContacts(toSave)
         setContacts([...toSave])
         pendingContactsRef.current = null
+        scheduleProfileSave(session.account, session.character, session.game, session.useLich)
       }, 2000)
     }
   }, [roomState.players]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -646,6 +659,8 @@ export default function GameWindow({ onDisconnect }: Props) {
         setStatus(s.clean ? 'Disconnected' : 'Connection lost')
         if (!s.clean) setShowDebug(true)
         document.title = `${playerTitleRef.current} [Disconnected] | Lichborne v${__APP_VERSION__}`
+        exportCharacterProfile(session.account, session.character, session.game, session.useLich)
+          .catch(console.error)
       }
     })
 
@@ -974,7 +989,7 @@ export default function GameWindow({ onDisconnect }: Props) {
 
   return (
     <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
-    <ContactsContext.Provider value={{ contacts, templates: contactTemplates, nameRegex, onContactClick: handleContactClick }}>
+    <ContactsContext.Provider value={{ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }}>
     <div className="game-layout">
       <div className="game-toolbar">
         <span className="toolbar-title"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
@@ -1021,7 +1036,7 @@ export default function GameWindow({ onDisconnect }: Props) {
                 return (
                   <div key={line.id} className="text-line" style={monoStyle ?? undefined}>
                     {line.segments.map((seg, i) => hasExtras
-                      ? renderSegmentFull(seg, i, contacts, contactTemplates, nameRegex, matchRules, handleContactClick, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
+                      ? renderSegmentFull(seg, i, contacts, activeContactTemplates, nameRegex, matchRules, handleContactClick, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
                       : renderSegment(seg, i, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
                     )}
                   </div>
@@ -1143,7 +1158,7 @@ export default function GameWindow({ onDisconnect }: Props) {
           currentThemeId={currentThemeId}
           myThemes={myThemes}
           onThemeChange={id => setCurrentThemeId(id)}
-          onMyThemesChange={themes => { setMyThemes(themes); saveMyThemes(themes) }}
+          onMyThemesChange={themes => { setMyThemes(themes); saveMyThemes(themes); scheduleProfileSave(session.account, session.character, session.game, session.useLich); scheduleSharedProfileSave() }}
           onClose={() => setShowThemePicker(false)}
         />
       )}
@@ -1151,7 +1166,7 @@ export default function GameWindow({ onDisconnect }: Props) {
       {showSettings && (
         <SettingsPanel
           settings={settings}
-          onChange={s => { setSettings(s); saveSettings(s) }}
+          onChange={s => { setSettings(s); saveSettings(s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1163,6 +1178,7 @@ export default function GameWindow({ onDisconnect }: Props) {
           onSaved={() => {
             setContacts(loadContacts())
             setContactTemplates(loadContactTemplates())
+            scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
         />
       )}
@@ -1197,6 +1213,7 @@ export default function GameWindow({ onDisconnect }: Props) {
             setTriggers(loadTriggers())
             setAliases(loadAliases())
             setMacros(loadMacros())
+            scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
           onClose={() => {
             setShowAutomations(false)
@@ -1207,6 +1224,7 @@ export default function GameWindow({ onDisconnect }: Props) {
             setTriggers(loadTriggers())
             setAliases(loadAliases())
             setMacros(loadMacros())
+            scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
         />
       )}
