@@ -27,8 +27,8 @@ const STORAGE_CONTACTS  = 'lichborne.contacts'
 const STORAGE_TEMPLATES = 'lichborne.contact-templates'
 
 export const DEFAULT_TEMPLATES: ContactTemplate[] = [
-  { id: 'tpl-friends', name: 'Friends', textColor: '#a0d080', bgColor: 'transparent', bold: false, tagText: '',        tagColor: '#a0d080', tagBgColor: 'transparent', groupIds: [], allGroups: true, isDefault: true },
-  { id: 'tpl-enemies', name: 'Enemies', textColor: '#e05050', bgColor: 'transparent', bold: false, tagText: '[Enemy]', tagColor: '#e05050', tagBgColor: 'transparent', groupIds: [], allGroups: true, isDefault: true },
+  { id: 'tpl-friends', name: 'Friends', textColor: '#A0D080', bgColor: 'transparent', bold: false, tagText: '',        tagColor: '#A0D080', tagBgColor: 'transparent', groupIds: [], allGroups: true, isDefault: true },
+  { id: 'tpl-enemies', name: 'Enemies', textColor: '#E05050', bgColor: 'transparent', bold: false, tagText: '[Enemy]', tagColor: '#E05050', tagBgColor: 'transparent', groupIds: [], allGroups: true, isDefault: true },
 ]
 
 export const DR_GUILDS = [
@@ -53,11 +53,11 @@ function normalizeTemplate(t: Partial<ContactTemplate> & { id: string; name: str
   return {
     id: t.id,
     name: t.name,
-    textColor:  t.textColor  || '#c8c8c8',
+    textColor:  t.textColor  || '#C8C8C8',
     bgColor:    t.bgColor    || 'transparent',
     bold:       t.bold       ?? false,
     tagText:    t.tagText    ?? '',
-    tagColor:   t.tagColor   || '#c8c8c8',
+    tagColor:   t.tagColor   || '#C8C8C8',
     tagBgColor: t.tagBgColor || 'transparent',
     groupIds:   t.groupIds   ?? [],
     allGroups:  t.allGroups  ?? true,
@@ -99,11 +99,11 @@ export function newTemplate(): ContactTemplate {
   return {
     id: crypto.randomUUID(),
     name: '',
-    textColor: '#c8c8c8',
+    textColor: '#C8C8C8',
     bgColor: 'transparent',
     bold: false,
     tagText: '',
-    tagColor: '#c8c8c8',
+    tagColor: '#C8C8C8',
     tagBgColor: 'transparent',
     groupIds: [],
     allGroups: true,

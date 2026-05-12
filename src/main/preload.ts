@@ -79,6 +79,9 @@ contextBridge.exposeInMainWorld('api', {
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 
+  flashWindow: () => ipcRenderer.send('flash-window'),
+  writeLog: (filename: string, content: string) => ipcRenderer.send('write-log', filename, content),
+
   browseFolder: (): Promise<string | null> =>
     ipcRenderer.invoke('browse-folder'),
 

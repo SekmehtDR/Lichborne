@@ -470,7 +470,7 @@ export class StormFrontParser {
 
       case 'clearstream': {
         const id = attrs.id ?? ''
-        const stream = STREAM_MAP[id] ?? COMPONENT_STREAM[id]
+        const stream = STREAM_MAP[id] ?? COMPONENT_STREAM[id] ?? (id || null)
         if (stream) this.events.push({ type: 'clear-stream', stream })
         break
       }

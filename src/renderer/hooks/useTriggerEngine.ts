@@ -15,13 +15,27 @@ export interface TriggerGameState {
   indicators: Record<string, boolean>
   roomTitle: string
   variables: Record<string, string>
+  characterName: string
 }
 
 export interface TriggerCallbacks {
-  sendCommand: (cmd: string) => void
-  echoToStream: (stream: string, text: string) => void
-  setVariable: (name: string, value: string) => void
+  sendCommand:  (cmd: string) => void
+  echoToStream: (stream: string, text: string, color?: string | null) => void
+  setVariable:  (name: string, value: string) => void
   disableTrigger: (id: string) => void
+  flashWindow:  () => void
+  writeLog:     (file: string, content: string) => void
+  onFire?:      (name: string, matched: string, detail: string, stream: string) => void
+}
+
+export function playWavFile(filePath: string) {
+  try {
+    const url = filePath.startsWith('file://')
+      ? filePath
+      : 'file:///' + filePath.replace(/\\/g, '/')
+    const audio = new Audio(url)
+    audio.play().catch(() => {})
+  } catch {}
 }
 
 // Web Audio API tone — each call gets its own AudioContext to avoid conflicts
@@ -44,6 +58,23 @@ function playTone(preset: string) {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.5)
+    osc.onended = () => ctx.close()
+  } catch {}
+}
+
+function playBeep() {
+  try {
+    const ctx = new AudioContext()
+    const osc  = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 800
+    osc.type = 'square'
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.12)
     osc.onended = () => ctx.close()
   } catch {}
 }
@@ -107,9 +138,14 @@ function buildVars(
   groups: Record<string, string>,
   state: TriggerGameState,
 ): Record<string, string> {
+  const now = new Date()
   return {
     match:         matchText,
+    '0':           matchText,
     line:          lineText,
+    characterName: state.characterName,
+    date:          now.toLocaleDateString(),
+    time:          now.toLocaleTimeString(),
     health:        String(state.vitals.health?.current        ?? 0),
     mana:          String(state.vitals.mana?.current          ?? 0),
     stamina:       String(state.vitals.stamina?.current       ?? 0),
@@ -124,6 +160,29 @@ function buildVars(
     ...state.variables,
     ...groups,
   }
+}
+
+function summarizeAction(action: TriggerAction, vars: Record<string, string>): string {
+  switch (action.type) {
+    case 'command':  return `cmd: "${interpolate(action.command ?? '', vars).trim()}"`
+    case 'echo':     return `echo → ${action.echoStream ?? 'log'}: "${interpolate(action.echoMessage ?? '', vars).trim()}"`
+    case 'notify':   return `notify: "${interpolate(action.notifyTitle ?? 'Lichborne', vars)}"`
+    case 'sound':    return action.soundFile ? `sound: ${action.soundFile.split(/[\\/]/).pop()}` : `sound: ${action.soundPreset ?? 'chime'}`
+    case 'beep':     return 'beep'
+    case 'flash':    return 'flash window'
+    case 'log':      return `log → ${interpolate(action.logFile ?? '', vars).trim()}`
+    case 'webhook':  return `webhook: ${action.webhookUrl ?? ''}`
+    case 'variable': return `set $${action.varName} = "${interpolate(action.varValue ?? '', vars)}"`
+    default:         return action.type
+  }
+}
+
+function summarizeGates(gates: StateGate[]): string {
+  if (!gates.length) return ''
+  return gates.map((g, i) => {
+    const connector = i === 0 ? 'if ' : ` ${g.connector ?? 'and'} `
+    return `${connector}${g.variable} ${g.operator} ${g.value}`
+  }).join('')
 }
 
 function executeAction(
@@ -146,9 +205,10 @@ function executeAction(
       break
     }
     case 'echo': {
-      const msg = interpolate(action.echoMessage ?? '', vars).trim()
+      const msg   = interpolate(action.echoMessage ?? '', vars).trim()
       if (!msg) return
-      cbs.echoToStream(action.echoStream || 'log', msg)
+      const color = action.echoColor ? interpolate(action.echoColor, vars).trim() || null : null
+      cbs.echoToStream(action.echoStream || 'log', msg, color)
       break
     }
     case 'notify': {
@@ -164,8 +224,21 @@ function executeAction(
       break
     }
     case 'sound':
-      playTone(action.soundPreset ?? 'chime')
+      if (action.soundFile) playWavFile(action.soundFile)
+      else playTone(action.soundPreset ?? 'chime')
       break
+    case 'beep':
+      playBeep()
+      break
+    case 'flash':
+      cbs.flashWindow()
+      break
+    case 'log': {
+      const file    = interpolate(action.logFile    ?? '', vars).trim()
+      const content = interpolate(action.logMessage ?? '', vars)
+      if (file && content) cbs.writeLog(file, content)
+      break
+    }
     case 'webhook': {
       const url = action.webhookUrl?.trim()
       if (!url) return
@@ -178,7 +251,7 @@ function executeAction(
       break
     }
     case 'variable': {
-      const name = action.varName?.trim()
+      const name  = action.varName?.trim()
       const value = interpolate(action.varValue ?? '', vars)
       if (name) cbs.setVariable(name, value)
       break
@@ -191,11 +264,20 @@ export function useTriggerEngine(
   stateRef: React.MutableRefObject<TriggerGameState>,
   callbacks: TriggerCallbacks,
   activeGroupStatesRef: React.MutableRefObject<Record<string, boolean>>,
-): { processLine: (stream: string, lineText: string) => void; cancelPending: () => void } {
-  // Compiled regexes — recompiled whenever rules change
-  const compiledRef = useRef<{ rule: TriggerRule; regex: RegExp | null }[]>([])
+): { processLine: (stream: string, lineText: string) => void; processVariableChange: (name: string, newValue: string) => void; cancelPending: () => void } {
+  // Compiled text-trigger regexes — recompiled whenever rules change
+  const compiledRef = useRef<{ rule: TriggerRule; regex: RegExp | null; fastLower: string | null }[]>([])
+  // Variable-watch rules index
+  const varRulesRef = useRef<TriggerRule[]>([])
   useEffect(() => {
-    compiledRef.current = rules.map(r => ({ rule: r, regex: buildTriggerRegex(r) }))
+    compiledRef.current = rules
+      .filter(r => !r.triggerType || r.triggerType === 'text')
+      .map(r => ({
+        rule: r,
+        regex: buildTriggerRegex(r),
+        fastLower: r.mode === 'regex' ? null : r.pattern.trim().toLowerCase(),
+      }))
+    varRulesRef.current = rules.filter(r => r.triggerType === 'variable')
   }, [rules])
 
   // Per-trigger cooldown timestamps
@@ -214,11 +296,13 @@ export function useTriggerEngine(
   }, [])
 
   const processLine = useCallback((stream: string, lineText: string) => {
-    const now   = Date.now()
-    const state = stateRef.current
+    const now       = Date.now()
+    const state     = stateRef.current
+    const textLower = lineText.toLowerCase()
 
-    for (const { rule, regex } of compiledRef.current) {
+    for (const { rule, regex, fastLower } of compiledRef.current) {
       if (!rule.enabled || !regex) continue
+      if (fastLower !== null && !textLower.includes(fastLower)) continue
       if (!isRuleActive(rule.groupIds ?? [], activeGroupStatesRef.current, rule.allGroups ?? false)) continue
 
       // Stream scope filter
@@ -238,29 +322,76 @@ export function useTriggerEngine(
       // State gates
       if (!checkGates(rule.gates, state)) continue
 
-      // Record fire time before executing (prevents re-entry on sync actions)
       cooldownsRef.current[rule.id] = now
 
-      // Build variable context — include named capture groups from regex
+      // Named capture groups
       const groups: Record<string, string> = {}
       if (m.groups) {
         for (const [k, v] of Object.entries(m.groups)) {
           if (v !== undefined) groups[k] = v
         }
       }
+      // Numbered capture groups ($1, $2, ...)
+      for (let i = 1; i < m.length; i++) {
+        if (m[i] !== undefined) groups[String(i)] = m[i]
+      }
+
       const vars = buildVars(m[0], lineText, groups, state)
 
-      // Execute all actions in order
+      if (callbacks.onFire) {
+        const parts: string[] = [`pattern: "${rule.pattern}"`]
+        const gates = summarizeGates(rule.gates)
+        if (gates) parts.push(gates)
+        for (const a of rule.actions) parts.push(summarizeAction(a, vars))
+        callbacks.onFire(rule.name || rule.pattern.slice(0, 60), lineText.slice(0, 120), parts.join(' | '), stream)
+      }
+
       for (const action of rule.actions) {
         executeAction(action, vars, callbacks, trackTimer)
       }
 
-      // One-shot: disable after first fire
       if (rule.oneShot) {
         callbacks.disableTrigger(rule.id)
       }
     }
   }, [stateRef, callbacks, trackTimer])
 
-  return { processLine, cancelPending }
+  const processVariableChange = useCallback((name: string, newValue: string) => {
+    const now   = Date.now()
+    const state = stateRef.current
+
+    for (const rule of varRulesRef.current) {
+      if (!rule.enabled) continue
+      if (!isRuleActive(rule.groupIds ?? [], activeGroupStatesRef.current, rule.allGroups ?? false)) continue
+      if (!rule.watchVariable) continue
+      if (rule.watchVariable.toLowerCase() !== name.toLowerCase()) continue
+
+      if (rule.cooldownSeconds > 0) {
+        const last = cooldownsRef.current[rule.id] ?? 0
+        if (now - last < rule.cooldownSeconds * 1000) continue
+      }
+
+      if (!checkGates(rule.gates, state)) continue
+
+      cooldownsRef.current[rule.id] = now
+
+      const vars = buildVars(newValue, newValue, { '0': newValue, '1': newValue }, state)
+
+      if (callbacks.onFire) {
+        const parts: string[] = [`watch: $${rule.watchVariable} = "${newValue}"`]
+        const gates = summarizeGates(rule.gates)
+        if (gates) parts.push(gates)
+        for (const a of rule.actions) parts.push(summarizeAction(a, vars))
+        callbacks.onFire(rule.name || rule.watchVariable || rule.pattern.slice(0, 60), newValue.slice(0, 120), parts.join(' | '), `var:${name}`)
+      }
+
+      for (const action of rule.actions) {
+        executeAction(action, vars, callbacks, trackTimer)
+      }
+
+      if (rule.oneShot) callbacks.disableTrigger(rule.id)
+    }
+  }, [stateRef, callbacks, trackTimer, varRulesRef, cooldownsRef, activeGroupStatesRef])
+
+  return { processLine, processVariableChange, cancelPending }
 }

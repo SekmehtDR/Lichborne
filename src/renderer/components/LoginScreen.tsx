@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
-import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile } from '../profile'
+import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile, clearCharacterLocalStorage } from '../profile'
 import '../styles/login.css'
 
 const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
@@ -124,9 +124,13 @@ export default function LoginScreen({ onConnected }: Props) {
         const chr = characterRef.current.trim()
         const curAdv = advRef.current
         const game = gameCodeFromPort(curAdv.lichPort)
-        // Import character YAML first (restores saved settings into localStorage)
-        // then export (creates YAML for new characters, confirms state for existing ones)
-        importCharacterProfile(chr).catch(console.error).finally(() => {
+        // Import character YAML first (restores saved settings into localStorage).
+        // If the YAML is missing, clear stale localStorage so the new profile
+        // starts blank rather than inheriting data from a previous session.
+        importCharacterProfile(chr)
+          .then(loaded => { if (!loaded) clearCharacterLocalStorage() })
+          .catch(console.error)
+          .finally(() => {
           Promise.all([
             exportSharedProfile(),
             exportCharacterProfile(acc, chr, game, curAdv.useLich),

@@ -256,3 +256,13 @@ export interface RoomState {
   extra: string
   exits: string[]
 }
+
+export interface FireLogEntry {
+  id: number
+  ts: number
+  kind: 'highlight' | 'trigger'
+  name: string
+  matched: string   // the text that triggered the match (truncated)
+  detail: string    // action types for triggers; sound info for highlights
+  stream?: string   // stream or variable name the match came from
+}

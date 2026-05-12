@@ -84,19 +84,26 @@
   background: #1a1a0e;
 }
 
-.btn-disconnect:hover {
+.btn-disconnect {
   border-color: var(--color-danger-dim);
   color: var(--color-danger);
 }
 
+.btn-disconnect:hover {
+  border-color: var(--color-danger);
+  color: #f09090;
+  background: var(--color-danger-bg);
+}
+
 .btn-disconnect--login {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: #3a8a3a;
+  color: var(--color-success);
+  background: #0d1f0d;
 }
 .btn-disconnect--login:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  opacity: 0.85;
+  border-color: var(--color-success);
+  color: #80d880;
+  background: #122012;
 }
 
 /* ── Context menu ────────────────────────────────────────────────── */
@@ -162,11 +169,12 @@
 
 .text-window {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
-  overflow-anchor: none;
-  padding: 8px 12px;
+  overflow: hidden;
   cursor: text;
+}
+
+.text-line-wrap {
+  padding: 0 12px 0.15em;
 }
 
 .scroll-anchor-badge {
@@ -258,7 +266,6 @@
   min-height: 1.4em;
   font-size: var(--game-font-size);
   line-height: var(--game-line-height);
-  margin-bottom: 0.15em;
 }
 
 .command-bar {
@@ -341,8 +348,8 @@
 }
 
 @keyframes chip-pulse {
-  0%, 100% { filter: brightness(1); }
-  50%       { filter: brightness(0.85); }
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
 }
 
 [data-epilepsy-safe="true"] .cmd-chip { animation: none; }

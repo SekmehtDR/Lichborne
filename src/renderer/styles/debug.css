@@ -6,6 +6,7 @@
   height: 220px;
   font-family: var(--game-font-family);
   font-size: 0.79rem;
+  flex-shrink: 0;
 }
 
 .debug-toolbar {
@@ -133,4 +134,84 @@
 .rawxml-body {
   color: #9cdcfe;
   font-family: var(--game-font-family);
+}
+
+/* ── Fire log panel ─────────────────────────────────────────────────────────── */
+
+.fire-log-empty {
+  padding: 12px 8px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.fire-log-entry {
+  display: grid;
+  grid-template-columns: 72px 64px 60px minmax(80px, 160px) 1fr auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 1px 8px;
+  border-bottom: 1px solid var(--bg-sunken);
+  line-height: 1.4;
+  overflow: hidden;
+}
+
+.fire-log-entry:hover {
+  background: var(--bg-base);
+}
+
+.fire-log-time {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.fire-log-kind {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: bold;
+  padding: 0 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fire-log-kind--highlight {
+  background: #1e3a5f;
+  color: #9cdcfe;
+}
+
+.fire-log-kind--trigger {
+  background: #3a2a1e;
+  color: #ce9178;
+}
+
+.fire-log-name {
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fire-log-matched {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+
+.fire-log-detail {
+  color: #4ec9b0;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.fire-log-stream {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

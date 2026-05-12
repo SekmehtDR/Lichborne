@@ -21,7 +21,7 @@ const KEY_ACTIVE_MODE  = 'lichborne.activeModeId'
 // ── Default groups and modes ─────────────────────────────────────────────────
 
 export const DEFAULT_GROUPS: RuleGroup[] = [
-  { id: 'grp-combat',   name: 'Combat',   color: '#c8a84b' },
+  { id: 'grp-combat',   name: 'Combat',   color: '#C8A84B' },
   { id: 'grp-pvp',      name: 'PVP',      color: '#c85050' },
   { id: 'grp-social',   name: 'Social',   color: '#50a8c8' },
   { id: 'grp-crafting', name: 'Crafting', color: '#7ec850' },

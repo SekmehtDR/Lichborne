@@ -186,6 +186,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   const [macroDraft,   setMacroDraft]   = useState<MacroRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [search,       setSearch]       = useState('')
 
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -196,6 +197,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
     setMacroDraft(null)
     setIsPendingNew(false)
     setDeleteConfirm(false)
+    setSearch('')
   }
 
   // ── Alias CRUD ──────────────────────────────────────────────────────────────
@@ -246,12 +248,18 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
 
   function deleteAlias() {
     if (!selectedId) return
-    const updated = aliases.filter(r => r.id !== selectedId)
+    deleteAliasById(selectedId)
+  }
+
+  function deleteAliasById(id: string) {
+    const updated = aliases.filter(r => r.id !== id)
     setAliases(updated)
     saveAliases(updated)
     onSaved?.()
-    setSelectedId(null); setAliasDraft(null)
-    setIsPendingNew(false); setDeleteConfirm(false)
+    if (selectedId === id) {
+      setSelectedId(null); setAliasDraft(null)
+      setIsPendingNew(false); setDeleteConfirm(false)
+    }
   }
 
   function toggleAlias(id: string) {
@@ -310,12 +318,18 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
 
   function deleteMacro() {
     if (!selectedId) return
-    const updated = macros.filter(r => r.id !== selectedId)
+    deleteMacroById(selectedId)
+  }
+
+  function deleteMacroById(id: string) {
+    const updated = macros.filter(r => r.id !== id)
     setMacros(updated)
     saveMacros(updated)
     onSaved?.()
-    setSelectedId(null); setMacroDraft(null)
-    setIsPendingNew(false); setDeleteConfirm(false)
+    if (selectedId === id) {
+      setSelectedId(null); setMacroDraft(null)
+      setIsPendingNew(false); setDeleteConfirm(false)
+    }
   }
 
   function toggleMacro(id: string) {
@@ -341,6 +355,20 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
             <>
               <div className="ma-sidebar">
                 <button className="ma-new-btn" onClick={createAlias}>+ New Alias</button>
+                <div className="sidebar-search">
+                  <input
+                    className="sidebar-search-input"
+                    placeholder="Search…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  {search && <button className="sidebar-search-clear" onClick={() => setSearch('')}>✕</button>}
+                  {search && (
+                    <span className="sidebar-search-count">
+                      {aliases.filter(r => (r.name + ' ' + r.input + ' ' + r.commands.join(' ')).toLowerCase().includes(search.toLowerCase())).length}/{aliases.length}
+                    </span>
+                  )}
+                </div>
                 <div className="ma-list">
                   {aliases.length === 0 && !isPendingNew && (
                     <div className="ma-empty">
@@ -348,7 +376,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                       Create shortcuts for commands you use every day.
                     </div>
                   )}
-                  {aliases.map(r => (
+                  {(search ? aliases.filter(r => (r.name + ' ' + r.input + ' ' + r.commands.join(' ')).toLowerCase().includes(search.toLowerCase())) : aliases).map(r => (
                     <div
                       key={r.id}
                       className={`ma-list-item${selectedId === r.id ? ' ma-list-item--active' : ''}${!r.enabled ? ' ma-list-item--disabled' : ''}`}
@@ -361,6 +389,11 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                       />
                       <span className="ma-list-label">{r.name || r.input || <em className="ma-unnamed">Unnamed</em>}</span>
                       <span className="ma-list-arrow">→</span>
+                      <button
+                        className="list-item-delete"
+                        title="Delete"
+                        onClick={e => { e.stopPropagation(); deleteAliasById(r.id) }}
+                      >✕</button>
                     </div>
                   ))}
                   {isPendingNew && aliasDraft && (
@@ -500,6 +533,20 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
             <>
               <div className="ma-sidebar">
                 <button className="ma-new-btn" onClick={createMacro}>+ New Key Binding</button>
+                <div className="sidebar-search">
+                  <input
+                    className="sidebar-search-input"
+                    placeholder="Search…"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  {search && <button className="sidebar-search-clear" onClick={() => setSearch('')}>✕</button>}
+                  {search && (
+                    <span className="sidebar-search-count">
+                      {macros.filter(r => (r.name + ' ' + r.key + ' ' + r.commands.join(' ')).toLowerCase().includes(search.toLowerCase())).length}/{macros.length}
+                    </span>
+                  )}
+                </div>
                 <div className="ma-list">
                   {macros.length === 0 && !isPendingNew && (
                     <div className="ma-empty">
@@ -507,7 +554,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                       to a single keypress.
                     </div>
                   )}
-                  {macros.map(r => (
+                  {(search ? macros.filter(r => (r.name + ' ' + r.key + ' ' + r.commands.join(' ')).toLowerCase().includes(search.toLowerCase())) : macros).map(r => (
                     <div
                       key={r.id}
                       className={`ma-list-item${selectedId === r.id ? ' ma-list-item--active' : ''}${!r.enabled ? ' ma-list-item--disabled' : ''}`}
@@ -523,6 +570,11 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         : <span className="ma-key-badge ma-key-badge--unset">—</span>
                       }
                       <span className="ma-list-label">{r.name || r.commands[0] || <em className="ma-unnamed">Unnamed</em>}</span>
+                      <button
+                        className="list-item-delete"
+                        title="Delete"
+                        onClick={e => { e.stopPropagation(); deleteMacroById(r.id) }}
+                      >✕</button>
                     </div>
                   ))}
                   {isPendingNew && macroDraft && (

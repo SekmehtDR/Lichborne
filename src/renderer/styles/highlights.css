@@ -512,3 +512,30 @@
 .hp-btn--danger:hover {
   background: var(--color-danger-bg);
 }
+
+.hp-sound-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hp-input--sound {
+  flex: 1;
+  font-size: 0.8rem;
+}
+
+.hp-btn--browse,
+.hp-btn--play,
+.hp-btn--clear {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+
+.hp-btn--play {
+  font-size: 0.7rem;
+}
+
+.hp-btn--clear {
+  color: var(--text-dim);
+}

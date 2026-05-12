@@ -18,6 +18,7 @@ export interface HighlightRule {
   priority: number
   groupIds: string[]
   allGroups: boolean
+  soundFile?: string   // optional WAV/audio file path to play on match
 }
 
 const STORAGE_KEY = 'lichborne.highlights'

@@ -5,6 +5,7 @@ import { isRuleActive } from './groups'
 export interface CompiledRule {
   rule: HighlightRule
   regex: RegExp
+  fastLower: string | null  // lowercase literal for pre-filter; null for regex-mode rules
 }
 
 export interface HighlightsContextValue {
@@ -35,8 +36,9 @@ export function useCompiledHighlights(
       if (!isRuleActive(rule.groupIds ?? [], activeGroupStates, rule.allGroups ?? false)) continue
       const regex = buildHighlightRegex(rule)
       if (!regex) continue
-      if (rule.scope === 'match') matchRules.push({ rule, regex })
-      else lineRules.push({ rule, regex })
+      const fastLower = rule.mode === 'regex' ? null : rule.pattern.trim().toLowerCase()
+      if (rule.scope === 'match') matchRules.push({ rule, regex, fastLower })
+      else lineRules.push({ rule, regex, fastLower })
     }
     return { matchRules, lineRules }
   }, [rules, activeGroupStates])

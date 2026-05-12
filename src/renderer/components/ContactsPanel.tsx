@@ -32,6 +32,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]           = useState<Contact | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [search, setSearch]         = useState('')
   const [expandedTplId, setExpandedTplId] = useState<string | null>(null)
   const [tplDraft, setTplDraft]     = useState<ContactTemplate | null>(null)
   const nameInputRef                = useRef<HTMLInputElement>(null)
@@ -76,12 +77,18 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
 
   function deleteContact() {
     if (!selectedId) return
-    const updated = contacts.filter(c => c.id !== selectedId)
+    deleteContactById(selectedId)
+  }
+
+  function deleteContactById(id: string) {
+    const updated = contacts.filter(c => c.id !== id)
     setContacts(updated)
     saveContacts(updated)
-    setSelectedId(null)
-    setDraft(null)
-    setDeleteConfirm(false)
+    if (selectedId === id) {
+      setSelectedId(null)
+      setDraft(null)
+      setDeleteConfirm(false)
+    }
     onSaved?.()
   }
 
@@ -142,11 +149,23 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
           <div className="cp-body">
             <div className="cp-sidebar">
               <button className="cp-new-btn" onClick={createNew}>+ New Contact</button>
+              <div className="sidebar-search">
+                <input
+                  className="sidebar-search-input"
+                  placeholder="Search contacts…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
               <div className="cp-list">
                 {contacts.length === 0 && (
                   <div className="cp-empty">No contacts yet.</div>
                 )}
-                {contacts.map(c => {
+                {contacts.filter(c => {
+                  if (!search) return true
+                  const q = search.toLowerCase()
+                  return c.name.toLowerCase().includes(q) || c.guild.toLowerCase().includes(q) || c.notes.toLowerCase().includes(q)
+                }).map(c => {
                   const tpl = getTemplate(c.templateId)
                   return (
                     <div
@@ -157,9 +176,14 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                       {tpl?.tagText && (
                         <span className="cp-list-tag" style={{ color: tpl.tagColor }}>{tpl.tagText}{' '}</span>
                       )}
-                      <span style={{ color: tpl?.textColor ?? 'var(--text-primary)' }}>
+                      <span style={{ color: tpl?.textColor ?? 'var(--text-primary)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {c.name || <em className="cp-unnamed">Unnamed</em>}
                       </span>
+                      <button
+                        className="list-item-delete"
+                        title="Delete"
+                        onClick={e => { e.stopPropagation(); deleteContactById(c.id) }}
+                      >✕</button>
                     </div>
                   )
                 })}

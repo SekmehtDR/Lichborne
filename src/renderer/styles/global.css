@@ -49,6 +49,78 @@ body {
   color: var(--text-primary);
 }
 
+/* ── Shared sidebar search ────────────────────────────────────────────────── */
+
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-search-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-family: inherit;
+  padding: 3px 6px;
+  outline: none;
+}
+
+.sidebar-search-input::placeholder { color: var(--text-faint); }
+.sidebar-search-input:focus { border-color: var(--accent); }
+
+.sidebar-search-clear {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.sidebar-search-clear:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.sidebar-search-count {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.list-item-delete {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+
+.hp-list-item:hover .list-item-delete,
+.ma-list-item:hover .list-item-delete,
+.tp-list-item:hover .list-item-delete,
+.cp-list-item:hover .list-item-delete { opacity: 1; }
+
+.list-item-delete:hover { color: #e05050; background: rgba(224,80,80,0.12); }
+
+/* ── Update banner ──────────────────────────────────────────────────────── */
+
 .update-banner {
   flex-shrink: 0;
   display: flex;

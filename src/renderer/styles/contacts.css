@@ -146,13 +146,13 @@
 }
 
 .cp-list-item {
-  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px 6px 14px;
   font-size: 0.85rem;
   cursor: pointer;
   transition: background 0.1s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .cp-list-item:hover { background: var(--bg-hover); }

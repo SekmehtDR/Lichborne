@@ -5,6 +5,7 @@ import {
   buildHighlightRegex, isValidRegex,
   loadHighlights, saveHighlights, newHighlight,
 } from '../highlights'
+import { playWavFile } from '../hooks/useTriggerEngine'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
 import '../styles/groups.css'
@@ -36,6 +37,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [testInput, setTestInput] = useState(initialTestText ?? '')
+  const [search, setSearch]     = useState('')
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -152,13 +154,19 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
 
   function deleteRule() {
     if (!selectedId) return
-    const updated = rules.filter(r => r.id !== selectedId)
+    deleteRuleById(selectedId)
+  }
+
+  function deleteRuleById(id: string) {
+    const updated = rules.filter(r => r.id !== id)
     setRules(updated)
     saveHighlights(updated)
-    setSelectedId(null)
-    setDraft(null)
-    setIsPendingNew(false)
-    setDeleteConfirm(false)
+    if (selectedId === id) {
+      setSelectedId(null)
+      setDraft(null)
+      setIsPendingNew(false)
+      setDeleteConfirm(false)
+    }
     onSaved?.()
   }
 
@@ -186,11 +194,27 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
           {/* Sidebar */}
           <div className="hp-sidebar">
             <button className="hp-new-btn" onClick={createNew}>+ New Rule</button>
+            <div className="sidebar-search">
+              <input
+                className="sidebar-search-input"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search && (
+                <button className="sidebar-search-clear" onClick={() => setSearch('')}>✕</button>
+              )}
+              {search && (
+                <span className="sidebar-search-count">
+                  {rules.filter(r => (r.name + ' ' + r.pattern).toLowerCase().includes(search.toLowerCase())).length}/{rules.length}
+                </span>
+              )}
+            </div>
             <div className="hp-list">
               {rules.length === 0 && !isPendingNew && (
                 <div className="hp-empty">No highlights yet.<br />Right-click game text or click New Rule.</div>
               )}
-              {rules.map(r => (
+              {(search ? rules.filter(r => (r.name + ' ' + r.pattern).toLowerCase().includes(search.toLowerCase())) : rules).map(r => (
                 <div
                   key={r.id}
                   className={`hp-list-item${selectedId === r.id ? ' hp-list-item--active' : ''}${!r.enabled ? ' hp-list-item--disabled' : ''}`}
@@ -204,6 +228,11 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                   <span className="hp-list-swatch" style={listItemSwatch(r)} />
                   <span className="hp-list-label">{r.name || r.pattern || <em className="hp-unnamed">Unnamed</em>}</span>
                   <span className="hp-list-scope">{r.scope}</span>
+                  <button
+                    className="list-item-delete"
+                    title="Delete"
+                    onClick={e => { e.stopPropagation(); deleteRuleById(r.id) }}
+                  >✕</button>
                 </div>
               ))}
               {isPendingNew && draft && (
@@ -392,6 +421,42 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                       />
                       <span>Bold</span>
                     </label>
+                  </div>
+                </div>
+
+                <div className="hp-field">
+                  <label className="hp-label">Sound</label>
+                  <div className="hp-sound-row">
+                    <input
+                      className="hp-input hp-input--sound"
+                      value={draft.soundFile ?? ''}
+                      onChange={e => setDraft({ ...draft, soundFile: e.target.value || undefined })}
+                      placeholder="Optional WAV file path…"
+                    />
+                    <button
+                      type="button"
+                      className="hp-btn hp-btn--browse"
+                      onClick={async () => {
+                        const file = await window.api.browseFile([{ name: 'Sound Files', extensions: ['wav', 'mp3', 'ogg'] }])
+                        if (file) setDraft(prev => prev ? { ...prev, soundFile: file } : prev)
+                      }}
+                    >Browse</button>
+                    {draft.soundFile && (
+                      <>
+                        <button
+                          type="button"
+                          className="hp-btn hp-btn--play"
+                          title="Test sound"
+                          onClick={() => playWavFile(draft.soundFile!)}
+                        >▶</button>
+                        <button
+                          type="button"
+                          className="hp-btn hp-btn--clear"
+                          title="Remove sound"
+                          onClick={() => setDraft({ ...draft, soundFile: undefined })}
+                        >✕</button>
+                      </>
+                    )}
                   </div>
                 </div>
 

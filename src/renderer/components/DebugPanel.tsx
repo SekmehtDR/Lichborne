@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { GameEvent } from '../../shared/types'
+import type { GameEvent, FireLogEntry } from '../../shared/types'
 import '../styles/debug.css'
 import ContextMenu from './ContextMenu'
 
@@ -8,10 +8,12 @@ interface Props {
   onClear: () => void
   rawXmlLines: string[]
   onClearRawXml: () => void
+  fireLog: FireLogEntry[]
+  onClearFireLog: () => void
 }
 
-export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml }: Props) {
-  const [tab, setTab] = useState<'events' | 'rawxml'>('events')
+export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog }: Props) {
+  const [tab, setTab] = useState<'fires' | 'events' | 'rawxml'>('fires')
 
   const eventsBottomRef = useRef<HTMLDivElement>(null)
   const eventsScrollRef = useRef<HTMLDivElement>(null)
@@ -20,6 +22,10 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
   const rawBottomRef = useRef<HTMLDivElement>(null)
   const rawScrollRef = useRef<HTMLDivElement>(null)
   const rawPinnedRef = useRef(true)
+
+  const firesBottomRef = useRef<HTMLDivElement>(null)
+  const firesScrollRef = useRef<HTMLDivElement>(null)
+  const firesPinnedRef = useRef(true)
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
@@ -34,6 +40,13 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
   }
   prevEventLenRef.current = events.length
 
+  const rawBaseRef    = useRef(0)
+  const prevRawLenRef = useRef(0)
+  if (rawXmlLines.length < prevRawLenRef.current) {
+    rawBaseRef.current += prevRawLenRef.current - rawXmlLines.length
+  }
+  prevRawLenRef.current = rawXmlLines.length
+
   function handleEventsScroll() {
     const el = eventsScrollRef.current
     if (!el) return
@@ -46,6 +59,12 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
     rawPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
   }
 
+  function handleFiresScroll() {
+    const el = firesScrollRef.current
+    if (!el) return
+    firesPinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+  }
+
   useEffect(() => {
     if (eventsPinnedRef.current) eventsBottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [events])
@@ -54,18 +73,24 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
     if (rawPinnedRef.current) rawBottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [rawXmlLines])
 
+  useEffect(() => {
+    if (firesPinnedRef.current) firesBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+  }, [fireLog])
+
   // B12: scroll to bottom when switching tabs so first-open lands at latest content
   useEffect(() => {
     if (tab === 'events') eventsBottomRef.current?.scrollIntoView({ behavior: 'auto' })
     if (tab === 'rawxml') rawBottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    if (tab === 'fires')  firesBottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [tab])
 
-  const activeOnClear = tab === 'events' ? onClear : onClearRawXml
+  const activeOnClear = tab === 'events' ? onClear : tab === 'rawxml' ? onClearRawXml : onClearFireLog
 
   function handleCopy() {
-    const text = tab === 'events'
-      ? events.map(e => JSON.stringify(e)).join('\n')
-      : rawXmlLines.map(l => l.trimEnd()).join('\n')
+    let text = ''
+    if (tab === 'events') text = events.map(e => JSON.stringify(e)).join('\n')
+    else if (tab === 'rawxml') text = rawXmlLines.map(l => l.trimEnd()).join('\n')
+    else text = fireLog.map(e => `${new Date(e.ts).toLocaleTimeString()} [${e.kind}] ${e.name} | ${e.matched}${e.detail ? ' | ' + e.detail : ''}${e.stream ? ' | ' + e.stream : ''}`).join('\n')
     navigator.clipboard.writeText(text)
   }
 
@@ -73,6 +98,9 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
     <div className="debug-panel">
       <div className="debug-toolbar">
         <div className="debug-tabs">
+          <button className={`debug-tab ${tab === 'fires' ? 'debug-tab--active' : ''}`} onClick={() => setTab('fires')}>
+            Fires ({fireLog.length})
+          </button>
           <button className={`debug-tab ${tab === 'events' ? 'debug-tab--active' : ''}`} onClick={() => setTab('events')}>
             Events ({events.length})
           </button>
@@ -83,6 +111,26 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
         <button className="debug-copy" onClick={handleCopy}>Copy All</button>
         <button className="debug-clear" onClick={activeOnClear}>Clear</button>
       </div>
+
+      {tab === 'fires' && (
+        <div className="debug-scroll" ref={firesScrollRef} onScroll={handleFiresScroll}
+          onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          {fireLog.length === 0 && (
+            <div className="fire-log-empty">No fires yet. Highlights and triggers that match will appear here.</div>
+          )}
+          {fireLog.map(entry => (
+            <div key={entry.id} className={`fire-log-entry fire-log-entry--${entry.kind}`}>
+              <span className="fire-log-time">{new Date(entry.ts).toLocaleTimeString()}</span>
+              <span className={`fire-log-kind fire-log-kind--${entry.kind}`}>{entry.kind}</span>
+              <span className="fire-log-stream">{entry.stream ?? '—'}</span>
+              <span className="fire-log-name" title={entry.name}>{entry.name}</span>
+              <span className="fire-log-matched" title={entry.matched}>{entry.matched}</span>
+              {entry.detail && <span className="fire-log-detail" title={entry.detail}>{entry.detail}</span>}
+            </div>
+          ))}
+          <div ref={firesBottomRef} />
+        </div>
+      )}
 
       {tab === 'events' && (
         <div className="debug-scroll" ref={eventsScrollRef} onScroll={handleEventsScroll}
@@ -101,7 +149,7 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
         <div className="debug-scroll" ref={rawScrollRef} onScroll={handleRawScroll}
           onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
           {rawXmlLines.map((line, i) => (
-            <div key={i} className="rawxml-line">
+            <div key={rawBaseRef.current + i} className="rawxml-line">
               <span className="rawxml-body">{line}</span>
             </div>
           ))}

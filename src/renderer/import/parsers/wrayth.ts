@@ -1,0 +1,203 @@
+import { ImportResult, ImportHighlight, ImportMacro } from '../types'
+import { buildWraythPalette, resolveWraythColor } from '../colorUtils'
+import { normalizeWraythKey } from '../keyNormalizer'
+
+// ── XML helpers ───────────────────────────────────────────────────────────────
+// Minimal attribute extractor — avoids a full XML parser dependency.
+
+function getAttr(tag: string, attr: string): string {
+  const re = new RegExp(`${attr}=['"]([^'"]*?)['"]`, 'i')
+  const m  = tag.match(re)
+  return m ? m[1] : ''
+}
+
+function* iterTags(xml: string, tagName: string): Generator<string> {
+  const re = new RegExp(`<${tagName}\\s[^>]*?>`, 'gi')
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) yield m[0]
+}
+
+// ── Palette ───────────────────────────────────────────────────────────────────
+
+function parsePalette(xml: string): Map<number, string> {
+  const entries: Array<{ id: number; color: string }> = []
+  for (const tag of iterTags(xml, 'i')) {
+    const id    = parseInt(getAttr(tag, 'id'), 10)
+    const color = getAttr(tag, 'color')
+    if (!isNaN(id) && color) entries.push({ id, color })
+  }
+  return buildWraythPalette(entries)
+}
+
+// ── Name highlights (<names> section) ────────────────────────────────────────
+
+function parseNames(xml: string, palette: Map<number, string>): ImportHighlight[] {
+  const results: ImportHighlight[] = []
+
+  // Only process <h> tags inside the <names> block
+  const namesBlock = xml.match(/<names[^>]*>([\s\S]*?)<\/names>/i)
+  if (!namesBlock) return results
+
+  for (const tag of iterTags(namesBlock[1], 'h')) {
+    const text      = getAttr(tag, 'text').trim()
+    const colorRaw  = getAttr(tag, 'color')
+    const bgRaw     = getAttr(tag, 'bgcolor')
+
+    if (!text) continue
+
+    const textColor = resolveWraythColor(colorRaw, palette)
+    const bgColor   = bgRaw ? resolveWraythColor(bgRaw, palette) : null
+
+    results.push({
+      kind:          'highlight',
+      source:        'wrayth',
+      status:        'ready',
+      pattern:       text,
+      matchType:     'text',
+      caseSensitive: false,
+      scope:         'match',
+      textColor,
+      bgColor:       bgColor || null,
+      sourceClass:   'names',
+    })
+  }
+
+  // Deduplicate by text (Wrayth can have duplicate name entries)
+  const seen = new Set<string>()
+  return results.filter(r => {
+    if (seen.has(r.pattern)) return false
+    seen.add(r.pattern)
+    return true
+  })
+}
+
+// ── Highlights (<highlights> section) ────────────────────────────────────────
+// Wrayth stores text highlights as <h> tags inside a <highlights> block.
+// This section may be absent if the user never configured it.
+
+function parseHighlights(xml: string, palette: Map<number, string>): ImportHighlight[] {
+  const results: ImportHighlight[] = []
+
+  const block = xml.match(/<highlights[^>]*>([\s\S]*?)<\/highlights>/i)
+  if (!block) return results
+
+  for (const tag of iterTags(block[1], 'h')) {
+    const text     = getAttr(tag, 'text').trim()
+    const colorRaw = getAttr(tag, 'color')
+    const bgRaw    = getAttr(tag, 'bgcolor')
+
+    if (!text) continue
+
+    results.push({
+      kind:          'highlight',
+      source:        'wrayth',
+      status:        'ready',
+      pattern:       text,
+      matchType:     'text',
+      caseSensitive: false,
+      scope:         'match',
+      textColor:     resolveWraythColor(colorRaw, palette),
+      bgColor:       bgRaw ? resolveWraythColor(bgRaw, palette) : null,
+    })
+  }
+
+  return results
+}
+
+// ── Macros ────────────────────────────────────────────────────────────────────
+// Wrayth macro format: <k key='Alt-C' action='...'/>
+// Actions use \r for Enter, \x prefix for directions, {CommandName} for built-ins.
+
+// Wrayth built-in UI commands — not importable as game commands
+const WRAYTH_BUILTIN = new Set([
+  'exportdialog', 'highlightsdialog', 'importdialog', 'macrosdialog',
+  'chooseskin', 'variablesdialog', 'togglelinks', 'togglemusic',
+  'toggleimages', 'togglesounds', 'macroset', 'restart', 'rest',
+  'cyclewindows', 'cyclewindowsreverse', 'bufftop', 'buffbottom',
+  'historyprev', 'historynext', 'repeatlast', 'repeatsecondtolast',
+  'returnorrepeatlast', 'pageup', 'pagedown', 'lineup', 'linedown',
+  'pausescript', 'selectall', 'copy', 'cut', 'paste',
+])
+
+function isBuiltinAction(action: string): boolean {
+  // {CommandName} or {CommandName}N pattern
+  const m = action.match(/^\{([A-Za-z]+)\}/)
+  return m ? WRAYTH_BUILTIN.has(m[1].toLowerCase()) : false
+}
+
+function parseWraythAction(raw: string): { commands: string[]; hadBuiltin: boolean } {
+  const commands: string[] = []
+  let hadBuiltin = false
+
+  // Replace \r with a separator then split
+  const parts = raw
+    .replace(/\\r/g, '\r')
+    .split('\r')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  for (const part of parts) {
+    if (isBuiltinAction(part)) {
+      hadBuiltin = true
+      continue
+    }
+    // Strip \x direction prefix (used for directional movement commands)
+    const cmd = part.replace(/^\\x/, '').trim()
+    if (cmd) commands.push(cmd)
+  }
+
+  return { commands, hadBuiltin }
+}
+
+function parseMacros(xml: string): ImportMacro[] {
+  const results: ImportMacro[] = []
+
+  // Only process macros in set 0 (default set — sets 1-9 are typically empty)
+  const defaultSet = xml.match(/<keys[^>]*id=['"]0['"][^>]*>([\s\S]*?)<\/keys>/i)
+  if (!defaultSet) return results
+
+  for (const tag of iterTags(defaultSet[1], 'k')) {
+    const keyRaw    = getAttr(tag, 'key')
+    const actionRaw = getAttr(tag, 'action')
+
+    if (!keyRaw || !actionRaw) continue
+
+    const key = normalizeWraythKey(keyRaw)
+    if (!key) continue
+
+    const { commands, hadBuiltin } = parseWraythAction(actionRaw)
+    if (commands.length === 0) continue
+
+    results.push({
+      kind:       'macro',
+      source:     'wrayth',
+      status:     hadBuiltin ? 'partial' : 'ready',
+      statusNote: hadBuiltin ? 'Wrayth built-in commands removed' : undefined,
+      key,
+      commands,
+    })
+  }
+
+  return results
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export function parseWraythXml(xml: string): ImportResult {
+  const palette    = parsePalette(xml)
+  const highlights = parseHighlights(xml, palette)
+  const names      = parseNames(xml, palette)
+  const macros     = parseMacros(xml)
+
+  const unsupportedCount = [...highlights, ...names, ...macros].filter(r => r.status === 'unsupported').length
+
+  return {
+    highlights,
+    names,
+    macros,
+    aliases:           [],
+    triggers:          [],
+    substitutionCount: 0,
+    unsupportedCount,
+  }
+}

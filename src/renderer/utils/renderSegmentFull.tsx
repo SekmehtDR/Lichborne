@@ -37,7 +37,9 @@ export function renderSegmentFull(
     }
   }
 
+  const textLower = text.toLowerCase()
   for (const compiled of matchRules) {
+    if (compiled.fastLower !== null && !textLower.includes(compiled.fastLower)) continue
     compiled.regex.lastIndex = 0
     let m: RegExpExecArray | null
     while ((m = compiled.regex.exec(text)) !== null) {
@@ -133,7 +135,9 @@ export function getLineHighlightStyle(
 ): React.CSSProperties | null {
   if (lineRules.length === 0) return null
   const fullText = segments.map(s => s.text).join('')
+  const fullTextLower = fullText.toLowerCase()
   for (const compiled of lineRules) {
+    if (compiled.fastLower !== null && !fullTextLower.includes(compiled.fastLower)) continue
     compiled.regex.lastIndex = 0
     if (compiled.regex.test(fullText)) {
       const { style } = compiled.rule

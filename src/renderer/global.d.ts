@@ -24,6 +24,8 @@ declare global {
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       openUrl: (url: string) => void
       writeClipboard: (text: string) => void
+      flashWindow: () => void
+      writeLog: (filename: string, content: string) => void
       browseFolder: () => Promise<string | null>
       listMapDir: (dir: string) => Promise<{ name: string; path: string }[] | null>
       readFile: (filePath: string) => Promise<string | null>

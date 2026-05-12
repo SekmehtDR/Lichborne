@@ -190,6 +190,21 @@ ipcMain.handle('profile:list',                      ()                          
 
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
+
+ipcMain.on('flash-window', () => {
+  mainWindow?.flashFrame(true)
+})
+
+ipcMain.on('write-log', (_e, filename: string, content: string) => {
+  try {
+    const logsDir = app.isPackaged
+      ? path.join(path.dirname(app.getPath('exe')), 'Logs')
+      : path.join(app.getAppPath(), 'Logs')
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true })
+    const safeName = path.basename(filename)
+    fs.appendFileSync(path.join(logsDir, safeName), content + '\n', 'utf8')
+  } catch {}
+})
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
 ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())

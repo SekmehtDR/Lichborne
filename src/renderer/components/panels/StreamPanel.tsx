@@ -1,10 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
-import { renderSegment } from '../../utils/renderSegment'
-import { renderSegmentFull, getLineHighlightStyle } from '../../utils/renderSegmentFull'
 import { useContacts } from '../../ContactsContext'
 import { useHighlights } from '../../HighlightsContext'
 import { newHighlight, type HighlightRule } from '../../highlights'
+import { TextLineRow } from '../TextLineRow'
 import ContextMenu from '../ContextMenu'
 
 interface Props {
@@ -19,11 +18,6 @@ interface Props {
   onToggleTimestamp?: () => void
 }
 
-function fmtTimestamp(ts: number): string {
-  const d = new Date(ts)
-  return `[${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}] `
-}
-
 export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, showTimestamp, onToggleTimestamp }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
@@ -31,8 +25,6 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
-
-  const hasExtras = nameRegex || matchRules.length > 0
 
   // Re-check DOM position only when already pinned — catches stale-true from the
   // B16 race. When already unpinned, trust it: DOM reads are unreliable while
@@ -46,7 +38,7 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
     const el = scrollRef.current
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (dist > 40) pinnedRef.current = false
+    pinnedRef.current = dist <= 40
   }
 
   function getWordAtPoint(x: number, y: number): string | null {
@@ -85,21 +77,21 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
       {lines.length === 0 && emptyMessage && (
         <div className="stream-panel-empty">{emptyMessage}</div>
       )}
-      {lines.map(line => {
-        const lineStyle = getLineHighlightStyle(line.segments, lineRules)
-        const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre' as const } : lineStyle
-        return (
-          <div key={line.id} className="text-line" style={monoStyle ?? undefined}>
-            {showTimestamp && line.timestamp && (
-              <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
-            )}
-            {line.segments.map((seg, i) => hasExtras
-              ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls)
-              : renderSegment(seg, i, onSendCommand, autoLinkUrls)
-            )}
-          </div>
-        )
-      })}
+      {lines.map(line => (
+        <TextLineRow
+          key={line.id}
+          line={line}
+          matchRules={matchRules}
+          lineRules={lineRules}
+          contacts={contacts}
+          templates={templates}
+          nameRegex={nameRegex}
+          onContactClick={onContactClick}
+          onSendCommand={onSendCommand}
+          autoLinkUrls={autoLinkUrls}
+          showTimestamp={showTimestamp}
+        />
+      ))}
       <div ref={bottomRef} />
       {ctxMenu && (() => {
         const sep = { label: null as null }

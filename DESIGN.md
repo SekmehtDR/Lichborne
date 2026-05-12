@@ -57,6 +57,7 @@
    - 19.11 Label Modes
    - 19.12 Future Work
    - 19.14 Map Panel UI Layout
+23. [Virtual Scrolling — Main Window](#23-virtual-scrolling--main-window)
 
 ---
 
@@ -1673,6 +1674,25 @@ Supported operators: `<`, `>`, `<=`, `>=`, `==`, `!=`. Expressions are intention
 - Rules exported/imported as JSON; import merges with existing rules (no full replace)
 - **Zero-length match guard** — all `while (regex.exec())` loops (preview and live render) advance `lastIndex` manually when a zero-length match is returned (`m[0].length === 0`). This prevents an infinite loop when patterns use zero-width assertions like `^`, `$`, `\b`, or `(?=...)` in regex mode. Without this guard, a pattern like `^` produces a zero-length match at position 0 and can freeze the renderer thread before V8 can be interrupted.
 
+### 14.x Highlight Sound Architecture
+
+`HighlightRule` carries an optional `soundFile?: string` — a full filesystem path to a WAV/MP3/OGG file. When a highlight matches, `playWavFile()` is called in `GameWindow` via `processHighlightSoundsRef`, which iterates only rules that have `soundFile` set. This is a dedicated ref separate from the visual highlight pipeline so sounds fire even for streams that aren't displayed.
+
+**Design decision: sounds live on the rule, not a companion trigger.** Earlier designs created a secondary trigger for every highlight that had a sound. This was abandoned because: (1) it polluted the triggers list with auto-generated items the user didn't create, (2) it broke on import — the trigger count was double what users expected, and (3) sounds are a presentation concern, not a behavioral one. A highlight knows its own sound. A trigger that plays a sound is a different thing entirely.
+
+`playWavFile(path)` converts Windows backslash paths to `file:///` URLs and plays via `new Audio(url).play()`. Errors are silently swallowed — a missing sound file should never break the session.
+
+### 14.y Trigger Action Editor
+
+The THEN section of a trigger uses a card-per-action layout. Two notable UI decisions:
+
+- **Action type selector**: a single `<select>` replaces the original 9-pill row. Pills worked fine at 3–4 options but clipped badly as the action type count grew. The select scales to any number of types and matches the visual weight of the other dropdowns in the panel.
+- **Variable picker**: `VarPicker` is an uncontrolled `<select defaultValue="">` that inserts `$varName` at the cursor position when a variable is chosen, then resets via `e.target.value = ''` (direct DOM mutation). The previous implementation used a floating portal menu with open/close state, refs, and a `useEffect` click-outside handler — all of which were removed.
+
+### 14.z Command Echo
+
+Every command sent through `sendCommandSequence` (macros and alias resolution) is echoed to the main stream as `>command` using the `command-echo` preset, so players can see what fired. For aliases, only the resolved commands are echoed — the original typed alias name is suppressed. This matches how veteran clients (Genie, StormFront) behave and prevents confusion when an alias maps to a different command name.
+
 ---
 
 ## 15. Smart Names / Contacts
@@ -2770,3 +2790,162 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 | 2 | Import shared: `importSharedProfile()` on login screen mount; pre-fills account name and all Lich/port/mode settings | ✅ Complete |
 | 3 | Import character: `importCharacterProfile()` on connect before GameWindow renders; YAML is authority | ✅ Complete |
 | 4 | Game dropdown: populate login screen game selector from `games` table in `_shared.yaml` | Planned |
+
+---
+
+## 21. Stream Name Normalization
+
+All stream IDs are normalized to **lowercase** at the point they enter the system:
+
+- `echoToStream(stream, ...)` — trigger echo actions; `stream.toLowerCase()` applied before writing to `streamLines`
+- `stream-declare` event handler — game-sourced streams; `evt.stream.toLowerCase()` before pushing to `discoveredStreams` and `streamTitles`
+- `stream-push` event handler — same normalization
+
+**Display**: stream IDs are always stored and keyed lowercase. Tab labels capitalize the first letter (`id.charAt(0).toUpperCase() + id.slice(1)`) so "log" → "Log", "sekmeht" → "Sekmeht". The game server already sends lowercase IDs; normalization primarily matters for user-typed stream names in trigger echo actions.
+
+**Custom panel binding**: `makeCustomTab(name)` sets `tab.id = name.trim().toLowerCase()`. The `custom` case in `renderPanel` uses `streamLines[tab.id]`. This means a panel named "Sekmeht" and a trigger that echoes to "Sekmeht" (or "SEKMEHT" or "sekmeht") all resolve to the same `streamLines["sekmeht"]` key — no manual case-matching needed.
+
+**Why not normalize at the trigger editor?** The trigger stores whatever the user typed. Normalizing at storage time would silently alter the user's value and could cause confusion if the stored value differed from what they entered. Normalizing at use time is transparent and reversible.
+
+---
+
+## 22. Debug — Fires Tab
+
+The Fires tab in the Debug panel shows a live stream of every highlight and trigger that matched incoming game text. It is the primary tool for diagnosing automation behavior: seeing which rules fire, on what text, with what actions.
+
+### Architecture
+
+- `FireLogEntry` — defined in `shared/types.ts`; fields: `id`, `ts`, `kind` (`highlight` | `trigger`), `name`, `matched`, `detail`, `stream`
+- `fireLogBufRef` — accumulates entries without triggering React re-renders
+- `setFireLog` — only called when the debug panel is open (`showDebugRef.current`); entries are pushed with `prev => [...prev.slice(-(MAX - 1)), entry]` for O(1) append
+- Cap: 500 entries (same as the Events buffer)
+
+### Highlights
+
+`logHighlightFiresRef(text, stream)` is called alongside `processHighlightSoundsRef` for every incoming line. It:
+1. Returns immediately if `showDebugRef.current` is false — **zero overhead when debug is closed**
+2. Iterates `allHighlightRulesRef` (all compiled highlight rules, both `matchRules` and `lineRules`)
+3. Uses the same `fastLower` pre-filter as the sound engine
+4. For each match: logs `name || pattern`, the full line text, and a detail string containing `scope/mode | fg:color | bg:color | bold | glow | 🔊 sound`
+5. The `stream` column reveals when the same line arrives on multiple streams (e.g., `main` and `spells`) and fires the same highlight twice — this is expected DR behavior, not a bug
+
+### Triggers
+
+`TriggerCallbacks.onFire` is called inside `processLine` and `processVariableChange` after `buildVars` so action details can be interpolated. The detail string format is:
+
+```
+pattern: "…" | if health > 50 | cmd: "go north" | echo → log: "message"
+```
+
+For variable triggers:
+```
+watch: $health = "75" | if health > 50 | set $lastHealth = "75"
+```
+
+`summarizeAction(action, vars)` and `summarizeGates(gates)` build these strings. Actions are fully interpolated at the time of the fire event so the log shows actual runtime values, not template strings.
+
+### Name Fallback
+
+Both highlights and triggers fall back to `rule.pattern` when `rule.name` is blank. This is important because the import wizard intentionally leaves `name: ''` on all imported items — the pattern is the only meaningful identifier until the user labels their rules. Variable triggers additionally fall back to `rule.watchVariable` before the pattern.
+
+---
+
+## 23. Virtual Scrolling — Main Window
+
+### Problem
+
+The main story window accumulated up to 2000 `<TextLineRow>` DOM nodes. Chrome DevTools traces during heavy combat and movement bursts showed Layout at 40.9% and `removeChild` at 29.7% of total frame time. The bottleneck was the browser measuring and painting all 2000 nodes on every incoming line batch, not the React diffing.
+
+### Solution
+
+The `lines.map(<TextLineRow>)` render was replaced with `react-virtuoso`'s `<Virtuoso>` component. Virtuoso renders only the ~50 rows visible in the viewport at any given time. Off-screen rows are unmounted and remounted as the user scrolls.
+
+### Architecture
+
+```
+.text-window (wrapper div — overflow: hidden, NO padding, event handlers)
+└── <Virtuoso>                    ← managed by react-virtuoso
+    └── scroller div              ← scrollerRef → scrollRef.current; overflow-x: hidden
+        └── <div className="text-line-wrap">   ← padding: 0 12px per item
+            └── <TextLineRow>     ← only ~50 in DOM at once
+```
+
+**Item padding (B35):**
+Padding belongs on each item, not on the `.text-window` container. Applying `padding: 8px 12px` to the container reduces the width available to Virtuoso's scroller, causing item widths to differ from what Virtuoso estimated during initial measurement. This compounds into scroll height errors (scroll lands several lines short of true bottom) and causes the scrollbar to float in the gutter instead of sitting flush at the panel edge. Solution: `.text-window` has no padding; each item is wrapped in `<div className="text-line-wrap">` with `padding: 0 12px 0.15em` (see Last-line clip below).
+
+**Last-line clip (B38):**
+`margin-bottom` on the inner `.text-line` element collapses through `.text-line-wrap` (a block container with no padding-bottom or border-bottom). Collapsed margins are NOT captured by Virtuoso's ResizeObserver measurement of item height — so the last rendered line was always clipped by that margin regardless of scroll position. Fix: no `margin-bottom` on `.text-line`; inter-line spacing moved to `padding-bottom: 0.15em` on `.text-line-wrap`. Padding IS included in ResizeObserver measurements.
+
+**Scroll-following (pin to bottom) — B36:**
+Auto-follow is owned entirely by Virtuoso's `followOutput` prop. `followOutput` uses Virtuoso's internal height map for ALL items (rendered and unrendered), not `el.scrollHeight` which only reflects rendered items + spacer estimates. This is the correct tool for following a virtual list where new items appear below the current viewport and have no DOM presence yet.
+
+```tsx
+followOutput={() => pinnedRef.current ? 'auto' : false}
+```
+
+A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it forces `el.scrollTop` to the true DOM bottom and arms `suppressUnpinRef` for 200ms:
+
+```tsx
+totalListHeightChanged={() => {
+  if (!pinnedRef.current) return
+  const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (dist > 2) {
+    suppressUnpin(200)
+    el.scrollTop = el.scrollHeight - el.clientHeight
+  }
+}}
+```
+
+**Why `followOutput` instead of `useLayoutEffect + scrollTop`:**
+Direct `el.scrollTop = el.scrollHeight - el.clientHeight` uses DOM `scrollHeight`, which only accounts for rendered items plus spacer estimates. Items beyond the current viewport have 0 or minimal spacer height when first appended, so the assignment lands far short of the true bottom. `followOutput` avoids this because it references Virtuoso's internal item height accumulator (which tracks all items, not just rendered ones) and calls `scrollTo` after Virtuoso has updated its own layout.
+
+**Un-pinning:**
+Un-pinning happens only via explicit user action:
+- `onWheel` on the wrapper div: if `e.deltaY < 0` (scroll up), sets `pinnedRef.current = false` synchronously (fires before the DOM scroll event — required during fast combat where lines arrive every frame)
+- `PageUp` / `Home` key handlers: set `pinnedRef.current = false` before adjusting `scrollTop`
+
+The scroll event listener on the Virtuoso scroller element does the opposite — it **only re-pins**:
+
+```typescript
+function handleVirtuosoScroll() {
+  if (suppressUnpinRef.current) return
+  const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+  if (dist <= 10 && !pinnedRef.current) {
+    pinnedRef.current = true
+    newLineCountRef.current = 0
+    setNewLineCount(0)
+  }
+}
+```
+
+This separation is critical: `followOutput` and `totalListHeightChanged` both generate scroll events. If the scroll handler also un-pinned on `dist > threshold`, those programmatic events would immediately clear the pin state — breaking auto-follow entirely.
+
+**Suppress-unpin guard:**
+`suppressUnpinRef.current = true` is set for 200ms whenever a programmatic scroll occurs (from `totalListHeightChanged`, `scrollToBottom`, or `scrollToIndex`). The scroll handler returns early while suppressed. The 200ms window covers Virtuoso's async ResizeObserver and rAF timing.
+
+**Re-pinning:**
+- Scroll handler re-pins automatically when the user scrolls all the way to the bottom (`dist <= 10`)
+- `scrollToBottom()` — called by badge click or the End key — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: lines.length - 1, align: 'end', behavior: 'auto' })`
+- `clearLines()` sets `pinnedRef.current = true` so the user is not stranded at the top of an empty buffer after a screen clear
+
+**Word wrap:**
+Virtuoso's scroller div has `overflow: auto` internally, enabling horizontal scrolling and breaking word wrap. Fixed by `el.style.overflowX = 'hidden'` in the `scrollerRef` callback.
+
+**Keyboard scrolling (PageUp/PageDown/Home/End):**
+`scrollRef.current` points to the Virtuoso scroller div. Directly setting `el.scrollTop` works — Virtuoso observes the scroll event and updates its virtual window accordingly.
+
+### Stream ID Case Handling (B34, B37)
+
+Stream IDs are preserved in their original capitalization throughout the entire pipeline. No `toLowerCase()` normalization is applied at any ingestion point:
+
+- **`stream-text`** — `rawStream` used as-is; `streamLines["LichScripts"]` and `streamLines["moonWindow"]` receive data under exactly those keys
+- **`stream-declare` / `stream-push`** — discovered stream IDs registered with original case; tab `id` matches the key used in `streamLines`
+- **`echoToStream`** — trigger echo actions write to the exact stream name provided
+- **Parser `clearstream` case** — falls back to raw `id` for unknown streams, so `<clearStream id="moonWindow"/>` clears `streamLines["moonWindow"]`
+- **`makeCustomTab`** — preserves the stream ID's original case as the tab `id`
+
+The only exception is the `NEVER_DISCOVER` filter, which uses `id.toLowerCase()` for its lookup since that set contains hardcoded lowercase constants for built-in game streams.
+
+Built-in game streams (`main`, `room`, `thoughts`, `log`, etc.) always arrive from the server in lowercase, so they are unaffected. Trigger echo stream names must exactly match the case of the target panel's stream ID.
+
+**Stream title as display label:** A `<streamWindow id="moonWindow" title="Moons"/>` declaration stores `streamTitles["moonWindow"] = "Moons"`. When adding the stream as a panel tab, `addDiscoveredTab` uses `streamTitles[streamId] ?? streamId` for the label — so the tab shows "Moons" while the internal `id` stays `"moonWindow"`. When no title is declared the stream ID is used with its first character uppercased (`"LichScripts"` → label `"LichScripts"`). The title is purely cosmetic; all routing uses the stream ID.

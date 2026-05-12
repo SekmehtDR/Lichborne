@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { GameEvent, TextLine, RoomState, InjuryState } from '../../shared/types'
+import ContextMenu from './ContextMenu'
+import type { GameEvent, TextLine, RoomState, InjuryState, FireLogEntry } from '../../shared/types'
 import type { HighlightRule } from '../highlights'
 import type { TriggerRule } from '../triggers'
 import RoomPanel from './panels/RoomPanel'
@@ -45,8 +46,9 @@ export function makeTab(type: PanelType): TabDef {
 }
 
 export function makeCustomTab(name: string): TabDef {
-  const id = `custom-${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-${Date.now()}`
-  return { id, type: 'custom', label: name }
+  const id    = name.trim()
+  const label = id.charAt(0).toUpperCase() + id.slice(1)
+  return { id, type: 'custom', label }
 }
 
 interface Props {
@@ -60,6 +62,8 @@ interface Props {
   onClearDebug?: () => void
   rawXmlLines?: string[]
   onClearRawXml?: () => void
+  fireLog?: FireLogEntry[]
+  onClearFireLog?: () => void
   onClearStream?: (streamId: string) => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
@@ -77,7 +81,7 @@ interface Props {
 
 export default function PanelFrame({
   streamLines, roomState, expSkills, rankUpSkills, onSendCommand, autoLinkUrls = true,
-  debugEvents, onClearDebug, rawXmlLines, onClearRawXml, onClearStream, onHighlight, onTrigger,
+  debugEvents, onClearDebug, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], streamTitles = {}, unreadIds,
@@ -85,6 +89,7 @@ export default function PanelFrame({
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
+  const [tabCtxMenu, setTabCtxMenu] = useState<{ x: number; y: number; tabId: string } | null>(null)
   const [showNameInput, setShowNameInput] = useState(false)
   const [newPanelName, setNewPanelName] = useState('')
   const addWrapRef = useRef<HTMLDivElement>(null)
@@ -156,6 +161,7 @@ export default function PanelFrame({
           activeTab, streamLines, roomState, expSkills, rankUpSkills, onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
+          fireLog ?? [], onClearFireLog ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
           streamTimestamps, onToggleTimestamp, autoLinkUrls,
         )}
@@ -171,6 +177,7 @@ export default function PanelFrame({
                 key={tab.id}
                 className={`panel-tab${isActive ? ' panel-tab--active' : ''}${isUnread ? ' panel-tab--unread' : ''}`}
                 onClick={() => onActiveChange(tab.id)}
+                onContextMenu={e => { e.preventDefault(); setTabCtxMenu({ x: e.clientX, y: e.clientY, tabId: tab.id }) }}
               >
                 <span>{tab.label}</span>
                 {isUnread && <span className="panel-tab-unread-dot" title="New content" />}
@@ -182,6 +189,22 @@ export default function PanelFrame({
               </div>
             )
           })}
+          {tabCtxMenu && (() => {
+            const tab = tabs.find(t => t.id === tabCtxMenu.tabId)
+            if (!tab) return null
+            const items: ({ label: string; onClick: () => void } | { label: null })[] = [
+              {
+                label: 'Clear',
+                onClick: () => {
+                  if (tab.type === 'debug') onClearDebug?.()
+                  else onClearStream?.(tab.id)
+                },
+              },
+              { label: null },
+              { label: 'Close tab', onClick: () => closeTab(tab.id) },
+            ]
+            return <ContextMenu x={tabCtxMenu.x} y={tabCtxMenu.y} items={items} onClose={() => setTabCtxMenu(null)} />
+          })()}
         </div>
 
         <div className="panel-tab-add-wrap" ref={addWrapRef}>
@@ -264,6 +287,8 @@ function renderPanel(
   onClearDebug: () => void,
   rawXmlLines: string[],
   onClearRawXml: () => void,
+  fireLog: FireLogEntry[],
+  onClearFireLog: () => void,
   onClearStream: (streamId: string) => void,
   onHighlight?: (rule: HighlightRule, testText?: string) => void,
   onTrigger?: (pattern: string) => void,
@@ -289,7 +314,7 @@ function renderPanel(
     case 'injuries':      return <InjuriesPanel parts={injuryState} />
     case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
     case 'inv':           return sp('inv',           streamLines.inv           ?? [])
-    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} />
+    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} />
     case 'log':           return sp('log',           streamLines.log           ?? [])
     case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} onSendCommand={onSendCommand} />
     case 'custom':        return (
@@ -297,7 +322,7 @@ function renderPanel(
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls}
         showTimestamp={!!streamTimestamps[tab.id]}
         onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(tab.id) : undefined}
-        emptyMessage={`Waiting for content on stream "${tab.id}"…`} />
+        emptyMessage={`Waiting for content on stream "${tab.label}"…`} />
     )
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "DragonRealms game client with Lich support and AI features",
   "main": "dist/main/main.js",
   "scripts": {
@@ -71,6 +71,7 @@
     "electron-updater": "^6.8.3",
     "js-yaml": "^4.1.1",
     "react": "^18.0.0",
-    "react-dom": "^18.0.0"
+    "react-dom": "^18.0.0",
+    "react-virtuoso": "^4.18.7"
   }
 }

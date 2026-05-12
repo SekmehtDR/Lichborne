@@ -78,7 +78,7 @@ export function buildCharacterProfile(
     character,
     game,
     useLich,
-    theme:            localStorage.getItem('lichborne.theme') ?? 'dark',
+    theme:            localStorage.getItem('lichborne.theme') ?? 'classic',
     settings:         loadSettings(),
     layout,
     automations,
@@ -173,6 +173,40 @@ export async function importCharacterProfile(character: string): Promise<Charact
   if (data.contactTemplates) saveContactTemplates(data.contactTemplates)
 
   return data as CharacterProfile
+}
+
+// ── Clear character localStorage ─────────────────────────────────────────────
+// Called when a character YAML is missing so stale data from a previous
+// character doesn't bleed into the new blank profile.
+
+const CHARACTER_LS_KEYS = [
+  'lichborne.theme',
+  'lichborne.settings',
+  'lichborne.panelWidth',
+  'lichborne.topPanelHeight',
+  'lichborne.midPanelHeight',
+  'lichborne.topTabs',
+  'lichborne.topActiveId',
+  'lichborne.midTabs',
+  'lichborne.midActiveId',
+  'lichborne.bottomTabs',
+  'lichborne.bottomActiveId',
+  'lichborne.streamTimestamps',
+  'lichborne.mapLabelMode',
+  'lichborne.highlights',
+  'lichborne.triggers',
+  'lichborne.macros',
+  'lichborne.aliases',
+  'lichborne.groups',
+  'lichborne.modes',
+  'lichborne.activeGroupStates',
+  'lichborne.activeModeId',
+  'lichborne.contacts',
+  'lichborne.contact-templates',
+]
+
+export function clearCharacterLocalStorage(): void {
+  for (const key of CHARACTER_LS_KEYS) localStorage.removeItem(key)
 }
 
 // ── Debounced auto-save ───────────────────────────────────────────────────────

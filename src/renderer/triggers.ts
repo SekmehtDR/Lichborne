@@ -1,4 +1,4 @@
-export type ActionType = 'command' | 'echo' | 'notify' | 'sound' | 'webhook' | 'variable'
+export type ActionType = 'command' | 'echo' | 'notify' | 'sound' | 'webhook' | 'variable' | 'flash' | 'beep' | 'log'
 
 export type WatchStream = 'any' | string
 
@@ -27,27 +27,39 @@ export interface TriggerAction {
   // echo
   echoMessage?: string
   echoStream?: string
+  echoColor?: string
   // notify
   notifyTitle?: string
   notifyBody?: string
   // sound
   soundPreset?: 'chime' | 'alert' | 'alarm' | 'ping'
+  soundFile?: string   // WAV/audio file path — takes priority over soundPreset when set
   // webhook
   webhookUrl?: string
   webhookMessage?: string
   // variable
   varName?: string
   varValue?: string
+  // log
+  logFile?: string
+  logMessage?: string
 }
+
+export type TriggerType = 'text' | 'variable'
 
 export interface TriggerRule {
   id: string
   name: string
   enabled: boolean
+  triggerType: TriggerType   // 'text' (default) or 'variable'
+  // text trigger fields
   pattern: string
   mode: 'text' | 'phrase' | 'regex'
   caseSensitive: boolean
   watchStream: WatchStream
+  // variable trigger fields
+  watchVariable?: string     // variable name to watch (triggerType === 'variable')
+  // shared
   gates: StateGate[]
   cooldownSeconds: number
   oneShot: boolean
@@ -82,7 +94,7 @@ export function buildTriggerRegex(rule: TriggerRule): RegExp | null {
     } else {
       source = escapeRegex(rule.pattern)
     }
-    return new RegExp(`(${source})`, rule.caseSensitive ? '' : 'i')
+    return new RegExp(source, rule.caseSensitive ? '' : 'i')
   } catch {
     return null
   }
@@ -112,6 +124,7 @@ export function newTriggerAction(type: ActionType = 'command'): TriggerAction {
     delayMs: 0,
     echoMessage: '',
     echoStream: 'log',
+    echoColor: '',
     notifyTitle: 'Lichborne',
     notifyBody: '$line',
     soundPreset: 'chime',
@@ -119,6 +132,8 @@ export function newTriggerAction(type: ActionType = 'command'): TriggerAction {
     webhookMessage: '$line',
     varName: '',
     varValue: '',
+    logFile: '',
+    logMessage: '$line',
   }
 }
 
@@ -127,10 +142,12 @@ export function newTrigger(pattern = ''): TriggerRule {
     id: crypto.randomUUID(),
     name: '',
     enabled: true,
+    triggerType: 'text',
     pattern,
     mode: 'text',
     caseSensitive: false,
     watchStream: 'any',
+    watchVariable: '',
     gates: [],
     cooldownSeconds: 0,
     oneShot: false,
@@ -171,8 +188,15 @@ export const NUMERIC_OPERATORS: GateOperator[] = ['<', '<=', '>', '>=', '=', '!=
 export const STRING_OPERATORS:  GateOperator[] = ['=', '!=']
 
 export const INTERPOLATABLE_VARS: { name: string; desc: string }[] = [
-  { name: 'match',         desc: 'matched text' },
+  { name: 'match',         desc: 'matched text (same as $0)' },
+  { name: '0',             desc: 'full matched text' },
+  { name: '1',             desc: 'first capture group' },
+  { name: '2',             desc: 'second capture group' },
+  { name: '3',             desc: 'third capture group' },
   { name: 'line',          desc: 'full matched line' },
+  { name: 'characterName', desc: 'logged-in character name' },
+  { name: 'date',          desc: 'current date' },
+  { name: 'time',          desc: 'current time' },
   { name: 'health',        desc: 'health %' },
   { name: 'mana',          desc: 'mana %' },
   { name: 'stamina',       desc: 'stamina %' },

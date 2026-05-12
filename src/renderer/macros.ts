@@ -93,6 +93,15 @@ export function newMacro(key = ''): MacroRule {
 
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta', 'OS'])
 
+const NUMPAD_CODE_MAP: Record<string, string> = {
+  NumpadSubtract: 'Num-',  NumpadAdd:      'Num+',
+  NumpadMultiply: 'Num*',  NumpadDivide:   'Num/',
+  NumpadDecimal:  'Num.',  NumpadEnter:    'NumEnter',
+  Numpad0: 'Num0', Numpad1: 'Num1', Numpad2: 'Num2', Numpad3: 'Num3',
+  Numpad4: 'Num4', Numpad5: 'Num5', Numpad6: 'Num6', Numpad7: 'Num7',
+  Numpad8: 'Num8', Numpad9: 'Num9',
+}
+
 export function formatKeyCombo(e: KeyboardEvent): string {
   const mods: string[] = []
   if (e.ctrlKey)  mods.push('Ctrl')
@@ -100,7 +109,9 @@ export function formatKeyCombo(e: KeyboardEvent): string {
   if (e.shiftKey) mods.push('Shift')
   const key = e.key
   if (MODIFIER_KEYS.has(key)) return ''
-  const display = key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key
+  // e.code distinguishes numpad keys from their keyboard twins (e.g. NumpadSubtract vs Minus)
+  const display = NUMPAD_CODE_MAP[e.code]
+    ?? (key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key)
   return [...mods, display].join('+')
 }
 

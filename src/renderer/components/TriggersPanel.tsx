@@ -9,6 +9,7 @@ import {
   GATE_VARIABLES, NUMERIC_OPERATORS, STRING_OPERATORS,
   INTERPOLATABLE_VARS, WATCH_STREAM_OPTIONS,
 } from '../triggers'
+import { playWavFile } from '../hooks/useTriggerEngine'
 import GroupPicker from './GroupPicker'
 import '../styles/triggers.css'
 import '../styles/groups.css'
@@ -20,9 +21,12 @@ const ACTION_LABELS: Record<ActionType, string> = {
   sound:    '🔊 Sound',
   webhook:  '🔗 Webhook',
   variable: '📋 Variable',
+  flash:    '⚡ Flash',
+  beep:     '🔔 Beep',
+  log:      '📄 Log',
 }
 
-const ACTION_TYPES: ActionType[] = ['command', 'echo', 'notify', 'sound', 'webhook', 'variable']
+const ACTION_TYPES: ActionType[] = ['command', 'echo', 'notify', 'sound', 'flash', 'beep', 'log', 'webhook', 'variable']
 
 interface Props {
   onClose: () => void
@@ -40,37 +44,14 @@ interface VarPickerProps {
 }
 
 function VarPicker({ inputRef, value, onChange }: VarPickerProps) {
-  const [open, setOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState({ top: 0, left: 0 })
-  const btnRef  = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    function onOutside(e: MouseEvent) {
-      if (
-        !btnRef.current?.contains(e.target as Node) &&
-        !menuRef.current?.contains(e.target as Node)
-      ) setOpen(false)
-    }
-    document.addEventListener('mousedown', onOutside)
-    return () => document.removeEventListener('mousedown', onOutside)
-  }, [open])
-
-  function handleOpen() {
-    const rect = btnRef.current?.getBoundingClientRect()
-    if (rect) {
-      setMenuPos({ top: rect.bottom + 4, left: rect.right })
-    }
-    setOpen(v => !v)
-  }
-
-  function insert(varName: string) {
+  function handleSelect(e: React.ChangeEvent<HTMLSelectElement>) {
+    const varName = e.target.value
+    if (!varName) return
     const el = inputRef.current
     const pos = el ? (el.selectionStart ?? value.length) : value.length
     const next = value.slice(0, pos) + `$${varName}` + value.slice(pos)
     onChange(next)
-    setOpen(false)
+    e.target.value = ''
     setTimeout(() => {
       el?.focus()
       const newPos = pos + varName.length + 1
@@ -79,24 +60,12 @@ function VarPicker({ inputRef, value, onChange }: VarPickerProps) {
   }
 
   return (
-    <>
-      <button ref={btnRef} className="tp-var-btn" type="button" onClick={handleOpen} title="Insert variable">$</button>
-      {open && createPortal(
-        <div
-          ref={menuRef}
-          className="tp-var-menu"
-          style={{ top: menuPos.top, left: menuPos.left, transform: 'translateX(-100%)' }}
-        >
-          {INTERPOLATABLE_VARS.map(v => (
-            <div key={v.name} className="tp-var-item" onClick={() => insert(v.name)}>
-              <code>${v.name}</code>
-              <span>{v.desc}</span>
-            </div>
-          ))}
-        </div>,
-        document.body,
-      )}
-    </>
+    <select className="tp-var-select" defaultValue="" onChange={handleSelect}>
+      <option value="" disabled>$var</option>
+      {INTERPOLATABLE_VARS.map(v => (
+        <option key={v.name} value={v.name}>${v.name} — {v.desc}</option>
+      ))}
+    </select>
   )
 }
 
@@ -136,23 +105,22 @@ interface ActionCardProps {
 }
 
 function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) {
+  const actionRef = useRef(action)
+  actionRef.current = action
   const up = (patch: Partial<TriggerAction>) => onChange({ ...action, ...patch })
 
   return (
     <div className="tp-action-card">
       <div className="tp-action-header">
-        <div className="tp-action-type-pills">
+        <select
+          className="tp-action-type-select"
+          value={action.type}
+          onChange={e => up({ type: e.target.value as ActionType })}
+        >
           {ACTION_TYPES.map(t => (
-            <button
-              key={t}
-              type="button"
-              className={`tp-action-type-pill${action.type === t ? ' tp-action-type-pill--active' : ''}`}
-              onClick={() => up({ type: t })}
-            >
-              {ACTION_LABELS[t]}
-            </button>
+            <option key={t} value={t}>{ACTION_LABELS[t]}</option>
           ))}
-        </div>
+        </select>
         {canRemove && (
           <button type="button" className="tp-action-remove" onClick={onRemove} title="Remove action">×</button>
         )}
@@ -199,6 +167,46 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
                 placeholder="log"
               />
             </div>
+            <div className="tp-action-row">
+              <label className="tp-label">Color</label>
+              <input
+                type="color"
+                className="tp-color-swatch"
+                value={action.echoColor && action.echoColor.startsWith('#') ? action.echoColor : '#c8c8c8'}
+                onChange={e => up({ echoColor: e.target.value })}
+              />
+              <input
+                className="tp-input tp-input--hex"
+                value={action.echoColor ?? ''}
+                onChange={e => up({ echoColor: e.target.value })}
+                placeholder="(default color)"
+              />
+            </div>
+          </>
+        )}
+        {action.type === 'flash' && (
+          <div className="tp-action-note">Flashes the application in the OS taskbar to draw attention.</div>
+        )}
+        {action.type === 'beep' && (
+          <div className="tp-action-note">Plays a short system beep sound.</div>
+        )}
+        {action.type === 'log' && (
+          <>
+            <div className="tp-action-row">
+              <label className="tp-label">File</label>
+              <input
+                className="tp-input"
+                value={action.logFile ?? ''}
+                onChange={e => up({ logFile: e.target.value })}
+                placeholder="e.g. Ranklog-$characterName.txt"
+              />
+            </div>
+            <VarInputRow
+              label="Message"
+              value={action.logMessage ?? ''}
+              onChange={v => up({ logMessage: v })}
+              placeholder="Text to append to the file…"
+            />
           </>
         )}
 
@@ -220,21 +228,59 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
         )}
 
         {action.type === 'sound' && (
-          <div className="tp-action-row">
-            <label className="tp-label">Sound</label>
-            <div className="tp-sound-pills">
-              {(['chime', 'alert', 'alarm', 'ping'] as const).map(s => (
-                <button
-                  key={s}
-                  type="button"
-                  className={`tp-sound-pill${(action.soundPreset ?? 'chime') === s ? ' tp-sound-pill--active' : ''}`}
-                  onClick={() => up({ soundPreset: s })}
-                >
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </button>
-              ))}
+          <>
+            <div className="tp-action-row">
+              <label className="tp-label">Preset</label>
+              <div className="tp-sound-pills">
+                {(['chime', 'alert', 'alarm', 'ping'] as const).map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`tp-sound-pill${!action.soundFile && (action.soundPreset ?? 'chime') === s ? ' tp-sound-pill--active' : ''}${action.soundFile ? ' tp-sound-pill--dim' : ''}`}
+                    onClick={() => up({ soundPreset: s, soundFile: undefined })}
+                    title={action.soundFile ? 'Clear WAV file to use a preset' : undefined}
+                  >
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+            <div className="tp-action-row">
+              <label className="tp-label">WAV file</label>
+              <div className="tp-sound-file-row">
+                <input
+                  className="tp-input tp-input--sound"
+                  value={action.soundFile ?? ''}
+                  onChange={e => up({ soundFile: e.target.value || undefined })}
+                  placeholder="Optional — overrides preset"
+                />
+                <button
+                  type="button"
+                  className="tp-btn tp-btn--browse"
+                  onClick={async () => {
+                    const file = await window.api.browseFile([{ name: 'Sound Files', extensions: ['wav', 'mp3', 'ogg'] }])
+                    if (file) onChange({ ...actionRef.current, soundFile: file })
+                  }}
+                >Browse</button>
+                {action.soundFile && (
+                  <>
+                    <button
+                      type="button"
+                      className="tp-btn tp-btn--play"
+                      title="Test sound"
+                      onClick={() => playWavFile(action.soundFile!)}
+                    >▶</button>
+                    <button
+                      type="button"
+                      className="tp-btn tp-btn--clear"
+                      title="Remove WAV file"
+                      onClick={() => up({ soundFile: undefined })}
+                    >✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </>
         )}
 
         {action.type === 'webhook' && (
@@ -335,6 +381,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
   const [draft, setDraft]       = useState<TriggerRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [search, setSearch]     = useState('')
   const [testInput, setTestInput] = useState('')
   const [testStream, setTestStream] = useState('main')
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -363,13 +410,26 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
     const m = regex.exec(testInput)
     if (!m) return { match: false, matchText: '', actionSummary: '' }
 
-    const sampleVars = { match: m[0], line: testInput, health: '100', mana: '100', rt: '0', stance: 'standing', spell: 'None', room: 'Test Room' }
+    const now = new Date()
+    const sampleVars = {
+      match: m[0], '0': m[0], '1': m[1] ?? '', '2': m[2] ?? '', '3': m[3] ?? '',
+      line: testInput,
+      characterName: 'Adventurer',
+      date: now.toLocaleDateString(), time: now.toLocaleTimeString(),
+      health: '100', mana: '100', stamina: '100', spirit: '100', concentration: '100',
+      rt: '0', stance: 'standing', spell: 'None',
+      left: 'Empty', right: 'Empty',
+      room: 'Test Room',
+    }
     const summary = draft.actions.map(a => {
       switch (a.type) {
         case 'command':  return `Command: "${interpolate(a.command ?? '', sampleVars)}"`
-        case 'echo':     return `Echo → ${a.echoStream ?? 'log'}: "${interpolate(a.echoMessage ?? '', sampleVars)}"`
+        case 'echo':     return `Echo → ${a.echoStream ?? 'log'}${a.echoColor ? ` [${a.echoColor}]` : ''}: "${interpolate(a.echoMessage ?? '', sampleVars)}"`
         case 'notify':   return `Notify: "${interpolate(a.notifyTitle ?? 'Lichborne', sampleVars)}"`
-        case 'sound':    return `Sound: ${a.soundPreset ?? 'chime'}`
+        case 'sound':    return a.soundFile ? `Sound: ${a.soundFile.split(/[\\/]/).pop()}` : `Sound: ${a.soundPreset ?? 'chime'}`
+        case 'flash':    return 'Flash window'
+        case 'beep':     return 'Beep'
+        case 'log':      return `Log → ${interpolate(a.logFile ?? '', sampleVars)}: "${interpolate(a.logMessage ?? '', sampleVars)}"`
         case 'webhook':  return `Webhook → ${a.webhookUrl ? a.webhookUrl.slice(0, 30) + '…' : '(no url)'}`
         case 'variable': return `Set $${a.varName ?? '?'} = "${interpolate(a.varValue ?? '', sampleVars)}"`
         default:         return a.type
@@ -430,14 +490,20 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
 
   function deleteRule() {
     if (!selectedId) return
-    const updated = rules.filter(r => r.id !== selectedId)
+    deleteRuleById(selectedId)
+  }
+
+  function deleteRuleById(id: string) {
+    const updated = rules.filter(r => r.id !== id)
     setRules(updated)
     saveTriggers(updated)
     onSaved?.()
-    setSelectedId(null)
-    setDraft(null)
-    setIsPendingNew(false)
-    setDeleteConfirm(false)
+    if (selectedId === id) {
+      setSelectedId(null)
+      setDraft(null)
+      setIsPendingNew(false)
+      setDeleteConfirm(false)
+    }
   }
 
   function toggleEnabled(id: string) {
@@ -488,11 +554,25 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
           {/* Sidebar */}
           <div className="tp-sidebar">
             <button className="tp-new-btn" onClick={createNew}>+ New Trigger</button>
+            <div className="sidebar-search">
+              <input
+                className="sidebar-search-input"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search && <button className="sidebar-search-clear" onClick={() => setSearch('')}>✕</button>}
+              {search && (
+                <span className="sidebar-search-count">
+                  {rules.filter(r => (r.name + ' ' + r.pattern).toLowerCase().includes(search.toLowerCase())).length}/{rules.length}
+                </span>
+              )}
+            </div>
             <div className="tp-list">
               {rules.length === 0 && !isPendingNew && (
                 <div className="tp-empty">No triggers yet.<br />Right-click game text or click New Trigger.</div>
               )}
-              {rules.map(r => (
+              {(search ? rules.filter(r => (r.name + ' ' + r.pattern).toLowerCase().includes(search.toLowerCase())) : rules).map(r => (
                 <div
                   key={r.id}
                   className={`tp-list-item${selectedId === r.id ? ' tp-list-item--active' : ''}${!r.enabled ? ' tp-list-item--disabled' : ''}`}
@@ -504,14 +584,19 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
                     onClick={e => { e.stopPropagation(); toggleEnabled(r.id) }}
                   />
                   <span className="tp-list-label">{r.name || r.pattern || <em>Unnamed</em>}</span>
-                  <div className="tp-list-badges">
+                  <div className="tp-list-badges" style={{ marginLeft: 'auto' }}>
                     {r.actions.slice(0, 3).map(a => (
                       <span key={a.id} className="tp-badge" title={ACTION_LABELS[a.type]}>
-                        {a.type === 'command' ? '⌨' : a.type === 'echo' ? '📢' : a.type === 'notify' ? '🔔' : a.type === 'sound' ? '🔊' : a.type === 'webhook' ? '🔗' : '📋'}
+                        {a.type === 'command' ? '⌨' : a.type === 'echo' ? '📢' : a.type === 'notify' ? '🔔' : a.type === 'sound' ? '🔊' : a.type === 'flash' ? '⚡' : a.type === 'beep' ? '🔔' : a.type === 'log' ? '📄' : a.type === 'webhook' ? '🔗' : '📋'}
                       </span>
                     ))}
                     {r.actions.length > 3 && <span className="tp-badge">+{r.actions.length - 3}</span>}
                   </div>
+                  <button
+                    className="list-item-delete"
+                    title="Delete"
+                    onClick={e => { e.stopPropagation(); deleteRuleById(r.id) }}
+                  >✕</button>
                 </div>
               ))}
               {isPendingNew && draft && (
@@ -567,6 +652,24 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
                     </div>
 
                     <div className="tp-field">
+                      <label className="tp-label">Fires on</label>
+                      <div className="tp-mode-toggle">
+                        {(['text', 'variable'] as const).map(tt => (
+                          <button
+                            key={tt}
+                            type="button"
+                            className={`tp-mode-btn${(draft.triggerType ?? 'text') === tt ? ' tp-mode-btn--active' : ''}`}
+                            onClick={() => setDraft({ ...draft, triggerType: tt })}
+                            title={tt === 'text' ? 'Fires when game text matches a pattern' : 'Fires when a variable changes value'}
+                          >
+                            {tt === 'text' ? 'Game Text' : 'Variable Change'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(draft.triggerType ?? 'text') === 'text' ? (
+                    <div className="tp-field">
                       <label className="tp-label">Pattern</label>
                       <div className="tp-pattern-row">
                         <input
@@ -605,6 +708,18 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
                         <span className="tp-pattern-error">Invalid regular expression</span>
                       )}
                     </div>
+                    ) : (
+                    <div className="tp-field">
+                      <label className="tp-label">Watch variable</label>
+                      <input
+                        className="tp-input"
+                        value={draft.watchVariable ?? ''}
+                        onChange={e => setDraft({ ...draft, watchVariable: e.target.value })}
+                        placeholder="e.g. health, mana, myVar"
+                      />
+                      <div className="tp-pattern-hint">Fires whenever this variable's value changes.</div>
+                    </div>
+                    )}
 
                     <div className="tp-meta-row">
                       <div className="tp-field">
@@ -613,6 +728,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
                           className="tp-select"
                           value={draft.watchStream}
                           onChange={e => setDraft({ ...draft, watchStream: e.target.value })}
+                          disabled={(draft.triggerType ?? 'text') === 'variable'}
                         >
                           {WATCH_STREAM_OPTIONS.map(o => (
                             <option key={o.value} value={o.value}>{o.label}</option>

@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState } from '../../shared/types'
-import { renderSegment } from '../utils/renderSegment'
-import { renderSegmentFull, getLineHighlightStyle } from '../utils/renderSegmentFull'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry } from '../../shared/types'
+import { TextLineRow } from './TextLineRow'
 import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
 import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
 import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
-import { useTriggerEngine, type TriggerGameState } from '../hooks/useTriggerEngine'
+import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import MapPanel from './panels/MapPanel'
@@ -42,6 +42,7 @@ interface Props {
 }
 
 let lineId = 0
+let fireLogId = 0
 
 const EXP_READOUT = /^[A-Za-z ]+:\s+\d+\s+\d+%\s+\w/
 function isExpReadout(segments: TextSegment[]): boolean {
@@ -69,6 +70,7 @@ const NEVER_DISCOVER = new Set([
   'arrivals', 'logons',
   'conversations', 'talk',
   'spells', 'percwindow',
+  'assess',
   'familiar',
   'inv', 'inventory',
   'exp',
@@ -86,6 +88,7 @@ const STREAM_FALLBACK: Record<string, string> = {
   spells:        'main',
   familiar:      'main',
   combat:        'main',
+  assess:        'main',
   atmospherics:  'main',
   group:         'main',
 }
@@ -133,6 +136,24 @@ function removeFromZone(
   if (activeId === tab.id && next.length > 0) setActiveId(next[Math.max(0, idx - 1)].id)
 }
 
+const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, timerStyle }: {
+  rtExpires: number; ctExpires: number; timerStyle: string
+}) {
+  const { rt, ct, rtMax, ctMax, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
+  if (timerStyle === 'chips') return (<>
+    {rt > 0 && <div className="cmd-chips cmd-chips--rt">
+      {Array.from({ length: Math.min(Math.ceil(rt), Math.round(rtMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--rt" />)}
+    </div>}
+    {ct > 0 && <div className="cmd-chips cmd-chips--ct">
+      {Array.from({ length: Math.min(Math.ceil(ct), Math.round(ctMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--ct" />)}
+    </div>}
+  </>)
+  return (<>
+    {rt > 0 && <div className="cmd-bar cmd-bar--rt" style={{ width: `${rtPct}%` }} />}
+    {ct > 0 && <div className="cmd-bar cmd-bar--ct" style={{ width: `${ctPct}%` }} />}
+  </>)
+})
+
 export default function GameWindow({ session, onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
@@ -151,11 +172,14 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const showDebugRef                  = useRef(false)
   const debugEventsBufRef             = useRef<GameEvent[]>([])
   const rawXmlBufRef                  = useRef<string[]>([])
+  const fireLogBufRef                 = useRef<FireLogEntry[]>([])
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
   const clearDebugEvents = () => { debugEventsBufRef.current = []; setDebugEvents([]) }
   const [rawXmlLines, setRawXmlLines] = useState<string[]>([])
   const clearRawXmlLines = () => { rawXmlBufRef.current = []; setRawXmlLines([]) }
-  const clearLines       = () => setLines([])
+  const [fireLog, setFireLog]         = useState<FireLogEntry[]>([])
+  const clearFireLog = () => { fireLogBufRef.current = []; setFireLog([]) }
+  const clearLines       = () => { pinnedRef.current = true; setLines([]) }
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
   const [streamTimestamps, setStreamTimestamps] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('lichborne.streamTimestamps') ?? '{}') } catch { return {} }
@@ -250,44 +274,125 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     indicators: {},
     roomTitle: '',
     variables: {},
+    characterName: session.character,
   })
   const lastSeenTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingContactsRef = useRef<Contact[] | null>(null)
-  const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('lichborne.theme') ?? 'dark')
+  const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('lichborne.theme') ?? 'classic')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
   const [injuryState, setInjuryState]             = useState<InjuryState>({})
 
-  const { rt, ct, rtMax, ctMax, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
-
   // ── Trigger engine ────────────────────────────────────────────────────────
 
-  const echoToStream = useCallback((stream: string, text: string) => {
-    const line = { id: lineId++, segments: [{ text, preset: 'echo' as const }], timestamp: Date.now() }
+  const echoToStream = useCallback((stream: string, text: string, color?: string | null) => {
+    const key  = stream
+    const fg   = color ? color.replace(/^#/, '') : undefined
+    const line = { id: lineId++, segments: [{ text, preset: 'echo' as const, ...(fg ? { fg } : {}) }], timestamp: Date.now() }
     setStreamLines(prev => ({
       ...prev,
-      [stream]: [...(prev[stream] ?? []).slice(-(MAX_STREAM_LINES - 1)), line],
+      [key]: [...(prev[key] ?? []).slice(-(MAX_STREAM_LINES - 1)), line],
     }))
   }, [])
 
   const triggerCallbacks = useMemo(() => ({
-    sendCommand: (cmd: string) => window.api.sendCommand(cmd),
+    sendCommand:  (cmd: string) => window.api.sendCommand(cmd),
     echoToStream,
-    setVariable: (name: string, value: string) => { triggerCtxRef.current.variables[name] = value },
+    setVariable:  (name: string, value: string) => {
+      triggerCtxRef.current.variables[name] = value
+      processVariableChangeRef.current(name, value)
+    },
     disableTrigger: (id: string) => setTriggers(prev => {
       const updated = prev.map(r => r.id === id ? { ...r, enabled: false } : r)
       saveTriggers(updated)
       return updated
     }),
+    flashWindow:  () => window.api.flashWindow(),
+    writeLog:     (file: string, content: string) => window.api.writeLog(file, content),
+    onFire: (name: string, matched: string, detail: string, stream: string) => {
+      if (!showDebugRef.current) return
+      const entry: FireLogEntry = {
+        id: fireLogId++,
+        ts: Date.now(),
+        kind: 'trigger',
+        name,
+        matched,
+        detail,
+        stream,
+      }
+      fireLogBufRef.current.push(entry)
+      if (fireLogBufRef.current.length > MAX_DEBUG_EVENTS) fireLogBufRef.current.splice(0, fireLogBufRef.current.length - MAX_DEBUG_EVENTS)
+      setFireLog(prev => [...prev.slice(-(MAX_DEBUG_EVENTS - 1)), entry])
+    },
   }), [echoToStream])
 
-  const { processLine, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
+  const { processLine, processVariableChange, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
   const processLineRef = useRef(processLine)
   useEffect(() => { processLineRef.current = processLine }, [processLine])
+  const processVariableChangeRef = useRef(processVariableChange)
+  useEffect(() => { processVariableChangeRef.current = processVariableChange }, [processVariableChange])
   const cancelPendingRef = useRef(cancelPending)
   useEffect(() => { cancelPendingRef.current = cancelPending }, [cancelPending])
+
+  // Highlight sound rules — compiled rules that have a soundFile set
+  const highlightSoundRulesRef = useRef([...matchRules, ...lineRules].filter(cr => cr.rule.soundFile))
+  useEffect(() => {
+    highlightSoundRulesRef.current = [...matchRules, ...lineRules].filter(cr => cr.rule.soundFile)
+  }, [matchRules, lineRules])
+
+  const processHighlightSoundsRef = useRef((text: string) => {
+    const lower = text.toLowerCase()
+    for (const cr of highlightSoundRulesRef.current) {
+      if (cr.fastLower && !lower.includes(cr.fastLower)) continue
+      cr.regex.lastIndex = 0
+      if (cr.regex.test(text)) {
+        playWavFile(cr.rule.soundFile!)
+        break
+      }
+    }
+  })
+
+  // All compiled highlight rules — used for fire log when debug is open
+  const allHighlightRulesRef = useRef([...matchRules, ...lineRules])
+  useEffect(() => {
+    allHighlightRulesRef.current = [...matchRules, ...lineRules]
+  }, [matchRules, lineRules])
+
+  const logHighlightFiresRef = useRef((text: string, stream: string) => {
+    if (!showDebugRef.current) return
+    const lower = text.toLowerCase()
+    for (const cr of allHighlightRulesRef.current) {
+      if (cr.fastLower && !lower.includes(cr.fastLower)) continue
+      cr.regex.lastIndex = 0
+      if (cr.regex.test(text)) {
+        const { style, soundFile, pattern, name, mode, scope } = cr.rule
+        const nameFallback = name || pattern.slice(0, 60)
+        const parts = [
+          `pattern: "${pattern}"`,
+          `${scope}/${mode}`,
+          style.textColor !== 'transparent' ? `fg:${style.textColor}` : '',
+          style.bgColor !== 'transparent' ? `bg:${style.bgColor}` : '',
+          style.bold ? 'bold' : '',
+          style.glow ? `glow:${style.glowColor}` : '',
+          soundFile ? `🔊 ${soundFile.split(/[\\/]/).pop()}` : '',
+        ].filter(Boolean).join(' | ')
+        const entry: FireLogEntry = {
+          id: fireLogId++,
+          ts: Date.now(),
+          kind: 'highlight',
+          name: nameFallback,
+          matched: text.slice(0, 120),
+          detail: parts,
+          stream,
+        }
+        fireLogBufRef.current.push(entry)
+        if (fireLogBufRef.current.length > MAX_DEBUG_EVENTS) fireLogBufRef.current.splice(0, fireLogBufRef.current.length - MAX_DEBUG_EVENTS)
+        setFireLog(prev => [...prev.slice(-(MAX_DEBUG_EVENTS - 1)), entry])
+      }
+    }
+  })
 
   // Alias + macro refs — always current without re-registering document listeners
   const aliasesRef = useRef(aliases)
@@ -303,6 +408,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     if (showDebug) {
       setDebugEvents([...debugEventsBufRef.current])
       setRawXmlLines([...rawXmlBufRef.current])
+      setFireLog([...fireLogBufRef.current])
     }
   }, [showDebug])
 
@@ -333,9 +439,23 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   }, [topActiveId, midActiveId, bottomActiveId])
 
   // Drag refs
-  const bottomRef        = useRef<HTMLDivElement>(null)
-  const scrollRef        = useRef<HTMLDivElement>(null)
-  const pinnedRef        = useRef(true)
+  const virtuosoRef           = useRef<VirtuosoHandle>(null)
+  const scrollRef             = useRef<HTMLDivElement | null>(null)
+  const pinnedRef          = useRef(true)
+  const suppressUntilRef   = useRef(0)
+  // Stable scroll handler — re-pins when user scrolls back to bottom.
+  // Never unpins programmatically; unpinning happens only via onWheel / keyboard.
+  const handleVirtuosoScrollRef = useRef(() => {
+    if (Date.now() < suppressUntilRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (dist <= 10 && !pinnedRef.current) {
+      pinnedRef.current = true
+      newLineCountRef.current = 0
+      setNewLineCount(0)
+    }
+  })
   const newLineCountRef  = useRef(0)
   const inputRef         = useRef<HTMLInputElement>(null)
   const panelColumnRef   = useRef<HTMLDivElement>(null)
@@ -462,12 +582,15 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       for (const evt of events) {
         switch (evt.type) {
           case 'stream-text': {
-            const { stream, segments, mono } = evt as StreamTextEvent
+            const { stream: rawStream, segments, mono } = evt as StreamTextEvent
+            const stream = rawStream
             const lineText = segments.map(s => s.text).join('')
             const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}) })
             if (stream === 'main') {
               if (!isExpReadout(segments)) newMain.push(mkLine())
               processLineRef.current('main', lineText)
+              processHighlightSoundsRef.current(lineText)
+              logHighlightFiresRef.current(lineText, 'main')
             } else if (stream === 'raw') {
               // discard
             } else if (stream === 'room') {
@@ -492,6 +615,8 @@ export default function GameWindow({ session, onDisconnect }: Props) {
               }
               // Use original stream name for trigger matching (not the fallback target)
               processLineRef.current(stream, lineText)
+              processHighlightSoundsRef.current(lineText)
+              logHighlightFiresRef.current(lineText, stream)
             }
             break
           }
@@ -499,31 +624,39 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             vitalUpdates[evt.id] = { current: evt.current, max: evt.max }
             triggerCtxRef.current.vitals[evt.id] = { current: evt.current, max: evt.max }
             if (evt.label) labelUpdates[evt.id] = evt.label
+            processVariableChangeRef.current(evt.id, String(evt.current))
             break
           case 'roundtime':
             newRt = evt.expires
             triggerCtxRef.current.rtSeconds = Math.max(0, (evt.expires - Date.now()) / 1000)
+            processVariableChangeRef.current('rt', String(Math.ceil(triggerCtxRef.current.rtSeconds)))
             break
           case 'casttime':   newCt = evt.expires; break
           case 'indicator':
             indicatorUpdates[evt.id] = evt.visible
             triggerCtxRef.current.indicators[evt.id] = evt.visible
+            processVariableChangeRef.current(evt.id, evt.visible ? 'true' : 'false')
             break
           case 'stance':
             newStance = evt.text
             triggerCtxRef.current.stance = evt.text
+            processVariableChangeRef.current('stance', evt.text)
             break
           case 'spell':
             newSpell = evt.name
             triggerCtxRef.current.spell = evt.name
+            processVariableChangeRef.current('spell', evt.name)
+            processVariableChangeRef.current('preparedspell', evt.name)
             break
           case 'hand':
             if (evt.hand === 'right') {
               setRightHand(evt.item || 'Empty')
               triggerCtxRef.current.rightHand = evt.item || 'Empty'
+              processVariableChangeRef.current('right', evt.item || 'Empty')
             } else {
               setLeftHand(evt.item || 'Empty')
               triggerCtxRef.current.leftHand = evt.item || 'Empty'
+              processVariableChangeRef.current('left', evt.item || 'Empty')
             }
             break
           case 'exits':
@@ -533,6 +666,8 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           case 'room-title':
             roomUpdates.title = evt.title
             triggerCtxRef.current.roomTitle = evt.title
+            processVariableChangeRef.current('room', evt.title)
+            processVariableChangeRef.current('roomname', evt.title)
             break
           case 'exp-component':
             expUpdates[evt.skill] = evt.text
@@ -560,12 +695,14 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           case 'injury-update':
             setInjuryState(evt.parts)
             break
-          case 'stream-declare':
-            newDiscovered.push(evt.stream)
+          case 'stream-declare': {
+            const sid = evt.stream
+            newDiscovered.push(sid)
             if (evt.title && evt.title !== evt.stream) {
-              setStreamTitles(prev => prev[evt.stream] === evt.title ? prev : { ...prev, [evt.stream]: evt.title })
+              setStreamTitles(prev => prev[sid] === evt.title ? prev : { ...prev, [sid]: evt.title })
             }
             break
+          }
           case 'stream-push':
             newDiscovered.push(evt.stream)
             break
@@ -581,12 +718,11 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       }
 
       if (newMain.length > 0) {
-        // Stale-true guard (B16): re-check DOM position when already pinned.
         if (pinnedRef.current) {
-          const el = scrollRef.current
-          if (el) pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
-        }
-        if (pinnedRef.current) {
+          // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
+          // before ours, so the scroll event from followOutput would un-pin us unless
+          // the flag is already set when the handler runs.
+          suppressUntilRef.current = Date.now() + 200
           // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
           setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         } else {
@@ -595,6 +731,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           if (newLineCountRef.current >= MAX_LINES * 3) {
             // Hard cap: buffer is very large; resume auto-scroll and trim.
             pinnedRef.current = true
+            suppressUntilRef.current = Date.now() + 200
             newLineCountRef.current = 0
             setNewLineCount(0)
             setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
@@ -676,28 +813,20 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   // ── Scroll ────────────────────────────────────────────────────────────────
 
+  function suppressUnpin(ms = 150) {
+    suppressUntilRef.current = Date.now() + ms
+  }
+
   function scrollToBottom() {
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
+    suppressUnpin(300)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
-    bottomRef.current?.scrollIntoView({ behavior: 'auto' })
+    if (lines.length > 0) virtuosoRef.current?.scrollToIndex({ index: lines.length - 1, align: 'end', behavior: 'auto' })
     inputRef.current?.focus()
   }
 
-  function handleScroll() {
-    const el = scrollRef.current
-    if (!el) return
-    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-    // Only un-pin here. Re-pinning is exclusively via scrollToBottom() (badge click
-    // or End key). This prevents Chromium's CSS Scroll Anchoring from firing a
-    // scroll event after MAX_LINES trim and accidentally re-pinning the view.
-    if (dist > 40) pinnedRef.current = false
-  }
-
-  useLayoutEffect(() => {
-    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
-  }, [lines])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -861,13 +990,17 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   }
 
   function sendCommandSequence(commands: string[], delayMs: number) {
+    const echoCmd = (cmd: string) => {
+      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
+      window.api.sendCommand(cmd)
+    }
     if (delayMs > 0) {
       commands.forEach((cmd, i) => {
-        const h = setTimeout(() => window.api.sendCommand(cmd), i * delayMs)
+        const h = setTimeout(() => echoCmd(cmd), i * delayMs)
         macroTimersRef.current.add(h)
       })
     } else {
-      commands.forEach(cmd => window.api.sendCommand(cmd))
+      commands.forEach(echoCmd)
     }
   }
 
@@ -878,11 +1011,11 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     if (!command.trim()) return
     if (historyRef.current[0] !== command) historyRef.current = [command, ...historyRef.current].slice(0, 200)
     historyIdxRef.current = -1
-    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
 
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
     const resolved = resolveAlias(command, activeAliases, buildMacroVars())
     if (resolved) {
+      // Alias matched — sendCommandSequence echoes the resolved commands; skip echoing the alias name
       sendCommandSequence(resolved.commands, resolved.delayMs)
       if (resolved.passThrough) {
         const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
@@ -894,6 +1027,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         }
       }
     } else {
+      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
       window.api.sendCommand(command)
     }
     setCommand('')
@@ -933,12 +1067,15 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   // ── Shared PanelFrame props ───────────────────────────────────────────────
 
+  const sendCommand = useCallback((cmd: string) => window.api.sendCommand(cmd), [])
+
   const sharedFrameProps = {
     streamLines, roomState, expSkills, rankUpSkills,
-    onSendCommand: (cmd: string) => window.api.sendCommand(cmd),
+    onSendCommand: sendCommand,
     autoLinkUrls: settings.autoLinkUrls,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
+    fireLog, onClearFireLog: clearFireLog,
     onClearStream: clearStream,
     onHighlight: openHighlightEditor,
     onTrigger: openTriggerEditor,
@@ -1020,7 +1157,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       <div className="game-main">
         <div className="text-window-wrap">
           <div className="text-area">
-            <div className="text-window" ref={scrollRef} onScroll={handleScroll}
+            <div className="text-window"
               onWheel={e => { if (e.deltaY < 0) pinnedRef.current = false }}
               onClick={() => inputRef.current?.focus()}
               onContextMenu={e => {
@@ -1029,20 +1166,48 @@ export default function GameWindow({ session, onDisconnect }: Props) {
                 const lineText = getLineTextAtPoint(e.clientX, e.clientY)
                 setMainCtxMenu({ x: e.clientX, y: e.clientY, word, lineText })
               }}>
-              {lines.map(line => {
-                const lineStyle = getLineHighlightStyle(line.segments, lineRules)
-                const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre' as const } : lineStyle
-                const hasExtras = nameRegex || matchRules.length > 0
-                return (
-                  <div key={line.id} className="text-line" style={monoStyle ?? undefined}>
-                    {line.segments.map((seg, i) => hasExtras
-                      ? renderSegmentFull(seg, i, contacts, activeContactTemplates, nameRegex, matchRules, handleContactClick, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
-                      : renderSegment(seg, i, (cmd) => window.api.sendCommand(cmd), settings.autoLinkUrls)
-                    )}
+              <Virtuoso
+                ref={virtuosoRef}
+                scrollerRef={el => {
+                  if (scrollRef.current) {
+                    scrollRef.current.removeEventListener('scroll', handleVirtuosoScrollRef.current)
+                  }
+                  scrollRef.current = el as HTMLDivElement | null
+                  if (el) {
+                    if (el instanceof HTMLElement) el.style.overflowX = 'hidden'
+                    el.addEventListener('scroll', handleVirtuosoScrollRef.current, { passive: true })
+                  }
+                }}
+                style={{ height: '100%' }}
+                data={lines}
+                followOutput={() => pinnedRef.current ? 'auto' : false}
+                totalListHeightChanged={() => {
+                  if (!pinnedRef.current) return
+                  const el = scrollRef.current
+                  if (!el) return
+                  const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+                  if (dist > 2) {
+                    suppressUntilRef.current = Date.now() + 200
+                    el.scrollTop = el.scrollHeight - el.clientHeight
+                  }
+                }}
+                computeItemKey={(_index, line) => line.id}
+                itemContent={(_index, line) => (
+                  <div className="text-line-wrap">
+                    <TextLineRow
+                      line={line}
+                      matchRules={matchRules}
+                      lineRules={lineRules}
+                      contacts={contacts}
+                      templates={activeContactTemplates}
+                      nameRegex={nameRegex}
+                      onContactClick={handleContactClick}
+                      onSendCommand={sendCommand}
+                      autoLinkUrls={settings.autoLinkUrls}
+                    />
                   </div>
-                )
-              })}
-              <div ref={bottomRef} />
+                )}
+              />
             </div>
             {newLineCount > 0 && (
               <div
@@ -1058,21 +1223,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           <form className="command-bar" onSubmit={handleCommand}>
             <span className="prompt-marker">&gt;</span>
             <div className="cmd-input-wrap">
-              {settings.timerStyle === 'chips' ? (<>
-                {rt > 0 && (
-                  <div className="cmd-chips cmd-chips--rt">
-                    {Array.from({ length: Math.min(Math.ceil(rt), Math.round(rtMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--rt" />)}
-                  </div>
-                )}
-                {ct > 0 && (
-                  <div className="cmd-chips cmd-chips--ct">
-                    {Array.from({ length: Math.min(Math.ceil(ct), Math.round(ctMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--ct" />)}
-                  </div>
-                )}
-              </>) : (<>
-                {rt > 0 && <div className="cmd-bar cmd-bar--rt" style={{ width: `${rtPct}%` }} />}
-                {ct > 0 && <div className="cmd-bar cmd-bar--ct" style={{ width: `${ctPct}%` }} />}
-              </>)}
+              <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} timerStyle={settings.timerStyle} />
               <input ref={inputRef} type="text" autoFocus value={command}
                 onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
                 onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
@@ -1123,7 +1274,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} />}
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} />}
 
       {showMapOverlay && (
         <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>
@@ -1208,11 +1359,21 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           highlightPrefill={highlightPrefill}
           highlightTestText={highlightTestText}
           triggerPrefillPattern={triggerPrefillPattern}
+          onThemeSaved={(themeId) => {
+            const updated = loadMyThemes()
+            setMyThemes(updated)
+            setCurrentThemeId(themeId)
+            localStorage.setItem('lichborne.theme', themeId)
+            scheduleSharedProfileSave()
+            scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+          }}
           onSaved={() => {
             setHighlights(loadHighlights())
             setTriggers(loadTriggers())
             setAliases(loadAliases())
             setMacros(loadMacros())
+            setContacts(loadContacts())
+            setContactTemplates(loadContactTemplates())
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
           onClose={() => {

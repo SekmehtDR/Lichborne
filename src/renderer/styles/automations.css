@@ -72,6 +72,18 @@
   color: var(--accent);
 }
 
+.at-import-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.at-import-btn:hover { color: var(--accent); border-color: var(--accent); }
+
 .at-close {
   background: transparent;
   border: none;

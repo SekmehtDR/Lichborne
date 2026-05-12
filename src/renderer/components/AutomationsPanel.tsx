@@ -5,6 +5,7 @@ import HighlightsPanel from './HighlightsPanel'
 import TriggersPanel from './TriggersPanel'
 import MacrosPanel from './MacrosPanel'
 import GroupsModesTab from './GroupsModesTab'
+import ImportWizard from './ImportWizard'
 import '../styles/automations.css'
 
 type Tab = 'highlights' | 'triggers' | 'macros' | 'aliases' | 'groups'
@@ -12,6 +13,7 @@ type Tab = 'highlights' | 'triggers' | 'macros' | 'aliases' | 'groups'
 interface Props {
   onClose:              () => void
   onSaved?:             () => void
+  onThemeSaved?:        (themeId: string) => void
   initialTab?:          Tab
   highlightPrefill?:    HighlightRule
   highlightTestText?:   string
@@ -19,10 +21,11 @@ interface Props {
 }
 
 export default function AutomationsPanel({
-  onClose, onSaved, initialTab = 'highlights',
+  onClose, onSaved, onThemeSaved, initialTab = 'highlights',
   highlightPrefill, highlightTestText, triggerPrefillPattern,
 }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab)
+  const [showImport, setShowImport] = useState(false)
   useEffect(() => { setTab(initialTab) }, [initialTab])
 
   const TABS: { id: Tab; label: string }[] = [
@@ -50,6 +53,7 @@ export default function AutomationsPanel({
               </button>
             ))}
           </div>
+          <button className="at-import-btn" onClick={() => setShowImport(true)}>Import</button>
           <button className="at-close" onClick={onClose}>✕</button>
         </div>
 
@@ -78,5 +82,16 @@ export default function AutomationsPanel({
     </div>
   )
 
-  return createPortal(modal, document.body)
+  return (
+    <>
+      {createPortal(modal, document.body)}
+      {showImport && (
+        <ImportWizard
+          onClose={() => setShowImport(false)}
+          onSaved={() => { onSaved?.(); setShowImport(false) }}
+          onThemeSaved={onThemeSaved}
+        />
+      )}
+    </>
+  )
 }

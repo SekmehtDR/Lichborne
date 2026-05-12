@@ -255,6 +255,40 @@
 
 .tp-input:focus { border-color: var(--accent-dim); }
 
+.tp-input--hex {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.tp-color-swatch {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  background: none;
+}
+
+.tp-color-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.tp-color-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.tp-action-note {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: 4px 2px;
+  font-style: italic;
+}
+
 .tp-input--error {
   border-color: var(--color-danger-border) !important;
   box-shadow: 0 0 0 1px var(--color-danger-border);
@@ -263,6 +297,12 @@
 .tp-pattern-error {
   font-size: 0.72rem;
   color: var(--color-danger);
+}
+
+.tp-pattern-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 3px;
 }
 
 .tp-select {
@@ -472,39 +512,27 @@
 .tp-action-header {
   display: flex;
   align-items: center;
-  gap: 0;
   background: var(--bg-hover);
   border-bottom: 1px solid var(--border);
 }
 
-.tp-action-type-pills {
-  display: flex;
+.tp-action-type-select {
   flex: 1;
-  overflow: hidden;
-}
-
-.tp-action-type-pill {
   background: transparent;
   border: none;
   border-right: 1px solid var(--border);
-  color: var(--text-faint);
-  font-family: inherit;
-  font-size: 0.72rem;
-  padding: 5px 10px;
-  cursor: pointer;
-  transition: all 0.12s;
-  white-space: nowrap;
-}
-
-.tp-action-type-pill:hover {
-  background: var(--bg-base);
-  color: var(--text-secondary);
-}
-
-.tp-action-type-pill--active {
-  background: var(--bg-base);
   color: var(--accent);
+  font-family: inherit;
+  font-size: 0.78rem;
   font-weight: 600;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+
+.tp-action-type-select:focus {
+  background: var(--bg-base);
 }
 
 .tp-action-remove {
@@ -585,60 +613,26 @@
   color: var(--accent);
 }
 
-/* ── Variable insertion button + menu ────────────────────────────────────── */
+/* ── Variable insertion dropdown ─────────────────────────────────────────── */
 
-.tp-var-btn {
+.tp-var-select {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--accent-dim);
-  font-family: monospace;
-  font-size: 0.85rem;
-  font-weight: 700;
-  padding: 4px 8px;
-  cursor: pointer;
-  line-height: 1;
-  flex-shrink: 0;
-  transition: all 0.12s;
-}
-
-.tp-var-btn:hover {
-  background: var(--bg-hover);
-  color: var(--accent);
-  border-color: var(--accent-dim);
-}
-
-.tp-var-menu {
-  position: fixed;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  z-index: 300;
-  min-width: 200px;
-  overflow: hidden;
-}
-
-.tp-var-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.tp-var-item:hover { background: var(--bg-hover); }
-
-.tp-var-item code {
+  font-family: inherit;
   font-size: 0.78rem;
-  color: var(--accent);
+  padding: 5px 6px;
+  cursor: pointer;
   flex-shrink: 0;
+  outline: none;
+  transition: border-color 0.15s;
 }
 
-.tp-var-item span {
-  font-size: 0.75rem;
-  color: var(--text-faint);
+.tp-var-select:hover,
+.tp-var-select:focus {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 /* ── Add action button ───────────────────────────────────────────────────── */
@@ -777,3 +771,31 @@
   border-color: var(--accent-dim);
   color: var(--accent-dim);
 }
+
+.tp-sound-pill--dim {
+  opacity: 0.4;
+}
+
+.tp-sound-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.tp-input--sound {
+  flex: 1;
+  font-size: 0.8rem;
+}
+
+.tp-btn--browse,
+.tp-btn--play,
+.tp-btn--clear {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+}
+
+.tp-btn--play { font-size: 0.7rem; }
+
+.tp-btn--clear { color: var(--text-dim); }
