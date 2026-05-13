@@ -113,13 +113,25 @@ const WRAYTH_BUILTIN = new Set([
   'exportdialog', 'highlightsdialog', 'importdialog', 'macrosdialog',
   'chooseskin', 'variablesdialog', 'togglelinks', 'togglemusic',
   'toggleimages', 'togglesounds', 'macroset', 'restart', 'rest',
-  'cyclewindows', 'cyclewindowsreverse', 'bufftop', 'buffbottom',
+  'cyclewindows', 'cyclewindowsreverse', 'buffertop', 'bufferbottom',
   'historyprev', 'historynext', 'repeatlast', 'repeatsecondtolast',
   'returnorrepeatlast', 'pageup', 'pagedown', 'lineup', 'linedown',
   'pausescript', 'selectall', 'copy', 'cut', 'paste',
 ])
 
+// Plain-text Wrayth client commands that aren't {Braced} format
+const WRAYTH_PLAIN_BUILTIN = new Set([
+  'xml toggle containers', 'xml toggle dialogs',
+  'xml toggle links',      'xml toggle images',
+  'xml toggle sounds',     'xml toggle music',
+])
+
 function isBuiltinAction(action: string): boolean {
+  const lower = action.toLowerCase().trim()
+  // Normalize all whitespace for comparison
+  const normalized = lower.replace(/\s+/g, ' ')
+  if (WRAYTH_PLAIN_BUILTIN.has(normalized)) return true
+  if (normalized.startsWith('xml ')) return true
   // {CommandName} or {CommandName}N pattern
   const m = action.match(/^\{([A-Za-z]+)\}/)
   return m ? WRAYTH_BUILTIN.has(m[1].toLowerCase()) : false
@@ -137,13 +149,14 @@ function parseWraythAction(raw: string): { commands: string[]; hadBuiltin: boole
     .filter(Boolean)
 
   for (const part of parts) {
-    if (isBuiltinAction(part)) {
+    // Strip \x direction prefix before builtin check — some client commands use it too
+    const cmd = part.replace(/^\\x/, '').trim()
+    if (!cmd) continue
+    if (isBuiltinAction(cmd)) {
       hadBuiltin = true
       continue
     }
-    // Strip \x direction prefix (used for directional movement commands)
-    const cmd = part.replace(/^\\x/, '').trim()
-    if (cmd) commands.push(cmd)
+    commands.push(cmd)
   }
 
   return { commands, hadBuiltin }
@@ -166,7 +179,15 @@ function parseMacros(xml: string): ImportMacro[] {
     if (!key) continue
 
     const { commands, hadBuiltin } = parseWraythAction(actionRaw)
-    if (commands.length === 0) continue
+
+    if (commands.length === 0) {
+      if (hadBuiltin) results.push({
+        kind: 'macro', source: 'wrayth', status: 'unsupported',
+        statusNote: 'All commands are Wrayth client built-ins — nothing to import',
+        key, commands: [],
+      })
+      continue
+    }
 
     results.push({
       kind:       'macro',
@@ -181,6 +202,25 @@ function parseMacros(xml: string): ImportMacro[] {
   return results
 }
 
+// ── Block counters ────────────────────────────────────────────────────────────
+
+function countWraythBlock(xml: string, blockName: string): number {
+  const re = new RegExp(`<${blockName}[^>]*>([\\s\\S]*?)<\\/${blockName}>`, 'i')
+  const m  = xml.match(re)
+  if (!m) return 0
+  return (m[1].match(/<i\s/gi) ?? []).length
+}
+
+function countSkippedMacroSets(xml: string): number {
+  let total = 0
+  for (let set = 1; set <= 9; set++) {
+    const re = new RegExp(`<keys[^>]*id=['"]${set}['"][^>]*>([\\s\\S]*?)<\\/keys>`, 'i')
+    const m  = xml.match(re)
+    if (m) total += (m[1].match(/<k\s/gi) ?? []).length
+  }
+  return total
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function parseWraythXml(xml: string): ImportResult {
@@ -188,6 +228,10 @@ export function parseWraythXml(xml: string): ImportResult {
   const highlights = parseHighlights(xml, palette)
   const names      = parseNames(xml, palette)
   const macros     = parseMacros(xml)
+
+  const scriptsCount         = countWraythBlock(xml, 'scripts')
+  const stringsCount         = countWraythBlock(xml, 'strings')
+  const skippedMacroSetsCount = countSkippedMacroSets(xml)
 
   const unsupportedCount = [...highlights, ...names, ...macros].filter(r => r.status === 'unsupported').length
 
@@ -197,7 +241,10 @@ export function parseWraythXml(xml: string): ImportResult {
     macros,
     aliases:           [],
     triggers:          [],
-    substitutionCount: 0,
+    substitutionCount: stringsCount,   // Wrayth <strings> = text substitution rules
     unsupportedCount,
+    ...(scriptsCount          > 0 ? { scriptsCount }          : {}),
+    ...(stringsCount          > 0 ? { stringsCount }          : {}),
+    ...(skippedMacroSetsCount > 0 ? { skippedMacroSetsCount } : {}),
   }
 }

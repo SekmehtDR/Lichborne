@@ -212,6 +212,22 @@
 
 /* ── Groups & Modes editor tab ───────────────────────────────────────────── */
 
+.gm-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gm-lich-notice {
+  padding: 8px 14px;
+  background: rgba(100, 180, 255, 0.06);
+  border-bottom: 1px solid rgba(100, 180, 255, 0.15);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
 .gm-body {
   flex: 1;
   display: flex;

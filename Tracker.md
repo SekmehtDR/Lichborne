@@ -651,6 +651,432 @@ Items removed from active phase scope — too large for current pass, require de
 | Multi-Character Support | Inline character tab bar (same toolbar row as Debug/Panels/Theme buttons); each tab shows guild icon + name + health% + status glyphs; full tab state matrix including disconnected with stale state preserved; per-character profiles with encrypted credentials; quick-send overlay (Ctrl+Shift+Enter) to command background characters; pop-out to OS window; per-character layout/theme/history memory. Full spec in DESIGN.md Section 13. |
 | Phase 6D — Contact Auto-Detection | Parser detects new player names from arrivals, tells, room players; candidate queue with source context; dismissible add-prompt banner with template picker; session-only ignore list. Deferred — risk of false positives from NPC names/system messages. |
 | Trigger switchMode action | `applyMode` wired in GroupsContext; only TriggersPanel action-type UI + `useTriggerEngine` executeAction case remain. Low effort, deferred until trigger polish pass. |
+| Wrayth import — Scripts notice | `<scripts>` block is silently ignored; users with Lich scripts in their export get no feedback. Should count scripts and show a "not yet supported" notice in the wizard (same pattern as `substitutionCount` for Genie/Frostbite). |
+| Wrayth import — Strings notice | `<strings>` (Wrayth's text substitution rules) are silently ignored. Should count and surface a "not yet supported" notice like Genie's substitutes. |
+| Wrayth import — Macro sets 1–9 | Only set 0 (default) is imported. Sets 1–9 are silently dropped. Low impact (usually empty) but should at least count non-empty sets and note the skip. |
+| Wrayth import — Presets as theme | `<presets>` block defines text-style roles (roomName, speech, whisper, etc.). When presets have non-skin colors, they could map to a custom theme the same way Genie's `presets.cfg` does. Currently not parsed at all. |
+| Wrayth import — Ignores | `<ignores>` block (mute/ignore list) is not parsed. No equivalent feature in Frostborne yet; revisit when an ignore/mute system is added. |
+| Frostbite import — bgColor field ignored | `N\bgColor` key in `[TextHighlight]` is never read; parser hardcodes `bgColor: null`. Highlights with a background color set in Frostbite silently lose it on import. |
+| Frostbite import — Built-in commands not filtered | `{ReturnOrRepeatLast}`, `{RepeatLast}`, `{RepeatSecondToLast}` in macro actions are not stripped; they get imported as literal commands that the game server ignores. Apply the same built-in filter used for Wrayth macros. |
+| Frostbite import — Quoted command strings | INI values like `"advance "` include surrounding quotes that are not stripped after `$n` removal. Resulting command sent to game includes the quotes. |
+| Frostbite import — `[AlertHighlight]` silent drop | Health/stun threshold alerts (`health\value=60`, `health\file=recycle.wav`, `stun\file=ding.wav`) are not parsed and give no user feedback. No direct equivalent in Frostborne yet — should count and surface as unsupported rather than silently ignoring. |
+| Frostbite import — `[GeneralHighlight]` as theme | Named color roles (`a_roomName`, `d_speech`, `e_whisper`, `f_thinking`, `c_damage`, etc.) map directly to Frostborne theme variables. Could generate a "Imported from Frostbite" custom theme the same way Genie's `presets.cfg` does. Currently not parsed at all. |
+| Frostbite import — `general.ini` not offered | `general.ini` is not a file slot in the wizard. Contains `[GameWindow]`/`[DockWindow]`/`[Commandline]` bg+font colors (same `@Variant` format) that could feed the theme import, and `[QuickButton]` command buttons that could surface as unsupported. |
+| Genie import — All-internal macros silently dropped | Macros whose every command is Genie-internal (`#clear`, `#mapper`, `#window`, `#script`, etc.) are skipped with no user feedback after internal-command filtering leaves `commands.length === 0`. Should surface as an unsupported count. |
+| Genie import — `$variable` references not flagged | Macros like `{F9} {whisper $whisper @}` import as `ready` but send the literal string `$whisper` to the game. Should be flagged `partial` when a `$` token is detected in a command. |
+| Genie import — `@` target placeholder not flagged | `{F1} {look @}`, `{F5} {assess @}`, etc. import as `ready` but Genie substitutes the current target at runtime; Frostborne sends a literal `@`. Should be flagged `partial` to warn the user. |
+| Genie import — `#if`/`#class`/`#event`-only triggers silently dropped | Triggers whose only actions are unsupported (`#if`, `#class on/off`, `#event`) are skipped entirely when `hasAny = false`, with no user feedback. Should surface as unsupported rather than vanishing. |
+| Genie import — Named sounds in `#play` marked `ready` | `#play Alteration`, `#play MiniFanfare1`, `#play Error`, etc. are Genie internal sound library names, not file paths. Stored as `soundFiles` and marked `ready` but Frostborne cannot locate them. Should be `partial` with a note that the path needs updating. |
+| Genie import — `gags.cfg` not offered | Genie gag rules suppress matching lines of text. Not offered as a file slot. No Frostborne equivalent yet — should be offered, counted, and shown as unsupported so users know their gags were not imported. |
+| Genie import — `variables.cfg` not offered | Genie variables (`$whisper`, `$charactername`, `$partner`, etc.) are referenced in macros and triggers but `variables.cfg` is never surfaced. No Frostborne equivalent — should be offered, counted, and noted as unsupported so users understand why `$var` macros behave differently after import. |
+
+---
+
+## Product Philosophy — Lich-Forward Client
+
+> **Lichborne's identity: the best display and configuration layer for Lich users. Everything you see, hear, and feel. Everything you do belongs in a script.**
+
+Decided 2026-05-12 after full audit of Lich5 internals and comparison against Genie/Wrayth/Frostbite import gaps.
+
+### What Lich already owns — don't duplicate
+
+Lich5 provides a complete automation stack that no client should try to replicate:
+
+- **DownstreamHook** — intercepts and rewrites ALL game text before the client sees it (`textsubs.lic` runs here; client-side substitution would be redundant and would operate on already-transformed text)
+- **UpstreamHook** — intercepts all outbound commands before they reach the game (`alias.lic` runs here)
+- **WatchFor** — pattern-matching triggers inside scripts with full Ruby behind them; vastly more capable than any client trigger
+- **Vars / UserVars** — per-character SQLite variable storage; scripts depend on this; no client equivalent needed
+- **Full game state model** — `DRRoom`, `DRStats`, `DRSpells`, `DRSkill`, `DRBanking` etc.; Lich parses and owns this
+- **Script orchestration** — 180+ scripts covering training, combat, crafting, healing, loot, navigation, economy, multi-char, AI
+- **YAML profile system** — per-character automation config (`Sekmeht-setup.yaml` etc.); drives the entire script stack
+
+### What Lichborne owns — go deep here
+
+| Layer | Features |
+|---|---|
+| **Rendering** | Text highlighting, name styling, themes, fonts, density, panel layout, stream routing, stream timestamps |
+| **Display panels** | Vitals bars, exp panel, room panel, injuries panel, map visualization, script output streams |
+| **Connection** | Auth, Lich process launch, command input, key bindings, command echo, graceful disconnect |
+| **Configuration** | Display profiles (separate from Lich's script YAML), import wizard (display prefs migration) |
+| **Sound/alerts** | Always-on sound triggers and visual alerts — independent of any running Lich script |
+
+### The gray zone — keep thin, freeze scope
+
+| Feature | Keep? | Constraint |
+|---|---|---|
+| Simple aliases | Yes | Single-command expansions only. No `$variables`, no chaining. Don't expand further. |
+| Simple triggers | Yes | Sound, flash, echo-to-stream only. No conditional logic, no state, no variables. Don't expand further. |
+| Key bindings / macros | Yes | Send-command-on-keypress. Warn on `$variable` refs and `@` placeholders at import. |
+| Import wizard | Yes | Migration tool for display preferences. Reframe: imports highlights/names/keys/theme. Everything else gets a "belongs in Lich" notice. |
+
+### Won't build — ever
+
+These features belong to Lich. Building them in the client creates maintenance debt, confuses the product identity, and will always be worse than the Lich equivalent.
+
+| Feature | Why Lich owns it |
+|---|---|
+| Client-side variables | Lich's `Vars` system is per-character, SQLite-backed, accessible to all scripts |
+| Text substitution / gags | `textsubs.lic` runs as a DownstreamHook — the client sees already-transformed text |
+| Conditional trigger logic (`#if`, state, chaining) | WatchFor in a script has full Ruby; client logic will always be a worse version |
+| Training automation | `t2.lic` and family |
+| Combat automation | `stabbity.lic` and family |
+| Crafting automation | 15+ dedicated scripts |
+| Healing automation | `tendme.lic`, `tendother.lic`, `first-aid.lic` |
+| Loot / inventory management | `sell-loot.lic`, `sorter.lic`, `rummage.lic` |
+| Navigation / pathfinding | Map data + `find.lic`, `automap.lic` |
+| Group management | `buff.lic`, `coordinator.lic` |
+| Economy / banking | `bankbot.lic`, `crowns.lic` |
+| Discord / webhook integration | `beakon.lic` and family |
+| Multi-character coordination | `nw-monitor.lic`, `coordinator.lic` |
+| AI / LLM integration | `aichar.lic`, OpenAI key management in Lich data |
+
+### Import wizard reframe
+
+The import wizard's job is: **bring your display preferences from another client into Lichborne, and tell you what to do with the rest.**
+
+| Data type | Import action |
+|---|---|
+| Highlights | ✅ Import fully |
+| Names / contacts | ✅ Import fully |
+| Macros / key bindings | ✅ Import; flag `$variable` refs and `@` as partial |
+| Presets → theme | ✅ Import fully |
+| Display triggers (sound / flash / echo) | ✅ Import |
+| Simple aliases (no `$vars`) | ✅ Import |
+| Complex triggers (logic, conditionals) | ⚠️ Import display actions only; note "logic belongs in a Lich WatchFor" |
+| Aliases / macros with `$variables` | ⚠️ Import as partial; note "variables won't resolve — move to a Lich script" |
+| Lich scripts (`<scripts>` in Wrayth) | ⚠️ Count and surface; "these run in Lich, not the client" |
+| Variables | ⚠️ Count only; "these live in Lich's Vars system" |
+| Substitutions / gags | ⚠️ Count only; "use textsubs.lic — this is a DownstreamHook" |
+
+---
+
+## Lich Collaboration Layer — Future Investment
+
+This is where Lichborne earns its identity. Nobody has built a proper Lich dashboard. These features surface Lich's state in the client UI rather than duplicating Lich's automation.
+
+| Feature | Description | Priority |
+|---|---|---|
+| **Active scripts panel** | Show running scripts per character — name, uptime, pause/abort controls. Reads from Lich's script manager via the existing socket connection. | High |
+| **Script log panel** | Dedicated panel for Lich `echo` output distinct from game text; distinguishable per-script coloring. Already partially works via custom streams — needs first-class treatment. | High |
+| **YAML profile viewer / editor** | Browse and edit per-character Lich YAML config files (`Sekmeht-setup.yaml` etc.) from within the client. Read path via configured Lich script dir; write with confirmation. | Medium |
+| **Lich variable inspector** | Read-only view of `Vars` / `UserVars` from Lich's SQLite database for the connected character. Helps users debug why a script behaves differently. | Medium |
+| **DownstreamHook registry** | Show which hooks are active and which scripts registered them — helps diagnose stream conflicts and unexpected text transforms. | Low |
+| **Script start from client** | Buttons or command palette to launch common scripts (`.t2`, `.buff`, `.tend`) without typing. Requires Lich IPC or upstream command injection. | Low |
+
+---
+
+## Lich-Primary Roadmap
+
+> Comprehensive phased plan from v0.1.x to a true Lich-primary display client. See DESIGN.md Sections 24–25 for the full architecture and rewrite analysis that drives these decisions.
+>
+> **North star:** Lichborne is the best display and configuration layer for Lich users. Stop where Lich begins.
+
+---
+
+### Release A — "Honest Client" (v0.2) ✅
+**Theme: Stop pretending, start clarifying. No new features — reframe what we already have.**
+
+Estimated effort: ~1 dev day across 6 files. All changes are mechanical parser fixes and UI copy updates — no new architecture, no new dependencies.
+
+---
+
+#### `src/renderer/import/types.ts` — New count fields on ImportResult
+
+`ImportResult` needs new optional fields for everything that gets counted but not imported. These feed the "Belongs in Lich" section on the confirm screen.
+
+- [x] Add `alertHighlightCount?: number` — Frostbite `[AlertHighlight]` entries (health/stun thresholds)
+- [x] Add `gagsCount?: number` — Genie `gags.cfg` line count
+- [x] Add `variablesCount?: number` — Genie `variables.cfg` entry count
+- [x] Add `scriptsCount?: number` — Wrayth `<scripts>` block entry count
+- [x] Add `stringsCount?: number` — Wrayth `<strings>` substitution rule count
+- [x] Add `skippedMacroSetsCount?: number` — Wrayth non-empty macro sets 1–9
+
+---
+
+#### `src/renderer/import/parsers/frostbite.ts` — Parser fixes
+
+**bgColor ignored** (`parseHighlights()`, line 87)
+`bgColor: null` is hardcoded. The `N\bgColor` key is never read. Fix: read `section[\`${i}\\bgColor\`]` and run through `parseFrostbiteColor()`.
+- [x] Read `N\bgColor` from `[TextHighlight]` and decode with `parseFrostbiteColor()`
+
+**Built-in commands not filtered** (`parseMacros()`, lines 129–137)
+`{ReturnOrRepeatLast}`, `{RepeatLast}`, `{RepeatSecondToLast}` survive `$n` stripping and enter `commands[]` as literal strings the server will reject. Actual macros.ini has entries like `553648133={ReturnOrRepeatLast}$n`.
+Fix: add a `FROSTBITE_BUILTIN` Set (same pattern as `WRAYTH_BUILTIN` in wrayth.ts); detect before pushing to `commands[]`; set status `partial` if any were removed.
+- [x] Add `FROSTBITE_BUILTIN` Set and filter built-in command strings in `parseMacros()`
+
+**Quoted command strings** (`parseMacros()`, lines 129–131)
+`general.ini` has `36108929="advance "`. After `$n` stripping the surrounding quotes survive.
+Fix: add `.replace(/^"|"$/g, '')` to the command cleanup chain.
+- [x] Strip surrounding double-quotes from command strings
+
+**`[AlertHighlight]` silently dropped**
+Section is never touched — no count, no user notice.
+Fix: add `countAlertHighlights(ini)` reading the `size` key from `[AlertHighlight]`; return as `alertHighlightCount` in `parseFrostbiteFiles()`.
+- [x] Add `countAlertHighlights()` and return `alertHighlightCount`
+
+**`[GeneralHighlight]` not parsed**
+Has named color roles (`a_roomName`, `d_speech`, `e_whisper`, `f_thinking`, `c_damage`, etc.) that map directly to Lichborne CSS vars — same concept as Genie's `presets.cfg → themeVars` path.
+Fix: add `parseGeneralHighlightTheme(ini)` with a CSS var mapping table; return `themeVars` from `parseFrostbiteFiles()`.
+- [x] Add `parseGeneralHighlightTheme()` mapping color roles to CSS vars; return `themeVars`
+
+**`general.ini` not offered**
+Fix: needs to be handled in `parseFrostbiteFiles()` — read `[QuickButton]` (count as unsupported) and `[GameWindow]`/`[DockWindow]` bg colors (feed into theme).
+- [x] Parse `general.ini` for `[GameWindow]` bg colors (→ theme) and `[QuickButton]` (→ unsupported count)
+
+---
+
+#### `src/renderer/import/parsers/genie.ts` — Parser fixes
+
+**All-internal macros silently dropped** (`parseMacros()`, lines 165–167)
+`if (commands.length === 0) continue` — macros whose every command is Genie-internal (`#clear`, `#mapper`, `#window`, `#script`) vanish with no user feedback.
+Fix: replace `continue` with an `unsupported` push: `"All commands are Genie-internal — nothing to import"`.
+- [x] When `commands.length === 0` after filtering, push `unsupported` entry instead of silently dropping
+
+**`$variable` references not flagged** (`parseMacros()` and `parseAliases()`, post-split)
+`splitAction()` filters `#`-prefixed commands but does not scan for `$`. A macro like `{F9} {whisper $whisper @}` imports as `ready`. Fix: after building `commands[]`, check `commands.some(c => c.includes('$'))` → status `partial`, note `"Variable references won't resolve — move to a Lich script"`. Apply to both macros and aliases.
+- [x] Detect `$` in macro commands → `partial` with Lich note
+- [x] Detect `$` in alias commands → `partial` with Lich note
+
+**`@` target placeholder not flagged** (`parseMacros()` and `parseAliases()`)
+Unlike Frostbite, the Genie parser does NOT strip `@` — it passes through to the game as a literal character. Fix: check `commands.some(c => c.includes('@'))` → `partial`, note `"@ target placeholder won't resolve — move to a Lich alias"`. Apply to both macros and aliases. Note: may coexist with `$` flag on the same item.
+- [x] Detect `@` in macro commands → `partial` with Lich note
+- [x] Detect `@` in alias commands → `partial` with Lich note
+
+**`#if`/`#class`/`#event`-only triggers silently dropped** (`parseTriggers()`, lines 376–379)
+`if (!hasAny) continue` — triggers whose only actions are unsupported disappear.
+Fix: when `!hasAny && dropped.length > 0`, push `unsupported` entry listing the dropped action types.
+- [x] When `!hasAny` after filtering, push `unsupported` entry instead of silently dropping
+
+**Named Genie library sounds marked `ready`** (`parseActionParts()`, lines 318–320)
+`#play Alteration`, `#play MiniFanfare1`, `#play Error` are Genie built-in sound library names with no file extension or path separator. They're stored in `soundFiles[]` and become `ready` trigger sound actions that will fail at playback.
+Fix: in `parseActionParts()`, distinguish file paths (contains `/`, `\`, or a known audio extension) from Genie library names — flag the latter as `partial` with note `"Genie library sound — update path after import"`.
+- [x] Detect Genie library sound names (no path/extension) in `#play` and flag as `partial`
+
+**`gags.cfg` and `variables.cfg` not offered** (`parseGenieFiles()`)
+Neither appears in `GENIE_SLOTS`. Fix: count `#gag` lines → `gagsCount`; count entries in `variables.cfg` → `variablesCount`. (File slot changes are in ImportWizard.tsx.)
+- [x] Count `#gag` lines from `gags.cfg` content → `gagsCount`
+- [x] Count variable entries from `variables.cfg` content → `variablesCount`
+
+---
+
+#### `src/renderer/import/parsers/wrayth.ts` — Parser fixes
+
+**`<scripts>` block not counted** (`parseWraythXml()`, line 200)
+`substitutionCount: 0` is hardcoded — the `<scripts>` block is never inspected.
+Fix: add `countWraythBlock(xml, 'scripts')` counting `<i>` tags inside the block; return as `scriptsCount`.
+- [x] Add `countWraythBlock()` helper; return `scriptsCount` for `<scripts>` block
+
+**`<strings>` block not counted**
+Same gap — Wrayth's text substitution rules live here.
+Fix: reuse `countWraythBlock(xml, 'strings')`; return as `stringsCount`.
+- [x] Return `stringsCount` for `<strings>` block
+
+**Macro sets 1–9 not flagged** (`parseMacros()`, line 155)
+Only `id="0"` is matched. Sets 1–9 are silently skipped.
+Fix: after parsing set 0, scan for `<keys id="[1-9]">` blocks and sum their `<k>` entry counts; return as `skippedMacroSetsCount`.
+- [x] Scan sets 1–9 for non-empty entries; return `skippedMacroSetsCount`
+
+**`<presets>` block not parsed**
+Wrayth defines named color roles in `<presets>` similar to Genie's `#preset` lines.
+Fix: add `parseWraythPresets(xml, palette)` — needs a real Wrayth XML export with a populated `<presets>` block to confirm the attribute names. Blocked on a sample with presets. Return `themeVars` when colors are present.
+- [ ] Add `parseWraythPresets()` mapping preset color roles to CSS vars *(blocked on Wrayth export sample with presets)*
+
+---
+
+#### `src/renderer/components/ImportWizard.tsx` — UI changes
+
+**File slots missing** (lines 64–78)
+- [x] Add `{ key: 'gags', label: 'gags.cfg', hint: 'Gag rules (counted, not imported)' }` to `GENIE_SLOTS`
+- [x] Add `{ key: 'variables', label: 'variables.cfg', hint: 'Variables (counted, not imported)' }` to `GENIE_SLOTS`
+- [x] Add `{ key: 'general', label: 'general.ini', hint: 'Window colors and quick buttons' }` to `FROSTBITE_SLOTS`
+
+**Parse call for new Genie files** (`parse()`, lines 134–142)
+- [x] Pass `gags: fileTexts['gags']` and `variables: fileTexts['variables']` into `parseGenieFiles()`
+- [x] Pass `general: fileTexts['general']` into `parseFrostbiteFiles()`
+
+**Step 1 — no import scope disclaimer** (`renderStep1()`)
+Currently jumps straight to source/file selection. Users with 73 Genie triggers expect them all to come over.
+- [x] Add a notice below the source cards: "Lichborne imports display preferences — highlights, colors, key bindings, and themes. Variables, substitutions, and complex automation belong in Lich."
+
+**Substitution notice copy is generic** (`renderStep2()`, lines 652–657)
+Currently: "text substitution is not yet supported in Frostborne and will be available in a future update."
+- [x] Update copy to: "Use `textsubs.lic` — Lich rewrites game text before Lichborne sees it. Client-side substitution would be redundant."
+- [x] Show this notice for gags and variables too (when counts > 0)
+
+**Step 3 confirm screen has no "Belongs in Lich" section** (`renderStep3()`, lines 664–705)
+Only shows "Migrated" item counts. Users never see what was counted but not imported.
+- [x] Add a second table below the merge options: "The following belong in Lich" with rows for each non-zero count field (`scriptsCount`, `stringsCount`, `substitutionCount`, `alertHighlightCount`, `gagsCount`, `variablesCount`, `skippedMacroSetsCount`)
+- [x] Each row shows the count and a one-line explanation: scripts → "Run in Lich, not the client"; substitutions/strings/gags → "Use `textsubs.lic`"; variables → "Lich's Vars system already holds these"; alertHighlights → "Health/stun thresholds — no Lichborne equivalent yet"
+- [x] Style this section as greyed-out / dimmed (distinct from the "Migrated" table)
+
+**Theme name hardcoded to "Genie"** (lines 226, 414)
+`createCustomThemeFrom(classicTheme, 'Imported from Genie')` and the UI label both say "Genie" regardless of source.
+- [x] Make theme name dynamic: `` `Imported from ${source.charAt(0).toUpperCase() + source.slice(1)}` ``
+- [x] Update theme checkbox label to match the dynamic name
+
+---
+
+#### `src/renderer/components/AutomationsPanel.tsx` — Reframe
+
+**"Groups & Modes" tab implies automation ownership** (lines 31–37)
+- [x] Rename tab label from `"Groups & Modes"` to `"Groups"`
+- [x] Add a notice at the top of `GroupsModesTab`: "Groups control which display rules are active. Complex automation (variables, triggers with logic, substitution) belongs in a Lich script."
+
+---
+
+#### Release A — Effort Summary
+
+| File | Changes | Est. |
+|------|---------|------|
+| `src/renderer/import/types.ts` | 6 new optional count fields | 20 min |
+| `src/renderer/import/parsers/frostbite.ts` | bgColor, built-in filter, quote strip, AlertHighlight count, GeneralHighlight → theme, general.ini | ~3 hr |
+| `src/renderer/import/parsers/genie.ts` | All-internal macro/trigger counts, `$var` flag, `@` flag, named sound flag, gags/variables count | ~2 hr |
+| `src/renderer/import/parsers/wrayth.ts` | scripts count, strings count, macro set 1–9 count, presets → theme | ~1.5 hr |
+| `src/renderer/components/ImportWizard.tsx` | New file slots, new parse calls, Step 1 disclaimer, substitution copy, "Belongs in Lich" confirm section, dynamic theme name | ~2.5 hr |
+| `src/renderer/components/AutomationsPanel.tsx` | Tab rename, Groups notice | 20 min |
+
+**Total: ~1 dev day.** No new dependencies. No new IPC. No architecture changes. One open dependency: Wrayth `<presets>` parsing requires a Wrayth export with populated presets to confirm attribute names.
+
+#### Release A — Post-release fixes (found during testing)
+
+- **B41 — Wrayth `\x`-prefixed client commands imported as READY** (`wrayth.ts`): `xml toggle containers` and `xml toggle dialogs` use the same `\x` direction prefix as movement commands. `isBuiltinAction` was called before `\x` stripping, so the prefix prevented matching. Fix: strip `\x` first, then check builtin. Also fixed `{BufferTop}`/`{BufferBottom}` — set had `bufftop`/`buffbottom` but braced name extracts to `BufferTop`/`BufferBottom`. Added `WRAYTH_PLAIN_BUILTIN` set for plain-text client commands.
+- **Empty file shows "Not loaded"** (`ImportWizard.tsx`): `fileTexts[slot.key]` truthiness check fails for empty files (e.g. `gags.cfg` with no rules). Fixed to `slot.key in fileTexts`.
+
+---
+
+### Release B — "Lich Visibility" (v0.3)
+**Theme: See into Lich from the client for the first time. File system reads only — no new dependencies.**
+
+#### Auto-Detect Lich Map Directory
+- [ ] When Lich path is configured and known, probe `{LichDir}/data/DR/` for XML map files on first connect
+- [ ] Offer the detected directory as the default map directory — user can still override
+- [ ] If multiple map directories exist (e.g. data/DR/ and data/GS/), list them for selection
+- [ ] Eliminates the current manual "select folder" step for all Lich users
+
+#### Script Browser Panel
+- [ ] New main-process IPC handler: `list-lich-scripts` — returns `.lic` filenames from `{LichDir}/scripts/` and `{LichDir}/scripts/custom/`
+- [ ] New read-only panel or modal: "Lich Scripts" — searchable/filterable list of available scripts
+- [ ] Clicking a script name copies `.scriptname` to the command bar (ready to send)
+- [ ] Shows script source (core vs. custom) and last-modified date
+
+#### YAML Profile Viewer
+- [ ] New main-process IPC handler: `read-lich-profile` — reads a specific `{LichDir}/scripts/profiles/*.yaml` file
+- [ ] New modal accessible from toolbar: "Lich Config" — lists profile files for known characters; click to view formatted YAML in a read-only code block
+- [ ] No write access in this release
+- [ ] Syntax highlighting for YAML (lightweight — key/string color differentiation at minimum)
+
+---
+
+### Release C — "Lich Dashboard" (v0.4)
+**Theme: Real-time Lich state surfaced in the UI. The LichBridge module is introduced.**
+
+#### LichBridge Module (main process)
+- [ ] `LichBridge` class with four sub-components:
+  - `FileReader` — wraps `list-lich-scripts`, `read-lich-profile`; future `write-lich-profile`
+  - `StreamParser` — subscribes to `LichScripts` stream events; parses into `ScriptRecord[]` (name, status, uptime, pauseable)
+  - `CommandInjector` — wraps `send-command` IPC for Lich-specific dot-commands (`.t2`, `.buff stop`, `.script abort name`)
+  - `SqliteReader` — stub only; full implementation in Release D
+- [ ] `useLichBridge()` renderer hook: exposes `scripts[]`, `sendDotCommand(cmd)`, `abortScript(name)`, `pauseScript(name)`
+
+#### Active Scripts Panel
+- [ ] New panel type: "Lich Scripts" — live list of currently running scripts
+- [ ] Columns: script name, status badge (Running / Paused / Dying), uptime display, Abort button, Pause button
+- [ ] Data source: `LichBridge.StreamParser` parses the `LichScripts` stream (already received; needs structure parsing)
+- [ ] Panel is user-discoverable via Panel Manager (not auto-shown)
+- [ ] Empty state: "No scripts running" with a note about how to start scripts
+
+#### Script Palette
+- [ ] Per-character configurable button strip stored under new `scriptPalette` key in character YAML
+- [ ] Each button: display label + dot-command string
+- [ ] Default palette ships with common commands: `.t2`, `.buff`, `.tend`, `.t2 stop`
+- [ ] Button strip renders in the toolbar or as a small dedicated panel — user configurable
+- [ ] Buttons send via `CommandInjector` → existing `send-command` IPC
+- [ ] Palette editor in Settings or inline panel edit mode
+
+#### Script Feed Improvements
+- [ ] Existing custom stream panels (LichScripts, script-specific streams) support per-stream color coding
+- [ ] Color auto-assigned from a palette when stream is first discovered; user can override
+- [ ] Color assignment stored in display profile (character YAML)
+- [ ] Clear button promoted to visible panel chrome (not just right-click)
+
+---
+
+### Release D — "Deep Lich" (v0.5)
+**Theme: Lich config management from within the client. Requires `better-sqlite3` dependency.**
+
+#### Variable Inspector Panel
+- [ ] Add `better-sqlite3` as a main-process dependency
+- [ ] `LichBridge.SqliteReader` implemented: reads `Vars` and `UserVars` from `{LichDir}/data/lich.db3` for the connected character
+- [ ] New panel type: "Lich Variables" — searchable key-value table
+- [ ] Refresh on: panel open, character switch, manual refresh button
+- [ ] Read-only. No write path in any release.
+
+#### YAML Profile Editor (extends Release B viewer)
+- [ ] Write path: after editing, show a diff view (current vs. proposed) before saving
+- [ ] Confirmation modal: "Overwrite {LichDir}/scripts/profiles/Sekmeht-setup.yaml?" with explicit file path shown
+- [ ] Schema-aware editing for well-known script keys:
+  - t2 `training_list` — skill picker list (known skills from DRDefs)
+  - setup `combat_teaching_skill` — single skill picker dropdown
+  - setup `hunting_buddy` — character name input with validation
+- [ ] Fallback to raw YAML text editing for unrecognized keys
+
+#### Richer Highlight Engine
+- [ ] Named highlight groups (Combat, Magic, RP, Navigation, Custom) — group-level enable/disable toggle
+- [ ] Live test input in the highlight editor — type a sample line; see which rules match and how the line renders
+- [ ] Highlight set export/import — save the full highlight list as a named JSON file; share or restore
+- [ ] Priority/ordering — drag to reorder rules within a group; first-match vs. all-match mode per group (stored in profile)
+
+---
+
+### Release E — "Character Awareness" (v0.6)
+**Theme: The client knows your character. Uses data the XML parser already provides.**
+
+#### Guild-Aware Exp Layout
+- [ ] Exp panel auto-orders skills based on detected guild (from `<app>` XML / profile)
+- [ ] Each guild has a preferred skill ordering (top skills shown first): Trader → barter/trading/appraisal; Ranger → athletics/stealth/outdoors; Paladin → holy skills; etc.
+- [ ] User can pin specific skills to top; pins override the auto-order
+- [ ] Fallback: alphabetical when guild is unrecognized
+
+#### Character-Aware Panels
+- [ ] Injury display uses race-appropriate body part groupings (already parsed; this is a display mapping per race)
+- [ ] Spell slot display filters to circles relevant to the connected character's guild
+- [ ] Room panel shows guild-specific NPC tag styling (combat teach partner, group member, etc.)
+
+#### Session Log
+- [ ] Structured session log — captures game text, script echo, and Lichborne system messages as tagged records
+- [ ] Filter by: stream, time range, source type (game / script / system)
+- [ ] Export as plain text or JSON
+- [ ] Rolling persistence: last N sessions saved to disk in the data folder
+- [ ] Session boundaries: new session on connect; labeled with character name and timestamp
+
+---
+
+### Release F — "Hook Layer" (v0.7 — long-term, Lich-side dependency)
+**Theme: Full Lich introspection. Requires coordination with Lich5 maintainers or community.**
+
+#### Hook Registry Panel
+- [ ] Read-only view of active DownstreamHooks and UpstreamHooks: which script owns each, in what order
+- [ ] Shows hook execution order so users can diagnose conflicts ("why is textsubs not firing?", "which script is intercepting my command?")
+- [ ] Requires Lich to expose hook state — either via `LichScripts` stream additions or a new TCP API endpoint
+
+#### Lich TCP API Integration
+- [ ] Use `reusable_tcp_server.rb` as the foundation for a real-time bidirectional Lichborne ↔ Lich channel
+- [ ] Enables: variable subscriptions (push on change, not poll-on-open), real-time script events, hook management without stream parsing
+- [ ] Replaces stream-parsing workarounds in `LichBridge.StreamParser` with a typed event protocol
+- [ ] Requires coordination with Lich5 maintainers; track upstream discussion in project notes
+
+---
+
+### Roadmap Summary
+
+| Release | Version | Theme | Lich Integration Seam | Key Deliverables |
+|---------|---------|-------|----------------------|-----------------|
+| A | v0.2 | Honest Client | None | Import reframe, automation reframe, 17 import bug fixes |
+| B | v0.3 | Lich Visibility | File system (read) | Map auto-detect, script browser, YAML profile viewer |
+| C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette |
+| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, richer highlight engine |
+| E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log |
+| F | v0.7 | Hook Layer | Lich TCP API (new) | Hook Registry, real-time Lich IPC |
 
 ---
 

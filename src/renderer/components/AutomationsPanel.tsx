@@ -33,7 +33,7 @@ export default function AutomationsPanel({
     { id: 'triggers',   label: 'Triggers'   },
     { id: 'macros',     label: 'Macros'     },
     { id: 'aliases',    label: 'Aliases'    },
-    { id: 'groups',     label: 'Groups & Modes' },
+    { id: 'groups',     label: 'Groups'         },
   ]
 
   const modal = (

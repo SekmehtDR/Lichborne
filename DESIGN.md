@@ -58,6 +58,23 @@
    - 19.12 Future Work
    - 19.14 Map Panel UI Layout
 23. [Virtual Scrolling — Main Window](#23-virtual-scrolling--main-window)
+24. [Lich Integration Architecture](#24-lich-integration-architecture)
+    - 24.1 Product Philosophy
+    - 24.2 The Full Stack
+    - 24.3 What Each Layer Owns
+    - 24.4 Integration Seams
+    - 24.5 Feature Ownership Matrix
+    - 24.6 Won't Build — Ever
+    - 24.7 Import Wizard Reframe
+    - 24.8 Lich Collaboration Layer — Future Roadmap
+    - 24.9 Implementation Roadmap by Effort
+25. [Rewrite vs. Refactor Analysis](#25-rewrite-vs-refactor-analysis)
+    - 25.1 The Honest Case Against a Rewrite
+    - 25.2 What to Scrap
+    - 25.3 What to Keep and Go Deeper
+    - 25.4 What to Add
+    - 25.5 New Architecture: The LichBridge Module
+    - 25.6 Recommendation
 
 ---
 
@@ -2948,4 +2965,418 @@ The only exception is the `NEVER_DISCOVER` filter, which uses `id.toLowerCase()`
 
 Built-in game streams (`main`, `room`, `thoughts`, `log`, etc.) always arrive from the server in lowercase, so they are unaffected. Trigger echo stream names must exactly match the case of the target panel's stream ID.
 
+---
+
+## 24. Lich Integration Architecture
+
+> Decided 2026-05-12 after full audit of Lich5 internals, Genie/Wrayth/Frostbite import gaps, and Lichborne connection architecture.
+
+### 24.1 Product Philosophy
+
+> **Lichborne's identity: the best display and configuration layer for Lich users. Everything you see, hear, and feel. Everything you do belongs in a script.**
+
+Lichborne is not a general-purpose DR client that happens to support Lich. It is a purpose-built rendering and configuration layer that treats Lich as a first-class citizen. Features that Lich already owns — automation, variables, text substitution, triggers with logic — should never be duplicated in Lichborne. Building them creates maintenance debt, confuses the product identity, and will always be an inferior version of what Lich provides.
+
+The features that make Lichborne different from Genie and Frostbite are not triggers and aliases. They are rendering quality, display depth, and Lich integration. Go deep there, not sideways into automation.
+
+---
+
+### 24.2 The Full Stack
+
+```
+Simu Game Servers
+      │  XML protocol over TCP (fixed — we don't control this)
+      ▼
+   Lich5
+      │  Transparent proxy + hook system + script runtime
+      │  DownstreamHook rewrites game text before client sees it
+      │  UpstreamHook intercepts commands before they reach game
+      │  Scripts parse XML, maintain full game state model
+      │  Routes structured output to named streams
+      │  Exposes localhost:11024 to client
+      │
+      ├──[LichScripts stream]── running script state → Lichborne
+      ├──[File system]────────── scripts/, profiles/, data/lich.db3
+      ├──[Upstream commands]──── Lichborne can inject .scriptname
+      │
+      ▼
+  Lichborne
+      │  Receives XML Lich passes through; StormFrontParser extracts events
+      │  React renders vitals, room, exp, streams, map, highlights
+      │  Profile system persists display settings to YAML
+      │  No direct awareness of Lich's internal state (today)
+      ▼
+     User
+```
+
+**Today:** Lich and Lichborne share a wire but have no relationship beyond it. Lich knows everything; Lichborne knows only what the game XML contains.
+
+**Future:** Lichborne gains visibility into Lich's state via three integration seams — file system reads, `LichScripts` stream parsing, and upstream command injection — without ever trying to execute scripts or replicate Lich's automation.
+
+---
+
+### 24.3 What Each Layer Owns
+
+**Simu** — produces the XML game protocol. Fixed input. We only receive it.
+
+**Lich5** owns:
+- Full game state model (`DRRoom`, `DRStats`, `DRSpells`, `DRSkill`, `DRBanking`)
+- Persistent variable storage (`Vars` / `UserVars` in SQLite at `data/lich.db3`)
+- Script execution, orchestration, and lifecycle (180+ scripts)
+- DownstreamHook — intercepts and can rewrite ALL game text before the client sees it (`textsubs.lic` runs here; any client-side substitution would be redundant and would operate on already-transformed text)
+- UpstreamHook — intercepts all outbound commands before they reach the game (`alias.lic` runs here)
+- WatchFor — pattern-matching triggers inside scripts with full Ruby; vastly more capable than any client trigger
+- Per-character YAML automation profiles (`scripts/profiles/Sekmeht-setup.yaml`)
+- Map data in JSON format (`data/DR/map-*.json`)
+- Discord / webhook integrations, AI/LLM integrations
+
+**Lichborne** owns:
+- Rendering the XML Lich passes through — text highlighting, stream routing, virtual scrolling
+- React game state derived from parser events (vitals, room, exp, injuries, indicators)
+- Panel layout, themes, fonts, accessibility settings
+- Always-on highlight engine (no script required — persistent across sessions)
+- Always-on sound alerts and visual triggers (display layer, independent of Lich)
+- Display profiles in YAML (`profiles/Sekmeht.yaml`) — separate from Lich's script YAML
+- Map visualization (reads Lich-compatible XML from user-selected directory)
+- Key bindings, command echo, graceful disconnect
+- Import wizard (migration of display preferences from other clients)
+
+---
+
+### 24.4 Integration Seams
+
+Three surfaces exist for deepening the Lichborne ↔ Lich relationship. None require changes to Lich itself.
+
+**Seam 1 — File System (low effort)**
+Lichborne already launches Lich and knows its directory. The main process already has `read-file` and `list-map-dir` IPC handlers. New handlers can expose:
+- `{LichDir}/scripts/` and `{LichDir}/scripts/custom/` — script discovery and browsing
+- `{LichDir}/scripts/profiles/*.yaml` — per-character automation config for viewer/editor
+- `{LichDir}/data/lich.db3` — `Vars` / `UserVars` via `better-sqlite3` (read-only)
+- `{LichDir}/data/DR/map-*.json` — Lich's native map format (eliminates manual dir selection)
+
+**Seam 2 — LichScripts Stream (already wired, needs parsing)**
+Lich sends running script state to the `LichScripts` stream. Lichborne already receives and renders it as raw text. Parsing that structured output into actual script records (name, status, uptime) is the foundation of the active scripts panel.
+
+**Seam 3 — Upstream Command Injection (already works, needs UI)**
+Lichborne's `send-command` IPC path sends to Lich's upstream pipe. Sending `.t2`, `.buff stop`, `.script abort scriptname` already works today — it just requires a UI surface. Lich's UpstreamHook processes these commands exactly as if the user typed them.
+
+**Future Seam — Direct Lich IPC**
+Lich5 exposes `lib/common/reusable_tcp_server.rb` — a TCP server for richer bidirectional communication. This is a longer-term path to real-time script state, variable updates, and hook management without polling streams.
+
+---
+
+### 24.5 Feature Ownership Matrix
+
+#### Display Layer — Lichborne Owns, Go Deep
+
+| Feature | Lich | Lichborne | Direction |
+|---------|------|-----------|-----------|
+| Text highlighting / coloring | No | ✅ Yes | Invest — core differentiator |
+| Name / contact styling | No | ✅ Yes | Invest |
+| Themes & appearance | No | ✅ Yes | Invest |
+| Panel layout & stream routing | No | ✅ Yes | Invest |
+| Font / density / spacing | No | ✅ Yes | Invest |
+| Vitals bars (from XML) | No | ✅ Yes | Invest |
+| Exp panel (from XML) | No | ✅ Yes | Invest |
+| Room panel (from XML) | No | ✅ Yes | Invest |
+| Map rendering | Produces data | ✅ Renders it | Invest — collaborative, not duplicate |
+| Script output streams | Produces output | ✅ Renders it | Invest — this is exactly right |
+| Sound alerts on text match | No | ✅ Partial | Invest — always-on, no script needed |
+| Stream timestamps | No | ✅ Yes | Keep |
+| Auto-copy to clipboard | No | ✅ Yes | Keep |
+
+#### Connection Layer — Lichborne Owns
+
+| Feature | Lich | Lichborne | Direction |
+|---------|------|-----------|-----------|
+| SGE auth / login | No | ✅ Yes | Keep |
+| Lich process launch | Manages itself | ✅ Launches it | Keep |
+| Command input / bar | No | ✅ Yes | Keep |
+| Key bindings (send on keypress) | No | ✅ Yes | Keep — hardware layer |
+| Command echo | No | ✅ Yes | Keep |
+| Graceful disconnect | No | ✅ Yes | Keep |
+| Display profiles (YAML) | Script YAML (separate concern) | ✅ Yes | Keep — these are different systems |
+
+#### The Gray Zone — Keep Thin, Freeze Scope
+
+| Feature | Direction | Constraint |
+|---------|-----------|------------|
+| Simple aliases | Keep | Single-command expansions only. No `$variables`, no chaining. Do not expand. |
+| Simple triggers | Keep | Sound, flash, echo-to-stream only. No conditional logic or state. Do not expand. |
+| Key bindings / macros | Keep | Warn on `$variable` refs and `@` placeholders at import time. |
+| Import wizard | Keep, reframe | Migration tool for display preferences only. See Section 24.7. |
+
+---
+
+### 24.6 Won't Build — Ever
+
+These features belong to Lich. Building them in Lichborne creates maintenance debt, confuses the product identity, and will always be inferior to the Lich equivalent.
+
+| Feature | Why Lich Already Owns It |
+|---------|--------------------------|
+| Client-side variables | Lich's `Vars` system is per-character, SQLite-backed, accessible to all scripts simultaneously |
+| Text substitution / gags | `textsubs.lic` runs as a DownstreamHook — the client sees already-transformed text; client substitution would be redundant |
+| Conditional trigger logic (`#if`, state, chaining) | WatchFor in a script has full Ruby behind it; client logic will always be a worse version |
+| Training automation | `t2.lic` and the training script family |
+| Combat automation | `stabbity.lic` and related scripts |
+| Crafting automation | 15+ dedicated craft scripts |
+| Healing automation | `tendme.lic`, `tendother.lic`, `first-aid.lic`, `plantheal.lic` |
+| Loot / inventory management | `sell-loot.lic`, `sorter.lic`, `rummage.lic`, `offload-items.lic` |
+| Navigation / pathfinding | Map JSON + `find.lic`, `automap.lic` |
+| Group management | `buff.lic`, `buffother.lic`, `coordinator.lic` |
+| Economy / banking | `bankbot.lic`, `crowns.lic`, `pay-debt.lic`, `tithe.lic` |
+| Discord / webhook integration | `beakon.lic` and webhook URL management in Lich data |
+| Multi-character coordination | `nw-monitor.lic`, `coordinator.lic`, IPC between sessions |
+| AI / LLM integration | `aichar.lic`, `aiconvo.lic`, OpenAI key management in Lich data |
+
+---
+
+### 24.7 Import Wizard Reframe
+
+The import wizard's job is: **bring your display preferences from another client into Lichborne, and surface what to do with everything else.**
+
+It is not a full settings migration tool. Users who expect their 73 Genie triggers to become Lichborne triggers will be disappointed; users who understand they're migrating their highlight palette and key bindings will be delighted.
+
+| Data Type | Import Action | Rationale |
+|-----------|--------------|-----------|
+| Highlights | ✅ Import fully | Pure display — client's core job |
+| Names / contacts | ✅ Import fully | Pure display |
+| Macros / key bindings | ✅ Import; flag `$var` refs and `@` as partial | Hardware layer |
+| Presets → theme | ✅ Import fully | Pure display |
+| Display triggers (sound / flash / echo) | ✅ Import | Display layer — always-on is correct |
+| Simple aliases (no `$vars`) | ✅ Import | Pre-Lich convenience layer |
+| Macros / aliases with `$variables` | ⚠️ Import as partial | Note: "Variables won't resolve — move to a Lich script" |
+| Complex triggers (logic, conditionals) | ⚠️ Import display actions only | Note: "Logic belongs in a Lich WatchFor" |
+| Lich scripts (`<scripts>` in Wrayth XML) | ⚠️ Count and surface | "These run in Lich, not the client" |
+| Variables | ⚠️ Count only | "These live in Lich's Vars system already" |
+| Substitutions / gags | ⚠️ Count only | "Use textsubs.lic — this is a DownstreamHook" |
+
+---
+
+### 24.8 Lich Collaboration Layer — Future Roadmap
+
+These are the features that make Lichborne the first real Lich dashboard. None of them duplicate Lich's automation. All of them surface Lich's state in a way no client has done before.
+
+#### Active Scripts Panel
+Show all currently running Lich scripts per character — name, uptime, status (running / paused / dying), with pause and abort controls. Source: parse the `LichScripts` stream, which Lich already sends when scripts start and stop. This stream is already received by Lichborne and rendered as raw text; the work is parsing its structure into typed records.
+
+#### Script Log Panel
+First-class treatment for Lich script `echo` output — distinct from game text, with per-script color coding, clear controls, and optional filtering by script name. The `LichScripts` and custom script streams already work via the existing stream discovery system; this is a display and UX improvement, not new plumbing.
+
+#### Script Start / Stop from Client
+A configurable button palette (per character profile) that sends upstream commands to Lich — `.t2`, `.buff stop`, `.script abort scriptname`. Uses Seam 3 (upstream command injection), which already works. Work is purely UI: a button strip in the toolbar or a command palette modal, configurable per character in the display YAML.
+
+#### YAML Profile Viewer / Editor
+Browse and edit per-character Lich automation config files (`Sekmeht-setup.yaml`, `Sekmeht-back.yaml`, etc.) from within Lichborne. Read path via the known Lich script directory. Write with confirmation prompt. Future: schema-aware editing for well-known scripts (t2 `training_list`, setup `combat_teaching_skill`, etc.) with typed fields rather than raw YAML.
+
+#### Lich Variable Inspector
+Read-only view of `Vars` and `UserVars` for the connected character, sourced directly from Lich's SQLite database (`data/lich.db3`) via `better-sqlite3` in the main process. Helps users understand why a script behaves differently — "what is `$whisper` set to right now?" Surface as a collapsible panel or modal; no write access.
+
+#### DownstreamHook / UpstreamHook Registry
+Show which hooks are currently registered and which scripts own them. Helps diagnose conflicts — why `textsubs` isn't firing, why a stream is receiving unexpected data, which script is intercepting commands. Requires Lich to expose hook registry state, either via the `LichScripts` stream or a future TCP IPC channel.
+
+---
+
+### 24.9 Implementation Roadmap by Effort
+
+#### Low Effort — File System Reads
+
+All of these use Seam 1. The main process already has `read-file` and `list-map-dir` IPC handlers; these are additive.
+
+1. **Auto-detect Lich map directory** — read map XML from `{LichDir}/data/` instead of requiring manual folder selection. Eliminates a setup step.
+2. **Script browser** — list `.lic` files in `scripts/` and `scripts/custom/` so users can see what's available without opening a file manager.
+3. **YAML profile viewer** — read `scripts/profiles/*.yaml` and display as formatted read-only text in a modal. Zero write risk.
+
+#### Medium Effort — New UI Surfaces
+
+4. **Active scripts panel** — parse `LichScripts` stream output into typed script records; render as a panel with name, uptime, status badge, and abort button.
+5. **Script start/stop buttons** — configurable per-character button strip that sends upstream commands (`.t2`, `.buff stop`, etc.) via existing `send-command` IPC.
+6. **YAML profile editor** — extend viewer with write capability; confirmation prompt before saving; diff view before commit.
+
+#### Higher Effort — SQLite and IPC
+
+7. **Lich variable inspector** — add `better-sqlite3` dependency; new main-process IPC handler reads `Vars`/`UserVars` from `data/lich.db3` for the current character; renderer displays as searchable key-value table.
+8. **Hook registry** — requires either Lich to expose hook state via stream or a direct TCP IPC channel. Longer-term.
+
+#### Long-Term — Direct Lich IPC
+
+9. **Lich TCP API** — use `reusable_tcp_server.rb` as the basis for a bidirectional Lichborne ↔ Lich channel. Enables real-time script state, variable subscriptions, and hook management without polling streams. Requires coordination with Lich5 maintainers.
+10. **Lich JSON map format** — load `data/DR/map-*.json` natively in addition to XML, giving access to Lich's richer map metadata (room UIDs, zone graph, node notes).
+
 **Stream title as display label:** A `<streamWindow id="moonWindow" title="Moons"/>` declaration stores `streamTitles["moonWindow"] = "Moons"`. When adding the stream as a panel tab, `addDiscoveredTab` uses `streamTitles[streamId] ?? streamId` for the label — so the tab shows "Moons" while the internal `id` stays `"moonWindow"`. When no title is declared the stream ID is used with its first character uppercased (`"LichScripts"` → label `"LichScripts"`). The title is purely cosmetic; all routing uses the stream ID.
+
+---
+
+## 25. Rewrite vs. Refactor Analysis
+
+> Decided 2026-05-12 after full audit of Lichborne internals, Lich5 architecture, and three-client import review. See Section 24 for the Lich-forward philosophy that drives these conclusions.
+>
+> **The full phased release plan (v0.2 through v0.7) with per-release checklists lives in Tracker.md under "Lich-Primary Roadmap".**
+
+### 25.1 The Honest Case Against a Rewrite
+
+A blank-page rewrite sounds appealing when a codebase has grown in the wrong directions. But Lichborne is not a legacy mess — it is 0.1.x software with real working parts and real users. The case against an immediate rewrite:
+
+- **The parser is the hardest part, and it works.** `StormFrontParser.ts` is 738 lines of hard-won XML parsing, edge-case handling, and stream routing. A rewrite does not make this easier — it makes it slower.
+- **Virtual scrolling is solved.** The `followOutput` / `suppressUnpinRef` / `totalListHeightChanged` architecture took significant iteration. A rewrite restarts that clock.
+- **The wrong parts are the cheapest to cut.** The automation ambitions (Groups/Modes, client-side variable system, complex import wizard expectations) are not deeply entangled. They can be frozen and removed without touching the core.
+- **The right parts are addable.** The Lich Dashboard features (Active Scripts Panel, Variable Inspector, YAML Editor) are new surfaces, not replacements. They compose on top of existing IPC infrastructure.
+
+**The honest recommendation: targeted refactor + additive build over 3–4 releases, not a blank-page rewrite.**
+
+---
+
+### 25.2 What to Scrap
+
+These are areas where continued investment would be wasted. Scrap means: freeze scope, remove existing UI surface if it exists, and redirect to Lich.
+
+| Area | Current State | What to Scrap | Why |
+|------|--------------|---------------|-----|
+| Automations tab | Partially built (Groups, Modes concept) | The automation layer entirely | Lich owns this — building a client-side version is permanently inferior |
+| Groups / Modes system | Designed but not deeply implemented | The concept itself | Groups are a script concern; a Lich YAML profile already does this better |
+| Import wizard ambition | Imports highlights + macros well; over-promises on triggers, aliases, substitution | The promise of full settings migration | Reframe as display migration tool (see 24.7) |
+| Client-side variables | Not built yet but implied by alias `$var` handling | Any effort to build this | `Vars` lives in Lich SQLite; surface it via Variable Inspector instead |
+| Client-side substitution | Not built | Any plan to build it | DownstreamHook already runs `textsubs.lic` before text reaches the client |
+| Complex trigger logic | Import wizard accepts `#if` triggers silently | Full trigger engine | WatchFor in a Lich script has full Ruby; client logic will always be a worse version |
+| Genie gags import | Silent drop today | Building a gag engine | Surface as "use textsubs.lic" notice instead |
+
+**One physical action for each scrapped area:**
+- Remove the Automations tab from the settings sidebar (or replace with a "Use Lich Scripts" informational panel)
+- Remove Groups/Modes from the profile schema or freeze at current (no UI exposed)
+- Rewrite the import wizard summary screen to distinguish "migrated" from "belongs in Lich" clearly
+
+---
+
+### 25.3 What to Keep and Go Deeper
+
+These are Lichborne's actual competitive advantages. Each one deserves sustained investment.
+
+| Area | Current State | Direction |
+|------|--------------|-----------|
+| `StormFrontParser.ts` | 738 lines, handles all known game XML | Keep as single source of truth; extend for new tags as discovered |
+| Stream system | Virtual tabs, discovery, routing all work | Add stream-level color coding and per-stream clear controls |
+| Virtual scrolling | `followOutput` + suppress-unpin pattern solved | Keep architecture; extend for timestamp display and search/filter |
+| Theme engine | CSS variable system, JSON theme format | Go deeper: more granular tokens, guild themes, per-panel overrides |
+| Highlight engine | Basic pattern matching with fg/bg | Go deeper: named groups, live test input, export/import per highlight set |
+| Map panel | SVG rendering, BFS pathfinding, zone-aware | Go deeper: Lich JSON format support, auto-detect map dir from Lich path |
+| Profile system | `_shared.yaml` + per-character YAML, debounced saves | Keep; extend to carry new features (script palette config, variable inspector prefs) |
+| Contact/name system | Group-aware styling, profile-backed | Keep; add per-guild contact presets |
+
+---
+
+### 25.4 What to Add
+
+These are the features that define Lichborne's unique position. None exist today. All compose on existing infrastructure.
+
+#### Lich Dashboard
+
+A new top-level panel group (or a dedicated sidebar section) that surfaces Lich's runtime state:
+
+**ScriptList panel** — shows all currently running scripts: name, uptime, status badge (running / paused / dying), abort button. Parses the `LichScripts` stream, which is already received. Work: stream → typed record parser + React component.
+
+**ScriptPalette panel** — a configurable grid of buttons, one per script command (`.t2`, `.buff stop`, `.script abort scriptname`). Buttons send via existing upstream command injection. Config stored in character YAML. Work: UI configuration surface + YAML schema extension.
+
+**ScriptFeed panel** — first-class rendering of Lich script `echo` output. Today these go to raw stream tabs. Future: per-script color coding, clear button, filter by script name. Work: tagging stream lines with source script name (requires parsing LichScripts stream for script name context).
+
+**HookRegistry panel** — read-only view of active DownstreamHooks and UpstreamHooks: which script owns each, in what order. Helps diagnose conflicts. Work: requires Lich to expose hook state (stream or TCP IPC) — longer-term dependency.
+
+#### LichConfig surfaces
+
+**YAML Profile Viewer/Editor** — browse `{LichDir}/scripts/profiles/*.yaml`. Read-only first release; write + confirmation prompt in second. Schema-aware editing for well-known scripts (t2 `training_list`, setup `combat_teaching_skill`) in a future release. Work: new main-process IPC handler for `{LichDir}/scripts/profiles/`, renderer modal.
+
+**Variable Inspector** — read `Vars` / `UserVars` from `{LichDir}/data/lich.db3` via `better-sqlite3`. Searchable key-value table, updated on panel open or character switch. No write access. Work: `better-sqlite3` dependency, main-process read handler, renderer panel.
+
+#### Richer Highlight Engine
+
+The current highlight engine is a proof of concept. A production highlight engine:
+
+- **Named groups** — highlights grouped into sets (Combat, Magic, RP, Navigation) that can be toggled as a unit
+- **Live test input** — type a sample line in the highlight editor and see which rules match and how
+- **Highlight export/import** — save a highlight set as a named JSON file; share via a community format compatible with the import wizard
+- **Priority and conflict resolution** — explicit ordering, first-match vs. all-match mode per highlight group
+
+#### Character-Aware Panels
+
+Panels that adapt based on the connected character's guild and stats — sourced from the XML the parser already handles:
+
+- Guild-specific exp skill layout (Trader has different skills than Ranger — show relevant ones first)
+- Injury panel that knows which body part names the parser emits for this character's race
+- Spell slot display that knows which circle names are relevant
+
+#### Session Log with Lich Awareness
+
+A structured session log that knows the difference between game text, script echo, and Lichborne system messages. Exportable as formatted plain text or JSON. Filter by stream, time range, or source type.
+
+---
+
+### 25.5 New Architecture: The LichBridge Module
+
+The single largest structural addition is a `LichBridge` module that owns all Lich-specific IPC. Today, Lich-related logic is scattered: the Lich process launch is in the main process, the `LichScripts` stream is parsed in the renderer alongside game text, the map dir is user-selected manually.
+
+`LichBridge` consolidates:
+
+```
+Main Process
+└── LichBridge
+    ├── FileReader
+    │     reads scripts/, scripts/custom/, scripts/profiles/*.yaml
+    │     exposes: list-lich-scripts, read-lich-profile, write-lich-profile
+    ├── SqliteReader
+    │     reads data/lich.db3 via better-sqlite3
+    │     exposes: get-lich-vars, get-lich-uservars
+    ├── StreamParser
+    │     subscribes to the LichScripts stream from the renderer pipeline
+    │     parses structured output into typed ScriptRecord[]
+    │     exposes: lich-scripts-updated IPC event
+    └── CommandInjector
+          wraps existing send-command IPC for Lich-specific commands
+          exposes: run-lich-script, abort-lich-script, send-lich-dot-command
+
+Renderer
+├── useLichBridge() hook — subscribes to lich-scripts-updated, exposes send helpers
+├── ScriptListPanel — consumes useLichBridge().scripts
+├── ScriptPalettePanel — calls useLichBridge().sendDotCommand()
+├── VariableInspectorPanel — calls IPC get-lich-vars on open
+└── YamlProfileModal — calls IPC read-lich-profile / write-lich-profile
+```
+
+This module has no coupling to the game parser. It is a separate IPC surface. It can be added without touching `StormFrontParser.ts`, the stream system, or the highlight engine.
+
+---
+
+### 25.6 Recommendation
+
+**Do not rewrite. Execute this plan across 3–4 releases:**
+
+**Release A — Freeze and reframe** (no new user-facing features, internal cleanup)
+- Remove or stub the Automations tab
+- Rewrite import wizard summary screen to clearly distinguish "migrated" from "belongs in Lich"
+- Add "not yet supported" notices for substitutions, gags, complex triggers, variables
+- Fix the known import bugs from the backlog (Frostbite bgColor, built-in filtering, Genie `$variable` flagging)
+
+**Release B — Lich visibility (low effort seams)**
+- Auto-detect Lich map directory from known Lich path
+- Script browser: list `.lic` files in `scripts/` and `scripts/custom/`
+- YAML profile viewer: read-only modal for `scripts/profiles/*.yaml`
+
+**Release C — Lich Dashboard**
+- `LichBridge` module with `FileReader`, `StreamParser`, `CommandInjector`
+- ScriptList panel (parses `LichScripts` stream → typed records)
+- ScriptPalette panel (configurable dot-command buttons per character)
+
+**Release D — Deep integration**
+- Variable Inspector (SQLite read via `better-sqlite3`)
+- YAML profile editor (write + confirmation)
+- Richer highlight engine (named groups, live test input)
+
+At no point is a blank-page rewrite the right answer. The core is sound. The direction was wrong in one dimension (automation ambition). Correcting the direction and building additively gets Lichborne to a unique, defensible position faster than starting over.
+
+### 25.7 Release A — Lessons from Testing
+
+Release A was completed and tested against real Genie, Frostbite, and Wrayth config files in 2026-05-12. Several parser edge cases were discovered that were not visible from reading the code:
+
+- **Wrayth `\x` prefix on client commands**: `xml toggle containers` and `xml toggle dialogs` use the same `\x` direction prefix as movement macros. The builtin check was running before prefix stripping, so these slipped through as READY. Real-file testing caught this immediately. Lesson: the three-parser architecture is correct, but each parser needs to be exercised against real files — the format has undocumented quirks that only appear in production data.
+- **Empty file truthiness bug**: `fileTexts[slot.key]` was falsy for empty files (e.g. `gags.cfg` with no rules), showing "Not loaded" even after a successful read. Fixed to `slot.key in fileTexts`.
+- **"Belongs in Lich" section correctly absent**: For users whose configs have no scripts, strings, gags, or variables, the amber section correctly hides — the conditional logic works as designed.
+- **Wrayth theme**: Confirmed that Wrayth XML has no color preset or theme section — no Theme Colors tab appears, which is correct behavior.
+

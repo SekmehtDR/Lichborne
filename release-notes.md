@@ -1,20 +1,16 @@
-## What's new in v0.1.13
+## What's new in v0.2.0
 
-- **Legacy client import wizard** — import your highlights, triggers, macros, and aliases from Wrayth (XML), Genie (.cfg files), or Frostbite (.ini files) via the Import button in the Automations panel. 3-step flow: pick source files → preview and select what to bring in → confirm. Genie color presets convert to a custom theme automatically
-- **Sound playback** — highlights can now play a WAV file when they match. Triggers support both preset tones (chime / alert / alarm / ping) and a custom WAV file path in the sound action
-- **Command echo** — every command you send (typed, macro, or alias) echoes to the main stream as `>command` so you always see what fired
-- **Debug — Fires tab** — new tab in the Debug panel (opens by default) showing a live log of every highlight and trigger that matches, with the matched line, rule name, stream, and what action ran
-- **Main window performance** — virtual scrolling now keeps only ~50 rows in the DOM instead of 2000; combat, swimming, and heavy movement are dramatically smoother. RT/CT animations, timer ticks, and scroll suppression all optimized to eliminate the remaining frame-time cost
-- **Trigger editor polish** — action type is now a dropdown instead of 9 pill buttons; variable picker inserts `$var` at the cursor via a dropdown instead of a floating menu
-- **Numpad macro keys** — Num-, Num+, Num*, and other numpad keys are now correctly bound and distinguished from their keyboard twins
-- **Stream panels re-pin on scroll-back** — scrolling back to the bottom of Thoughts, Arrivals, Deaths, or any custom Lich script panel re-enables auto-follow (previously stuck unpinned until restart)
-- **Lich script stream fixes** — `<clearStream>` now works correctly for custom panels like `moonWindow` and `LichScripts`; scroll lock in the Raw XML debug tab fixed
-- **`assess` command output** — assess results now appear in the main window correctly
-- **Toolbar button colors** — Disconnect is red when connected (danger), Login is green when disconnected (draw attention)
+- **Honest import wizard** — the import wizard now clearly separates what Lichborne can use from what belongs in Lich. Step 1 shows a scope notice so you know what to expect before loading files. Step 3 shows a "Belongs in Lich" section listing counts for scripts, substitution rules, gags, variables, and skipped macro sets — nothing silently disappears
+- **Import parser fixes** — all three parsers (Genie, Frostbite, Wrayth) now correctly flag partial and unsupported items instead of silently dropping them. Macros with `$variable` references or `@` target placeholders show as partial with a tooltip explaining why. All-internal commands show as skip. Frostbite background colors now import correctly (previously always null)
+- **Genie gags and variables** — `gags.cfg` and `variables.cfg` are now offered as optional file slots. Their counts appear in the "Belongs in Lich" section with a `textsubs.lic` note
+- **Frostbite general.ini** — `general.ini` is now offered as a file slot. Window background colors map to theme vars; quick buttons are counted
+- **Dynamic theme names** — imported themes are named "Imported from Genie", "Imported from Frostbite", or "Imported from Wrayth" based on the source, not hardcoded to Genie
+- **Groups tab reframe** — the "Groups & Modes" tab is renamed to "Groups" and shows a notice clarifying that complex automation belongs in a Lich script, not here
+- **Wrayth client commands filtered** — `xml toggle containers`, `xml toggle dialogs`, `{BufferTop}`, `{BufferBottom}`, and other Wrayth-internal commands now correctly show as skip instead of importing as game commands that would fail
 
 ## How to install
 
-1. Download `Lichborne-0.1.13-setup.exe` below
+1. Download `Lichborne-0.2.0-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -30,7 +26,7 @@
 - 18 themes including Classic (Genie-style defaults) — all fully theme the map panel
 - Automations, groups, and modes system with group-aware contact templates
 - Stream timestamps, clickable exits, contacts
-- Legacy client import wizard (Wrayth, Genie, Frostbite)
+- Legacy client import wizard (Wrayth, Genie, Frostbite) with honest Lich-aware scoping
 - Portable YAML profiles — copy your install folder to move everything
 - Auto-update — the client will notify you when a new version is available
 
@@ -42,4 +38,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.1.12...v0.1.13
+https://github.com/SekmehtDR/Lichborne/compare/v0.1.13...v0.2.0

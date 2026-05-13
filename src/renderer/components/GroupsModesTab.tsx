@@ -88,6 +88,11 @@ export default function GroupsModesTab() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <div className="gm-wrap">
+      <div className="gm-lich-notice">
+        Groups control which display rules (highlights, triggers, macros, aliases) are active.
+        Complex automation — variables, triggers with logic, substitution — belongs in a Lich script.
+      </div>
     <div className="gm-body">
 
       {/* ── Groups panel ── */}
@@ -231,6 +236,7 @@ export default function GroupsModesTab() {
         )}
       </div>
 
+    </div>
     </div>
   )
 }

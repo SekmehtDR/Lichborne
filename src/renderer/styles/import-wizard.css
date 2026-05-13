@@ -390,7 +390,22 @@
   font-size: 0.82rem;
 }
 
-/* ── Substitution notice ──────────────────────────────────────────────────── */
+/* ── Step 1: Scope notice ─────────────────────────────────────────────────── */
+
+.iw-scope-notice {
+  margin-bottom: 16px;
+  background: rgba(100, 180, 255, 0.07);
+  border: 1px solid rgba(100, 180, 255, 0.2);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.iw-scope-notice strong { color: var(--text-primary); }
+
+/* ── Substitution / Lich notices ─────────────────────────────────────────── */
 
 .iw-sub-notice {
   margin-top: 16px;
@@ -400,6 +415,13 @@
   padding: 10px 14px;
   font-size: 0.78rem;
   color: #ffaa00;
+}
+
+.iw-sub-notice code {
+  font-family: monospace;
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 /* ── Step 3: Confirm ─────────────────────────────────────────────────────── */
@@ -421,6 +443,37 @@
 .iw-summary-table tr:last-child td { border-bottom: none; }
 
 .iw-summary-count { font-weight: 700; color: var(--accent); }
+
+/* ── "Belongs in Lich" section ───────────────────────────────────────────── */
+
+.iw-lich-section {
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 170, 0, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.iw-lich-section-title {
+  background: rgba(255, 170, 0, 0.08);
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #ffaa00;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.iw-summary-table--lich td { color: var(--text-dim); }
+.iw-summary-table--lich td:first-child { color: var(--text-dim); opacity: 0.7; }
+
+.iw-summary-count--lich { color: var(--text-dim); font-weight: 600; }
+
+.iw-lich-note {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+  font-style: italic;
+}
 
 .iw-merge-label {
   font-size: 0.8rem;

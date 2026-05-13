@@ -62,19 +62,22 @@ interface FileSlot {
 }
 
 const GENIE_SLOTS: FileSlot[] = [
-  { key: 'highlights', label: 'highlights.cfg', hint: 'Text highlights' },
-  { key: 'names',      label: 'names.cfg',      hint: 'Name highlights' },
-  { key: 'macros',     label: 'macros.cfg',      hint: 'Keyboard macros (global or per-character)' },
-  { key: 'aliases',    label: 'aliases.cfg',     hint: 'Aliases (global or per-character)' },
-  { key: 'triggers',   label: 'triggers.cfg',    hint: 'Triggers' },
-  { key: 'presets',    label: 'presets.cfg',     hint: 'Color presets → custom theme' },
-  { key: 'substitutes',label: 'substitutes.cfg', hint: 'Substitutions (counted, not imported)' },
+  { key: 'highlights',  label: 'highlights.cfg',  hint: 'Text highlights' },
+  { key: 'names',       label: 'names.cfg',        hint: 'Name highlights' },
+  { key: 'macros',      label: 'macros.cfg',       hint: 'Keyboard macros (global or per-character)' },
+  { key: 'aliases',     label: 'aliases.cfg',      hint: 'Aliases (global or per-character)' },
+  { key: 'triggers',    label: 'triggers.cfg',     hint: 'Triggers' },
+  { key: 'presets',     label: 'presets.cfg',      hint: 'Color presets → custom theme' },
+  { key: 'substitutes', label: 'substitutes.cfg',  hint: 'Substitutions (counted, not imported — use textsubs.lic)' },
+  { key: 'gags',        label: 'gags.cfg',         hint: 'Gag rules (counted, not imported — use textsubs.lic)' },
+  { key: 'variables',   label: 'variables.cfg',    hint: 'Variables (counted, not imported — live in Lich Vars)' },
 ]
 
 const FROSTBITE_SLOTS: FileSlot[] = [
   { key: 'highlights',  label: 'highlights.ini',  hint: 'Text highlights' },
   { key: 'macros',      label: 'macros.ini',       hint: 'Keyboard macros' },
-  { key: 'substitutes', label: 'substitutes.ini',  hint: 'Substitutions (counted, not imported)' },
+  { key: 'substitutes', label: 'substitutes.ini',  hint: 'Substitutions (counted, not imported — use textsubs.lic)' },
+  { key: 'general',     label: 'general.ini',      hint: 'Window colors → theme; quick buttons (counted)' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -139,6 +142,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         triggers:      fileTexts['triggers'],
         presets:       fileTexts['presets'],
         substitutions: fileTexts['substitutes'],
+        gags:          fileTexts['gags'],
+        variables:     fileTexts['variables'],
       })
     }
     if (source === 'wrayth') {
@@ -151,6 +156,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         highlights:  fileTexts['highlights'],
         macros:      fileTexts['macros'],
         substitutes: fileTexts['substitutes'],
+        general:     fileTexts['general'],
       })
     }
     return null
@@ -219,10 +225,11 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       }
     }
 
-    // Create custom theme from Genie presets if selected
+    // Create custom theme from presets if selected
     if (selTheme && result.themeVars && Object.keys(result.themeVars).length > 0) {
+      const sourceName = source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Import'
       const classicTheme = THEMES.find(t => t.id === 'classic') ?? THEMES[0]
-      const newTheme = createCustomThemeFrom(classicTheme, 'Imported from Genie')
+      const newTheme = createCustomThemeFrom(classicTheme, `Imported from ${sourceName}`)
       Object.assign(newTheme.vars, result.themeVars)
       saveMyThemes([...loadMyThemes(), newTheme])
       onThemeSaved?.(newTheme.id)
@@ -322,6 +329,10 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
 
     return (
       <>
+        <div className="iw-scope-notice">
+          Lichborne imports <strong>display preferences</strong> — highlights, colors, key bindings, and themes.
+          Variables, substitutions, and complex automation belong in Lich.
+        </div>
         <div className="iw-source-grid">
           {cards.map(c => (
             <div
@@ -345,7 +356,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                     {slot.label}<br /><span>{slot.hint}</span>
                   </div>
                   <div className="iw-file-input-wrap">
-                    {fileTexts[slot.key]
+                    {slot.key in fileTexts
                       ? <span className="iw-file-chosen">✓ loaded</span>
                       : <span className="iw-file-none">Not loaded</span>
                     }
@@ -412,7 +423,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                 onChange={e => setSelTheme(e.target.checked)}
                 style={{ accentColor: 'var(--accent)', marginRight: 6 }}
               />
-              Create "Imported from Genie" custom theme with these colors
+              Create "Imported from {source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Import'}" custom theme with these colors
             </label>
           ) : (
             <>
@@ -652,7 +663,19 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         {result.substitutionCount > 0 && (
           <div className="iw-sub-notice">
             {result.substitutionCount} substitution rule{result.substitutionCount !== 1 ? 's' : ''} found —
-            text substitution is not yet supported in Frostborne and will be available in a future update.
+            use <code>textsubs.lic</code>. Lich rewrites game text before Lichborne sees it, so client-side substitution would be redundant.
+          </div>
+        )}
+        {(result.gagsCount ?? 0) > 0 && (
+          <div className="iw-sub-notice">
+            {result.gagsCount} gag rule{result.gagsCount !== 1 ? 's' : ''} found —
+            use <code>textsubs.lic</code>. Gag rules suppress text that Lich has already transformed.
+          </div>
+        )}
+        {(result.variablesCount ?? 0) > 0 && (
+          <div className="iw-sub-notice">
+            {result.variablesCount} variable{result.variablesCount !== 1 ? 's' : ''} found —
+            these live in Lich's Vars system. Reference them in your scripts, not the client.
           </div>
         )}
       </>
@@ -683,6 +706,42 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             )}
           </tbody>
         </table>
+
+        {(() => {
+          const lichRows: Array<{ label: string; count: number; note: string }> = []
+          if ((result?.substitutionCount ?? 0) > 0)
+            lichRows.push({ label: 'Substitution rules', count: result!.substitutionCount, note: 'Use textsubs.lic — Lich rewrites text before Lichborne sees it' })
+          if ((result?.stringsCount ?? 0) > 0)
+            lichRows.push({ label: 'Wrayth strings', count: result!.stringsCount!, note: 'Use textsubs.lic' })
+          if ((result?.gagsCount ?? 0) > 0)
+            lichRows.push({ label: 'Gag rules', count: result!.gagsCount!, note: 'Use textsubs.lic' })
+          if ((result?.variablesCount ?? 0) > 0)
+            lichRows.push({ label: 'Variables', count: result!.variablesCount!, note: 'These live in Lich\'s Vars system' })
+          if ((result?.scriptsCount ?? 0) > 0)
+            lichRows.push({ label: 'Lich scripts', count: result!.scriptsCount!, note: 'Run in Lich, not the client' })
+          if ((result?.alertHighlightCount ?? 0) > 0)
+            lichRows.push({ label: 'Alert highlights', count: result!.alertHighlightCount!, note: 'Health/stun thresholds — no Lichborne equivalent yet' })
+          if ((result?.skippedMacroSetsCount ?? 0) > 0)
+            lichRows.push({ label: 'Macro sets 1–9 entries', count: result!.skippedMacroSetsCount!, note: 'Only the default set (0) is imported' })
+
+          if (lichRows.length === 0) return null
+          return (
+            <div className="iw-lich-section">
+              <div className="iw-lich-section-title">These belong in Lich</div>
+              <table className="iw-summary-table iw-summary-table--lich">
+                <tbody>
+                  {lichRows.map(row => (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      <td><span className="iw-summary-count iw-summary-count--lich">{row.count}</span></td>
+                      <td className="iw-lich-note">{row.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        })()}
 
         <div className="iw-merge-label">Merge strategy</div>
         <div className="iw-merge-options">

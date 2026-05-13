@@ -162,16 +162,26 @@ function parseMacros(text: string): ImportMacro[] {
     const action = stripSendMarker(actionRaw)
     const { commands, hadInternal } = splitAction(action)
 
-    // Skip macros that are entirely Genie-internal with no game commands
-    if (commands.length === 0) continue
+    // All commands were Genie-internal — surface as unsupported rather than silently dropping
+    if (commands.length === 0) {
+      results.push({
+        kind: 'macro', source: 'genie', status: 'unsupported',
+        statusNote: 'All commands are Genie-internal — nothing to import',
+        key, commands: [],
+      })
+      continue
+    }
+
+    const notes: string[] = []
+    if (hadInternal)                         notes.push('Some Genie-internal commands were removed')
+    if (commands.some(c => c.includes('$'))) notes.push('Variable references won\'t resolve — move to a Lich script')
+    if (commands.some(c => c.includes('@'))) notes.push('@ target placeholder won\'t resolve — move to a Lich alias')
 
     results.push({
-      kind:     'macro',
-      source:   'genie',
-      status:   hadInternal ? 'partial' : 'ready',
-      statusNote: hadInternal
-        ? 'Some Genie-internal commands were removed'
-        : undefined,
+      kind:       'macro',
+      source:     'genie',
+      status:     notes.length > 0 ? 'partial' : 'ready',
+      statusNote: notes.length > 0 ? notes.join('; ') : undefined,
       key,
       commands,
     })
@@ -197,12 +207,17 @@ function parseAliases(text: string): ImportAlias[] {
 
     if (commands.length === 0) continue
 
+    const notes: string[] = []
+    if (hadInternal)                         notes.push('Some Genie-internal commands were removed')
+    if (commands.some(c => c.includes('$'))) notes.push('Variable references won\'t resolve — move to a Lich script')
+    if (commands.some(c => c.includes('@'))) notes.push('@ target placeholder won\'t resolve — move to a Lich alias')
+
     results.push({
-      kind:     'alias',
-      source:   'genie',
-      status:   hadInternal ? 'partial' : 'ready',
-      statusNote: hadInternal ? 'Some Genie-internal commands were removed' : undefined,
-      input:    input.trim(),
+      kind:       'alias',
+      source:     'genie',
+      status:     notes.length > 0 ? 'partial' : 'ready',
+      statusNote: notes.length > 0 ? notes.join('; ') : undefined,
+      input:      input.trim(),
       commands,
     })
   }
@@ -266,14 +281,15 @@ function parseEchoAction(raw: string): ImportEchoAction {
 
 // Split a Genie action string on ; and categorise each part.
 function parseActionParts(actionRaw: string): {
-  commands:    string[]
-  echoActions: ImportEchoAction[]
-  varActions:  ImportVarAction[]
-  logActions:  ImportLogAction[]
-  soundFiles:  string[]
-  hasFlash:    boolean
-  hasBeep:     boolean
-  dropped:     string[]
+  commands:        string[]
+  echoActions:     ImportEchoAction[]
+  varActions:      ImportVarAction[]
+  logActions:      ImportLogAction[]
+  soundFiles:      string[]
+  hasFlash:        boolean
+  hasBeep:         boolean
+  hasLibrarySound: boolean   // true when a #play arg looks like a Genie built-in name, not a file path
+  dropped:         string[]
 } {
   const parts = actionRaw.split(';').map(s => s.trim()).filter(Boolean)
   const commands:    string[]             = []
@@ -282,8 +298,9 @@ function parseActionParts(actionRaw: string): {
   const logActions:  ImportLogAction[]   = []
   const soundFiles:  string[]            = []
   const dropped:     string[]            = []
-  let hasFlash = false
-  let hasBeep  = false
+  let hasFlash        = false
+  let hasBeep         = false
+  let hasLibrarySound = false
 
   for (const part of parts) {
     if (!part.startsWith('#')) {
@@ -317,7 +334,12 @@ function parseActionParts(actionRaw: string): {
       }
     } else if (lower.startsWith('#play ')) {
       const sound = part.slice(6).trim()
-      if (sound && sound.toLowerCase() !== 'stop') soundFiles.push(sound)
+      if (sound && sound.toLowerCase() !== 'stop') {
+        soundFiles.push(sound)
+        // Genie library names have no path separator or audio extension
+        const isFilePath = /[/\\]/.test(sound) || /\.(wav|mp3|ogg|aiff?)$/i.test(sound)
+        if (!isFilePath) hasLibrarySound = true
+      }
     } else if (lower === '#flash') {
       hasFlash = true
     } else if (lower === '#beep') {
@@ -333,7 +355,7 @@ function parseActionParts(actionRaw: string): {
     // Everything else (##escaped, #put without body, etc.) is silently skipped
   }
 
-  return { commands, echoActions, varActions, logActions, soundFiles, hasFlash, hasBeep, dropped }
+  return { commands, echoActions, varActions, logActions, soundFiles, hasFlash, hasBeep, hasLibrarySound, dropped }
 }
 
 function parseTriggers(text: string): ImportTrigger[] {
@@ -369,14 +391,26 @@ function parseTriggers(text: string): ImportTrigger[] {
 
     const {
       commands, echoActions, varActions, logActions,
-      soundFiles, hasFlash, hasBeep, dropped,
+      soundFiles, hasFlash, hasBeep, hasLibrarySound, dropped,
     } = parseActionParts(actionRaw)
 
-    // Skip if there are no importable actions at all
+    // No importable actions at all — surface as unsupported instead of silently dropping
     const hasAny = commands.length > 0 || echoActions.length > 0 ||
                    varActions.length > 0 || logActions.length > 0 ||
                    soundFiles.length > 0 || hasFlash || hasBeep
-    if (!hasAny) continue
+    if (!hasAny) {
+      results.push({
+        kind: 'trigger', source: 'genie', status: 'unsupported',
+        statusNote: dropped.length > 0
+          ? `Unsupported actions only: ${[...new Set(dropped.map(d => d.split(/\s/)[0]))].join(', ')}`
+          : 'No importable actions found',
+        pattern: patternRaw, matchType: 'regex', caseSensitive: false,
+        commands: [], echoActions: [], varActions: [], logActions: [],
+        soundFiles: [], hasFlash: false, hasBeep: false, droppedActions: dropped,
+        classTag,
+      })
+      continue
+    }
 
     // Determine status
     let status: ImportTrigger['status'] = 'ready'
@@ -384,6 +418,10 @@ function parseTriggers(text: string): ImportTrigger[] {
     if (dropped.length > 0) {
       status = 'partial'
       notes.push(`Unsupported actions skipped: ${[...new Set(dropped.map(d => d.split(/\s/)[0]))].join(', ')}`)
+    }
+    if (hasLibrarySound) {
+      status = 'partial'
+      notes.push('Genie library sound name — update path after import')
     }
 
     results.push({
@@ -486,6 +524,8 @@ export interface GenieFiles {
   triggers?: string      // triggers.cfg content
   substitutions?: string // substitutes.cfg content (counted but not imported)
   presets?: string       // presets.cfg content → mapped to custom theme vars
+  gags?: string          // gags.cfg content (counted but not imported — use textsubs.lic)
+  variables?: string     // variables.cfg content (counted but not imported — live in Lich Vars)
 }
 
 export function parseGenieFiles(files: GenieFiles): ImportResult {
@@ -505,6 +545,20 @@ export function parseGenieFiles(files: GenieFiles): ImportResult {
     }
   }
 
+  let gagsCount = 0
+  if (files.gags) {
+    for (const line of files.gags.split('\n')) {
+      if (line.trim().startsWith('#gag')) gagsCount++
+    }
+  }
+
+  let variablesCount = 0
+  if (files.variables) {
+    for (const line of files.variables.split('\n')) {
+      if (line.trim().startsWith('#variable')) variablesCount++
+    }
+  }
+
   const unsupportedCount = [
     ...highlights, ...macros, ...aliases, ...triggers,
   ].filter(r => r.status === 'unsupported').length
@@ -513,5 +567,7 @@ export function parseGenieFiles(files: GenieFiles): ImportResult {
     highlights, names, macros, aliases, triggers,
     substitutionCount, unsupportedCount,
     ...(themeVars && Object.keys(themeVars).length > 0 ? { themeVars } : {}),
+    ...(gagsCount     > 0 ? { gagsCount }     : {}),
+    ...(variablesCount > 0 ? { variablesCount } : {}),
   }
 }

@@ -90,5 +90,12 @@ export interface ImportResult {
   triggers: ImportTrigger[]
   substitutionCount: number     // deferred feature — count only, not imported
   unsupportedCount: number
-  themeVars?: Record<string, string>  // CSS vars mapped from Genie presets.cfg
+  themeVars?: Record<string, string>  // CSS vars mapped from Genie/Frostbite/Wrayth presets
+  // "Belongs in Lich" counts — surfaced on confirm screen, never imported
+  alertHighlightCount?: number  // Frostbite [AlertHighlight] health/stun threshold entries
+  gagsCount?: number            // Genie gags.cfg rule count
+  variablesCount?: number       // Genie variables.cfg entry count
+  scriptsCount?: number         // Wrayth <scripts> block entry count
+  stringsCount?: number         // Wrayth <strings> substitution rule count
+  skippedMacroSetsCount?: number // Wrayth non-empty macro sets 1–9
 }
