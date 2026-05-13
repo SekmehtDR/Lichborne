@@ -36,8 +36,9 @@ export function buildSharedProfile(): SharedProfile {
       portLocked:     adv.portLocked     ?? true,
       modeLocked:     adv.modeLocked     ?? true,
     },
-    mapDir:    localStorage.getItem('lichborne.mapDir') ?? '',
-    games:     DEFAULT_GAMES,
+    mapDir:      localStorage.getItem('lichborne.mapDir')      ?? '',
+    genieMapsDir: localStorage.getItem('lichborne.genieMapsDir') ?? '',
+    games:       DEFAULT_GAMES,
     myThemes:  loadMyThemes(),
   }
 }
@@ -59,7 +60,7 @@ export function buildCharacterProfile(
     bottomTabs:       tryParse(localStorage.getItem('lichborne.bottomTabs'), []),
     bottomActiveId:   localStorage.getItem('lichborne.bottomActiveId') ?? 'exp',
     streamTimestamps: tryParse(localStorage.getItem('lichborne.streamTimestamps'), {}),
-    mapLabelMode:     localStorage.getItem('lichborne.mapLabelMode') ?? 'short',
+    mapLabelMode:     localStorage.getItem('lichborne.mapLabelMode.v2') ?? 'none',
   }
 
   const automations: AutomationsProfile = {
@@ -130,8 +131,9 @@ export async function importSharedProfile(): Promise<void> {
     }))
   }
 
-  if (data.mapDir)   localStorage.setItem('lichborne.mapDir', data.mapDir)
-  if (data.myThemes) saveMyThemes(data.myThemes)
+  if (data.mapDir)      localStorage.setItem('lichborne.mapDir',      data.mapDir)
+  if (data.genieMapsDir) localStorage.setItem('lichborne.genieMapsDir', data.genieMapsDir)
+  if (data.myThemes)    saveMyThemes(data.myThemes)
 }
 
 export async function importCharacterProfile(character: string): Promise<CharacterProfile | null> {
@@ -154,7 +156,7 @@ export async function importCharacterProfile(character: string): Promise<Charact
     if (l.bottomTabs)     localStorage.setItem('lichborne.bottomTabs',    JSON.stringify(l.bottomTabs))
     if (l.bottomActiveId) localStorage.setItem('lichborne.bottomActiveId', l.bottomActiveId)
     if (l.streamTimestamps) localStorage.setItem('lichborne.streamTimestamps', JSON.stringify(l.streamTimestamps))
-    if (l.mapLabelMode)     localStorage.setItem('lichborne.mapLabelMode', l.mapLabelMode)
+    if (l.mapLabelMode)     localStorage.setItem('lichborne.mapLabelMode.v2', l.mapLabelMode)
   }
 
   if (data.automations) {
@@ -192,7 +194,7 @@ const CHARACTER_LS_KEYS = [
   'lichborne.bottomTabs',
   'lichborne.bottomActiveId',
   'lichborne.streamTimestamps',
-  'lichborne.mapLabelMode',
+  'lichborne.mapLabelMode.v2',
   'lichborne.highlights',
   'lichborne.triggers',
   'lichborne.macros',

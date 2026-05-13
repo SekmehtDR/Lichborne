@@ -61,58 +61,24 @@
 }
 
 .map-btn--folder { font-size: 14px; }
+.map-btn--clear { color: var(--text-dim); opacity: 0.6; }
+.map-btn--clear:hover { color: var(--color-danger); opacity: 1; border-color: var(--color-danger-dim); }
 
 .map-btn--sm {
   padding: 1px 5px;
   font-size: 11px;
 }
 
-.map-file-select {
+.map-toolbar-location {
   flex: 1;
   min-width: 0;
-  background: var(--map-select-bg);
-  border: 1px solid var(--map-btn-border);
-  color: var(--map-select-color);
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.map-file-select:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-
-.map-file-select option {
-  background: var(--map-chrome-bg);
-  color: var(--map-select-color);
-}
-
-.map-label-select {
-  flex-shrink: 0;
-  background: var(--map-select-bg);
-  border: 1px solid var(--map-btn-border);
-  color: var(--map-text-muted);
-  border-radius: 3px;
-  padding: 2px 4px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.map-label-select:focus {
-  outline: none;
-  border-color: var(--accent-dim);
-}
-
-.map-label-select option {
-  background: var(--map-chrome-bg);
-  color: var(--map-select-color);
-}
-
-.map-label-select--sm {
   font-size: 10px;
-  padding: 1px 3px;
+  color: var(--map-text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
 }
 
 .map-search {
@@ -491,6 +457,22 @@
   flex-shrink: 0;
 }
 
+.map-detail-close {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+  color: var(--map-text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.1s, background 0.1s;
+}
+
+.map-detail-close:hover { color: #e06060; background: #2e1a1a; }
+
 .map-detail-aliases {
   display: flex;
   flex-wrap: wrap;
@@ -516,6 +498,11 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.map-detail-meta {
+  font-style: italic;
+  opacity: 0.6;
 }
 
 .map-detail-exits {
@@ -654,6 +641,61 @@
   border-top: 1px solid var(--map-border-subtle);
   margin-top: 4px;
   padding-top: 4px;
+}
+
+/* ── Label mode select ────────────────────────────────────────── */
+
+.map-label-select {
+  background: var(--map-select-bg);
+  border: 1px solid var(--map-btn-border);
+  color: var(--map-text);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.map-label-select:focus { outline: none; border-color: var(--accent-dim); }
+
+.map-label-select--sm { font-size: 10px; padding: 1px 3px; }
+
+/* ── View wrap (sub-component root) ──────────────────────────── */
+
+.map-view-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Sub-bar (z-level chips, label mode, etc. inside sub-views) */
+
+.map-subbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--map-chrome-bg);
+  border-bottom: 1px solid var(--map-border-subtle);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* ── Genie progress bar ───────────────────────────────────────── */
+
+.map-genie-progress {
+  height: 2px;
+  background: var(--map-btn-bg);
+  flex-shrink: 0;
+}
+
+.map-genie-progress-bar {
+  height: 100%;
+  background: var(--map-select-color);
+  transition: width 0.1s linear;
 }
 
 /* ── Full-screen Maps overlay ──────────────────────────────── */

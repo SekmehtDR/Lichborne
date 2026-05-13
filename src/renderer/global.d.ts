@@ -1,4 +1,4 @@
-import type { LoginCredentials, GameEvent, MapZone } from '../shared/types'
+import type { LoginCredentials, GameEvent } from '../shared/types'
 
 declare global {
   interface Window {
@@ -29,6 +29,11 @@ declare global {
       browseFolder: () => Promise<string | null>
       listMapDir: (dir: string) => Promise<{ name: string; path: string }[] | null>
       readFile: (filePath: string) => Promise<string | null>
+      // Lich file-system
+      findLichMapFile: (lichPath: string) => Promise<{ jsonPath: string; mapsDir: string } | null>
+      readMapImage: (mapsDir: string, imageName: string) => Promise<string | null>
+      listLichScripts: (lichPath: string) => Promise<{ name: string; source: 'core' | 'custom'; lastModified: number }[]>
+      listLichProfiles: (lichPath: string) => Promise<string[]>
       // Profile I/O
       readSharedProfile: () => Promise<unknown | null>
       writeSharedProfile: (data: unknown) => Promise<void>

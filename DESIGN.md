@@ -3371,6 +3371,150 @@ This module has no coupling to the game parser. It is a separate IPC surface. It
 
 At no point is a blank-page rewrite the right answer. The core is sound. The direction was wrong in one dimension (automation ambition). Correcting the direction and building additively gets Lichborne to a unique, defensible position faster than starting over.
 
+### 25.8 Hybrid Map System — Design Spec
+
+#### Background
+
+Lichborne's map panel has two distinct rendering modes:
+
+1. **Image mode** (default when Lich is configured): Loads Lich's `map-*.json` database and displays the actual map artwork (GIF/PNG from `maps/`) with an SVG overlay highlighting the current room. Zero configuration beyond `lichPath`.
+
+2. **Graph mode**: Renders an SVG node graph using Genie XML map data for spatial coordinates. Works standalone (direct-connect users without Lich) — Genie nodes become orphan placeholders. When Lich is also loaded, rooms are matched and full navigation is available.
+
+If Lich is not configured or its map file cannot be found, the panel auto-switches to Graph mode on startup.
+
+#### Why Two Modes
+
+Lich image maps are authoritative and require no setup beyond a Lich install. Genie maps add spatial awareness — explicit X/Y/Z coordinates and zone groupings that let you see the world as a connected graph. The hybrid treats them as complementary: Lich owns *what the room is* and *how to get there*, Genie owns *where it is in space*.
+
+#### Data Sources
+
+**Lich JSON** (`data/DR/map-*.json`):
+- `id` — Lich internal room ID (not the Simutronics room number)
+- `title` — `["[[Zone, Room Name]]"]` — strip outer `[[` `]]` for display
+- `description` — array of strings (day/night variants); may be null/undefined
+- `wayto` — `{ "destLichId": "movement command" }` — authoritative navigation; may be null
+- `image` / `image_coords` — map artwork reference (image mode only)
+- `tags`, `location` — metadata
+
+**Map file selection**: `find-lich-map-file` scans **all subdirectories** under `data/` (DR, GS, GS3, TF, DRX, DRT, DRF, and any future codes) and picks the `map-*.json` file with the **highest numeric sequence** across all of them (e.g. `map-1778475193.json` > `map-1776456844.json`). Sequence number is extracted via the capture group in `/^map-(\d+)\.json$/i`. Modification time (`mtimeMs`) is used as a secondary tiebreaker for any two files with the same sequence number (shouldn't happen in practice, but covers edge cases such as a file being copied into a second game folder). Using mtime as the primary sort was considered but is unreliable — mtime resets when files are copied or unzipped.
+
+**Genie XML** (`Map*.xml` files):
+- `<zone name="..." id="...">` — each file is one named zone
+- `<node id="..." name="..." note="alias|alias2" color="#RRGGBB">` — room node
+- `<description>` — can appear twice (day/night variants)
+- `<position x="..." y="..." z="..." />` — spatial coordinates, LOCAL to this zone file
+- `<arc exit="..." move="..." destination="genieNodeId" />` — connections (not used for navigation)
+
+#### Cross-Reference / Matching
+
+Rooms are matched between the two databases by title, then description, then note alias:
+
+1. Strip `[[` `]]` from Lich title → compare to Genie `node.name` (exact string match)
+2. If multiple title matches: compare normalized descriptions (collapse whitespace, lowercase)
+3. Fallback: parse `node.note` as pipe-separated aliases, repeat title+description match for each alias
+4. First match wins; a Lich room can only be matched once (first match wins)
+
+Once matched, each Lich room gains a `GenieAugment`:
+```typescript
+genieId:  number   // Genie node ID within its zone
+zoneName: string   // zone name (e.g. "The Crossing")
+zoneId:   string   // zone id attribute
+x, y, z:  number   // Genie local coordinates within zone
+color?:   string   // Genie node color hex
+note?:    string   // pipe-separated aliases
+```
+
+Unmatched Genie nodes become **orphans** — kept in `orphansByZone: Map<string, GenieNode[]>` and rendered with a dashed border and `?` badge. Their count appears in the graph legend.
+
+#### Load Order
+
+Genie loading is gated on Lich finishing first:
+```
+dbStatus: 'idle' → 'loading' → 'ready' | 'error'
+```
+The `loadGenie` effect only fires when `dbStatus === 'ready' || dbStatus === 'error'`, ensuring `titleIndex` is fully populated before matching begins. For direct-connect users (Lich error), all Genie nodes become orphans since `titleIndex` is empty.
+
+#### Genie Load Cancellation
+
+A **generation counter** (`genieGenRef`) prevents stale async loads from overwriting cleared state:
+- `loadGenie`: captures `const gen = ++genieGenRef.current` at start; checks `if (gen !== genieGenRef.current) return` after every `await`
+- `clearGenieFolder`: does `genieGenRef.current++` to invalidate any in-flight load
+
+#### Graph View — Zone-by-Zone (Phase 1)
+
+The graph renderer operates on one Genie zone at a time, auto-switching as the player moves:
+
+- **Visible nodes**: all Lich rooms whose augment zone = current zone, plus orphan Genie nodes from that zone
+- **Arc lines**: drawn from Lich `wayto` edges — for each (lichId → destLichId) edge, if both have Genie positions in the current zone, draw a line between them
+- **Cross-zone exits**: amber `◆` diamond rendered above nodes that have at least one `wayto` destination in a different zone; count shown in legend
+- **Node positions**: Genie `(x, y)` local coordinates directly used as SVG coordinates
+- **Navigation**: clicking a node → sends the Lich `wayto` command (BFS walk available via detail panel)
+- **Unmatched Genie nodes**: shown at their Genie position, dashed border, `?` badge, neutral color
+- **Zone auto-switch**: when current room changes to a different zone, graph fits/centers on new zone
+
+**Direct-connect / no-Lich mode**: `lichDb` is empty; all Genie nodes are orphans. Graph is still fully browsable. Toolbar shows "browse only" instead of matched count.
+
+#### Persistence
+
+- `viewMode` (`'image' | 'graph'`) — `localStorage` key `lichborne.mapViewMode`
+- `genieMapsDir` — `localStorage` key `lichborne.genieMapsDir` **and** `_shared.yaml` (via `scheduleSharedProfileSave()`) so it survives across logins. Added to `SharedProfile` type and both `buildSharedProfile` / `importSharedProfile`.
+- `mapLabelMode` — `localStorage` key `lichborne.mapLabelMode.v2` (v2 suffix to reset stale `'short'` default from old key to `'none'`); also persisted per-character in profile.
+
+#### Component Structure
+
+```
+MapPanel.tsx          — coordinator: database loading, shared state, toolbar, view toggle
+  MapImageView.tsx    — Lich image + SVG overlay
+  MapGraphView.tsx    — SVG node graph (zone-by-zone)
+```
+
+State owned by MapPanel (passed as props to sub-views):
+- `lichDb: Map<number, LichRoom>` — full Lich room database (React state)
+- `imageIndex: Map<string, LichRoom[]>` — image filename → rooms (React state)
+- `titleIndex: React.MutableRefObject<Map<string, LichRoom[]>>` — ref, lookup only, not passed as prop
+- `augments: Map<number, GenieAugment>` — lichId → Genie augmentation
+- `orphansByZone: Map<string, GenieNode[]>` — unmatched Genie nodes by zone
+- `viewMode: 'image' | 'graph'`
+- `genieMapsDir: string`
+- `genieStatus: 'idle' | 'loading' | 'ready' | 'error'`
+- `genieProgress: { loaded: number; total: number } | null`
+- `currentRoom: LichRoom | undefined`
+
+#### CSS Classes (map-panel.css)
+
+- `.map-panel` / `.map-panel--large` — outer container
+- `.map-toolbar` — top bar with tabs, folder picker, status hints
+- `.map-toolbar-location` — right-aligned current location label
+- `.map-genie-progress` / `.map-genie-progress-bar` — 2px progress stripe
+- `.map-canvas-wrap` — fill remaining height, clipping container
+- `.map-view-wrap` — flex column, position:relative, overflow:hidden (used inside sub-views)
+- `.map-subbar` — secondary toolbar row (z-level chips, zoom buttons)
+- `.map-label-select` / `.map-label-select--sm` — label mode dropdown
+- `.map-detail-close` — close button on room detail panel
+- `.map-detail-meta` — italic/muted metadata line in detail panel
+
+#### What Genie Arcs Are NOT Used For
+
+Genie `<arc>` elements are intentionally ignored for navigation. Lich `wayto` is the single source of truth for room connections and movement commands. Genie arcs are only used as a display fallback for orphan nodes where no Lich wayto is available.
+
+#### Graph View — World Stitching (Phase 2, not yet implemented)
+
+In world view, all zones are rendered in a single continuous SVG coordinate space. Since each Genie zone file uses its own local coordinate system, zones must be given global offsets.
+
+**Zone offset algorithm (BFS stitching):**
+
+1. Choose a reference zone (e.g. "The Crossing") — assign it global offset `(0, 0)`
+2. Find all cross-zone Lich `wayto` edges where source and destination rooms both have Genie augments in *different* zones
+3. For each such edge `(roomA in ZoneA) → (roomB in ZoneB)`:
+   - `ZoneB.globalOffset = ZoneA.globalOffset + (A.localPos - B.localPos)`
+4. BFS outward; conflicting offsets (multiple connections between same two zones) averaged by connection count
+5. Isolated zones placed in a grid off to the side
+
+**Rendering**: every node's screen position = `zone.globalOffset + node.localPos`. Only nodes within the SVG viewport are rendered.
+
+---
+
 ### 25.7 Release A — Lessons from Testing
 
 Release A was completed and tested against real Genie, Frostbite, and Wrayth config files in 2026-05-12. Several parser edge cases were discovered that were not visible from reading the code:

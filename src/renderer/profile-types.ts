@@ -31,6 +31,7 @@ export interface SharedProfile {
   account: string
   advancedSettings: SharedAdvancedSettings
   mapDir: string
+  genieMapsDir: string
   games: Record<string, GameDefinition>
   myThemes: CustomTheme[]
 }

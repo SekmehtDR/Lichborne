@@ -6,6 +6,10 @@
 
 ## Open Bugs
 
+*(none)*
+
+## Shelved
+
 | # | Summary | Reporter | Notes |
 |---|---|---|---|
 | B28 | Advanced/Lich settings reset to defaults in new windows | Binu | Lich path, Ruby path, and related advanced fields persist correctly on the first instance but revert to defaults when a second window is opened — settings are likely being read from defaults instead of localStorage/persisted store on subsequent window loads |

@@ -76,6 +76,13 @@
 **Performance Pass — Main window rendering ✅: four targeted optimizations verified via Chrome DevTools profiling across movement, swimming+RT, idle, and heavy-XML scenarios: (1) chip-pulse animation changed from `filter:brightness` to `opacity` — opacity is compositor-only, eliminating 142ms Recalculate Style cost per recording during active RT/CT; (2) `TimerDisplay` extracted as `memo`'d component owning `useTimers` — 100ms interval ticks no longer re-render GameWindow and all its children; (3) `suppressUnpinRef` bool+timer replaced with `suppressUntilRef` timestamp — eliminated all `clearTimeout`+`setTimeout` churn from the scroll suppression path (75% reduction in timer scheduling overhead during fast movement); (4) trigger engine `fastLower` pre-filter — same substring pre-check already used by highlight engine added to `useTriggerEngine.processLine`, cutting most trigger evaluations to a single `includes()` call on non-matching lines ✅**
 **Toolbar — Disconnect/Login button state colors ✅: button shows red border+text when connected (signals danger/exit) and green border+text when disconnected (draws attention to Login) ✅**
 **B40 — Raw XML tab scroll lock fix ✅: `rawXmlLines` buffer trimmed with `shift()` on overflow but used `key={i}` (index-based) — same root cause as B14; all DOM nodes shifted their content on trim, making the view scroll forward while pinned up; fixed with `rawBaseRef`/`prevRawLenRef` stable key offset in DebugPanel, matching the existing eventBaseRef pattern ✅**
+**Release A — "Honest Client" v0.2.0 ✅: Legacy client import wizard (Wrayth, Genie, Frostbite); 3-step modal; neutral ImportCandidate layer; per-client parsers; Genie presets.cfg → custom theme; profile-aware import ✅**
+**Release B — "Lich Visibility" v0.3.0 ✅: Lich JSON map system ✅; Script browser ✅; YAML profile viewer ✅; B41 setCommand fix ✅; Hybrid graph view (Genie augmentation, zone-by-zone) ✅**
+**Release C — v0.3.1 (planned): World stitching (Phase 2 — BFS zone offset algorithm, single continuous SVG world view) 🔲**
+**Hybrid Map System — Phase 1 ✅: Three-component architecture — `MapPanel.tsx` (coordinator), `MapImageView.tsx` (Lich image+overlay), `MapGraphView.tsx` (Genie SVG graph); `mapTypes.ts` shared types and utilities; Lich JSON loaded first (gated by dbStatus), Genie XML loads progressively after in batches of 5 with progress bar; room matching by title → description → alias (note field); augments keyed by Lich ID; orphan Genie nodes shown as dashed ? boxes; arc lines from Lich wayto edges; cross-zone exits marked with amber ◆ diamond; z-level filter chips; label mode selector (default: off); fit view + zoom +/− buttons; color legend with cross-zone count and orphan count; room detail panel with ✕ close button; BFS walk; zone auto-switch on room change ✅**
+**Hybrid Map — Direct Connect mode ✅: Graph view available without Lich — auto-switches to Graph tab on Lich load failure; Image tab shows error, Graph tab shows Genie-only browsing (all nodes as orphans); toolbar shows "browse only" hint instead of match count ✅**
+**Hybrid Map — Persistence ✅: Genie maps folder stored in `_shared.yaml` via `scheduleSharedProfileSave()` (profile system, not localStorage); auto-loads Genie on startup after Lich finishes; viewMode persisted to localStorage; label mode persisted to `lichborne.mapLabelMode.v2` key (v2 resets stale 'short' default to 'none') ✅**
+**Hybrid Map — Bug fixes ✅: dragRef null-deref in onMouseMove (captured ox/oy before setState callback) in both MapImageView and MapGraphView; null wayto/description guards in detail panel and nodeBodies; computeFit NaN guard when SVG not yet laid out; Genie load cancellation race fixed with generation counter (clearGenieFolder increments gen, in-flight load checks gen at each await and abandons if superseded); mapLabelMode profile key corrected to v2 in profile.ts build/import/clear; map-detail-meta CSS class added; Lich map file selection: `find-lich-map-file` now scans all subdirs under `data/` dynamically (DR, GS, GS3, TF, DRX, DRT, DRF, any future codes) instead of a hardcoded list; selects highest numeric sequence from filename via `/^map-(\d+)\.json$/i`; mtime used as tiebreaker for equal sequences; sequence number preferred over mtime as primary sort (mtime is unreliable after copy/unzip) ✅**
 
 ---
 
@@ -96,7 +103,8 @@
 | `0.1.10` | 2026-05-09 | Released (pre-release) | B17: combat/swimming scroll-pin race fix (onWheel eager unpin); B18: auto-copy replaced with native Electron clipboard IPC; B19: Home/End keys work in automation text fields; B20: scroll pin fully fixed — no trim while unpinned (content at top stays visible), handleScroll only un-pins, badge/End re-pins and trims to MAX_LINES, hard cap at 6000 lines; tested stable at 3600+ new lines |
 | `0.1.11` | 2026-05-09 | Released (pre-release) | Map panel UI reorganization: two-bar chrome layout, legend as canvas overlay, current room label z-order fix, B30 custom theme map var fix; Profile System Phases 1–3: full YAML round-trip (export + import), shared profile pre-fills login form, character YAML restores all settings on login; new automations and contact templates default to allGroups: true; contact templates are now group-aware — styling toggles with mode switches |
 | `0.1.12` | 2026-05-09 | Released (pre-release) | Profile system Phases 1–3; group-aware contact templates; allGroups default for all new automation items; profiles/ gitignored |
-| `0.1.13` | 2026-05-11 | In progress | Legacy client import wizard (Wrayth, Genie, Frostbite); Genie presets.cfg → custom theme; profile-aware import; import name blanking; Genie /i flag fix; highlight sound playback (no companion trigger); trigger WAV sound support; trigger action type dropdown + VarPicker dropdown; WebKit color swatch fix; numpad key detection; command/alias echo to main stream; Debug Fires tab; B33 virtual scrolling (react-virtuoso, ~50 DOM rows instead of 2000, eliminates combat lag); B34/B37 stream ID raw-case preservation (clearStream/pushStream/stream-text all use exact script capitalization); B35 text-window padding removed (flush scroller, compass alignment, height estimation fix); B36 scroll-following full rewrite (followOutput owns auto-scroll via Virtuoso internal height map; totalListHeightChanged fine-correction pass; scroll handler re-pin-only; onWheel/keyboard-only unpin; suppressUnpinRef covers followOutput events; clearLines resets pin); B38 last-line clip fix (margin-bottom on .text-line collapsed through wrapper — moved to padding-bottom on .text-line-wrap so ResizeObserver captures it); panel tab right-click Clear; stream title attribute used as display label; B39 stream panel re-pin fix (handleScroll was unpin-only — scrolling back to bottom now re-pins); Performance Pass: chip-pulse animation filter:brightness→opacity (eliminates Recalculate Style cost during RT/CT); TimerDisplay isolated as memo'd component (100ms interval ticks no longer re-render GameWindow); suppressUnpinRef bool+timer replaced with suppressUntilRef timestamp (eliminates clearTimeout+setTimeout churn — 75% reduction in timer scheduling overhead); trigger engine fastLower pre-filter (substring check before regex.exec on every incoming line — mirrors highlight engine optimization); toolbar Disconnect button red when connected, green when disconnected; B40 Raw XML tab scroll lock fixed — stable key offset (rawBaseRef+i) prevents content shifts when rawXmlBufRef rolls over, matching the B14 pattern from the Events tab |
+| `0.3.0` | 2026-05-12 | In progress | Release B — Lich Visibility: hybrid map system (Lich image view + Genie SVG graph, zone-by-zone, direct-connect mode, persistence via _shared.yaml, generation counter cancellation, zoom buttons, cross-zone diamonds, orphan legend, label default off, dragRef null-deref fixes, null wayto/description guards, computeFit NaN guard, Genie load race fix, map file selector dynamic scan + sequence sort + mtime tiebreaker) |
+| `0.1.13` | 2026-05-11 | Released (pre-release) | Legacy client import wizard (Wrayth, Genie, Frostbite); Genie presets.cfg → custom theme; profile-aware import; import name blanking; Genie /i flag fix; highlight sound playback (no companion trigger); trigger WAV sound support; trigger action type dropdown + VarPicker dropdown; WebKit color swatch fix; numpad key detection; command/alias echo to main stream; Debug Fires tab; B33 virtual scrolling (react-virtuoso, ~50 DOM rows instead of 2000, eliminates combat lag); B34/B37 stream ID raw-case preservation (clearStream/pushStream/stream-text all use exact script capitalization); B35 text-window padding removed (flush scroller, compass alignment, height estimation fix); B36 scroll-following full rewrite (followOutput owns auto-scroll via Virtuoso internal height map; totalListHeightChanged fine-correction pass; scroll handler re-pin-only; onWheel/keyboard-only unpin; suppressUnpinRef covers followOutput events; clearLines resets pin); B38 last-line clip fix (margin-bottom on .text-line collapsed through wrapper — moved to padding-bottom on .text-line-wrap so ResizeObserver captures it); panel tab right-click Clear; stream title attribute used as display label; B39 stream panel re-pin fix (handleScroll was unpin-only — scrolling back to bottom now re-pins); Performance Pass: chip-pulse animation filter:brightness→opacity (eliminates Recalculate Style cost during RT/CT); TimerDisplay isolated as memo'd component (100ms interval ticks no longer re-render GameWindow); suppressUnpinRef bool+timer replaced with suppressUntilRef timestamp (eliminates clearTimeout+setTimeout churn — 75% reduction in timer scheduling overhead); trigger engine fastLower pre-filter (substring check before regex.exec on every incoming line — mirrors highlight engine optimization); toolbar Disconnect button red when connected, green when disconnected; B40 Raw XML tab scroll lock fixed — stable key offset (rawBaseRef+i) prevents content shifts when rawXmlBufRef rolls over, matching the B14 pattern from the Events tab |
 
 ---
 
@@ -944,26 +952,56 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 
 ---
 
-### Release B — "Lich Visibility" (v0.3)
+### Release B — "Lich Visibility" (v0.3) ✅
 **Theme: See into Lich from the client for the first time. File system reads only — no new dependencies.**
 
-#### Auto-Detect Lich Map Directory
-- [ ] When Lich path is configured and known, probe `{LichDir}/data/DR/` for XML map files on first connect
-- [ ] Offer the detected directory as the default map directory — user can still override
-- [ ] If multiple map directories exist (e.g. data/DR/ and data/GS/), list them for selection
-- [ ] Eliminates the current manual "select folder" step for all Lich users
+#### Lich JSON Map System *(exceeded original scope — replaced XML auto-detect)*
+- [x] Discovered that Lich uses `data/DR/map-*.json` (not XML) as its primary map database
+- [x] `find-lich-map-file` IPC handler: finds the most recently modified `map-*.json` in `data/DR/` and returns its path + `maps/` image directory
+- [x] `read-map-image` IPC handler: reads map image files (GIF/PNG) as base64 for renderer
+- [x] MapPanel fully rewritten — loads 13MB JSON once, builds title/image/room indexes in renderer
+- [x] Rooms matched by title + description (same normalized approach as XML maps; Simutronics room# is unrelated to Lich IDs)
+- [x] Renders actual Lich map images (GIF/PNG from `maps/`) with SVG overlay rects for rooms
+- [x] Current room highlighted green with pulse animation; adjacent rooms amber; selected blue
+- [x] Pan/zoom (wheel + drag), re-centers on current room automatically on zone change
+- [x] Room detail panel: title, description, exits (clickable), BFS walk button
+- [x] Search: type-ahead across all 18 000+ rooms by title
+- [x] Zero configuration for the user — auto-derives from `lichPath` in Advanced Settings
 
 #### Script Browser Panel
-- [ ] New main-process IPC handler: `list-lich-scripts` — returns `.lic` filenames from `{LichDir}/scripts/` and `{LichDir}/scripts/custom/`
-- [ ] New read-only panel or modal: "Lich Scripts" — searchable/filterable list of available scripts
-- [ ] Clicking a script name copies `.scriptname` to the command bar (ready to send)
-- [ ] Shows script source (core vs. custom) and last-modified date
+- [x] `list-lich-scripts` IPC handler: scans `scripts/custom/` (custom) then `scripts/` (core) for `.lic` files with mtime
+- [x] Scripts modal: searchable, filter tabs (All / Custom / Core), last-modified date
+- [x] Clicking a script puts `;scriptname` in the command bar via `setCommand` state (not direct DOM write)
+- [x] Source badge: custom = accent color, core = dimmed
 
 #### YAML Profile Viewer
-- [ ] New main-process IPC handler: `read-lich-profile` — reads a specific `{LichDir}/scripts/profiles/*.yaml` file
-- [ ] New modal accessible from toolbar: "Lich Config" — lists profile files for known characters; click to view formatted YAML in a read-only code block
-- [ ] No write access in this release
-- [ ] Syntax highlighting for YAML (lightweight — key/string color differentiation at minimum)
+- [x] `list-lich-profiles` IPC handler: lists `.yaml`/`.yml` files from `scripts/profiles/`
+- [x] Profiles modal: left panel = profile list, right panel = read-only YAML with syntax highlighting
+- [x] Syntax highlighting: keys (blue), strings (green), booleans/numbers (orange), comments (dimmed)
+- [x] No write access in this release
+
+#### Hybrid Map System — Graph View (Phase 1: Zone-by-Zone)
+- [ ] Split MapPanel into three files: `MapPanel.tsx` (shared state + toolbar), `MapImageView.tsx` (extracted current renderer), `MapGraphView.tsx` (new graph renderer)
+- [ ] Genie maps folder picker in map panel toolbar (graph mode only); stored as `lichborne.genieMapsDir`
+- [ ] Load + index all Genie XML zone files: `Map<zoneName, GenieZone>` with nodes, positions, colors, notes
+- [ ] Cross-reference builder: match Lich rooms to Genie nodes by `title + description`; produce `Map<lichId, GenieAugment>` (genieId, zoneName, x, y, z, color, note)
+- [ ] Orphan tracking: Genie nodes with no Lich match kept as `Map<zoneName, GenieNode[]>` — shown as `?` nodes in graph view
+- [ ] View mode toggle in toolbar: `Image` / `Graph`; persisted to localStorage
+- [ ] Graph renderer: SVG node graph using Genie `(x, y)` positions; arc lines from Lich `wayto` edges (both endpoints must have augments in current zone); zone auto-switch on room change
+- [ ] Node styling: Genie color for matched rooms; dashed border + `?` badge for orphan Genie nodes; current room pulse (green); adjacent rooms (amber); selected (blue)
+- [ ] Graph mode navigation: click = select + show detail; double-click = BFS walk via Lich `wayto`
+- [ ] Room detail panel in graph mode: Lich title, description, exits (from wayto), Genie ID + zone shown as metadata, walk button
+
+#### Hybrid Map System — World Stitching (Phase 2)
+- [ ] Zone offset algorithm: BFS from "The Crossing" as world origin `(0,0)`; compute each zone's global offset from cross-zone Lich `wayto` edges; average conflicting offsets weighted by connection count
+- [ ] Isolated zones (no cross-zone Lich connections): placed in a labeled grid off to the side of the main world
+- [ ] World view toggle (sub-mode of Graph): renders all zones in single SVG coordinate space using `zone.globalOffset + node.localPos`
+- [ ] Viewport culling: only render nodes within current SVG viewport bounds (performance for 18k+ nodes)
+- [ ] Zone label overlays at zone centroids (faint, non-interactive)
+- [ ] Seamless travel: camera pans continuously, no zone-switch flash
+
+#### Release B — Post-release fixes
+- [x] B41: `onSendCommand` in LichScriptsPanel was writing to `inputRef.current.value` (bypassed React controlled input) — fixed to call `setCommand(cmd)` instead
 
 ---
 

@@ -17,7 +17,7 @@ It connects through [Lich5](https://github.com/elanthia-online/lich-5) (recommen
 - **Your settings follow you** — every panel move, highlight tweak, and contact update saves automatically. Restart the client, switch characters, move to a new machine — everything is exactly where you left it
 - **Groups & Modes** — organize your highlights, triggers, macros, and contacts into groups. Switch modes from the toolbar and everything updates at once. One click to go from hunting mode to town mode
 - **Contacts that know context** — tag player names with colors, prefixes, and notes. Their name lights up everywhere it appears in game text. Enemy highlighting only in PVP mode, friend colors only in town — contacts respect your active mode
-- **Maps built in** — loads the same XML zone files that [Genie](https://github.com/elanthia-online/genie-client) uses. The map follows you as you move, click exits to walk, or use the pathfinder to go anywhere
+- **Two map views** — an Image view that displays Lich's built-in map artwork with your current room highlighted, and a Graph view that renders Genie XML zone files as a live SVG node graph. The map follows you as you move, click any node to walk there, or use the pathfinder to go anywhere. Works without Lich too — point it at your Genie maps folder and browse zones directly
 - **Auto-updates** — when a new version is ready, Lichborne tells you and installs it with one click. No re-downloading from scratch
 
 ---

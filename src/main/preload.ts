@@ -91,6 +91,18 @@ contextBridge.exposeInMainWorld('api', {
   readFile: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  findLichMapFile: (lichPath: string): Promise<{ jsonPath: string; mapsDir: string } | null> =>
+    ipcRenderer.invoke('find-lich-map-file', lichPath),
+
+  readMapImage: (mapsDir: string, imageName: string): Promise<string | null> =>
+    ipcRenderer.invoke('read-map-image', mapsDir, imageName),
+
+  listLichScripts: (lichPath: string): Promise<{ name: string; source: 'core' | 'custom'; lastModified: number }[]> =>
+    ipcRenderer.invoke('list-lich-scripts', lichPath),
+
+  listLichProfiles: (lichPath: string): Promise<string[]> =>
+    ipcRenderer.invoke('list-lich-profiles', lichPath),
+
   // ── Profile I/O ─────────────────────────────────────────────────────────────
   readSharedProfile:    ():                                        Promise<unknown | null> => ipcRenderer.invoke('profile:read-shared'),
   writeSharedProfile:   (data: unknown):                          Promise<void>           => ipcRenderer.invoke('profile:write-shared', data),

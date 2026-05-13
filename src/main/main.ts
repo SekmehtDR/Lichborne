@@ -181,6 +181,68 @@ ipcMain.handle('read-file', (_event, filePath: string) => {
   try { return fs.readFileSync(filePath, 'utf-8') } catch { return null }
 })
 
+// ── Lich file-system helpers ──────────────────────────────────────────────────
+
+function lichDirFrom(lichPath: string): string {
+  return path.dirname(lichPath)
+}
+
+ipcMain.handle('find-lich-map-file', (_e, lichPath: string): { jsonPath: string; mapsDir: string } | null => {
+  if (!lichPath) return null
+  const lichDir = lichDirFrom(lichPath)
+  const mapsDir = path.join(lichDir, 'maps')
+  // Scan all subdirs under data/ for the highest-sequence map-*.json
+  const dataRoot = path.join(lichDir, 'data')
+  try {
+    const gameDirs = fs.readdirSync(dataRoot, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => path.join(dataRoot, e.name))
+    const candidates = gameDirs.flatMap(dir => {
+      try {
+        return fs.readdirSync(dir).flatMap(f => {
+          const m = /^map-(\d+)\.json$/i.exec(f)
+          if (!m) return []
+          const fp = path.join(dir, f)
+          try { return [{ fp, seq: parseInt(m[1], 10), mtime: fs.statSync(fp).mtimeMs }] } catch { return [] }
+        })
+      } catch { return [] }
+    }).sort((a, b) => b.seq - a.seq || b.mtime - a.mtime)
+    if (candidates.length > 0) return { jsonPath: candidates[0].fp, mapsDir }
+  } catch {}
+  return null
+})
+
+ipcMain.handle('read-map-image', (_e, mapsDir: string, imageName: string): string | null => {
+  try { return fs.readFileSync(path.join(mapsDir, imageName)).toString('base64') } catch { return null }
+})
+
+ipcMain.handle('list-lich-scripts', (_e, lichPath: string): { name: string; source: 'core' | 'custom'; lastModified: number }[] => {
+  if (!lichPath) return []
+  const lichDir = lichDirFrom(lichPath)
+  const results: { name: string; source: 'core' | 'custom'; lastModified: number }[] = []
+  for (const { dir, source } of [
+    { dir: path.join(lichDir, 'scripts', 'custom'), source: 'custom' as const },
+    { dir: path.join(lichDir, 'scripts'),           source: 'core'   as const },
+  ]) {
+    try {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (!e.isFile() || !e.name.toLowerCase().endsWith('.lic')) continue
+        const stat = fs.statSync(path.join(dir, e.name))
+        results.push({ name: e.name.replace(/\.lic$/i, ''), source, lastModified: stat.mtimeMs })
+      }
+    } catch {}
+  }
+  return results
+})
+
+ipcMain.handle('list-lich-profiles', (_e, lichPath: string): string[] => {
+  if (!lichPath) return []
+  const profileDir = path.join(lichDirFrom(lichPath), 'scripts', 'profiles')
+  try {
+    return fs.readdirSync(profileDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
+  } catch { return [] }
+})
+
 // ── Profile IPC ───────────────────────────────────────────────────────────────
 ipcMain.handle('profile:read-shared',               ()                               => readSharedProfile())
 ipcMain.handle('profile:write-shared',              (_e, data: unknown)              => writeSharedProfile(data))
