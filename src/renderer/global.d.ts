@@ -10,6 +10,7 @@ declare global {
       onConnectionStatus: (cb: (status: { connected: boolean; message: string; clean?: boolean }) => void) => () => void
       onError: (cb: (message: string) => void) => () => void
       onRawXml: (cb: (line: string) => void) => () => void
+      debugPanelToggle: (open: boolean) => void
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       discoverLichPaths: (currentRuby: string, currentLich: string) => Promise<{
         rubyPath: string | null; lichPath: string | null

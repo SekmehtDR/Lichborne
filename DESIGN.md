@@ -271,13 +271,39 @@ When the connection drops for any reason (user-initiated QUIT, server timeout, d
 
 **Toolbar button**: changes from `Disconnect` → `Login` (styled in accent color). Clicking `Login` calls `onDisconnect` to return to the login screen.
 
-**Debug panel**: auto-opens only on *unexpected* disconnects (network drop, Lich crash). Clean disconnects (QUIT command, Disconnect button) do not open it.
+**Debug panel**: auto-opens only on *unexpected* disconnects (network drop, Lich crash). Clean disconnects (QUIT command, Disconnect button) do not open it. When the user opens the Debug panel, the renderer sends a `debug-panel-toggle` IPC signal to main; main gates the `raw-xml` channel behind that flag so raw lines are never serialized over IPC during normal play.
 
 **Clean vs unexpected detection**: a `cleanDisconnect` flag in `main.ts` is set when: (1) `quit` or `exit` is sent via `SEND_COMMAND` IPC, (2) the Disconnect button fires the `DISCONNECT` IPC handler, or (3) the parser sees `<exit/>` (direct connection). The flag is read and reset in `connection.on('disconnect')` and passed as `clean: boolean` in the status payload — no cross-channel race possible.
 
 **"Connection closed." message**: injected into the main text window via a `useEffect` on `dropped` (fires after all pending game text has rendered), with a blank line above and a `[HH:MM]` timestamp — matching Genie's behavior.
 
 **State**: a `dropped` boolean in `GameWindow` is set `true` on any disconnect. The toolbar status text changes color (accent) to make the disconnected state visually obvious.
+
+---
+
+### 2.12 IPC Event Dispatch Pipeline
+
+The path from raw TCP bytes to rendered game text is:
+
+```
+TCP chunk → LichConnection.flush() → 'line' event (one per \n)
+  → main.ts line handler:
+      1. [debug only] send raw line on 'raw-xml' channel
+      2. parser.parse(line) → GameEvent[]
+      3. side-effects: shell.openExternal (launch-url), cleanDisconnect flag (game-exit)
+      4. filter: drop 'launch-url' and 'unknown' event types
+      5. push remaining events into eventQueue
+      6. scheduleFlush() — setImmediate batches across the full TCP read
+  → one 'game-event' IPC send per server tick → renderer
+```
+
+**Event batching**: `scheduleFlush()` in `main.ts` uses `setImmediate` so all lines from a single TCP read (which Node.js delivers as one I/O event) are coalesced into a single `webContents.send`. During connection burst (~40–60 lines) this reduces IPC round-trips from one-per-line to one total.
+
+**`raw-xml` channel gating**: raw lines are only sent over the `raw-xml` IPC channel when the Debug panel is open. The renderer sends `debug-panel-toggle: true/false` to main when the panel opens or closes; main stores `debugPanelOpen` and gates the send on it. Zero IPC overhead during normal play.
+
+**`unknown` event filtering**: `StormFrontParser` emits `UnknownEvent` for tags it does not recognize — these carry no display content and the renderer ignores them. They are dropped in the main process before the IPC send so they never cross the boundary.
+
+**LichBridge intercept seam** (Release C): the line handler is the correct interception point for `;listall` response suppression. The LichBridge module will inspect each line before `parser.parse()` is called, pull off lines that match the `SCRIPT_LIST_PATTERN`, and prevent them from reaching the parser (which would emit them as `stream-text` events on `main`).
 
 ---
 

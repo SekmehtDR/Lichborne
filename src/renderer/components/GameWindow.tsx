@@ -410,6 +410,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   useEffect(() => {
     showDebugRef.current = showDebug
+    window.api.debugPanelToggle(showDebug)
     if (showDebug) {
       setDebugEvents([...debugEventsBufRef.current])
       setRawXmlLines([...rawXmlBufRef.current])

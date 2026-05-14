@@ -6,7 +6,7 @@ import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
-import type { LoginCredentials } from '../shared/types'
+import type { GameEvent, LoginCredentials } from '../shared/types'
 
 const CH = {
   LOGIN:             'login',
@@ -23,20 +23,40 @@ const connection = new ConnectionManager()
 const parser = new StormFrontParser()
 let cleanDisconnect = false
 let connected = false
+let debugPanelOpen = false
+
+// Coalesce parsed game events across all lines received in a single I/O tick.
+// setImmediate fires after the current TCP read drains, so all lines from one
+// server response arrive in one IPC call instead of one per line.
+let eventQueue: GameEvent[] = []
+let flushScheduled = false
+
+function scheduleFlush() {
+  if (flushScheduled) return
+  flushScheduled = true
+  setImmediate(() => {
+    if (eventQueue.length > 0) {
+      mainWindow?.webContents.send(CH.GAME_EVENT, eventQueue)
+      eventQueue = []
+    }
+    flushScheduled = false
+  })
+}
 
 connection.on('status', (msg: string) => {
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
 })
 connection.on('line', (line: string) => {
-  mainWindow?.webContents.send(CH.RAW_XML, line)
+  if (debugPanelOpen) mainWindow?.webContents.send(CH.RAW_XML, line)
   const events = parser.parse(line)
   for (const evt of events) {
     if (evt.type === 'launch-url') shell.openExternal(evt.url)
     if (evt.type === 'game-exit') cleanDisconnect = true
   }
-  const rendererEvents = events.filter(e => e.type !== 'launch-url')
-  if (rendererEvents.length > 0) {
-    mainWindow?.webContents.send(CH.GAME_EVENT, rendererEvents)
+  const filtered = events.filter(e => e.type !== 'launch-url' && e.type !== 'unknown')
+  if (filtered.length > 0) {
+    eventQueue.push(...filtered)
+    scheduleFlush()
   }
 })
 connection.on('disconnect', () => {
@@ -257,6 +277,7 @@ ipcMain.handle('profile:read-character',            (_e, character: string)     
 ipcMain.handle('profile:write-character',           (_e, character: string, data: unknown) => writeCharacterProfile(character, data))
 ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
 
+ipcMain.on('debug-panel-toggle', (_e, open: boolean) => { debugPanelOpen = open })
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 

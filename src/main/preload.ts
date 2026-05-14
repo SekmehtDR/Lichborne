@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('updater-log', listener)
   },
 
+  debugPanelToggle: (open: boolean) => ipcRenderer.send('debug-panel-toggle', open),
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 
