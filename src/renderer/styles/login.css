@@ -309,8 +309,10 @@
   cursor: not-allowed;
 }
 
-.checkbox-label-lich {
-  margin-bottom: 2px;
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .checkbox-label {

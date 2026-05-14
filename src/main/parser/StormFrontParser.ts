@@ -688,6 +688,10 @@ export class StormFrontParser {
         // doesn't bleed into the next server turn (e.g. crystal whisper bleeding
         // into subsequent movement messages, or orphaned <color> entries from a
         // Lich script that forgot to close its color tag).
+        // boldDepth is also reset here because a Lich script outputting a literal '<'
+        // (e.g. "health: 60 < 65") can cause <popBold/> to be swallowed by the
+        // tokenizer, leaving boldDepth stuck for the rest of the session.
+        this.boldDepth     = 0
         this.currentPreset = undefined
         this.colorStack    = []
         this.linkCmd       = undefined

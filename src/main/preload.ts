@@ -103,6 +103,11 @@ contextBridge.exposeInMainWorld('api', {
   listLichProfiles: (lichPath: string): Promise<string[]> =>
     ipcRenderer.invoke('list-lich-profiles', lichPath),
 
+  // ── Password store ───────────────────────────────────────────────────────────
+  savePassword:   (account: string, password: string): Promise<void>          => ipcRenderer.invoke('password:save',   account, password),
+  loadPassword:   (account: string):                   Promise<string | null> => ipcRenderer.invoke('password:load',   account),
+  deletePassword: (account: string):                   Promise<void>          => ipcRenderer.invoke('password:delete', account),
+
   // ── Profile I/O ─────────────────────────────────────────────────────────────
   readSharedProfile:    ():                                        Promise<unknown | null> => ipcRenderer.invoke('profile:read-shared'),
   writeSharedProfile:   (data: unknown):                          Promise<void>           => ipcRenderer.invoke('profile:write-shared', data),

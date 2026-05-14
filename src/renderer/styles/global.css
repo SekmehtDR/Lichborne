@@ -117,7 +117,7 @@ body {
 .tp-list-item:hover .list-item-delete,
 .cp-list-item:hover .list-item-delete { opacity: 1; }
 
-.list-item-delete:hover { color: #e05050; background: rgba(224,80,80,0.12); }
+.list-item-delete:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); }
 
 /* ── Update banner ──────────────────────────────────────────────────────── */
 
@@ -127,37 +127,37 @@ body {
   align-items: center;
   gap: 10px;
   padding: 6px 14px;
-  background: #1a2e1a;
-  border-bottom: 1px solid #2d5a2d;
-  color: #7dbb7d;
+  background: color-mix(in srgb, var(--color-success) 12%, var(--bg-base));
+  border-bottom: 1px solid color-mix(in srgb, var(--color-success) 35%, var(--bg-base));
+  color: color-mix(in srgb, var(--color-success) 70%, white);
   font-size: 0.8rem;
 }
 
 .update-btn {
   padding: 3px 10px;
   border-radius: 4px;
-  border: 1px solid #2d5a2d;
-  background: #1f3a1f;
-  color: #7dbb7d;
+  border: 1px solid color-mix(in srgb, var(--color-success) 35%, var(--bg-base));
+  background: color-mix(in srgb, var(--color-success) 15%, var(--bg-base));
+  color: color-mix(in srgb, var(--color-success) 70%, white);
   font-size: 0.78rem;
   cursor: pointer;
   font-family: inherit;
 }
 
-.update-btn:hover { background: #284a28; }
+.update-btn:hover { background: color-mix(in srgb, var(--color-success) 20%, var(--bg-base)); }
 
 .update-btn--install {
-  border-color: #4caf50;
-  color: #4caf50;
+  border-color: var(--color-success);
+  color: var(--color-success);
 }
 
-.update-btn--install:hover { background: #1f4a1f; }
+.update-btn--install:hover { background: color-mix(in srgb, var(--color-success) 18%, var(--bg-base)); }
 
 .update-dismiss {
   margin-left: auto;
   background: none;
   border: none;
-  color: #7dbb7d;
+  color: color-mix(in srgb, var(--color-success) 70%, white);
   font-size: 0.85rem;
   cursor: pointer;
   padding: 2px 6px;
@@ -172,25 +172,25 @@ body {
   display: flex;
   justify-content: flex-end;
   padding: 3px 10px;
-  background: #111;
-  border-bottom: 1px solid #1e1e1e;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border-faint);
 }
 
 .update-btn-check {
   background: none;
   border: none;
-  color: #555;
+  color: var(--text-dim);
   font-size: 0.72rem;
   cursor: pointer;
   font-family: inherit;
   padding: 2px 4px;
 }
 
-.update-btn-check:hover:not(:disabled) { color: #7dbb7d; }
+.update-btn-check:hover:not(:disabled) { color: var(--color-success); }
 .update-btn-check:disabled { opacity: 0.4; cursor: default; }
 
 .update-up-to-date {
-  color: #555;
+  color: var(--text-dim);
   font-size: 0.72rem;
   margin-right: 8px;
 }

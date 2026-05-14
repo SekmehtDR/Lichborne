@@ -77,15 +77,15 @@
 }
 
 .btn-debug--active {
-  border-color: #569cd6;
-  color: #9cdcfe;
-  background: #1a2a3a;
+  border-color: var(--link-color);
+  color: color-mix(in srgb, var(--link-color) 60%, white);
+  background: color-mix(in srgb, var(--link-color) 10%, transparent);
 }
 
 .btn-map--active {
   border-color: var(--accent-dim);
   color: var(--accent);
-  background: #1a1a0e;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .btn-lich-scripts--active,
@@ -102,19 +102,19 @@
 
 .btn-disconnect:hover {
   border-color: var(--color-danger);
-  color: #f09090;
+  color: color-mix(in srgb, var(--color-danger) 60%, white);
   background: var(--color-danger-bg);
 }
 
 .btn-disconnect--login {
-  border-color: #3a8a3a;
+  border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
   color: var(--color-success);
-  background: #0d1f0d;
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
 }
 .btn-disconnect--login:hover {
   border-color: var(--color-success);
-  color: #80d880;
-  background: #122012;
+  color: color-mix(in srgb, var(--color-success) 60%, white);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 
 /* ── Context menu ────────────────────────────────────────────────── */
@@ -193,7 +193,7 @@
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(18, 16, 10, 0.93);
+  background: color-mix(in srgb, var(--bg-base) 93%, transparent);
   border: 1px solid var(--accent-bg);
   color: var(--accent);
   font-size: 0.75rem;
@@ -207,31 +207,31 @@
 }
 
 .scroll-anchor-badge:hover {
-  background: rgba(40, 32, 8, 0.97);
+  background: color-mix(in srgb, var(--accent-bg) 97%, transparent);
   border-color: var(--accent-dim);
-  color: #e8c850;
+  color: color-mix(in srgb, var(--accent) 80%, white);
 }
 
 .scroll-anchor-badge--warn {
-  border-color: #c0622a;
-  color: #e07840;
+  border-color: color-mix(in srgb, var(--preset-expiry) 70%, transparent);
+  color: var(--preset-expiry);
 }
 
 .scroll-anchor-badge--warn:hover {
-  background: rgba(40, 18, 8, 0.97);
-  border-color: #e07840;
-  color: #e89060;
+  background: color-mix(in srgb, var(--preset-expiry) 10%, transparent);
+  border-color: var(--preset-expiry);
+  color: color-mix(in srgb, var(--preset-expiry) 70%, white);
 }
 
 .scroll-anchor-badge--danger {
-  border-color: #a02020;
-  color: #e04040;
+  border-color: var(--color-danger-dim);
+  color: var(--color-danger);
 }
 
 .scroll-anchor-badge--danger:hover {
-  background: rgba(40, 8, 8, 0.97);
-  border-color: #e04040;
-  color: #f06060;
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  border-color: var(--color-danger);
+  color: color-mix(in srgb, var(--color-danger) 60%, white);
 }
 
 .panel-divider {

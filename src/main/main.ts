@@ -5,6 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
+import { savePassword, loadPassword, deletePassword } from './passwords'
 import type { LoginCredentials } from '../shared/types'
 
 const CH = {
@@ -92,6 +93,7 @@ function createWindow() {
 
 ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
   try {
+    parser.reset()
     if (creds.useLich) {
       await connection.connectViaLich(creds)
     } else {
@@ -242,6 +244,11 @@ ipcMain.handle('list-lich-profiles', (_e, lichPath: string): string[] => {
     return fs.readdirSync(profileDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
   } catch { return [] }
 })
+
+// ── Password IPC ──────────────────────────────────────────────────────────────
+ipcMain.handle('password:save',   (_e, account: string, password: string) => savePassword(account, password))
+ipcMain.handle('password:load',   (_e, account: string)                   => loadPassword(account))
+ipcMain.handle('password:delete', (_e, account: string)                   => deletePassword(account))
 
 // ── Profile IPC ───────────────────────────────────────────────────────────────
 ipcMain.handle('profile:read-shared',               ()                               => readSharedProfile())

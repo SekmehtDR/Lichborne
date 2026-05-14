@@ -67,7 +67,7 @@
 }
 
 .injuries-clear {
-  color: var(--color-muted, #888);
+  color: var(--text-muted);
   font-style: italic;
   padding: 4px 0;
 }
@@ -78,7 +78,7 @@
 
 .injuries-section-label {
   font-weight: bold;
-  color: var(--color-muted, #aaa);
+  color: var(--text-muted);
   font-size: 0.8em;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -93,17 +93,17 @@
   margin-bottom: 2px;
 }
 
-.injuries-part-name { color: var(--color-text, #ccc); }
+.injuries-part-name { color: var(--text-secondary); }
 .injuries-part-severity { font-size: 0.85em; font-style: italic; }
 
-.injury-wound-1 { background: rgba(200, 170, 0, 0.15); }
-.injury-wound-1 .injuries-part-severity { color: #c8aa00; }
+.injury-wound-1 { background: color-mix(in srgb, var(--injury-wound1-color) 15%, transparent); }
+.injury-wound-1 .injuries-part-severity { color: var(--injury-wound1-color); }
 
-.injury-wound-2 { background: rgba(210, 100, 0, 0.18); }
-.injury-wound-2 .injuries-part-severity { color: #d26400; }
+.injury-wound-2 { background: color-mix(in srgb, var(--injury-wound2-color) 18%, transparent); }
+.injury-wound-2 .injuries-part-severity { color: var(--injury-wound2-color); }
 
-.injury-wound-3 { background: rgba(200, 30, 30, 0.2); }
-.injury-wound-3 .injuries-part-severity { color: #c81e1e; }
+.injury-wound-3 { background: color-mix(in srgb, var(--injury-wound3-color) 20%, transparent); }
+.injury-wound-3 .injuries-part-severity { color: var(--injury-wound3-color); }
 
 /* ============================================================
    Room panel
@@ -370,7 +370,7 @@
 }
 
 .exp-footer-sting {
-  color: #c0392b;
+  color: var(--color-danger);
   font-style: italic;
 }
 

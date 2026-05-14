@@ -241,7 +241,6 @@ export function parseWraythXml(xml: string): ImportResult {
     macros,
     aliases:           [],
     triggers:          [],
-    substitutionCount: stringsCount,   // Wrayth <strings> = text substitution rules
     unsupportedCount,
     ...(scriptsCount          > 0 ? { scriptsCount }          : {}),
     ...(stringsCount          > 0 ? { stringsCount }          : {}),

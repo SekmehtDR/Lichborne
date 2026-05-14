@@ -22,8 +22,8 @@ const PART_LABELS: Record<string, string> = {
   nsys: 'Nerves',
 }
 
-function woundLevel(height: number, width: number, name: string): 0 | 1 | 2 | 3 {
-  if (height === 0 && width === 0) return 0
+function woundLevel(id: string, name: string): 0 | 1 | 2 | 3 {
+  if (name === id) return 0
   const m = name.match(/(\d+)$/)
   return m ? (Math.min(3, parseInt(m[1], 10)) as 0 | 1 | 2 | 3) : 1
 }
@@ -32,7 +32,7 @@ const WOUND_CLASS = ['', 'injury-wound-1', 'injury-wound-2', 'injury-wound-3'] a
 const WOUND_LABEL = ['', 'Light', 'Moderate', 'Severe'] as const
 
 export default function InjuriesPanel({ parts }: Props) {
-  const injured = Object.entries(parts).filter(([, p]) => p.height > 0 || p.width > 0)
+  const injured = Object.entries(parts).filter(([id, p]) => p.name !== id)
 
   return (
     <div className="injuries-panel">
@@ -42,7 +42,7 @@ export default function InjuriesPanel({ parts }: Props) {
         SECTIONS.map(({ label, ids }) => {
           const woundedInSection = ids.filter(id => {
             const p = parts[id]
-            return p && (p.height > 0 || p.width > 0)
+            return p && p.name !== id
           })
           if (woundedInSection.length === 0) return null
           return (
@@ -50,7 +50,7 @@ export default function InjuriesPanel({ parts }: Props) {
               <div className="injuries-section-label">{label}</div>
               {woundedInSection.map(id => {
                 const p = parts[id]
-                const lvl = woundLevel(p.height, p.width, p.name)
+                const lvl = woundLevel(id, p.name)
                 return (
                   <div key={id} className={`injuries-part ${WOUND_CLASS[lvl]}`}>
                     <span className="injuries-part-name">{PART_LABELS[id] ?? id}</span>

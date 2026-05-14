@@ -7,8 +7,9 @@ const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
 const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
 const DEFAULT_LICH_PORT = 11024
 
-const ADV_KEY     = 'lichborne.advancedSettings'
-const ACCOUNT_KEY = 'lichborne.account'
+const ADV_KEY      = 'lichborne.advancedSettings'
+const ACCOUNT_KEY  = 'lichborne.account'
+const REMEMBER_KEY = 'lichborne.rememberPassword'
 
 interface AdvancedSettings {
   useLich: boolean
@@ -69,6 +70,7 @@ export default function LoginScreen({ onConnected }: Props) {
   const [account, setAccount] = useState(() => localStorage.getItem(ACCOUNT_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [character, setCharacter] = useState('')
+  const [rememberPassword, setRememberPassword] = useState(() => localStorage.getItem(REMEMBER_KEY) === 'true')
 
   const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
   const { useLich, lichPath, rubyPath, lichPort, portLocked, lichMode, modeLocked, lichDelay, hideLichWindow, showAdvanced } = adv
@@ -89,8 +91,21 @@ export default function LoginScreen({ onConnected }: Props) {
   type DiscoveryResult = Awaited<ReturnType<typeof window.api.discoverLichPaths>> | null
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
 
-  useEffect(() => { saveAdvanced(adv) }, [adv])
+  useEffect(() => {
+    saveAdvanced(adv)
+    // Write _shared.yaml so a second instance opening concurrently gets current
+    // settings — separate Electron processes can't share localStorage (LevelDB lock).
+    const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
+    return () => clearTimeout(t)
+  }, [adv])
   useEffect(() => { document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}` }, [])
+
+  useEffect(() => {
+    if (!account) return
+    let cancelled = false
+    window.api.loadPassword(account).then(pw => { if (!cancelled && pw !== null) setPassword(pw) })
+    return () => { cancelled = true }
+  }, [account])
 
   // Load _shared.yaml on startup → refresh login form with saved account and Lich settings
   useEffect(() => {
@@ -175,6 +190,10 @@ export default function LoginScreen({ onConnected }: Props) {
     if (!result.ok) {
       setError(result.error ?? 'Connection failed')
       setConnecting(false)
+    } else if (rememberPassword) {
+      window.api.savePassword(account, password)
+    } else {
+      window.api.deletePassword(account)
     }
   }
 
@@ -238,15 +257,31 @@ export default function LoginScreen({ onConnected }: Props) {
             />
           </label>
 
-          <label className="checkbox-label checkbox-label-lich">
-            <input
-              type="checkbox"
-              checked={useLich}
-              onChange={e => setAdv1('useLich', e.target.checked)}
-              disabled={connecting}
-            />
-            Connect via Lich (recommended)
-          </label>
+          <div className="checkbox-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={e => {
+                  const val = e.target.checked
+                  setRememberPassword(val)
+                  localStorage.setItem(REMEMBER_KEY, String(val))
+                }}
+                disabled={connecting}
+              />
+              Remember password
+            </label>
+
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={useLich}
+                onChange={e => setAdv1('useLich', e.target.checked)}
+                disabled={connecting}
+              />
+              Connect via Lich (recommended)
+            </label>
+          </div>
 
           <div className="advanced-toggle" onClick={() => !connecting && setAdv1('showAdvanced', !showAdvanced)}>
             {showAdvanced ? '▾' : '▸'} Advanced / Lich Settings
