@@ -89,6 +89,18 @@ Lichborne is a DragonRealms game client built for **real players** — from firs
 - **Discoverable** — new players should be able to configure the client without reading a manual
 - **Performant** — never drop game text, never lag a command
 
+**Product position:**
+
+Lichborne is not a general-purpose DR client that happens to support Lich. It is a purpose-built **display and configuration layer** that treats Lich as a first-class citizen. Lich owns all automation — scripts, variables, text substitution, conditional triggers, and training/combat routines. Lichborne owns what you see, hear, and configure visually.
+
+This distinction is the product's moat. Every other DR client (StormFront, Genie, Frostbite, Wrayth) treats Lich as an optional add-on. Lichborne is built around Lich as the assumed runtime — which means it can go deeper on rendering quality and Lich dashboard features than any client that has to work without Lich too.
+
+The two unique advantages no other client offers today:
+1. **Rendering depth** — modern themes with 100+ CSS variables, 16+ built-in themes including all 12 guild palettes, full accessibility suite, virtual scrolling, hybrid map (Lich image tiles + Genie SVG graph), and a display profile system that follows the player across reinstalls and machines.
+2. **Lich dashboard** (roadmap) — surfacing Lich's runtime state (running scripts, variables, YAML profiles, hook registry) directly in the UI. No other client has done this. It is the reason Lich users would choose Lichborne over Genie even for a setup they could script themselves.
+
+See Section 24 for the full Lich integration architecture and Section 25 for the release roadmap.
+
 ---
 
 ## 2. Terminology

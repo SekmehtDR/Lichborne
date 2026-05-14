@@ -77,7 +77,21 @@
 **Toolbar — Disconnect/Login button state colors ✅: button shows red border+text when connected (signals danger/exit) and green border+text when disconnected (draws attention to Login) ✅**
 **B40 — Raw XML tab scroll lock fix ✅: `rawXmlLines` buffer trimmed with `shift()` on overflow but used `key={i}` (index-based) — same root cause as B14; all DOM nodes shifted their content on trim, making the view scroll forward while pinned up; fixed with `rawBaseRef`/`prevRawLenRef` stable key offset in DebugPanel, matching the existing eventBaseRef pattern ✅**
 **Release A — "Honest Client" v0.2.0 ✅: Legacy client import wizard (Wrayth, Genie, Frostbite); 3-step modal; neutral ImportCandidate layer; per-client parsers; Genie presets.cfg → custom theme; profile-aware import ✅**
-**Release B — "Lich Visibility" v0.3.0 ✅: Lich JSON map system ✅; Script browser ✅; YAML profile viewer ✅; B41 setCommand fix ✅; Hybrid graph view (Genie augmentation, zone-by-zone) ✅**
+**Release B — "Lich Visibility" v0.3.x ✅: Lich JSON map system ✅; Script browser ✅; YAML profile viewer ✅; B41 setCommand fix ✅; Hybrid graph view (Genie augmentation, zone-by-zone) ✅; B52/B28/B42/B53 bug fixes ✅; password save (DPAPI) ✅; theme contrast + CSS wiring pass ✅**
+
+---
+
+## Next Target: Release C — "Lich Dashboard" (v0.4)
+
+**Theme:** Real-time Lich state surfaced in the UI. Introduces the `LichBridge` module.
+
+Key deliverables (full spec in Tracker.md Lich-Primary Roadmap and DESIGN.md §25.4–25.5):
+- `LichBridge` module in main process (FileReader, StreamParser, CommandInjector, SqliteReader stub)
+- Active Scripts Panel — live list of running Lich scripts with pause/abort controls
+- Script Palette — per-character configurable dot-command button strip in toolbar/panel
+- Script Feed improvements — per-stream color coding, visible clear button
+
+See the **Lich-Primary Roadmap** section below for the full Release C checklist.
 **B52 — boldDepth stuck after unescaped `<` in Lich script output ✅: `<pushBold/>60 < 65<popBold/>` — the tokenizer's `<[^>]*>` consumes ` 65<popBold/>` as one malformed tag, swallowing popBold and leaving boldDepth=1 for the rest of the session (all text bold/yellow). Fix 1: `boldDepth = 0` added to the prompt handler — prompts are frame boundaries, bold cannot survive one. Fix 2: `parser.reset()` called in the `CH.LOGIN` IPC handler so stuck state doesn't bleed into a new session after disconnect/reconnect ✅**
 **B28 — Advanced/Lich settings reset to defaults in second windows ✅: separate Electron processes cannot share localStorage due to LevelDB file locking; `_shared.yaml` is the correct cross-process store but was only written on a successful connect, so a second instance opening before any connection fell back to all defaults. Fix: `LoginScreen` `adv` effect now debounce-exports the shared profile (1s) whenever any advanced setting changes — YAML is always current for any concurrently-opened instance ✅**
 **B42 — Wrayth import wizard duplicate "Substitution rules" row ✅: `parseWraythXml` was setting both `substitutionCount: stringsCount` and `stringsCount` in its return — `substitutionCount` renders as "Substitution rules" and `stringsCount` renders as "Wrayth strings", producing two rows for the same `<strings>` block data. Fix: removed `substitutionCount` assignment from Wrayth parser (that field belongs to Genie/Frostbite substitution files); `countWraythBlock` logic verified correct with synthetic XML ✅**
@@ -110,7 +124,7 @@
 | `0.1.10` | 2026-05-09 | Released (pre-release) | B17: combat/swimming scroll-pin race fix (onWheel eager unpin); B18: auto-copy replaced with native Electron clipboard IPC; B19: Home/End keys work in automation text fields; B20: scroll pin fully fixed — no trim while unpinned (content at top stays visible), handleScroll only un-pins, badge/End re-pins and trims to MAX_LINES, hard cap at 6000 lines; tested stable at 3600+ new lines |
 | `0.1.11` | 2026-05-09 | Released (pre-release) | Map panel UI reorganization: two-bar chrome layout, legend as canvas overlay, current room label z-order fix, B30 custom theme map var fix; Profile System Phases 1–3: full YAML round-trip (export + import), shared profile pre-fills login form, character YAML restores all settings on login; new automations and contact templates default to allGroups: true; contact templates are now group-aware — styling toggles with mode switches |
 | `0.1.12` | 2026-05-09 | Released (pre-release) | Profile system Phases 1–3; group-aware contact templates; allGroups default for all new automation items; profiles/ gitignored |
-| `0.3.2` | 2026-05-13 | In progress | B52: boldDepth stuck after unescaped `<`; B28: advanced settings reset in second windows; B42: Wrayth import duplicate row; password save (safeStorage DPAPI, per-account, auto-fill); B53: injuries panel wound detection fixed (name attr, not height/width); theme contrast pass (16+ themes, invisible border-faint fixed); CSS wiring pass (panels/game/global.css hardcoded colors → CSS vars + color-mix); all dark themes bold text → #ffff00 (yellow, matching Genie default; light themes unchanged) |
+| `0.3.2` | 2026-05-13 | Released | B52: boldDepth stuck after unescaped `<`; B28: advanced settings reset in second windows; B42: Wrayth import duplicate row; password save (safeStorage DPAPI, per-account, auto-fill); B53: injuries panel wound detection fixed (name attr, not height/width); theme contrast pass (16+ themes, invisible border-faint fixed); CSS wiring pass (panels/game/global.css hardcoded colors → CSS vars + color-mix); all dark themes bold text → #ffff00 (yellow, matching Genie default; light themes unchanged) |
 | `0.3.1` | 2026-05-12 | Released | Release B bug fixes: room matching reworked (Lich ID from subtitle, direct lookup), Genie node matching improved (zone-qualified title fallback), cross-zone exits in detail panel, detail panel follows player, recenter works cross-zone, reload button, auto-reload on map download, mouse wheel zoom, map control focus fix, single recenter button |
 | `0.3.0` | 2026-05-12 | In progress | Release B — Lich Visibility: hybrid map system (Lich image view + Genie SVG graph, zone-by-zone, direct-connect mode, persistence via _shared.yaml, generation counter cancellation, zoom buttons, cross-zone diamonds, orphan legend, label default off, dragRef null-deref fixes, null wayto/description guards, computeFit NaN guard, Genie load race fix, map file selector dynamic scan + sequence sort + mtime tiebreaker) |
 | `0.1.13` | 2026-05-11 | Released (pre-release) | Legacy client import wizard (Wrayth, Genie, Frostbite); Genie presets.cfg → custom theme; profile-aware import; import name blanking; Genie /i flag fix; highlight sound playback (no companion trigger); trigger WAV sound support; trigger action type dropdown + VarPicker dropdown; WebKit color swatch fix; numpad key detection; command/alias echo to main stream; Debug Fires tab; B33 virtual scrolling (react-virtuoso, ~50 DOM rows instead of 2000, eliminates combat lag); B34/B37 stream ID raw-case preservation (clearStream/pushStream/stream-text all use exact script capitalization); B35 text-window padding removed (flush scroller, compass alignment, height estimation fix); B36 scroll-following full rewrite (followOutput owns auto-scroll via Virtuoso internal height map; totalListHeightChanged fine-correction pass; scroll handler re-pin-only; onWheel/keyboard-only unpin; suppressUnpinRef covers followOutput events; clearLines resets pin); B38 last-line clip fix (margin-bottom on .text-line collapsed through wrapper — moved to padding-bottom on .text-line-wrap so ResizeObserver captures it); panel tab right-click Clear; stream title attribute used as display label; B39 stream panel re-pin fix (handleScroll was unpin-only — scrolling back to bottom now re-pins); Performance Pass: chip-pulse animation filter:brightness→opacity (eliminates Recalculate Style cost during RT/CT); TimerDisplay isolated as memo'd component (100ms interval ticks no longer re-render GameWindow); suppressUnpinRef bool+timer replaced with suppressUntilRef timestamp (eliminates clearTimeout+setTimeout churn — 75% reduction in timer scheduling overhead); trigger engine fastLower pre-filter (substring check before regex.exec on every incoming line — mirrors highlight engine optimization); toolbar Disconnect button red when connected, green when disconnected; B40 Raw XML tab scroll lock fixed — stable key offset (rawBaseRef+i) prevents content shifts when rawXmlBufRef rolls over, matching the B14 pattern from the Events tab |
@@ -989,17 +1003,17 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 - [x] Syntax highlighting: keys (blue), strings (green), booleans/numbers (orange), comments (dimmed)
 - [x] No write access in this release
 
-#### Hybrid Map System — Graph View (Phase 1: Zone-by-Zone)
-- [ ] Split MapPanel into three files: `MapPanel.tsx` (shared state + toolbar), `MapImageView.tsx` (extracted current renderer), `MapGraphView.tsx` (new graph renderer)
-- [ ] Genie maps folder picker in map panel toolbar (graph mode only); stored as `lichborne.genieMapsDir`
-- [ ] Load + index all Genie XML zone files: `Map<zoneName, GenieZone>` with nodes, positions, colors, notes
-- [ ] Cross-reference builder: match Lich rooms to Genie nodes by `title + description`; produce `Map<lichId, GenieAugment>` (genieId, zoneName, x, y, z, color, note)
-- [ ] Orphan tracking: Genie nodes with no Lich match kept as `Map<zoneName, GenieNode[]>` — shown as `?` nodes in graph view
-- [ ] View mode toggle in toolbar: `Image` / `Graph`; persisted to localStorage
-- [ ] Graph renderer: SVG node graph using Genie `(x, y)` positions; arc lines from Lich `wayto` edges (both endpoints must have augments in current zone); zone auto-switch on room change
-- [ ] Node styling: Genie color for matched rooms; dashed border + `?` badge for orphan Genie nodes; current room pulse (green); adjacent rooms (amber); selected (blue)
-- [ ] Graph mode navigation: click = select + show detail; double-click = BFS walk via Lich `wayto`
-- [ ] Room detail panel in graph mode: Lich title, description, exits (from wayto), Genie ID + zone shown as metadata, walk button
+#### Hybrid Map System — Graph View (Phase 1: Zone-by-Zone) ✅
+- [x] Split MapPanel into three files: `MapPanel.tsx` (shared state + toolbar), `MapImageView.tsx` (extracted current renderer), `MapGraphView.tsx` (new graph renderer)
+- [x] Genie maps folder picker in map panel toolbar (graph mode only); stored in `_shared.yaml` via profile system
+- [x] Load + index all Genie XML zone files: `Map<zoneName, GenieZone>` with nodes, positions, colors, notes
+- [x] Cross-reference builder: match Lich rooms to Genie nodes by title → description → zone-prefix alias; produce `Map<lichId, GenieAugment>` (genieId, zoneName, x, y, z, color, note)
+- [x] Orphan tracking: Genie nodes with no Lich match kept as `Map<zoneName, GenieNode[]>` — shown as dashed `?` nodes in graph view
+- [x] View mode toggle in toolbar: `Image` / `Graph`; persisted to localStorage
+- [x] Graph renderer: SVG node graph using Genie `(x, y)` positions; arc lines from Lich `wayto` edges; cross-zone exits marked with amber ◆ diamond; zone auto-switch on room change
+- [x] Node styling: Genie color for matched rooms; dashed border + `?` badge for orphan Genie nodes; current room pulse; adjacent rooms amber; selected blue
+- [x] Graph mode navigation: click = select + show detail; BFS walk via Lich `wayto`
+- [x] Room detail panel in graph mode: Lich title, description, exits, Lich ID, zone badge, cross-zone connections section, walk button; follows player on move
 
 #### Hybrid Map System — World Stitching (Phase 2)
 - [ ] Zone offset algorithm: BFS from "The Crossing" as world origin `(0,0)`; compute each zone's global offset from cross-zone Lich `wayto` edges; average conflicting offsets weighted by connection count
@@ -1116,14 +1130,14 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 
 ### Roadmap Summary
 
-| Release | Version | Theme | Lich Integration Seam | Key Deliverables |
-|---------|---------|-------|----------------------|-----------------|
-| A | v0.2 | Honest Client | None | Import reframe, automation reframe, 17 import bug fixes |
-| B | v0.3 | Lich Visibility | File system (read) | Map auto-detect, script browser, YAML profile viewer |
-| C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette |
-| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, richer highlight engine |
-| E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log |
-| F | v0.7 | Hook Layer | Lich TCP API (new) | Hook Registry, real-time Lich IPC |
+| Release | Version | Theme | Lich Integration Seam | Key Deliverables | Status |
+|---------|---------|-------|----------------------|-----------------|--------|
+| A | v0.2.0 | Honest Client | None | Import reframe, automation reframe, 17 import bug fixes | ✅ Released |
+| B | v0.3.x | Lich Visibility | File system (read) | Map auto-detect, script browser, YAML profile viewer, hybrid graph map | ✅ Released |
+| C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette | 🔲 Next |
+| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, richer highlight engine | 🔲 Planned |
+| E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log | 🔲 Planned |
+| F | v0.7 | Hook Layer | Lich TCP API (new) | Hook Registry, real-time Lich IPC | 🔲 Long-term |
 
 ---
 
