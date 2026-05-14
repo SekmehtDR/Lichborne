@@ -2352,9 +2352,22 @@ A custom native menu replaces Electron's default. Built with `Menu.buildFromTemp
 
 ### 19.1 Overview
 
-The Map System is a spatially-aware map visualization built around the DragonRealms Lich XML map file format. It provides two surfaces: a full-screen overlay accessible via the "Maps" toolbar button, and an embeddable panel tab that can be placed alongside other panels in any zone.
+The Map System is a spatially-aware map visualization with two complementary data sources and two display modes.
 
-The approach is informed by Genie's Automapper (room matching algorithm, coordinate conventions) but the SVG rendering, UI, and cross-zone index are original.
+**Data sources:**
+- **Lich JSON** (`map-*.json` in Lich's `data/DR/` folder) — the primary database. Contains all mapped rooms as a flat array with numeric IDs, titles, descriptions, image file references, and exit arcs. This is the authoritative source for room IDs used in pathfinding.
+- **Genie XML** (player's Genie maps folder, e.g. `%APPDATA%\Genie\Maps\`) — optional augmentation layer. Provides x/y/z coordinates and color codes that the Lich JSON does not carry. Each Genie XML file is one zone (one `.xml` = one region).
+
+**Display modes (tabs in the map panel):**
+- **Image tab** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required.
+- **Graph tab** — renders an SVG graph of rooms in the current zone derived from Genie XML coordinates, augmented with Lich room IDs and colors. Works without Lich (browse-only mode with coordinate data only).
+
+**Component breakdown:**
+- `MapPanel` — coordinator; loads and indexes both databases; manages current-room tracking; owns the Image/Graph tab switch
+- `MapImageView` — Lich image tile display and exit navigation
+- `MapGraphView` — Genie SVG graph with BFS pathfinding, pan/zoom, z-levels, color legend
+
+**Auto-reload:** when `repository.lic` downloads a new Lich map database, the main stream carries `--- Map loaded <filename>.json`. `GameWindow` detects this pattern and increments `lichMapVersion`, which triggers `MapPanel` to reload the JSON database and re-index Genie augments automatically.
 
 ### 19.2 Map File Format
 
@@ -2392,16 +2405,36 @@ This matches Genie's `ConvertPoint` convention (direct `y * scale`, no flip). Ou
 
 ### 19.4 Room Matching
 
-The game sends the current room title in the `streamWindow` subtitle attribute: `subtitle=" - [Zone, Room Name - NNNN] (SimuID)"`.
+The game sends the current room title in the `streamWindow` subtitle attribute:
 
-**Parsing pipeline:**
-1. Extract bracket content: `/\[([^\]]+)\]/`
-2. Strip trailing Simutronics room number: `/\s*-\s*\d+\s*$/` → `"Zone, Room Name"`
-3. Emit as `room-title` event; `roomId` (from `()`) stored separately but not used for map matching
+```
+subtitle=" - [Zone, Room Name - LichID]"
+```
 
-**Matching algorithm (mirrors Genie `Node.Compare`):**
-1. **Name + description** (primary) — `node.name === title` AND `normalizeDesc(node.descriptions[i]) === normalizeDesc(desc)` where normalize = collapse whitespace + lowercase; handles day/night description variants
-2. **Name only** (fallback) — if description is empty or no desc match found, and exactly one node has that name, return it
+**StormFrontParser extraction pipeline:**
+1. Extract bracket content: `/\[([^\]]+)\]/` → inner string e.g. `"The Crossing, Champions' Square - 335"`
+2. Strip trailing Lich room ID: inner.match(`/\s*-\s*(\d+)\s*$/`) → `roomId = 335`, `cleanTitle = "The Crossing, Champions' Square"`
+3. Emit `room-title` event with both `title` and `roomId`
+
+**RoomState** stores `roomId?: number` alongside title and desc. `GameWindow` updates it from every `room-title` event. Both MapPanel instances (panel tab + overlay) receive it as a prop.
+
+**Lich JSON lookup (MapPanel primary match):**
+```
+roomId !== undefined → lichDb.get(roomId)   // direct O(1) hit
+  fallback → findRoom(titleIndex, title, desc)
+```
+
+`lichTitle()` strips any number of leading/trailing brackets from `node.title` before indexing, so both `[Room Name]` and `[[Room Name]]` formats match the clean title the parser emits.
+
+**Genie XML augmentation matching (inside `loadGenie`):**
+
+When Genie XML is loaded, each Genie node is matched to a Lich room to get its coordinates and color. Three strategies are tried in order:
+
+1. **Title match** — `titleIndex.get(node.name)`: exact name match; description disambiguates on multiple hits
+2. **Alias match** — `noteAliases(node.note)`: pipe-delimited aliases in the Genie `note` attribute; each alias tried against `titleIndex`
+3. **Zone-prefix construction** — build `"${zone.name}, ${node.name}"` and look it up in `titleIndex`; handles the common case where Genie stores short names ("Bulk Materials") while Lich titles are fully-qualified ("Leth Deriel, Bulk Materials")
+
+Unmatched Genie nodes are collected per-zone in `orphansByZone` for debugging. Matched nodes are stored in the `augments: Map<number, GenieAugment>` keyed by Lich room ID.
 
 ### 19.5 Cross-Zone Index
 
@@ -2528,16 +2561,24 @@ Labels render above the node rect at a constant 10px font size (scaled by `1/sca
 
 ### 19.14 Map Panel UI Layout
 
-The map panel uses a two-bar chrome layout with the canvas between them.
+**MapPanel toolbar** — appears above both tabs:
 
-**Top toolbar** — file management only:
-- 📂 browse folder button
-- ↺ refresh file list (animates while indexing)
-- Zone file select dropdown (`flex: 1` — takes remaining space)
-- `indexing… (N/M)` blink hint while cross-zone index builds
-- Search rooms input (expands on focus)
+| Slot | Content | Condition |
+|---|---|---|
+| `Image` | Tab button — switch to Lich image view | db ready or error |
+| `Graph` | Tab button — switch to Genie graph view | db ready or error |
+| ↺ | Reload Lich JSON database | always when db ready/error |
+| 📁/📂 | Pick Genie maps folder (filled/open icon) | graph tab active |
+| ✕ | Clear Genie maps folder | graph tab + folder set + not loading |
+| `Genie N/M` | Progress hint while Genie indexes | loading |
+| `NNN matched` | Count of Lich↔Genie augmented rooms | Genie ready + Lich ready |
+| `browse only` | Genie loaded but Lich unavailable | Genie ready + Lich error |
+| location | Current room location or title | after Lich ready |
 
-**Bottom bar** — navigation and view controls, left to right:
+**Genie progress bar** — a thin bar below the toolbar fills left-to-right as XML files are parsed. Only shown while loading.
+
+**MapGraphView bottom bar** — navigation and view controls, left to right:
+
 | Slot | Content | Condition |
 |---|---|---|
 | ◆ | Center-on-current-room button | zone loaded + current room matched |
@@ -2550,14 +2591,17 @@ The map panel uses a two-bar chrome layout with the canvas between them.
 | ▤ | Toggle color legend overlay | zone has colored rooms |
 | ■ | Stop auto-walk | while walking |
 
+**Mouse wheel zoom** — uses a callback ref (`svgCallbackRef`) to attach a non-passive `wheel` listener directly to the SVG element as soon as it mounts. `useEffect([], [])` cannot be used here because the SVG doesn't exist during early-return loading states. All map control buttons carry `onMouseDown={e => e.preventDefault()}` to prevent focus theft — without this, clicking a button moves browser focus away from the SVG and subsequent wheel events target the button rather than the canvas.
+
 **Current room label z-order** — the current room's label element is deferred to the end of the `nodeLabels` array regardless of where the current node appears in `visibleNodes`. SVG paints in array order, so this guarantees the green label is always on top of any overlapping neighbors.
 
-**Legend overlay** — the color legend is rendered as `position: absolute` inside `.map-canvas-wrap` (top-left, `z-index: 20`) rather than as a flex child above the canvas. This means it never affects the canvas height, making it safe to toggle in compact panel sizes.
+**Legend overlay** — rendered as `position: absolute` inside `.map-canvas-wrap` (top-left, `z-index: 20`) rather than as a flex child above the canvas. Toggling it never affects canvas height, making it safe in compact panel sizes.
 
 ### 19.12 Future Work
 
 | Item | Notes |
 |---|---|
+| World map (F13) | Continuous multi-zone SVG — BFS offset inference from cross-zone wayto edges; full spec in §25.8 Phase 2; shelved until zone-by-zone view is stable |
 | Exit stubs | Draw short stubs from room edge rather than center-to-center (Genie convention); cleaner at high zoom |
 | Cross-file pathfinding | Follow arcs whose destination lives in a different zone file |
 | Configurable walk delay | 600 ms/step is hardcoded; expose as a setting |

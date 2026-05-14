@@ -57,7 +57,7 @@ export interface GenieAugment {
 
 export function lichTitle(room: LichRoom): string {
   const t = (room.title ?? [])[0] ?? ''
-  return t.replace(/^\[\[/, '').replace(/\]\]$/, '').trim()
+  return t.replace(/^\[+/, '').replace(/\]+$/, '').trim()
 }
 
 export function normalizeDesc(s: string): string {
@@ -72,6 +72,13 @@ export function shortName(name: string): string {
 export function noteAliases(note: string | undefined): string[] {
   if (!note) return []
   return note.split('|').map(s => s.trim()).filter(Boolean)
+}
+
+// Extract the human-readable movement label from a wayto command.
+// Lich scripts like ";e UserVars.x='y';move 'go meeting portal'" → "go meeting portal"
+export function cmdLabel(cmd: string): string {
+  const m = cmd.match(/move\s+['"]([^'"]+)['"]/)
+  return m ? m[1] : cmd
 }
 
 export function findRoom(

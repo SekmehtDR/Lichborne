@@ -413,13 +413,16 @@ export class StormFrontParser {
           // before storing — the number is not present in the Lich XML node names.
           if (attrs.subtitle) {
             const titleMatch = attrs.subtitle.match(/\[([^\]]+)\]/)
-            const idMatch    = attrs.subtitle.match(/\((\d+)\)/)
             if (titleMatch) {
-              const cleanTitle = titleMatch[1].replace(/\s*-\s*\d+\s*$/, '').trim()
+              const inner      = titleMatch[1]
+              const trailMatch = inner.match(/\s*-\s*(\d+)\s*$/)
+              const cleanTitle = trailMatch
+                ? inner.slice(0, trailMatch.index).trim()
+                : inner.trim()
               this.events.push({
                 type: 'room-title',
                 title: cleanTitle,
-                roomId: idMatch ? parseInt(idMatch[1], 10) : undefined,
+                roomId: trailMatch ? parseInt(trailMatch[1], 10) : undefined,
               })
             }
           }

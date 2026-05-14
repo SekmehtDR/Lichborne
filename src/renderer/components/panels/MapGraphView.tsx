@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import type { LichRoom, GenieNode, GenieAugment } from './mapTypes'
-import { lichTitle, shortName, normalizeDesc, noteAliases, bfsPath, COLOR_LEGEND } from './mapTypes'
+import { lichTitle, shortName, normalizeDesc, noteAliases, bfsPath, cmdLabel, COLOR_LEGEND } from './mapTypes'
 
 interface Props {
   lichDb:        Map<number, LichRoom>
@@ -8,6 +8,7 @@ interface Props {
   orphansByZone: Map<string, GenieNode[]>
   currentRoom:   LichRoom | undefined
   roomTitle:     string
+  roomId?:       number
   onSendCommand: (cmd: string) => void
   genieReady:    boolean
   genieStatus:   'idle' | 'loading' | 'ready' | 'error'
@@ -44,7 +45,7 @@ function computeFit(points: { x: number; y: number }[], w: number, h: number, pa
 }
 
 export default function MapGraphView({
-  lichDb, augments, orphansByZone, currentRoom, roomTitle, onSendCommand, genieReady, genieStatus,
+  lichDb, augments, orphansByZone, currentRoom, roomTitle, roomId, onSendCommand, genieReady, genieStatus,
 }: Props) {
   // Current zone name being displayed
   const [currentZone, setCurrentZone] = useState<string>('')
@@ -64,9 +65,33 @@ export default function MapGraphView({
   )
   const [showLegend, setShowLegend] = useState(false)
 
-  const svgRef  = useRef<SVGSVGElement>(null)
-  const dragRef = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
-  const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const svgRef      = useRef<SVGSVGElement | null>(null)
+  const wheelHandler = useRef<((e: WheelEvent) => void) | null>(null)
+  const dragRef     = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
+  const walkTimers  = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  // Callback ref — attaches the wheel listener the moment the SVG mounts, not
+  // on component mount (which is too early: the SVG doesn't exist yet while
+  // Genie is loading or currentZone is empty).
+  const svgCallbackRef = useCallback((el: SVGSVGElement | null) => {
+    if (svgRef.current && wheelHandler.current) {
+      svgRef.current.removeEventListener('wheel', wheelHandler.current)
+    }
+    svgRef.current = el
+    if (!el) { wheelHandler.current = null; return }
+    function onWheel(e: WheelEvent) {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top
+      const delta = e.deltaY < 0 ? 1.15 : 1 / 1.15
+      setTransform(prev => {
+        const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * delta))
+        return { scale: s, x: mx - (mx - prev.x) * (s / prev.scale), y: my - (my - prev.y) * (s / prev.scale) }
+      })
+    }
+    wheelHandler.current = onWheel
+    el.addEventListener('wheel', onWheel, { passive: false })
+  }, []) // setTransform is stable
 
   // ── Determine current zone from current room's augment ──────────────────────
 
@@ -152,22 +177,6 @@ export default function MapGraphView({
 
   // ── Pan / zoom ──────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    const svg = svgRef.current; if (!svg) return
-    function onWheel(e: WheelEvent) {
-      e.preventDefault()
-      const rect = svg!.getBoundingClientRect()
-      const mx = e.clientX - rect.left, my = e.clientY - rect.top
-      const delta = e.deltaY < 0 ? 1.15 : 1 / 1.15
-      setTransform(prev => {
-        const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prev.scale * delta))
-        return { scale: s, x: mx - (mx - prev.x) * (s / prev.scale), y: my - (my - prev.y) * (s / prev.scale) }
-      })
-    }
-    svg.addEventListener('wheel', onWheel, { passive: false })
-    return () => svg.removeEventListener('wheel', onWheel)
-  }, [])
-
   function onMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return
     dragRef.current = { ox: e.clientX, oy: e.clientY, tx: transform.x, ty: transform.y }
@@ -212,6 +221,14 @@ export default function MapGraphView({
   }
 
   useEffect(() => () => cancelWalk(), []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep detail panel current as you move
+  useEffect(() => {
+    if (currentRoom && selectedId !== null) {
+      setSelectedId(currentRoom.id)
+      setSelectedOrphan(null)
+    }
+  }, [currentRoom?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Search ──────────────────────────────────────────────────────────────────
 
@@ -424,8 +441,9 @@ export default function MapGraphView({
     if (!currentRoom) return
     const aug = augments.get(currentRoom.id); if (!aug) return
     const svg = svgRef.current; if (!svg) return
+    if (aug.zoneName !== currentZone) setCurrentZone(aug.zoneName)
     setTransform(prev => ({ ...prev, x: svg.clientWidth / 2 - aug.x * prev.scale, y: svg.clientHeight / 2 - aug.y * prev.scale }))
-  }, [currentRoom, augments])
+  }, [currentRoom, augments, currentZone])
 
   const fitView = useCallback(() => {
     const svg = svgRef.current; if (!svg) return
@@ -487,25 +505,22 @@ export default function MapGraphView({
       <div className="map-subbar">
         <input className="map-search" placeholder="Search rooms…" value={searchText}
           onChange={e => setSearchText(e.target.value)} spellCheck={false} />
-        {currentRoom && augments.has(currentRoom.id) && (
-          <button className="map-btn map-btn--sm" onClick={recenter} title="Re-center on current room">◆</button>
-        )}
-        <button className="map-btn map-btn--sm" onClick={fitView} title="Fit zone to view">⊡</button>
-        <button className="map-btn map-btn--sm" onClick={() => setTransform(prev => {
+        <button className="map-btn map-btn--sm" onMouseDown={e => e.preventDefault()} onClick={fitView} title="Fit zone to view">⊡</button>
+        <button className="map-btn map-btn--sm" onMouseDown={e => e.preventDefault()} onClick={() => setTransform(prev => {
           const s = Math.min(MAX_SCALE, prev.scale * 1.4)
           const svg = svgRef.current
           if (!svg) return { ...prev, scale: s }
           const cx = svg.clientWidth / 2, cy = svg.clientHeight / 2
           return { scale: s, x: cx - (cx - prev.x) * (s / prev.scale), y: cy - (cy - prev.y) * (s / prev.scale) }
         })} title="Zoom in">+</button>
-        <button className="map-btn map-btn--sm" onClick={() => setTransform(prev => {
+        <button className="map-btn map-btn--sm" onMouseDown={e => e.preventDefault()} onClick={() => setTransform(prev => {
           const s = Math.max(MIN_SCALE, prev.scale / 1.4)
           const svg = svgRef.current
           if (!svg) return { ...prev, scale: s }
           const cx = svg.clientWidth / 2, cy = svg.clientHeight / 2
           return { scale: s, x: cx - (cx - prev.x) * (s / prev.scale), y: cy - (cy - prev.y) * (s / prev.scale) }
         })} title="Zoom out">−</button>
-        {walking && <button className="map-btn map-btn--sm map-btn--stop" onClick={cancelWalk}>■</button>}
+        {walking && <button className="map-btn map-btn--sm map-btn--stop" onMouseDown={e => e.preventDefault()} onClick={cancelWalk}>■</button>}
       </div>
 
       {/* Search results */}
@@ -533,7 +548,11 @@ export default function MapGraphView({
       {roomTitle && !currentRoom && (
         <div className="map-location-unknown">
           <span className="map-location-unknown-icon">⚑</span>
-          <span className="map-location-unknown-text">Location not in Lich map</span>
+          <span className="map-location-unknown-text">
+            {roomId !== undefined
+              ? `Lich #${roomId} not in map`
+              : 'Location not in Lich map'}
+          </span>
           <span className="map-location-unknown-room">{roomTitle}</span>
         </div>
       )}
@@ -582,7 +601,7 @@ export default function MapGraphView({
           </div>
         )}
 
-        <svg ref={svgRef} className="map-svg"
+        <svg ref={svgCallbackRef} className="map-svg"
           onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}
           onClick={() => { setSelectedId(null); setSelectedOrphan(null); setPathRooms(new Set()) }}
@@ -606,7 +625,8 @@ export default function MapGraphView({
       {/* Bottom bar */}
       <div className="map-bottom-bar">
         {currentRoom && augments.has(currentRoom.id) && (
-          <button className="map-btn map-btn--sm map-btn--locate" onClick={recenter} title="Center on current room">◆</button>
+          <button className="map-btn map-btn--sm map-btn--locate" onMouseDown={e => e.preventDefault()} onClick={recenter}
+            title={augments.get(currentRoom.id)?.zoneName !== currentZone ? 'Return to my location' : 'Center on current room'}>◆</button>
         )}
         {currentRoom && (
           <span className={`map-room-id-badge${augments.has(currentRoom.id) ? ' map-room-id-badge--found' : ' map-room-id-badge--missing'}`}>
@@ -620,11 +640,13 @@ export default function MapGraphView({
           {allZLevels.map(z => (
             <button key={z}
               className={`map-zlevel-chip${(!showAllZ && zLevels.has(z)) ? ' map-zlevel-chip--active' : ''}`}
+              onMouseDown={e => e.preventDefault()}
               onClick={() => { setShowAllZ(false); setZLevels(prev => { const n = new Set(prev); n.has(z) ? n.delete(z) : n.add(z); return n.size > 0 ? n : new Set([z]) }) }}>
               {z === 0 ? 'G' : z > 0 ? `+${z}` : z}
             </button>
           ))}
           <button className={`map-zlevel-chip${showAllZ ? ' map-zlevel-chip--active' : ''}`}
+            onMouseDown={e => e.preventDefault()}
             onClick={() => setShowAllZ(v => !v)}>All</button>
         </>)}
         <span style={{ flex: 1 }} />
@@ -637,17 +659,23 @@ export default function MapGraphView({
         </select>
         {(legendColors.length > 0 || crossZoneCount > 0 || orphansInZone.length > 0) && (
           <button className={`map-btn map-btn--sm${showLegend ? ' map-btn--active' : ''}`}
+            onMouseDown={e => e.preventDefault()}
             onClick={() => setShowLegend(v => !v)} title="Toggle color legend">▤</button>
         )}
       </div>
 
       {/* Room detail */}
-      {(selectedRoom || selectedOrphan) && (
+      {((selectedRoom && selectedRoomAug) || selectedOrphan) && (
         <div className="map-detail">
           {selectedRoom && selectedRoomAug && (<>
             <div className="map-detail-header">
-              <span className="map-detail-name">{lichTitle(selectedRoom)}</span>
-              <span className="map-detail-id">#{selectedRoom.id}</span>
+              <span className="map-detail-name">{shortName(lichTitle(selectedRoom))}</span>
+              {selectedRoom.id === currentRoom?.id && <span className="map-detail-here-badge" title="You are here">◆</span>}
+              <span className="map-detail-zone-badge">{selectedRoomAug.zoneName}</span>
+              <span className="map-detail-id"
+                title={`Genie #${selectedRoomAug.genieId} · (${selectedRoomAug.x}, ${selectedRoomAug.y}, ${selectedRoomAug.z})`}>
+                #{selectedRoom.id}
+              </span>
               <button className="map-detail-close" onClick={() => { setSelectedId(null); setSelectedOrphan(null) }} title="Close">✕</button>
             </div>
             {selectedRoomAug.note && (
@@ -655,26 +683,63 @@ export default function MapGraphView({
                 {noteAliases(selectedRoomAug.note).map(a => <span key={a} className="map-detail-alias">{a}</span>)}
               </div>
             )}
-            <div className="map-detail-desc map-detail-meta">
-              Genie: zone <em>{selectedRoomAug.zoneName}</em> · id #{selectedRoomAug.genieId} · ({selectedRoomAug.x}, {selectedRoomAug.y}, {selectedRoomAug.z})
-            </div>
             {(selectedRoom.description ?? [])[0] && <div className="map-detail-desc">{selectedRoom.description[0]}</div>}
             <div className="map-detail-exits">
-              {Object.entries(selectedRoom.wayto ?? {}).map(([destId, cmd]) => (
-                typeof cmd === 'string' && (
+              {Object.entries(selectedRoom.wayto ?? {}).map(([destId, cmd]) => {
+                if (typeof cmd !== 'string') return null
+                const destAug = augments.get(parseInt(destId, 10))
+                if (destAug && destAug.zoneName !== currentZone) return null
+                return (
                   <span key={destId} className="map-detail-exit"
                     style={{ borderColor: arcColor(cmd) }}
                     title={`→ #${destId}`} onClick={() => onSendCommand(cmd)}>{cmd}</span>
                 )
-              ))}
+              })}
             </div>
+            {(() => {
+              const crossZoneExits = Object.entries(selectedRoom.wayto ?? {}).flatMap(([destId, cmd]) => {
+                if (typeof cmd !== 'string') return []
+                const id = parseInt(destId, 10)
+                const destAug = augments.get(id)
+                const destRoom = lichDb.get(id)
+                if (!destAug || destAug.zoneName === currentZone) return []
+                return [{ destId: id, destZone: destAug.zoneName, destRoom, destAug, cmd }]
+              })
+              if (crossZoneExits.length === 0) return null
+              return (
+                <div className="map-detail-crosszone">
+                  {crossZoneExits.map(({ destId, destZone, destRoom, destAug, cmd }) => (
+                    <div key={destId} className="map-detail-crosszone-row">
+                      <span className="map-detail-crosszone-diamond">◆</span>
+                      <span className="map-detail-exit"
+                        style={{ borderColor: arcColor(cmdLabel(cmd)) }}
+                        title={cmd}
+                        onClick={() => onSendCommand(cmd)}>{cmdLabel(cmd)}</span>
+                      <span className="map-detail-crosszone-zone"
+                        title="View in graph"
+                        onClick={() => {
+                          setCurrentZone(destZone)
+                          setSelectedId(destId)
+                          setSelectedOrphan(null)
+                          const svg = svgRef.current; if (!svg) return
+                          setTransform(prev => ({
+                            ...prev,
+                            x: svg.clientWidth  / 2 - destAug.x * prev.scale,
+                            y: svg.clientHeight / 2 - destAug.y * prev.scale,
+                          }))
+                        }}>{destZone}</span>
+                      {destRoom && <span className="map-detail-crosszone-room">{shortName(lichTitle(destRoom))}</span>}
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
             {canWalk && (
               <button className={`map-walk-btn${walking ? ' map-walk-btn--walking' : ''}`}
                 onClick={() => walking ? cancelWalk() : walkToRoom(selectedRoom.id)}>
                 {walking ? '■ Stop walking' : `▶ Walk here  (${walkSteps} steps)`}
               </button>
             )}
-            {selectedRoom.id === currentRoom?.id && <div className="map-detail-here">◆ You are here</div>}
           </>)}
           {selectedOrphan && (<>
             <div className="map-detail-header">

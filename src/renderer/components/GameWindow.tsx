@@ -160,6 +160,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
+  const [lichMapVersion, setLichMapVersion] = useState(0)
   const [expSkills, setExpSkills]       = useState<Record<string, string>>({})
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
   const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -591,6 +592,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             const stream = rawStream
             const lineText = segments.map(s => s.text).join('')
             const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}) })
+            if (/^--- Map loaded .+\.json$/i.test(lineText.trim())) setLichMapVersion(v => v + 1)
             if (stream === 'main') {
               if (!isExpReadout(segments)) newMain.push(mkLine())
               processLineRef.current('main', lineText)
@@ -670,6 +672,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             break
           case 'room-title':
             roomUpdates.title = evt.title
+            roomUpdates.roomId = evt.roomId
             triggerCtxRef.current.roomTitle = evt.title
             processVariableChangeRef.current('room', evt.title)
             processVariableChangeRef.current('roomname', evt.title)
@@ -1083,6 +1086,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     fireLog, onClearFireLog: clearFireLog,
     onClearStream: clearStream,
     onHighlight: openHighlightEditor,
+    lichMapVersion,
     onTrigger: openTriggerEditor,
     discoveredStreams,
     streamTitles,
@@ -1291,7 +1295,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} onSendCommand={cmd => window.api.sendCommand(cmd)} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={cmd => window.api.sendCommand(cmd)} large />
             </div>
           </div>
         </div>

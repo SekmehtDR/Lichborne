@@ -9,6 +9,8 @@ import '../../styles/map-panel.css'
 interface Props {
   roomTitle?: string
   roomDesc?:  string
+  roomId?:    number
+  lichMapVersion?: number
   onSendCommand: (cmd: string) => void
   large?: boolean
 }
@@ -23,7 +25,7 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand, large = false }: Props) {
+export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMapVersion = 0, onSendCommand, large = false }: Props) {
   // ── View mode ────────────────────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<'image' | 'graph'>(() => {
     try { return (localStorage.getItem(VIEW_MODE_KEY) as 'image' | 'graph' | null) ?? 'image' } catch { return 'image' }
@@ -46,8 +48,10 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
   const [currentRoom, setCurrentRoom] = useState<LichRoom | undefined>()
   const roomTitleRef = useRef(roomTitle)
   const roomDescRef  = useRef(roomDesc)
+  const roomIdRef    = useRef(roomId)
   useEffect(() => { roomTitleRef.current = roomTitle }, [roomTitle])
   useEffect(() => { roomDescRef.current  = roomDesc  }, [roomDesc])
+  useEffect(() => { roomIdRef.current    = roomId    }, [roomId])
 
   // ── Genie augmentation ───────────────────────────────────────────────────────
   const [genieMapsDir, setGenieMapsDir] = useState<string>(() => {
@@ -61,45 +65,61 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
 
   // ── Load Lich JSON ───────────────────────────────────────────────────────────
 
-  useEffect(() => {
+  const loadLichDb = useCallback(async () => {
     const lichPath = getLichPath()
     if (!lichPath) { setDbStatus('error'); setDbError('no-lich-path'); setViewMode('graph'); return }
     setDbStatus('loading')
-    window.api.findLichMapFile(lichPath).then(async result => {
-      if (!result) { setDbStatus('error'); setDbError('no-map-file'); setViewMode('graph'); return }
-      mapsDirRef.current = result.mapsDir
-      try {
-        const raw = await window.api.readFile(result.jsonPath)
-        if (!raw) throw new Error('Could not read map file')
-        const rooms: LichRoom[] = JSON.parse(raw)
-        const db = new Map<number, LichRoom>()
-        const ti = new Map<string, LichRoom[]>()
-        const ii = new Map<string, LichRoom[]>()
-        for (const r of rooms) {
-          if (typeof r?.id !== 'number') continue
-          db.set(r.id, r)
-          const t = lichTitle(r)
-          if (t) { if (!ti.has(t)) ti.set(t, []); ti.get(t)!.push(r) }
-          if (r.image) { if (!ii.has(r.image)) ii.set(r.image, []); ii.get(r.image)!.push(r) }
-        }
-        titleIndex.current = ti
-        setLichDb(db)
-        setImageIndex(ii)
-        setDbStatus('ready')
-        setCurrentRoom(findRoom(ti, roomTitleRef.current, roomDescRef.current))
-      } catch (e) {
-        setDbStatus('error')
-        setDbError(String(e))
+    const result = await window.api.findLichMapFile(lichPath)
+    if (!result) { setDbStatus('error'); setDbError('no-map-file'); setViewMode('graph'); return }
+    mapsDirRef.current = result.mapsDir
+    try {
+      const raw = await window.api.readFile(result.jsonPath)
+      if (!raw) throw new Error('Could not read map file')
+      const rooms: LichRoom[] = JSON.parse(raw)
+      const db = new Map<number, LichRoom>()
+      const ti = new Map<string, LichRoom[]>()
+      const ii = new Map<string, LichRoom[]>()
+      for (const r of rooms) {
+        if (typeof r?.id !== 'number') continue
+        db.set(r.id, r)
+        const t = lichTitle(r)
+        if (t) { if (!ti.has(t)) ti.set(t, []); ti.get(t)!.push(r) }
+        if (r.image) { if (!ii.has(r.image)) ii.set(r.image, []); ii.get(r.image)!.push(r) }
       }
-    })
+      titleIndex.current = ti
+      setLichDb(db)
+      setImageIndex(ii)
+      setDbStatus('ready')
+      setCurrentRoom(
+        roomIdRef.current !== undefined
+          ? (db.get(roomIdRef.current) ?? findRoom(ti, roomTitleRef.current, roomDescRef.current))
+          : findRoom(ti, roomTitleRef.current, roomDescRef.current)
+      )
+    } catch (e) {
+      setDbStatus('error')
+      setDbError(String(e))
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadLichDb() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-reload when repository.lic downloads a new map database ────────────
+
+  useEffect(() => {
+    if (lichMapVersion === 0) return  // skip initial render
+    loadLichDb()
+  }, [lichMapVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Match current room when title/desc changes ───────────────────────────────
 
   useEffect(() => {
     if (dbStatus !== 'ready') return
-    setCurrentRoom(findRoom(titleIndex.current, roomTitle, roomDesc))
-  }, [roomTitle, roomDesc, dbStatus])
+    setCurrentRoom(
+      roomId !== undefined
+        ? (lichDb.get(roomId) ?? findRoom(titleIndex.current, roomTitle, roomDesc))
+        : findRoom(titleIndex.current, roomTitle, roomDesc)
+    )
+  }, [roomTitle, roomDesc, roomId, dbStatus, lichDb])
 
   // ── Load Genie XML progressively ─────────────────────────────────────────────
 
@@ -153,6 +173,22 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
                   )
                   if (dm) { matched = dm; break }
                 }
+              }
+            }
+
+            // 3) Zone-prefix construction: Genie stores short names ("Bulk Materials")
+            //    but Lich titles are fully-qualified ("Leth Deriel, Bulk Materials").
+            //    Try building the full title from zone name + node name.
+            if (!matched) {
+              const fullName = `${zone.name}, ${node.name}`
+              const byFull = ti.get(fullName) ?? []
+              if (byFull.length === 1) {
+                matched = byFull[0]
+              } else if (byFull.length > 1) {
+                const normDescs = node.descriptions.map(d => normalizeDesc(d))
+                matched = byFull.find(r =>
+                  (r.description ?? []).some(d => normDescs.includes(normalizeDesc(d)))
+                )
               }
             }
 
@@ -246,6 +282,11 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
               onClick={() => setViewMode('graph')}
               title="Genie graph view"
             >Graph</button>
+            <button
+              className="map-btn map-btn--sm"
+              onClick={loadLichDb}
+              title="Reload Lich map database"
+            >↺</button>
 
             {viewMode === 'graph' && (
               <>
@@ -337,6 +378,7 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
           mapsDir={mapsDirRef.current}
           currentRoom={currentRoom}
           roomTitle={roomTitle}
+          roomId={roomId}
           onSendCommand={onSendCommand}
         />
       )}
@@ -347,6 +389,7 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', onSendCommand,
           orphansByZone={orphansByZone}
           currentRoom={currentRoom}
           roomTitle={roomTitle}
+          roomId={roomId}
           onSendCommand={onSendCommand}
           genieReady={genieReady}
           genieStatus={genieStatus}

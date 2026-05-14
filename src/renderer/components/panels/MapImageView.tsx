@@ -8,6 +8,7 @@ interface Props {
   mapsDir:    string
   currentRoom: LichRoom | undefined
   roomTitle:   string
+  roomId?:     number
   onSendCommand: (cmd: string) => void
 }
 
@@ -24,7 +25,7 @@ function mimeFor(name: string): string {
 }
 
 export default function MapImageView({
-  lichDb, imageIndex, mapsDir, currentRoom, roomTitle, onSendCommand,
+  lichDb, imageIndex, mapsDir, currentRoom, roomTitle, roomId, onSendCommand,
 }: Props) {
   const [imageDataUrl,  setImageDataUrl]  = useState<string | null>(null)
   const [imageSize,     setImageSize]     = useState<{ w: number; h: number } | null>(null)
@@ -282,7 +283,11 @@ export default function MapImageView({
       {roomTitle && !currentRoom && (
         <div className="map-location-unknown">
           <span className="map-location-unknown-icon">⚑</span>
-          <span className="map-location-unknown-text">Location not in Lich map</span>
+          <span className="map-location-unknown-text">
+            {roomId !== undefined
+              ? `Lich #${roomId} not in map`
+              : 'Location not in Lich map'}
+          </span>
           <span className="map-location-unknown-room">{roomTitle}</span>
         </div>
       )}

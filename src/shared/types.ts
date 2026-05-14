@@ -255,6 +255,7 @@ export interface RoomState {
   creatures: string
   extra: string
   exits: string[]
+  roomId?: number
 }
 
 export interface FireLogEntry {
