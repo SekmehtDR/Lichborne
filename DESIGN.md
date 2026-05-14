@@ -3580,3 +3580,299 @@ Release A was completed and tested against real Genie, Frostbite, and Wrayth con
 - **"Belongs in Lich" section correctly absent**: For users whose configs have no scripts, strings, gags, or variables, the amber section correctly hides — the conditional logic works as designed.
 - **Wrayth theme**: Confirmed that Wrayth XML has no color preset or theme section — no Theme Colors tab appears, which is correct behavior.
 
+---
+
+## 26. Release C — Lich Dashboard Design
+
+> Decided 2026-05-14 after full audit of Lich5 source code (`C:\temp\lich-dev\lich-5`).
+> Constraint: no dependency on community-maintained Lich scripts. Must work with Lich core only.
+
+---
+
+### 26.1 Constraint Analysis
+
+The original Release C design assumed parsing the `LichScripts` stream, which is produced by `script-watch.lic`. After auditing Lich5 source, that assumption is wrong: **Lich's core sends no XML or text events about script lifecycle**. The `LichScripts` stream only exists when `script-watch.lic` is running. We cannot rely on it.
+
+**What Lich5 core exposes natively (no scripts needed):**
+
+| Source | What it contains | Accessible how |
+|--------|-----------------|----------------|
+| `;listall` core command | Comma-separated list of running script names, with `(paused)` suffix | Send upstream; parse text response |
+| `;pause name`, `;kill name` | Script control | Send upstream; already works |
+| `lich.db3` → `lich_settings` | Lich config key-value pairs, plain strings | Direct SQLite read from Node.js |
+| `lich.db3` → `session_summary_state` | Active game sessions (character name, started_at, state) | Direct SQLite read; feature-gated |
+| `lich.db3` → `uservars` | Per-character variables — Ruby Marshal BLOBs | Cannot read from Node.js without a Marshal parser; deferred to Release D |
+| Active Sessions TCP API | Session list via JSON over TCP (port 42,857) | Feature-gated; tracks sessions not scripts |
+| `scripts/`, `scripts/custom/` | Available `.lic` files | File system read; already done in Release B |
+| `scripts/profiles/*.yaml` | Lich automation YAMLs | File system read; already done in Release B |
+
+**What the `;listall` response looks like** (from `global_defs.rb` line 2286):
+```
+--- Lich: no active scripts
+--- Lich: t2, buff (paused), tend, repository
+```
+
+The format is a single line: comma-separated names, each optionally followed by ` (paused)`. This is the only output from `;listall`. Because of the specific `--- Lich: ` prefix and the bounded character set of script names (`[a-zA-Z0-9_-]`), this is reliably distinguishable from other Lich messages (`--- Lich: t2 does not appear to be running!` contains `!`; other messages contain natural language that doesn't match the list regex).
+
+**What is NOT feasible in Release C:**
+- Real-time push events for script start/stop (no core mechanism; requires a script)
+- Per-script uptime from Lich (not in `;listall` output; tracked locally by Lichborne from first observation)
+- Reading `uservars` (Ruby Marshal BLOBs; deferred to Release D)
+- Writing to Lich YAML profiles (deferred to Release D)
+
+---
+
+### 26.2 LichBridge Module
+
+A new `LichBridge` module in the main process consolidates all Lich-specific IPC. Today this logic is scattered: script browser IPC is ad-hoc, Lich process launch is inline in `main.ts`. LichBridge gives it a home.
+
+```
+Main Process
+└── src/main/lichbridge/
+    ├── index.ts              — assembles LichBridge, registers IPC handlers
+    ├── fileReader.ts         — wraps existing list-lich-scripts / read-lich-profile IPC
+    ├── scriptPoller.ts       — `;listall` polling + response parsing logic
+    ├── commandInjector.ts    — typed wrappers for Lich-specific upstream commands
+    └── sqliteReader.ts       — reads lich_settings (and future uservars)
+
+Renderer
+└── src/renderer/
+    ├── hooks/useLichBridge.ts   — subscribes to IPC events, exposes helpers
+    ├── components/ScriptListPanel.tsx
+    └── components/ScriptPalettePanel.tsx
+```
+
+The module has no coupling to `StormFrontParser` or the highlight/trigger engine. It is a separate IPC surface added alongside the existing game text pipeline.
+
+---
+
+### 26.3 Script List via `;listall` Polling
+
+#### Why polling, not streaming
+
+Lich core has no push mechanism for script events. The only native way to get the current script list is to ask for it with `;listall`. We poll every 5 seconds. This is identical to how `script-watch.lic` works (it loops on a configurable `passive_timer`) — the difference is we parse in the client rather than rendering raw text.
+
+#### Request-response correlation
+
+The renderer (via `useLichBridge`) sends `;listall` on a 5-second interval while connected. To suppress the response from being displayed as game text:
+
+1. When `;listall` is sent, `scriptPoller.ts` sets `pendingScriptList: true` in the main process (or the renderer via a ref).
+2. GameWindow's event loop checks each incoming line: if `pendingScriptList && line.text.startsWith('--- Lich: ')` → intercept and parse, do not add to `mainLines`, clear `pendingScriptList`.
+3. A 3-second timeout resets `pendingScriptList` if no response arrives (Lich offline or slow).
+
+This is implemented entirely in the renderer event loop — no main process changes needed beyond sending the command.
+
+#### Response parsing
+
+```typescript
+// In GameWindow event loop:
+const SCRIPT_LIST_PREFIX = '--- Lich: ';
+const SCRIPT_LIST_PATTERN = /^--- Lich: (?:no active scripts|((?:[a-zA-Z0-9_-]+(?:\s+\(paused\))?)(?:,\s*[a-zA-Z0-9_-]+(?:\s+\(paused\))?)*))$/;
+
+function parseScriptList(line: string): ScriptRecord[] | null {
+  const m = line.match(SCRIPT_LIST_PATTERN);
+  if (!m) return null;
+  if (!m[1]) return [];  // "no active scripts"
+  return m[1].split(/,\s*/).map(entry => {
+    const paused = entry.endsWith('(paused)');
+    const name = entry.replace(/\s+\(paused\)$/, '').trim();
+    return { name, paused, custom: false }; // custom resolved separately
+  });
+}
+```
+
+`custom` is resolved by cross-referencing with the script browser's known file list: if `scripts/custom/${name}.lic` exists → `custom: true`.
+
+#### `ScriptRecord` type
+
+```typescript
+interface ScriptRecord {
+  name: string;         // script name as Lich reports it
+  paused: boolean;      // true if "(paused)" in `;listall` output
+  custom: boolean;      // true if found under scripts/custom/
+  firstSeen: number;    // Date.now() when first observed (uptime clock origin)
+}
+```
+
+`firstSeen` is tracked in a `Map<string, number>` keyed by script name, persisted in a ref. When a script disappears from the list and reappears, `firstSeen` resets. This gives approximate uptime without any Lich-side tracking.
+
+#### Polling lifecycle
+
+- Polling starts `onConnect` (after `GameWindow` mounts)
+- Polling stops `onDisconnect`
+- Interval: 5 seconds (configurable via `SCRIPT_POLL_INTERVAL_MS` constant)
+- The `;listall` command is sent via the existing `send-command` IPC path — no new plumbing
+
+---
+
+### 26.4 Active Scripts Panel
+
+A new panel type (`panel-id: 'lichScripts'`) available in the Panel Manager. Not shown by default — user adds it.
+
+#### Layout
+
+```
+┌─ Lich Scripts ────────────────────────────────────┐
+│ [▶ t2]           running   0:14:32   [⏸] [✕]     │
+│ [C buff]         running   0:03:11   [⏸] [✕]     │
+│ [C tend]         paused    0:00:45   [▶] [✕]     │
+│ [▶ repository]   running   0:01:02   [⏸] [✕]     │
+└──────────── 4 scripts · last updated 0:00s ago ───┘
+```
+
+**Column layout:**
+- **Type badge**: `C` (amber, custom) or `▶` (dim, core) — identifies whether the script is from `scripts/custom/` or core
+- **Name**: script name, monospace
+- **Status**: `running` (green) or `paused` (amber)
+- **Uptime**: `hh:mm:ss` from `firstSeen` — approximate (from first Lichborne observation)
+- **Pause/Resume button**: ⏸ when running, ▶ when paused — sends `;pause name` or `;unpause name`
+- **Kill button**: ✕ — sends `;kill name`, with a confirmation popover
+
+**Footer:** `N scripts · last updated Xs ago` — shows script count and staleness.
+
+**Empty state:** "No scripts running. Use `;scriptname` in the command bar to start one." with a subtle link to open the Script Browser.
+
+**Error state:** When Lich is not connected or `;listall` gets no response within 3s, show "Script list unavailable" instead of stale data.
+
+#### Data flow
+
+```
+useLichBridge() hook
+  → sends ;listall every 5s via send-command IPC
+  → GameWindow event loop detects + parses response
+  → updates lichScripts state in GameWindow
+  → ScriptListPanel re-renders
+
+User clicks ⏸ on "t2"
+  → useLichBridge().pauseScript('t2')
+  → sends ";pause t2" via send-command IPC
+  → next poll (≤5s) reflects paused state
+```
+
+#### Panel registration
+
+`ScriptListPanel` is a structured panel type (like Room, Exp) — not a stream. It consumes `lichScripts` state from `GameWindow` via props through `sharedFrameProps`. Registered in `PanelFrame`'s `renderPanel` switch and `PANEL_CATALOG`.
+
+---
+
+### 26.5 Script Control
+
+All control actions use the existing upstream command pipe. No new IPC channels are needed.
+
+| Action | Command sent | Lich core handler |
+|--------|-------------|-------------------|
+| Pause script | `;pause scriptname` | `global_defs.rb` ~line 2240 |
+| Resume (unpause) | `;unpause scriptname` | `global_defs.rb` ~line 2250 |
+| Kill script | `;kill scriptname` | `global_defs.rb` ~line 2231 |
+| Start script | `;scriptname [args]` | `global_defs.rb` — script launch |
+| List (poll) | `;listall` | `global_defs.rb` line 2277 |
+
+Lich responds to pause/kill with a `--- Lich: ` confirmation message. These are NOT suppressed — they appear in the main text window so the player knows what happened. Only the `;listall` response is suppressed.
+
+**Kill confirmation:** Because kill is irreversible, the ✕ button shows a popover: `Kill "t2"? This will stop the script immediately.` with `[Kill]` and `[Cancel]` buttons. The same `ContextMenu` portal component used elsewhere.
+
+---
+
+### 26.6 Script Palette
+
+A configurable strip of buttons per character that sends upstream commands with one click. Stored in character YAML under a new `scriptPalette` key.
+
+#### YAML schema extension
+
+```yaml
+# In CharacterProfile (profiles/Sekmeht.yaml)
+scriptPalette:
+  - label: "t2"
+    command: ";t2"
+  - label: "buff"
+    command: ";buff"
+  - label: "tend"
+    command: ";tend"
+  - label: "t2 stop"
+    command: ";kill t2"
+```
+
+`command` is sent verbatim via the `send-command` IPC path. It can be any Lich command, game command, or alias. No special syntax required.
+
+#### UI placement
+
+The palette renders as a horizontal strip of compact buttons in the game toolbar, between the mode switcher and the theme button. Hidden when empty (zero buttons configured).
+
+```
+[Mode: Hunting ▼] | [t2] [buff] [tend] [t2 stop] | [Theme] [Settings] ...
+```
+
+Overflow: if more than 6 buttons are configured, a `[+N more ▼]` dropdown shows the rest.
+
+#### Palette editor
+
+Accessible via a `[⚙]` button that appears when hovering over the palette strip, or via Settings → Script Palette tab. A simple list editor: add/remove/reorder rows, each with a Label field and Command field. The editor auto-saves with a 500ms debounce to the character YAML via `scheduleProfileSave()`.
+
+---
+
+### 26.7 Lich Settings Viewer (bonus, low effort)
+
+A read-only view of the `lich_settings` table in `lich.db3`. These are Lich's own configuration values — NOT per-character vars (those are in `uservars` and require Marshal deserialization). `lich_settings` uses plain text values, directly readable via `better-sqlite3`.
+
+**What's in `lich_settings`:** Feature flags (stored as `feature_flag:name = "true"/"false"`), Lich system preferences, and any values written by `;set` commands.
+
+**IPC handler:** `get-lich-settings` — reads and returns `SELECT name, value FROM lich_settings ORDER BY name ASC` as a key-value array.
+
+**UI:** A collapsible section in the Settings panel footer, or a standalone modal reachable from the Lich menu. Shows `name → value` rows, searchable. Read-only. No write path in Release C.
+
+**Graceful fallback:** If `lich.db3` cannot be opened (Lich not installed, wrong path), the section shows "Lich database not found" rather than crashing.
+
+---
+
+### 26.8 Session Awareness (opportunistic)
+
+The `session_summary_state` table in `lich.db3` tracks active Lich processes when the `session_summary_store_and_reporting` feature flag is enabled (off by default, stored in `lich_settings`). Each row is one Lich process: `pid`, `session_name` (character name), `role`, `state`, `started_at`, `last_heartbeat_at`.
+
+Lichborne queries this table on connection and shows a subtle indicator if multiple sessions are detected: "2 Lich sessions active: Sekmeht, Muse". This helps players who run multiple characters simultaneously know their other sessions are still alive.
+
+**Implementation:** `get-lich-sessions` IPC handler — queries `session_summary_state WHERE state != 'exited'`, returns rows. The renderer checks for rows with `pid != currentPid` and surfaces them as a dismissable info chip in the toolbar.
+
+**Graceful fallback:** Table may be empty (feature flag off) or not exist (older Lich version). Both cases return an empty array; no UI is shown. No error is raised.
+
+---
+
+### 26.9 Implementation Plan
+
+#### New files
+
+| File | Purpose |
+|------|---------|
+| `src/main/lichbridge/index.ts` | Module assembly, IPC handler registration |
+| `src/main/lichbridge/sqliteReader.ts` | `get-lich-settings`, `get-lich-sessions` handlers; opens `lich.db3` via `better-sqlite3` |
+| `src/renderer/hooks/useLichBridge.ts` | Polls `;listall`, exposes `pauseScript`, `killScript`, `startScript`, `sendPaletteCommand` |
+| `src/renderer/components/ScriptListPanel.tsx` | Active scripts panel |
+| `src/renderer/components/ScriptListPanel.css` | Panel styles |
+| `src/renderer/components/ScriptPalettePanel.tsx` | Palette strip + editor |
+| `src/renderer/components/ScriptPalettePanel.css` | Palette styles |
+
+#### Modified files
+
+| File | Change |
+|------|--------|
+| `src/shared/types.ts` | Add `ScriptRecord` type; add `LichScriptsUpdatedEvent` to GameEvent union |
+| `src/renderer/types/profile-types.ts` | Add `scriptPalette: PaletteButton[]` to `CharacterProfile` |
+| `src/renderer/types/profile.ts` | Build/import/clear handlers for `scriptPalette` |
+| `src/renderer/components/GameWindow.tsx` | Add `;listall` response interception in event loop; add `lichScripts` state; wire `ScriptListPanel` and `ScriptPalettePanel` |
+| `src/renderer/components/panels/PanelFrame.tsx` | Add `'lichScripts'` to panel catalog; add `renderPanel` case |
+| `src/renderer/components/SettingsPanel.tsx` | Add Script Palette tab or section |
+| `src/main/main.ts` | Import and initialize `LichBridge`; register `get-lich-settings` and `get-lich-sessions` IPC handlers |
+| `package.json` | Add `better-sqlite3` dependency (needed for `sqliteReader.ts`) |
+
+#### Dependencies
+
+- `better-sqlite3` — synchronous SQLite from Node.js; already planned for Release D Variable Inspector; adding it in Release C for `lich_settings` and `session_summary_state` reads.
+
+#### Explicit non-starters
+
+These will not be built in Release C regardless of how easy they look:
+
+- **Text substitution / gag engine** — `textsubs.lic` is a DownstreamHook; client substitution operates on already-transformed text and is redundant
+- **Client-side variables** — `uservars` is Marshal; surface via Variable Inspector in Release D
+- **Trigger logic / WatchFor** — belongs in Lich scripts
+- **Anything that requires modifying Lich source** — Lichborne is a consumer, not a contributor to Lich core
+

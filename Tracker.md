@@ -1030,35 +1030,55 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 
 ### Release C — "Lich Dashboard" (v0.4)
 **Theme: Real-time Lich state surfaced in the UI. The LichBridge module is introduced.**
+**Constraint: No dependency on community-maintained Lich scripts. Uses Lich core commands and SQLite directly.**
+**Full spec: DESIGN.md §26.**
 
-#### LichBridge Module (main process)
-- [ ] `LichBridge` class with four sub-components:
-  - `FileReader` — wraps `list-lich-scripts`, `read-lich-profile`; future `write-lich-profile`
-  - `StreamParser` — subscribes to `LichScripts` stream events; parses into `ScriptRecord[]` (name, status, uptime, pauseable)
-  - `CommandInjector` — wraps `send-command` IPC for Lich-specific dot-commands (`.t2`, `.buff stop`, `.script abort name`)
-  - `SqliteReader` — stub only; full implementation in Release D
-- [ ] `useLichBridge()` renderer hook: exposes `scripts[]`, `sendDotCommand(cmd)`, `abortScript(name)`, `pauseScript(name)`
+#### LichBridge Module (main process) — `src/main/lichbridge/`
+- [ ] `index.ts` — module assembly, registers all Lich-specific IPC handlers
+- [ ] `sqliteReader.ts` — opens `lich.db3` via `better-sqlite3`; `get-lich-settings` handler (plain string key-value from `lich_settings` table); `get-lich-sessions` handler (rows from `session_summary_state`, graceful fallback when table is empty or feature flag is off)
+- [ ] `fileReader.ts` — consolidates existing `list-lich-scripts` and `read-lich-profile` IPC handlers from `main.ts` into module
+- [ ] `commandInjector.ts` — typed wrappers: `pauseScript(name)` → `;pause name`, `killScript(name)` → `;kill name`, `startScript(name, args?)` → `;name [args]`, `pollScriptList()` → `;listall`
+- [ ] Add `better-sqlite3` dependency to `package.json`
 
-#### Active Scripts Panel
-- [ ] New panel type: "Lich Scripts" — live list of currently running scripts
-- [ ] Columns: script name, status badge (Running / Paused / Dying), uptime display, Abort button, Pause button
-- [ ] Data source: `LichBridge.StreamParser` parses the `LichScripts` stream (already received; needs structure parsing)
-- [ ] Panel is user-discoverable via Panel Manager (not auto-shown)
-- [ ] Empty state: "No scripts running" with a note about how to start scripts
+#### Script List Polling — `src/renderer/hooks/useLichBridge.ts`
+- [ ] `useLichBridge()` hook: sends `;listall` every 5 seconds while connected via existing `send-command` IPC
+- [ ] Sets `pendingScriptListRef` flag on each poll send; clears on response or after 3s timeout
+- [ ] Exposes `scripts: ScriptRecord[]`, `pauseScript(name)`, `killScript(name)`, `startScript(name)`, `sendPaletteCommand(cmd)`, `lastUpdated: number`
+- [ ] `ScriptRecord` type in `shared/types.ts`: `{ name: string; paused: boolean; custom: boolean; firstSeen: number }`
+- [ ] `firstSeen` tracked in a `Map<string, number>` ref — resets when a script disappears and reappears; provides approximate uptime display
+- [ ] `custom` flag resolved by cross-referencing with known files in `scripts/custom/` (from `list-lich-scripts` IPC)
 
-#### Script Palette
-- [ ] Per-character configurable button strip stored under new `scriptPalette` key in character YAML
-- [ ] Each button: display label + dot-command string
-- [ ] Default palette ships with common commands: `.t2`, `.buff`, `.tend`, `.t2 stop`
-- [ ] Button strip renders in the toolbar or as a small dedicated panel — user configurable
-- [ ] Buttons send via `CommandInjector` → existing `send-command` IPC
-- [ ] Palette editor in Settings or inline panel edit mode
+#### `;listall` Response Interception — `GameWindow.tsx`
+- [ ] In the event loop, if `pendingScriptListRef.current && line.text.startsWith('--- Lich: ')` → attempt parse, suppress from `mainLines` display if parse succeeds
+- [ ] Parse regex: `SCRIPT_LIST_PATTERN` — matches `"no active scripts"` or comma-separated `"name"` / `"name (paused)"` entries; does NOT match error messages that contain `!` or natural language
+- [ ] Failed parse (unexpected format): line falls through to normal display — no silent data loss
+- [ ] `lichScripts` state added to `GameWindow`; passed through `sharedFrameProps` to `PanelFrame` → `ScriptListPanel`
 
-#### Script Feed Improvements
-- [ ] Existing custom stream panels (LichScripts, script-specific streams) support per-stream color coding
-- [ ] Color auto-assigned from a palette when stream is first discovered; user can override
-- [ ] Color assignment stored in display profile (character YAML)
-- [ ] Clear button promoted to visible panel chrome (not just right-click)
+#### Active Scripts Panel — `src/renderer/components/ScriptListPanel.tsx`
+- [ ] New structured panel type `'lichScripts'` registered in `PanelFrame` catalog; not shown by default (user adds via Panel Manager)
+- [ ] Columns: type badge (`C` amber for custom, `▶` dim for core), script name, status (`running` green / `paused` amber), uptime (hh:mm:ss from `firstSeen`), Pause/Resume button, Kill button
+- [ ] Kill button shows confirmation popover before sending `;kill name` (uses `ContextMenu` portal)
+- [ ] Footer: "N scripts · last updated Xs ago"
+- [ ] Empty state: "No scripts running. Use `;scriptname` in the command bar to start one."
+- [ ] Unavailable state: when `pendingScriptListRef` has been waiting >3s, show "Script list unavailable" (Lich offline or slow)
+
+#### Script Palette — `src/renderer/components/ScriptPalettePanel.tsx`
+- [ ] Horizontal strip of compact buttons in game toolbar (between mode switcher and theme button); hidden when `scriptPalette` array is empty
+- [ ] Each button: `{ label: string; command: string }` — command sent verbatim via `send-command` IPC
+- [ ] Overflow: `[+N ▼]` dropdown for buttons beyond 6
+- [ ] `scriptPalette: PaletteButton[]` added to `CharacterProfile` type and profile build/import/clear
+- [ ] Palette editor: gear icon on hover opens a modal list editor (add/remove/reorder rows, label + command fields); auto-saves to character YAML via `scheduleProfileSave()`
+- [ ] Default palette for new characters: `;t2`, `;buff`, `;tend`, `;kill t2`
+
+#### Lich Settings Viewer
+- [ ] `get-lich-settings` IPC handler returns `SELECT name, value FROM lich_settings ORDER BY name ASC` as key-value array
+- [ ] Collapsible "Lich Settings" section in Settings panel footer OR accessible via a toolbar gear icon; read-only, searchable; shows feature flags and Lich config values
+- [ ] Graceful fallback: "Lich database not found" when `lich.db3` cannot be opened
+
+#### Session Awareness
+- [ ] `get-lich-sessions` IPC handler returns non-exited rows from `session_summary_state`
+- [ ] If more than one active session detected (multiple characters), show a dismissable info chip in the toolbar: "N Lich sessions active: Name1, Name2"
+- [ ] Graceful fallback: returns empty array when table is absent or feature flag is off; no chip shown
 
 ---
 
