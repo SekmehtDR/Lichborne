@@ -77,6 +77,18 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   debugPanelToggle: (open: boolean) => ipcRenderer.send('debug-panel-toggle', open),
+
+  // ── LichBridge ───────────────────────────────────────────────────────────────
+  lichPollScripts:  ():                                    Promise<void>   => ipcRenderer.invoke('lich:poll-scripts'),
+  lichPauseScript:  (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:pause-script', name),
+  lichResumeScript: (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:resume-script', name),
+  lichKillScript:   (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:kill-script', name),
+  lichStartScript:  (name: string, args?: string):         Promise<void>   => ipcRenderer.invoke('lich:start-script', name, args),
+  onLichScriptsUpdate: (cb: (entries: Array<{ name: string; paused: boolean }>) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, entries: Array<{ name: string; paused: boolean }>) => cb(entries)
+    ipcRenderer.on('lich:scripts-update', listener)
+    return () => ipcRenderer.removeListener('lich:scripts-update', listener)
+  },
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
 

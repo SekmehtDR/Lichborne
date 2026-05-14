@@ -34,6 +34,8 @@ import { THEMES, applyTheme, applyCustomTheme } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
+import { useLichBridge } from '../hooks/useLichBridge'
+import type { ScriptPaletteEntry } from '../../shared/types'
 import '../styles/game.css'
 import '../styles/panels.css'
 import '../styles/map-panel.css'
@@ -206,6 +208,20 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [leftHand, setLeftHand]     = useState('Empty')
   const [exits, setExits]           = useState<string[]>([])
   const [newLineCount, setNewLineCount] = useState(0)
+
+  // LichBridge — script tracking
+  const lichPath = (() => {
+    try { return JSON.parse(localStorage.getItem('lichborne.advancedSettings') ?? '{}').lichPath ?? '' } catch { return '' }
+  })()
+  const { scripts: lichScripts, lastUpdated: lichLastUpdated, pending: lichPending,
+          pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(!dropped)
+
+  // Script Palette — user-configured quick-launch buttons
+  const [scriptPalette, setScriptPalette] = useState<ScriptPaletteEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem('lichborne.scriptPalette') ?? '[]') } catch { return [] }
+  })
+  void setScriptPalette  // exposed via settings in a later release; suppress lint for now
+  void lichPath
 
   // Layout sizes
   const [panelWidth, setPanelWidth]       = useState(() => loadInt('lichborne.panelWidth', DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
@@ -1095,6 +1111,11 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     unreadIds: unreadStreams,
     streamTimestamps,
     onToggleTimestamp: toggleStreamTimestamp,
+    lichScripts, lichLastUpdated, lichPending,
+    onLichPause:   pauseScript,
+    onLichResume:  resumeScript,
+    onLichKill:    killScript,
+    onLichRefresh: refreshScripts,
   }
 
   const handleContactClick = useCallback((contactId: string, x: number, y: number) => {
@@ -1149,6 +1170,18 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         <button className={`btn-lich-scripts${showLichScripts ? ' btn-lich-scripts--active' : ''}`} onClick={() => setShowLichScripts(v => !v)}>Scripts</button>
         <button className={`btn-lich-profile${showLichProfile ? ' btn-lich-profile--active' : ''}`} onClick={() => setShowLichProfile(v => !v)}>Profiles</button>
         <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
+        {scriptPalette.length > 0 && (
+          <div className="script-palette">
+            {scriptPalette.map((entry, i) => (
+              <button
+                key={i}
+                className="script-palette-btn"
+                onClick={() => sendCommand(entry.command)}
+                title={entry.command}
+              >{entry.label}</button>
+            ))}
+          </div>
+        )}
         <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button

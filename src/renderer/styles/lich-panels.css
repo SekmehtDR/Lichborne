@@ -261,3 +261,220 @@
   font-size: 0.85rem;
   padding: 2px 4px;
 }
+
+/* ── Active Scripts Panel (ScriptListPanel) ──────────────────────────────── */
+
+.sl-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+  font-size: 0.82rem;
+}
+
+.sl-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sl-header-title {
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  text-transform: uppercase;
+  flex: 1;
+}
+
+.sl-refresh {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 2px 5px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.sl-refresh:hover:not(:disabled) { color: var(--text-primary); }
+.sl-refresh:disabled { opacity: 0.4; cursor: default; }
+.sl-refresh--spinning { animation: sl-spin 0.8s linear infinite; }
+@keyframes sl-spin { to { transform: rotate(360deg); } }
+
+.sl-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sl-empty {
+  padding: 24px 16px;
+  color: var(--text-faint);
+  font-style: italic;
+  text-align: center;
+  font-size: 0.8rem;
+}
+.sl-empty code {
+  font-family: monospace;
+  background: rgba(255,255,255,0.07);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.sl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.1s;
+}
+.sl-row:hover { background: var(--bg-hover); }
+.sl-row--paused   { opacity: 0.65; }
+.sl-row--killing { opacity: 0.5; }
+
+.sl-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  border-radius: 3px;
+  padding: 1px 0;
+}
+.sl-badge--custom {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border: 1px solid var(--accent-bg);
+}
+.sl-badge--core {
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.sl-name {
+  flex: 1;
+  font-family: monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sl-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.sl-status--running {
+  color: #4caf50;
+  background: rgba(76,175,80,0.1);
+}
+.sl-status--paused {
+  color: var(--preset-expiry);
+  background: rgba(255,165,0,0.1);
+}
+.sl-status--killing {
+  color: var(--color-danger);
+  background: rgba(255,80,80,0.1);
+}
+
+.sl-uptime {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  width: 52px;
+  text-align: right;
+}
+
+.sl-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sl-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.1s;
+  line-height: 1.4;
+}
+.sl-btn:hover { color: var(--text-primary); border-color: var(--text-dim); }
+
+.sl-btn--pause:hover  { color: var(--preset-expiry); border-color: var(--preset-expiry); }
+.sl-btn--resume:hover { color: #4caf50; border-color: #4caf50; }
+.sl-btn--kill:hover   { color: var(--color-danger); border-color: var(--color-danger); }
+
+.sl-kill-confirm {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  color: var(--color-danger);
+}
+.sl-btn--kill-yes {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+}
+.sl-btn--kill-yes:hover { opacity: 0.85; color: #fff; }
+.sl-btn--kill-no { }
+
+.sl-footer {
+  padding: 5px 12px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border-faint);
+  background: var(--bg-hover);
+  flex-shrink: 0;
+}
+
+/* ── Script Palette (toolbar quick-launch strip) ─────────────────────────── */
+
+.script-palette {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  border-left: 1px solid var(--border-faint);
+  border-right: 1px solid var(--border-faint);
+}
+
+.script-palette-btn {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.script-palette-btn:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}

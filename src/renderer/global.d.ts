@@ -11,6 +11,13 @@ declare global {
       onError: (cb: (message: string) => void) => () => void
       onRawXml: (cb: (line: string) => void) => () => void
       debugPanelToggle: (open: boolean) => void
+      // LichBridge
+      lichPollScripts:     ()                                           => Promise<void>
+      lichPauseScript:     (name: string)                               => Promise<void>
+      lichResumeScript:    (name: string)                               => Promise<void>
+      lichKillScript:      (name: string)                               => Promise<void>
+      lichStartScript:     (name: string, args?: string)                => Promise<void>
+      onLichScriptsUpdate: (cb: (entries: Array<{ name: string; paused: boolean }>) => void) => () => void
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       discoverLichPaths: (currentRuby: string, currentLich: string) => Promise<{
         rubyPath: string | null; lichPath: string | null

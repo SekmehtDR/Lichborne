@@ -81,17 +81,18 @@
 
 ---
 
-## Next Target: Release C — "Lich Dashboard" (v0.4)
+## Next Target: Release D — "Deep Lich" (v0.5)
 
-**Theme:** Real-time Lich state surfaced in the UI. Introduces the `LichBridge` module.
+**Theme:** Lich config management from within the client. Introduces `better-sqlite3` for SQLite reads.
 
-Key deliverables (full spec in Tracker.md Lich-Primary Roadmap and DESIGN.md §25.4–25.5):
-- `LichBridge` module in main process (FileReader, StreamParser, CommandInjector, SqliteReader stub)
-- Active Scripts Panel — live list of running Lich scripts with pause/abort controls
-- Script Palette — per-character configurable dot-command button strip in toolbar/panel
-- Script Feed improvements — per-stream color coding, visible clear button
+Key deliverables (full spec in Tracker.md Lich-Primary Roadmap and DESIGN.md §26):
+- Variable Inspector Panel — searchable key-value table from `lich.db3` Vars/UserVars
+- YAML Profile Editor — diff view before write, schema-aware editing for t2/setup keys
+- Lich Settings Viewer — read-only `lich_settings` table from `lich.db3`
+- Session Awareness — multi-session chip when >1 active character detected
+- Richer Highlight Engine — named groups, live test input, import/export, priority ordering
 
-See the **Lich-Primary Roadmap** section below for the full Release C checklist.
+See the **Lich-Primary Roadmap** section below for the full Release D checklist.
 **B52 — boldDepth stuck after unescaped `<` in Lich script output ✅: `<pushBold/>60 < 65<popBold/>` — the tokenizer's `<[^>]*>` consumes ` 65<popBold/>` as one malformed tag, swallowing popBold and leaving boldDepth=1 for the rest of the session (all text bold/yellow). Fix 1: `boldDepth = 0` added to the prompt handler — prompts are frame boundaries, bold cannot survive one. Fix 2: `parser.reset()` called in the `CH.LOGIN` IPC handler so stuck state doesn't bleed into a new session after disconnect/reconnect ✅**
 **B28 — Advanced/Lich settings reset to defaults in second windows ✅: separate Electron processes cannot share localStorage due to LevelDB file locking; `_shared.yaml` is the correct cross-process store but was only written on a successful connect, so a second instance opening before any connection fell back to all defaults. Fix: `LoginScreen` `adv` effect now debounce-exports the shared profile (1s) whenever any advanced setting changes — YAML is always current for any concurrently-opened instance ✅**
 **B42 — Wrayth import wizard duplicate "Substitution rules" row ✅: `parseWraythXml` was setting both `substitutionCount: stringsCount` and `stringsCount` in its return — `substitutionCount` renders as "Substitution rules" and `stringsCount` renders as "Wrayth strings", producing two rows for the same `<strings>` block data. Fix: removed `substitutionCount` assignment from Wrayth parser (that field belongs to Genie/Frostbite substitution files); `countWraythBlock` logic verified correct with synthetic XML ✅**
@@ -125,6 +126,7 @@ See the **Lich-Primary Roadmap** section below for the full Release C checklist.
 | `0.1.10` | 2026-05-09 | Released (pre-release) | B17: combat/swimming scroll-pin race fix (onWheel eager unpin); B18: auto-copy replaced with native Electron clipboard IPC; B19: Home/End keys work in automation text fields; B20: scroll pin fully fixed — no trim while unpinned (content at top stays visible), handleScroll only un-pins, badge/End re-pins and trims to MAX_LINES, hard cap at 6000 lines; tested stable at 3600+ new lines |
 | `0.1.11` | 2026-05-09 | Released (pre-release) | Map panel UI reorganization: two-bar chrome layout, legend as canvas overlay, current room label z-order fix, B30 custom theme map var fix; Profile System Phases 1–3: full YAML round-trip (export + import), shared profile pre-fills login form, character YAML restores all settings on login; new automations and contact templates default to allGroups: true; contact templates are now group-aware — styling toggles with mode switches |
 | `0.1.12` | 2026-05-09 | Released (pre-release) | Profile system Phases 1–3; group-aware contact templates; allGroups default for all new automation items; profiles/ gitignored |
+| `0.4.0` | 2026-05-14 | Released | Release C — Lich Dashboard: LichBridge module (`commandInjector.ts` + `index.ts`), strict `;listall` interception regex (free-form `--- Lich:` messages pass through), `useLichBridge` hook (5s poll, 8s linger window for transient restarts, optimistic kill state, killed scripts evict immediately bypassing linger), ScriptListPanel (badge/name/status/uptime/pause/resume/kill with confirm, newest-first sort, footer with poll interval, unavailable state), `killing` status indicator, Script Palette toolbar strip; IPC pipeline improvements (event batching, raw-xml gating, UnknownEvent filter) |
 | `0.3.2` | 2026-05-13 | Released | B52: boldDepth stuck after unescaped `<`; B28: advanced settings reset in second windows; B42: Wrayth import duplicate row; password save (safeStorage DPAPI, per-account, auto-fill); B53: injuries panel wound detection fixed (name attr, not height/width); theme contrast pass (16+ themes, invisible border-faint fixed); CSS wiring pass (panels/game/global.css hardcoded colors → CSS vars + color-mix); all dark themes bold text → #ffff00 (yellow, matching Genie default; light themes unchanged) |
 | `0.3.1` | 2026-05-12 | Released | Release B bug fixes: room matching reworked (Lich ID from subtitle, direct lookup), Genie node matching improved (zone-qualified title fallback), cross-zone exits in detail panel, detail panel follows player, recenter works cross-zone, reload button, auto-reload on map download, mouse wheel zoom, map control focus fix, single recenter button |
 | `0.3.0` | 2026-05-12 | In progress | Release B — Lich Visibility: hybrid map system (Lich image view + Genie SVG graph, zone-by-zone, direct-connect mode, persistence via _shared.yaml, generation counter cancellation, zoom buttons, cross-zone diamonds, orphan legend, label default off, dragRef null-deref fixes, null wayto/description guards, computeFit NaN guard, Genie load race fix, map file selector dynamic scan + sequence sort + mtime tiebreaker) |
@@ -1040,52 +1042,53 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 - [x] `UnknownEvent` filtered in main before IPC — never crosses the boundary during normal play
 - [x] DESIGN.md §2.12 added documenting the full IPC dispatch pipeline
 
-#### LichBridge Module (main process) — `src/main/lichbridge/`
-- [ ] `index.ts` — module assembly, registers all Lich-specific IPC handlers
-- [ ] `sqliteReader.ts` — opens `lich.db3` via `better-sqlite3`; `get-lich-settings` handler (plain string key-value from `lich_settings` table); `get-lich-sessions` handler (rows from `session_summary_state`, graceful fallback when table is empty or feature flag is off)
-- [ ] `fileReader.ts` — consolidates existing `list-lich-scripts` and `read-lich-profile` IPC handlers from `main.ts` into module
-- [ ] `commandInjector.ts` — typed wrappers: `pauseScript(name)` → `;pause name`, `killScript(name)` → `;kill name`, `startScript(name, args?)` → `;name [args]`, `pollScriptList()` → `;listall`
-- [ ] Add `better-sqlite3` dependency to `package.json`
+#### LichBridge Module (main process) — `src/main/lichbridge/` ✅
+- [x] `index.ts` — module assembly, registers all Lich-specific IPC handlers; strict `SCRIPT_LIST_RE` only intercepts `;listall` response format — free-form `--- Lich:` messages pass through to game window
+- [x] `commandInjector.ts` — typed wrappers: `pauseScript(name)` → `;pause name`, `killScript(name)` → `;kill name`, `startScript(name, args?)` → `;name [args]`, `pollScriptList()` → `;listall`
+- [ ] `sqliteReader.ts` — deferred to Release D
+- [ ] `fileReader.ts` consolidation — deferred to Release D
+- [ ] `better-sqlite3` dependency — deferred to Release D
 
-#### Script List Polling — `src/renderer/hooks/useLichBridge.ts`
-- [ ] `useLichBridge()` hook: sends `;listall` every 5 seconds while connected via existing `send-command` IPC
-- [ ] Sets `pendingScriptListRef` flag on each poll send; clears on response or after 3s timeout
-- [ ] Exposes `scripts: ScriptRecord[]`, `pauseScript(name)`, `killScript(name)`, `startScript(name)`, `sendPaletteCommand(cmd)`, `lastUpdated: number`
-- [ ] `ScriptRecord` type in `shared/types.ts`: `{ name: string; paused: boolean; custom: boolean; firstSeen: number }`
-- [ ] `firstSeen` tracked in a `Map<string, number>` ref — resets when a script disappears and reappears; provides approximate uptime display
-- [ ] `custom` flag resolved by cross-referencing with known files in `scripts/custom/` (from `list-lich-scripts` IPC)
+#### Script List Polling — `src/renderer/hooks/useLichBridge.ts` ✅
+- [x] `useLichBridge()` hook: pushes `;listall` every 5 seconds while connected; subscribes to `lich:scripts-update` push events from main
+- [x] `pendingRef` flag + 3s timeout guard; `pending` state exposed for spinner
+- [x] Exposes `scripts: ScriptRecord[]`, `pauseScript`, `resumeScript`, `killScript`, `refresh`, `lastUpdated`
+- [x] `ScriptRecord` type: `{ name, paused, custom, firstSeen, killing? }` in `shared/types.ts`
+- [x] `firstSeenRef` + `lastSeenRef` + `lastKnownRef` Maps; 8s linger window absorbs T2-style transient restarts; scripts in `killingRef` bypass linger and evict immediately on confirmed exit
+- [x] `killingRef` set on kill action — optimistic `killing` state before next poll; evicted immediately when next poll confirms gone (does not re-appear as "running" for linger duration)
+- [x] Script list sorted newest-first by `firstSeen` — most recently started script at top
+- [x] `custom` flag from `list-lich-scripts` IPC cross-reference
 
-#### `;listall` Response Interception — `GameWindow.tsx`
-- [ ] In the event loop, if `pendingScriptListRef.current && line.text.startsWith('--- Lich: ')` → attempt parse, suppress from `mainLines` display if parse succeeds
-- [ ] Parse regex: `SCRIPT_LIST_PATTERN` — matches `"no active scripts"` or comma-separated `"name"` / `"name (paused)"` entries; does NOT match error messages that contain `!` or natural language
-- [ ] Failed parse (unexpected format): line falls through to normal display — no silent data loss
-- [ ] `lichScripts` state added to `GameWindow`; passed through `sharedFrameProps` to `PanelFrame` → `ScriptListPanel`
+#### `;listall` Response Interception — `src/main/lichbridge/index.ts` ✅
+- [x] `LichBridge.interceptLine()` called before `parser.parse()` in `main.ts` line handler
+- [x] Strict regex matches only exact `;listall` format (`no active scripts` or comma-separated names with optional `(paused)`); all other `--- Lich:` messages return `true` and fall through
+- [x] Parsed entries pushed via `win.webContents.send('lich:scripts-update', entries)`
 
-#### Active Scripts Panel — `src/renderer/components/ScriptListPanel.tsx`
-- [ ] New structured panel type `'lichScripts'` registered in `PanelFrame` catalog; not shown by default (user adds via Panel Manager)
-- [ ] Columns: type badge (`C` amber for custom, `▶` dim for core), script name, status (`running` green / `paused` amber), uptime (hh:mm:ss from `firstSeen`), Pause/Resume button, Kill button
-- [ ] Kill button shows confirmation popover before sending `;kill name` (uses `ContextMenu` portal)
-- [ ] Footer: "N scripts · last updated Xs ago"
-- [ ] Empty state: "No scripts running. Use `;scriptname` in the command bar to start one."
-- [ ] Unavailable state: when `pendingScriptListRef` has been waiting >3s, show "Script list unavailable" (Lich offline or slow)
+#### Active Scripts Panel — `src/renderer/components/ScriptListPanel.tsx` ✅
+- [x] Panel type `'lichScripts'` registered in `PanelFrame` catalog
+- [x] Columns: type badge (`C` amber for custom, `▶` dim for core), script name, status (`running` green / `paused` amber / `killing` red), uptime (`mm:ss` / `h:mm:ss` from `firstSeen`), Pause/Resume/Kill buttons
+- [x] Kill button shows inline "Kill? Yes / No" confirmation; dismisses on outside click
+- [x] Footer: "N scripts · updated Xs ago · polls every 5s"
+- [x] Empty state: "No scripts running. Use `;scriptname` to start one."
+- [x] Unavailable state: "Script list unavailable — connect via Lich to see running scripts."
+- [x] `killing` status indicator — optimistic UI update on kill click, row dims to 50% opacity
 
-#### Script Palette — `src/renderer/components/ScriptPalettePanel.tsx`
-- [ ] Horizontal strip of compact buttons in game toolbar (between mode switcher and theme button); hidden when `scriptPalette` array is empty
-- [ ] Each button: `{ label: string; command: string }` — command sent verbatim via `send-command` IPC
-- [ ] Overflow: `[+N ▼]` dropdown for buttons beyond 6
-- [ ] `scriptPalette: PaletteButton[]` added to `CharacterProfile` type and profile build/import/clear
-- [ ] Palette editor: gear icon on hover opens a modal list editor (add/remove/reorder rows, label + command fields); auto-saves to character YAML via `scheduleProfileSave()`
-- [ ] Default palette for new characters: `;t2`, `;buff`, `;tend`, `;kill t2`
+#### Script Palette — toolbar strip ✅
+- [x] `script-palette` strip in game toolbar; hidden when `scriptPalette` array is empty
+- [x] Each button: `{ label: string; command: string }` — command sent verbatim via `send-command` IPC
+- [x] `scriptPalette` state in `GameWindow`; persisted to `lichborne.scriptPalette` localStorage key
+- [ ] Palette editor (gear icon modal) — deferred
+- [ ] Overflow `[+N ▼]` dropdown — deferred
 
-#### Lich Settings Viewer
-- [ ] `get-lich-settings` IPC handler returns `SELECT name, value FROM lich_settings ORDER BY name ASC` as key-value array
-- [ ] Collapsible "Lich Settings" section in Settings panel footer OR accessible via a toolbar gear icon; read-only, searchable; shows feature flags and Lich config values
-- [ ] Graceful fallback: "Lich database not found" when `lich.db3` cannot be opened
+#### Lich Settings Viewer — deferred to Release D
+- [ ] `get-lich-settings` IPC handler
+- [ ] Collapsible viewer in Settings panel; read-only, searchable
+- [ ] Graceful fallback when `lich.db3` not found
 
-#### Session Awareness
-- [ ] `get-lich-sessions` IPC handler returns non-exited rows from `session_summary_state`
-- [ ] If more than one active session detected (multiple characters), show a dismissable info chip in the toolbar: "N Lich sessions active: Name1, Name2"
-- [ ] Graceful fallback: returns empty array when table is absent or feature flag is off; no chip shown
+#### Session Awareness — deferred to Release D
+- [ ] `get-lich-sessions` IPC handler
+- [ ] Multi-session toolbar chip
+- [ ] Graceful fallback when table absent
 
 ---
 
@@ -1161,8 +1164,8 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 |---------|---------|-------|----------------------|-----------------|--------|
 | A | v0.2.0 | Honest Client | None | Import reframe, automation reframe, 17 import bug fixes | ✅ Released |
 | B | v0.3.x | Lich Visibility | File system (read) | Map auto-detect, script browser, YAML profile viewer, hybrid graph map | ✅ Released |
-| C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette | 🔲 Next |
-| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, richer highlight engine | 🔲 Planned |
+| C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette | ✅ Released |
+| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, Lich Settings, Session Awareness | 🔲 Next |
 | E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log | 🔲 Planned |
 | F | v0.7 | Hook Layer | Lich TCP API (new) | Hook Registry, real-time Lich IPC | 🔲 Long-term |
 

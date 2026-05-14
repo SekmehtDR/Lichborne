@@ -3722,6 +3722,8 @@ interface ScriptRecord {
 
 `firstSeen` is tracked in a `Map<string, number>` keyed by script name, persisted in a ref. When a script disappears from the list and reappears, `firstSeen` resets. This gives approximate uptime without any Lich-side tracking.
 
+The script list is sorted by `firstSeen` descending — the most recently launched script appears at the top.
+
 #### Polling lifecycle
 
 - Polling starts `onConnect` (after `GameWindow` mounts)
@@ -3743,18 +3745,19 @@ A new panel type (`panel-id: 'lichScripts'`) available in the Panel Manager. Not
 │ [C buff]         running   0:03:11   [⏸] [✕]     │
 │ [C tend]         paused    0:00:45   [▶] [✕]     │
 │ [▶ repository]   running   0:01:02   [⏸] [✕]     │
-└──────────── 4 scripts · last updated 0:00s ago ───┘
+└──── 4 scripts · last updated 0:00s ago · polls every 5s ───┘
 ```
 
 **Column layout:**
 - **Type badge**: `C` (amber, custom) or `▶` (dim, core) — identifies whether the script is from `scripts/custom/` or core
 - **Name**: script name, monospace
-- **Status**: `running` (green) or `paused` (amber)
+- **Sort order**: newest first by `firstSeen` — most recently started script at the top
+- **Status**: `running` (green), `paused` (amber), or `killing` (red — set optimistically on kill click; script is evicted from the list immediately on the next poll that confirms it is gone, bypassing the normal 8s linger window)
 - **Uptime**: `hh:mm:ss` from `firstSeen` — approximate (from first Lichborne observation)
 - **Pause/Resume button**: ⏸ when running, ▶ when paused — sends `;pause name` or `;unpause name`
 - **Kill button**: ✕ — sends `;kill name`, with a confirmation popover
 
-**Footer:** `N scripts · last updated Xs ago` — shows script count and staleness.
+**Footer:** `N scripts · last updated Xs ago · polls every 5s` — shows script count, staleness, and a reminder that the list is not real-time.
 
 **Empty state:** "No scripts running. Use `;scriptname` in the command bar to start one." with a subtle link to open the Script Browser.
 
@@ -3764,15 +3767,22 @@ A new panel type (`panel-id: 'lichScripts'`) available in the Panel Manager. Not
 
 ```
 useLichBridge() hook
-  → sends ;listall every 5s via send-command IPC
-  → GameWindow event loop detects + parses response
-  → updates lichScripts state in GameWindow
+  → sends ;listall every 5s via lich:poll-scripts IPC
+  → main.ts line handler: LichBridge.interceptLine() matches response
+  → win.webContents.send('lich:scripts-update', entries)
+  → renderer: onLichScriptsUpdate callback fires in useLichBridge
+  → merges with linger window, sorts newest-first by firstSeen
   → ScriptListPanel re-renders
 
 User clicks ⏸ on "t2"
   → useLichBridge().pauseScript('t2')
-  → sends ";pause t2" via send-command IPC
+  → sends ";pause t2" via lich:pause-script IPC
   → next poll (≤5s) reflects paused state
+
+User clicks ✕ on "buff" → confirms kill
+  → killingRef.add('buff'), optimistic killing:true render
+  → sends ";kill buff" via lich:kill-script IPC
+  → next poll: buff absent → immediately evicted (skips 8s linger)
 ```
 
 #### Panel registration

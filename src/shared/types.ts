@@ -1,3 +1,18 @@
+// --- Lich script tracking ---
+
+export interface ScriptRecord {
+  name: string
+  paused: boolean
+  custom: boolean
+  firstSeen: number  // Date.now() at first poll that showed this script
+  killing?: boolean // kill sent, waiting for next poll to confirm removal
+}
+
+export interface ScriptPaletteEntry {
+  label: string
+  command: string
+}
+
 export interface LoginCredentials {
   account: string
   password: string

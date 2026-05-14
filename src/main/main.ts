@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
+import { lichBridge } from './lichbridge'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type { GameEvent, LoginCredentials } from '../shared/types'
@@ -24,6 +25,10 @@ const parser = new StormFrontParser()
 let cleanDisconnect = false
 let connected = false
 let debugPanelOpen = false
+
+// Register LichBridge once — passes connection.send so the injector
+// can dispatch ;listall / ;pause / ;kill without any extra wiring.
+lichBridge.register((cmd: string) => connection.send(cmd))
 
 // Coalesce parsed game events across all lines received in a single I/O tick.
 // setImmediate fires after the current TCP read drains, so all lines from one
@@ -48,6 +53,7 @@ connection.on('status', (msg: string) => {
 })
 connection.on('line', (line: string) => {
   if (debugPanelOpen) mainWindow?.webContents.send(CH.RAW_XML, line)
+  if (!lichBridge.interceptLine(line, mainWindow)) return
   const events = parser.parse(line)
   for (const evt of events) {
     if (evt.type === 'launch-url') shell.openExternal(evt.url)
