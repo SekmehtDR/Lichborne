@@ -2762,6 +2762,12 @@ layout:
   bottomActiveId: exp
   streamTimestamps: { thoughts: true, arrivals: false }
   mapLabelMode: short   # none | short | full | id | note
+  exp:
+    focus: Ranger           # selected guild/badging; 'None' = no badging
+    pinnedSkills: [Athletics, Stealth]
+    sortMode: alpha         # alpha | guild | rank | rate
+    sortDesc: false
+    focusMode: none         # none | primary | secondary | tertiary
 
 automations:
   highlights: [...]
@@ -2801,6 +2807,11 @@ contactTemplates: [...]
 | `lichborne.panelWidth` / `topPanelHeight` / `midPanelHeight` | `layout.*` | character |
 | `lichborne.streamTimestamps` | `layout.streamTimestamps` | character |
 | `lichborne.mapLabelMode` | `layout.mapLabelMode` | character |
+| `lichborne.focus.${charKey}` | `layout.exp.focus` | character (character-keyed) |
+| `lichborne.expPins.${charKey}` | `layout.exp.pinnedSkills` | character (character-keyed) |
+| `lichborne.expSort` | `layout.exp.sortMode` | character |
+| `lichborne.expSortDesc` | `layout.exp.sortDesc` | character |
+| `lichborne.expFocusMode` | `layout.exp.focusMode` | character |
 | `lichborne.mapDir` | `_shared.mapDir` | shared |
 | `lichborne.mapFile` | — (transient, not persisted to YAML) | — |
 
@@ -2828,6 +2839,8 @@ contactTemplates: [...]
 - Contacts panel `onSaved`
 - Contact last-seen auto-update timer (2s)
 - Mode switch (`activeModeId` watcher)
+- Exp panel badging/guild change (`handleFocusChange`)
+- Exp panel skill pin toggle (`handleTogglePin`)
 
 **Shared profile debounce triggers** (`scheduleSharedProfileSave`):
 - Map folder selected (`browseMapsFolder` in `MapPanel`)
@@ -2862,7 +2875,7 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 
 | File | Role |
 |---|---|
-| `src/renderer/profile-types.ts` | TypeScript interfaces (`SharedProfile`, `SharedAdvancedSettings`, `CharacterProfile`, `LayoutProfile`, `AutomationsProfile`, `GameDefinition`) |
+| `src/renderer/profile-types.ts` | TypeScript interfaces (`SharedProfile`, `SharedAdvancedSettings`, `CharacterProfile`, `LayoutProfile`, `AutomationsProfile`, `ExpProfile`, `GameDefinition`) |
 | `src/main/profiles.ts` | Main process YAML file I/O — `readSharedProfile`, `writeSharedProfile`, `readCharacterProfile`, `writeCharacterProfile`, `listCharacterProfiles` |
 | `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile`, `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile`, `scheduleProfileSave`, `scheduleSharedProfileSave` |
 | `src/main/main.ts` | IPC handlers: `profile:read-shared`, `profile:write-shared`, `profile:read-character`, `profile:write-character`, `profile:list` |

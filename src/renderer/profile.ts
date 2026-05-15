@@ -49,6 +49,7 @@ export function buildCharacterProfile(
   game: string,
   useLich: boolean,
 ): CharacterProfile {
+  const charKey = character || '_'
   const layout: LayoutProfile = {
     panelWidth:       parseInt(localStorage.getItem('lichborne.panelWidth')      ?? '320', 10),
     topPanelHeight:   parseInt(localStorage.getItem('lichborne.topPanelHeight')  ?? '200', 10),
@@ -61,6 +62,13 @@ export function buildCharacterProfile(
     bottomActiveId:   localStorage.getItem('lichborne.bottomActiveId') ?? 'exp',
     streamTimestamps: tryParse(localStorage.getItem('lichborne.streamTimestamps'), {}),
     mapLabelMode:     localStorage.getItem('lichborne.mapLabelMode.v2') ?? 'none',
+    exp: {
+      focus:        localStorage.getItem(`lichborne.focus.${charKey}`)    ?? 'None',
+      pinnedSkills: tryParse(localStorage.getItem(`lichborne.expPins.${charKey}`), []),
+      sortMode:     localStorage.getItem('lichborne.expSort')             ?? 'alpha',
+      sortDesc:     localStorage.getItem('lichborne.expSortDesc')         === 'desc',
+      focusMode:    localStorage.getItem('lichborne.expFocusMode')        ?? 'none',
+    },
   }
 
   const automations: AutomationsProfile = {
@@ -157,6 +165,15 @@ export async function importCharacterProfile(character: string): Promise<Charact
     if (l.bottomActiveId) localStorage.setItem('lichborne.bottomActiveId', l.bottomActiveId)
     if (l.streamTimestamps) localStorage.setItem('lichborne.streamTimestamps', JSON.stringify(l.streamTimestamps))
     if (l.mapLabelMode)     localStorage.setItem('lichborne.mapLabelMode.v2', l.mapLabelMode)
+    if (l.exp) {
+      const e = l.exp
+      const cKey = character || '_'
+      if (e.focus        != null) localStorage.setItem(`lichborne.focus.${cKey}`,    e.focus)
+      if (e.pinnedSkills != null) localStorage.setItem(`lichborne.expPins.${cKey}`,  JSON.stringify(e.pinnedSkills))
+      if (e.sortMode     != null) localStorage.setItem('lichborne.expSort',           e.sortMode)
+      if (e.sortDesc     != null) localStorage.setItem('lichborne.expSortDesc',       e.sortDesc ? 'desc' : 'asc')
+      if (e.focusMode    != null) localStorage.setItem('lichborne.expFocusMode',      e.focusMode)
+    }
   }
 
   if (data.automations) {
@@ -195,6 +212,9 @@ const CHARACTER_LS_KEYS = [
   'lichborne.bottomActiveId',
   'lichborne.streamTimestamps',
   'lichborne.mapLabelMode.v2',
+  'lichborne.expSort',
+  'lichborne.expSortDesc',
+  'lichborne.expFocusMode',
   'lichborne.highlights',
   'lichborne.triggers',
   'lichborne.macros',

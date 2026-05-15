@@ -1,3 +1,23 @@
+## What's new in v0.5.1
+
+### Exp panel — learning rate bars and guild badging
+
+- **Learning rate bars** — a thin progress bar now appears below each skill row showing how fast you are learning. The bar fills from 0 to 100% based on your current mindstate (0–34). Color indicates intensity: green for low (absorbing–cogitating), amber for mid (considering–pondering), orange for high (ruminating–crystallizing), and red for locked (34/34).
+- **Fraction display** — each skill now shows `(X/34)` at the end of the row, matching the native game format you already know from `>exp` output (e.g. `understanding (14/34)`).
+- **Bar colors are themeable** — the four bar colors (`--exp-bar-low`, `--exp-bar-mid`, `--exp-bar-high`, `--exp-bar-locked`) are CSS custom properties. They are set in the base dark theme and all themes inherit them; custom themes can override them per-theme.
+- **Guild badging and focus filter** — select your guild from the badging picker to overlay P / S / T / G badges on each skill name showing its skillset priority. With a guild selected, the focus mode filter can narrow the Learning section to only Primary, Secondary, or Tertiary skills.
+- **Exp panel settings persist to your character YAML** — badging selection, pinned skills, sort mode, sort direction, and focus filter are now saved to your `CharacterName.yaml` profile and restored on next login.
+
+### Map — graph view auto-centers on login
+
+- **Map no longer loads off-center** — the graph view now automatically centers on your current room when it first loads. Previously the view would come up at the wrong position and require a manual click of the ◆ button to snap to your location. The fit effect now fires the moment the SVG canvas is ready rather than waiting for a zone change.
+
+### Bug fixes
+
+- **Exp panel sort defaulted to Z-A on fresh install** — the sort direction was read with `!== 'asc'`, which evaluates `true` when nothing is stored (null). Changed to `=== 'desc'` so an absent key correctly defaults to ascending (A-Z), matching other DR clients.
+- **Badging selection not saving to YAML** — changing your guild in the exp panel wrote to localStorage but did not trigger a profile save. The YAML would only update on disconnect. Fixed: guild changes now schedule an immediate debounced profile write.
+- **Skill pins not saving to YAML** — same issue as above for pinning individual skills. Fixed: pin toggles now also schedule a profile write.
+
 ## What's new in v0.5.0
 
 ### Lich Dashboard — deep read access to your Lich installation
@@ -95,7 +115,7 @@
 
 ## How to install
 
-1. Download `Lichborne-0.5.0-setup.exe` below
+1. Download `Lichborne-0.5.1-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -107,4 +127,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.4.0...v0.5.0
+https://github.com/SekmehtDR/Lichborne/compare/v0.5.0...v0.5.1

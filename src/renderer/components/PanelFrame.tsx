@@ -59,6 +59,10 @@ interface Props {
   roomState: RoomState
   expSkills: Record<string, string>
   rankUpSkills?: Set<string>
+  expFocus?: string
+  pinnedSkills?: Set<string>
+  onFocusChange?: (focus: string) => void
+  onTogglePin?: (skill: string) => void
   onSendCommand: (cmd: string) => void
   autoLinkUrls?: boolean
   debugEvents?: GameEvent[]
@@ -92,7 +96,9 @@ interface Props {
 }
 
 export default function PanelFrame({
-  streamLines, roomState, expSkills, rankUpSkills, onSendCommand, autoLinkUrls = true,
+  streamLines, roomState, expSkills, rankUpSkills,
+  expFocus = 'None', pinnedSkills, onFocusChange, onTogglePin,
+  onSendCommand, autoLinkUrls = true,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
@@ -172,7 +178,9 @@ export default function PanelFrame({
     <div className="panel-frame">
       <div className="panel-frame-body">
         {activeTab && renderPanel(
-          activeTab, streamLines, roomState, expSkills, rankUpSkills, onSendCommand,
+          activeTab, streamLines, roomState, expSkills, rankUpSkills,
+          expFocus, pinnedSkills ?? new Set(), onFocusChange ?? (() => {}), onTogglePin ?? (() => {}),
+          onSendCommand,
           debugEvents ?? [], onClearDebug ?? (() => {}),
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           fireLog ?? [], onClearFireLog ?? (() => {}),
@@ -299,6 +307,10 @@ function renderPanel(
   roomState: RoomState,
   expSkills: Record<string, string>,
   rankUpSkills: Set<string> | undefined,
+  expFocus: string,
+  pinnedSkills: Set<string>,
+  onFocusChange: (focus: string) => void,
+  onTogglePin: (skill: string) => void,
   onSendCommand: (cmd: string) => void,
   debugEvents: GameEvent[],
   onClearDebug: () => void,
@@ -335,7 +347,7 @@ function renderPanel(
     case 'conversations': return sp('conversations', streamLines.conversations ?? [])
     case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
     case 'spells':        return sp('spells',        streamLines.spells        ?? [])
-    case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} />
+    case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} focus={expFocus} pinnedSkills={pinnedSkills} onFocusChange={onFocusChange} onTogglePin={onTogglePin} />
     case 'injuries':      return <InjuriesPanel parts={injuryState} />
     case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
     case 'inv':           return sp('inv',           streamLines.inv           ?? [])

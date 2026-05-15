@@ -38,6 +38,14 @@ export interface SharedProfile {
 
 // ── Character (CharacterName.yaml) ────────────────────────────────────────────
 
+export interface ExpProfile {
+  focus: string
+  pinnedSkills: string[]
+  sortMode: string
+  sortDesc: boolean
+  focusMode: string
+}
+
 export interface LayoutProfile {
   panelWidth: number
   topPanelHeight: number
@@ -50,6 +58,7 @@ export interface LayoutProfile {
   bottomActiveId: string
   streamTimestamps: Record<string, boolean>
   mapLabelMode: string
+  exp: ExpProfile
 }
 
 export interface AutomationsProfile {

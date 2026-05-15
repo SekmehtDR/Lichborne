@@ -89,11 +89,17 @@
 
 ### Release E Checklist
 
-#### Guild-Aware Exp Layout
-- [ ] Exp panel auto-orders skills based on detected guild (from `<app>` XML / profile)
-- [ ] Each guild has a preferred skill ordering (top skills shown first)
-- [ ] User can pin specific skills to top; pins override the auto-order
-- [ ] Fallback: alphabetical when guild is unrecognized
+#### Exp Panel — Badging, Focus Filter & Learning Bars ✅
+- [x] `focusTemplates.ts` — full skillset data for all 12 DR guilds; `getSkillBadge()`, `getSkillSortPriority()`, `GUILD_SKILLSET_ORDER`
+- [x] Badging/Focus control bar — guild picker sets `focus`; P/S/T/G badge overlays on each skill name
+- [x] FocusMode filter — `none|primary|secondary|tertiary` filters the Learning section by skillset tier when a guild is selected
+- [x] Sort picker — Alphabetical / Guild-Order / Rank / Learning Rate; sort direction toggle; stored in `localStorage`
+- [x] Learning rate bars — 3px progress bar below each skill row; fill = `mindstateIdx/34`; color-coded by bucket: low (1–8, green), mid (9–20, amber), high (21–33, orange), locked (34, red)
+- [x] `(X/34)` fraction as 7th column in each skill row — matches native game output `understanding (14/34)`
+- [x] Bar colors as CSS variables — `--exp-bar-low/mid/high/locked` in `darkBase`; all themes inherit; per-theme override possible
+- [x] `ExpProfile` interface — `focus`, `pinnedSkills`, `sortMode`, `sortDesc`, `focusMode`; stored under `layout.exp` in `CharacterName.yaml`
+- [x] Profile persistence — badging and pin changes call `scheduleProfileSave`; sort/focusMode persist on disconnect
+- [x] B55/B56/B57 — sort default Z-A bug fixed; missing `scheduleProfileSave` on focus/pin change fixed
 
 #### Character-Aware Panels
 - [ ] Injury display uses race-appropriate body part groupings
@@ -1149,11 +1155,16 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 ### Release E — "Character Awareness" (v0.6)
 **Theme: The client knows your character. Uses data the XML parser already provides.**
 
-#### Guild-Aware Exp Layout
-- [ ] Exp panel auto-orders skills based on detected guild (from `<app>` XML / profile)
-- [ ] Each guild has a preferred skill ordering (top skills shown first): Trader → barter/trading/appraisal; Ranger → athletics/stealth/outdoors; Paladin → holy skills; etc.
-- [ ] User can pin specific skills to top; pins override the auto-order
-- [ ] Fallback: alphabetical when guild is unrecognized
+#### Exp Panel — Badging, Focus Filter & Learning Bars ✅
+- [x] `focusTemplates.ts` — full skillset data for all 12 DR guilds; `getSkillBadge()`, `getSkillSortPriority()`, `GUILD_SKILLSET_ORDER`
+- [x] Badging/Focus control bar — guild picker sets `focus`; P/S/T/G badge overlays on each skill name
+- [x] FocusMode filter — `none|primary|secondary|tertiary` filters the Learning section by skillset tier
+- [x] Sort picker — Alphabetical / Guild-Order / Rank / Learning Rate; sort direction toggle; stored in `localStorage`
+- [x] Learning rate bars — 3px progress bar below each skill row; fill = `mindstateIdx/34`; color-coded: low (1–8, green `--exp-bar-low`), mid (9–20, amber `--exp-bar-mid`), high (21–33, orange `--exp-bar-high`), locked (34, red `--exp-bar-locked`)
+- [x] `(X/34)` fraction as 7th column — matches native game output format `understanding (14/34)`
+- [x] Bar color CSS variables in `darkBase`; all themes inherit; per-theme override possible
+- [x] `ExpProfile` interface in `profile-types.ts`; stored under `layout.exp` in `CharacterName.yaml`; full round-trip persisted
+- [x] B55/B56/B57 — sort default Z-A bug fixed; badging + pin changes now trigger `scheduleProfileSave`
 
 #### Character-Aware Panels
 - [ ] Injury display uses race-appropriate body part groupings (already parsed; this is a display mapping per race)
@@ -1387,6 +1398,7 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 | 2026-05-13 | Direct Lich room ID lookup — `MapPanel` tries `lichDb.get(roomId)` first (O(1)) before falling back to `findRoom(titleIndex, title, desc)`; eliminates false misses for rooms whose titles are shared across zones and for rooms where description text differs slightly between Lich and game output |
 | 2026-05-13 | B43 fix (Bulk Materials / Genie unmatched) — added zone-prefix construction as step 3 in Genie augmentation matching: build `"${zone.name}, ${node.name}"` and look it up in `titleIndex`; covers the common case where Genie stores short names ("Bulk Materials") while Lich titles are fully-qualified ("Leth Deriel, Bulk Materials"); description disambiguation applied on multiple hits |
 | 2026-05-13 | Match-failure specificity — "Location not in Lich map" banner in both MapImageView and MapGraphView now shows `"Lich #NNNN not in map"` when a numeric room ID was received (the room exists in-game but is unmapped in the Lich JSON) vs. generic "Location not in Lich map" when only a title was available |
+| 2026-05-15 | B58 fix — graph map view off-center at startup: fit `useEffect` depended on `currentZone`/`showAllZ`/`zLevels` but not on SVG mount; Genie finishes → SVG mounts via `svgCallbackRef` → no dep changed → effect skipped → transform stuck at {0,0,1}; fix: added `svgReady` state toggled in `svgCallbackRef`, included in fit effect deps so centering fires the moment the SVG is available |
 | 2026-05-13 | B45 fix — removed duplicate ◆ "Re-center" button from MapGraphView top subbar; single ◆ remains in the bottom navigation bar |
 | 2026-05-13 | B46 fix — all map control buttons (⊡, +, −, ◆, z-level chips, ▤, ■) now carry `onMouseDown={e => e.preventDefault()}` to prevent focus theft from the SVG canvas; without this, clicking any button moved browser focus away from the SVG so subsequent wheel events targeted the button element instead of the canvas |
 | 2026-05-13 | B47 fix — replaced static `svgRef + useEffect([], [])` wheel listener pattern with a callback ref (`svgCallbackRef`); `useEffect` with empty deps runs at mount when the SVG doesn't exist yet due to early-return loading states; callback ref attaches the non-passive `{ passive: false }` wheel listener the moment the SVG element actually enters the DOM; listener reference stored in `wheelHandler` ref (not on the DOM element) and removed on unmount/re-mount |

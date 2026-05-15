@@ -179,6 +179,10 @@ export const darkBase: ThemeVars = {
   '--exp-locked-skill':    '#d07030',
   '--exp-locked-mind':     '#a05020',
   '--exp-locked-rate':     '#7a3a10',
+  '--exp-bar-low':         '#4caf7d',
+  '--exp-bar-mid':         '#d4a017',
+  '--exp-bar-high':        '#d4621a',
+  '--exp-bar-locked':      '#cc4444',
 
   // ── Automap ────────────────────────────────────────────────────────────────
   '--map-bg':            '#0a0807',

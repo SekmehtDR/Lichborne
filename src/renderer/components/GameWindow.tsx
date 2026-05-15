@@ -166,6 +166,34 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
   const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
+  const charKey = session.character || '_'
+  const [expFocus, setExpFocus] = useState<string>(() =>
+    localStorage.getItem(`lichborne.focus.${charKey}`) ?? 'None'
+  )
+  const [pinnedSkills, setPinnedSkills] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(`lichborne.expPins.${charKey}`)
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+    } catch { return new Set() }
+  })
+
+  const handleFocusChange = useCallback((focus: string) => {
+    setExpFocus(focus)
+    localStorage.setItem(`lichborne.focus.${charKey}`, focus)
+    scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+  }, [charKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTogglePin = useCallback((skill: string) => {
+    setPinnedSkills(prev => {
+      const next = new Set(prev)
+      if (next.has(skill)) next.delete(skill)
+      else next.add(skill)
+      localStorage.setItem(`lichborne.expPins.${charKey}`, JSON.stringify([...next]))
+      return next
+    })
+    scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+  }, [charKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [command, setCommand] = useState('')
   const historyRef    = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
@@ -1095,6 +1123,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   const sharedFrameProps = {
     streamLines, roomState, expSkills, rankUpSkills,
+    expFocus, pinnedSkills, onFocusChange: handleFocusChange, onTogglePin: handleTogglePin,
     onSendCommand: sendCommand,
     autoLinkUrls: settings.autoLinkUrls,
     debugEvents, onClearDebug: clearDebugEvents,

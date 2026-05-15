@@ -65,6 +65,8 @@ export default function MapGraphView({
   )
   const [showLegend, setShowLegend] = useState(false)
 
+  const [svgReady, setSvgReady] = useState(false)
+
   const svgRef      = useRef<SVGSVGElement | null>(null)
   const wheelHandler = useRef<((e: WheelEvent) => void) | null>(null)
   const dragRef     = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
@@ -78,7 +80,7 @@ export default function MapGraphView({
       svgRef.current.removeEventListener('wheel', wheelHandler.current)
     }
     svgRef.current = el
-    if (!el) { wheelHandler.current = null; return }
+    if (!el) { wheelHandler.current = null; setSvgReady(false); return }
     function onWheel(e: WheelEvent) {
       e.preventDefault()
       const rect = el!.getBoundingClientRect()
@@ -91,7 +93,8 @@ export default function MapGraphView({
     }
     wheelHandler.current = onWheel
     el.addEventListener('wheel', onWheel, { passive: false })
-  }, []) // setTransform is stable
+    setSvgReady(true)
+  }, []) // setTransform and setSvgReady are stable
 
   // ── Determine current zone from current room's augment ──────────────────────
 
@@ -159,7 +162,7 @@ export default function MapGraphView({
       const cy = (visibleAug[0]?.aug.y ?? 0)
       setTransform({ scale: s, x: svg.clientWidth / 2 - cx * s, y: svg.clientHeight / 2 - cy * s })
     }
-  }, [currentZone, showAllZ, zLevels]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentZone, showAllZ, zLevels, svgReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Re-center when current room changes ────────────────────────────────────
 
