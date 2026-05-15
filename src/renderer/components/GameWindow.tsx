@@ -23,8 +23,7 @@ import SettingsPanel from './SettingsPanel'
 import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
 import AutomationsPanel from './AutomationsPanel'
-import LichScriptsPanel from './LichScriptsPanel'
-import LichProfileModal from './LichProfileModal'
+import LichDashboard, { type DashTab } from './LichDashboard'
 import ModeSwitcher from './ModeSwitcher'
 import { useGroups } from './GroupsContext'
 import { isRuleActive } from '../groups'
@@ -241,8 +240,8 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [showSettings,    setShowSettings]      = useState(false)
   const [showContacts,    setShowContacts]      = useState(false)
   const [showAutomations,   setShowAutomations]   = useState(false)
-  const [showLichScripts,   setShowLichScripts]   = useState(false)
-  const [showLichProfile,   setShowLichProfile]   = useState(false)
+  const [showLichDash,      setShowLichDash]      = useState(false)
+  const [lichDashTab,       setLichDashTab]       = useState<DashTab>('scripts')
   const [showMapOverlay,  setShowMapOverlay]    = useState(false)
   const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'groups'>('highlights')
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
@@ -449,7 +448,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   useEffect(() => {
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
       showSettings || showContacts || showAutomations || showMapOverlay ||
-      showLichScripts || showLichProfile
+      showLichDash
   }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
@@ -1167,8 +1166,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         <button className={`btn-map${showMapOverlay ? ' btn-map--active' : ''}`} onClick={() => setShowMapOverlay(v => !v)}>Maps</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
         <button className="btn-automations" onClick={() => setShowAutomations(v => !v)}>Automations</button>
-        <button className={`btn-lich-scripts${showLichScripts ? ' btn-lich-scripts--active' : ''}`} onClick={() => setShowLichScripts(v => !v)}>Scripts</button>
-        <button className={`btn-lich-profile${showLichProfile ? ' btn-lich-profile--active' : ''}`} onClick={() => setShowLichProfile(v => !v)}>Profiles</button>
+        <button className={`btn-lich-dash${showLichDash ? ' btn-lich-dash--active' : ''}`} onClick={() => { setLichDashTab('scripts'); setShowLichDash(v => !v) }}>Lich</button>
         <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
         {scriptPalette.length > 0 && (
           <div className="script-palette">
@@ -1435,18 +1433,13 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         />
       )}
 
-      {showLichScripts && (
-        <LichScriptsPanel
-          onClose={() => setShowLichScripts(false)}
-          onSendCommand={cmd => {
-            setCommand(cmd)
-            inputRef.current?.focus()
-          }}
+      {showLichDash && (
+        <LichDashboard
+          session={session}
+          initialTab={lichDashTab}
+          onClose={() => setShowLichDash(false)}
+          onSendCommand={cmd => { setCommand(cmd); inputRef.current?.focus() }}
         />
-      )}
-
-      {showLichProfile && (
-        <LichProfileModal onClose={() => setShowLichProfile(false)} />
       )}
 
     </div>

@@ -81,7 +81,7 @@ export default function MapGraphView({
     if (!el) { wheelHandler.current = null; return }
     function onWheel(e: WheelEvent) {
       e.preventDefault()
-      const rect = el.getBoundingClientRect()
+      const rect = el!.getBoundingClientRect()
       const mx = e.clientX - rect.left, my = e.clientY - rect.top
       const delta = e.deltaY < 0 ? 1.15 : 1 / 1.15
       setTransform(prev => {

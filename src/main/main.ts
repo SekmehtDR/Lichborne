@@ -5,6 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { lichBridge } from './lichbridge'
+import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type { GameEvent, LoginCredentials } from '../shared/types'
@@ -29,6 +30,9 @@ let debugPanelOpen = false
 // Register LichBridge once — passes connection.send so the injector
 // can dispatch ;listall / ;pause / ;kill without any extra wiring.
 lichBridge.register((cmd: string) => connection.send(cmd))
+
+// Register read-only lich.db3 IPC handlers (vars, settings, sessions).
+registerLichSqliteHandlers()
 
 // Coalesce parsed game events across all lines received in a single I/O tick.
 // setImmediate fires after the current TCP read drains, so all lines from one
@@ -269,6 +273,14 @@ ipcMain.handle('list-lich-profiles', (_e, lichPath: string): string[] => {
   try {
     return fs.readdirSync(profileDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'))
   } catch { return [] }
+})
+
+ipcMain.handle('write-lich-profile', (_e, lichPath: string, filename: string, content: string): void => {
+  if (!lichPath || !filename) throw new Error('Missing lichPath or filename')
+  const profileDir = path.resolve(path.join(lichDirFrom(lichPath), 'scripts', 'profiles'))
+  const fullPath = path.resolve(profileDir, filename)
+  if (!fullPath.startsWith(profileDir + path.sep) && fullPath !== profileDir) throw new Error('Invalid profile path')
+  fs.writeFileSync(fullPath, content, 'utf-8')
 })
 
 // ── Password IPC ──────────────────────────────────────────────────────────────

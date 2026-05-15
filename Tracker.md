@@ -81,18 +81,33 @@
 
 ---
 
-## Next Target: Release D — "Deep Lich" (v0.5)
+**B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
-**Theme:** Lich config management from within the client. Introduces `better-sqlite3` for SQLite reads.
+## Next Target: Release E — "Character Awareness" (v0.6)
 
-Key deliverables (full spec in Tracker.md Lich-Primary Roadmap and DESIGN.md §26):
-- Variable Inspector Panel — searchable key-value table from `lich.db3` Vars/UserVars
-- YAML Profile Editor — diff view before write, schema-aware editing for t2/setup keys
-- Lich Settings Viewer — read-only `lich_settings` table from `lich.db3`
-- Session Awareness — multi-session chip when >1 active character detected
-- Richer Highlight Engine — named groups, live test input, import/export, priority ordering
+**Theme:** The client knows your character. Uses data the XML parser already provides.
 
-See the **Lich-Primary Roadmap** section below for the full Release D checklist.
+### Release E Checklist
+
+#### Guild-Aware Exp Layout
+- [ ] Exp panel auto-orders skills based on detected guild (from `<app>` XML / profile)
+- [ ] Each guild has a preferred skill ordering (top skills shown first)
+- [ ] User can pin specific skills to top; pins override the auto-order
+- [ ] Fallback: alphabetical when guild is unrecognized
+
+#### Character-Aware Panels
+- [ ] Injury display uses race-appropriate body part groupings
+- [ ] Spell slot display filters to circles relevant to the connected character's guild
+- [ ] Room panel shows guild-specific NPC tag styling
+
+#### Session Log
+- [ ] Structured session log — captures game text, script echo, and Lichborne system messages as tagged records
+- [ ] Filter by: stream, time range, source type (game / script / system)
+- [ ] Export as plain text or JSON
+- [ ] Rolling persistence: last N sessions saved to disk in the data folder
+- [ ] Session boundaries: new session on connect; labeled with character name and timestamp
+
+See the **Lich-Primary Roadmap** section below for broader roadmap context.
 **B52 — boldDepth stuck after unescaped `<` in Lich script output ✅: `<pushBold/>60 < 65<popBold/>` — the tokenizer's `<[^>]*>` consumes ` 65<popBold/>` as one malformed tag, swallowing popBold and leaving boldDepth=1 for the rest of the session (all text bold/yellow). Fix 1: `boldDepth = 0` added to the prompt handler — prompts are frame boundaries, bold cannot survive one. Fix 2: `parser.reset()` called in the `CH.LOGIN` IPC handler so stuck state doesn't bleed into a new session after disconnect/reconnect ✅**
 **B28 — Advanced/Lich settings reset to defaults in second windows ✅: separate Electron processes cannot share localStorage due to LevelDB file locking; `_shared.yaml` is the correct cross-process store but was only written on a successful connect, so a second instance opening before any connection fell back to all defaults. Fix: `LoginScreen` `adv` effect now debounce-exports the shared profile (1s) whenever any advanced setting changes — YAML is always current for any concurrently-opened instance ✅**
 **B42 — Wrayth import wizard duplicate "Substitution rules" row ✅: `parseWraythXml` was setting both `substitutionCount: stringsCount` and `stringsCount` in its return — `substitutionCount` renders as "Substitution rules" and `stringsCount` renders as "Wrayth strings", producing two rows for the same `<strings>` block data. Fix: removed `substitutionCount` assignment from Wrayth parser (that field belongs to Genie/Frostbite substitution files); `countWraythBlock` logic verified correct with synthetic XML ✅**
@@ -126,6 +141,7 @@ See the **Lich-Primary Roadmap** section below for the full Release D checklist.
 | `0.1.10` | 2026-05-09 | Released (pre-release) | B17: combat/swimming scroll-pin race fix (onWheel eager unpin); B18: auto-copy replaced with native Electron clipboard IPC; B19: Home/End keys work in automation text fields; B20: scroll pin fully fixed — no trim while unpinned (content at top stays visible), handleScroll only un-pins, badge/End re-pins and trims to MAX_LINES, hard cap at 6000 lines; tested stable at 3600+ new lines |
 | `0.1.11` | 2026-05-09 | Released (pre-release) | Map panel UI reorganization: two-bar chrome layout, legend as canvas overlay, current room label z-order fix, B30 custom theme map var fix; Profile System Phases 1–3: full YAML round-trip (export + import), shared profile pre-fills login form, character YAML restores all settings on login; new automations and contact templates default to allGroups: true; contact templates are now group-aware — styling toggles with mode switches |
 | `0.1.12` | 2026-05-09 | Released (pre-release) | Profile system Phases 1–3; group-aware contact templates; allGroups default for all new automation items; profiles/ gitignored |
+| `0.5.0` | 2026-05-14 | Released | Release D — Deep Lich: `better-sqlite3` + Ruby Marshal parser (`marshalParser.ts`) + `sqliteReader.ts`; full `lich.db3` read pipeline (uservars, lich_settings, session_summary_state); Ruby Time binary decoding (little-endian, new+old format); unified Lich Dashboard modal (Scripts/Variables/Settings/Profiles tabs); Variables tab with recursive VarValue tree, scope selector, search; Settings tab with feature flag badges; YAML Profile Editor (raw textarea + highlight.js syntax highlighting + line number gutter, LCS diff with show-all toggle, js-yaml validator, `combat_teaching_skill` quick-edit, `write-lich-profile` IPC, CRLF normalization, 4000-line diff threshold) |
 | `0.4.0` | 2026-05-14 | Released | Release C — Lich Dashboard: LichBridge module (`commandInjector.ts` + `index.ts`), strict `;listall` interception regex (free-form `--- Lich:` messages pass through), `useLichBridge` hook (5s poll, 8s linger window for transient restarts, optimistic kill state, killed scripts evict immediately bypassing linger), ScriptListPanel (badge/name/status/uptime/pause/resume/kill with confirm, newest-first sort, footer with poll interval, unavailable state), `killing` status indicator, Script Palette toolbar strip; IPC pipeline improvements (event batching, raw-xml gating, UnknownEvent filter) |
 | `0.3.2` | 2026-05-13 | Released | B52: boldDepth stuck after unescaped `<`; B28: advanced settings reset in second windows; B42: Wrayth import duplicate row; password save (safeStorage DPAPI, per-account, auto-fill); B53: injuries panel wound detection fixed (name attr, not height/width); theme contrast pass (16+ themes, invisible border-faint fixed); CSS wiring pass (panels/game/global.css hardcoded colors → CSS vars + color-mix); all dark themes bold text → #ffff00 (yellow, matching Genie default; light themes unchanged) |
 | `0.3.1` | 2026-05-12 | Released | Release B bug fixes: room matching reworked (Lich ID from subtitle, direct lookup), Genie node matching improved (zone-qualified title fallback), cross-zone exits in detail panel, detail panel follows player, recenter works cross-zone, reload button, auto-reload on map download, mouse wheel zoom, map control focus fix, single recenter button |
@@ -1092,30 +1108,41 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 
 ---
 
-### Release D — "Deep Lich" (v0.5)
-**Theme: Lich config management from within the client. Requires `better-sqlite3` dependency.**
+### Release D — "Deep Lich" (v0.5) ✅
 
-#### Variable Inspector Panel
-- [ ] Add `better-sqlite3` as a main-process dependency
-- [ ] `LichBridge.SqliteReader` implemented: reads `Vars` and `UserVars` from `{LichDir}/data/lich.db3` for the connected character
-- [ ] New panel type: "Lich Variables" — searchable key-value table
-- [ ] Refresh on: panel open, character switch, manual refresh button
-- [ ] Read-only. No write path in any release.
+#### SQLite Foundation ✅
+- [x] `better-sqlite3` v11 added to dependencies; rebuilt against Electron 31 ABI via `@electron/rebuild`; marked `external` in `build-main.mjs`
+- [x] `src/main/lichbridge/marshalParser.ts` — full Ruby Marshal BLOB deserializer: nil/bool/Fixnum/Bignum/Float/String/Array/Hash/Symbol/Symlink/I-annotated/Regexp/Object/UserDefined/MarshalObject/extended/Data/object-link; signed fixnum byte fix; Ruby Time binary decoding (little-endian, new format bit-field extraction + old epoch format)
+- [x] `src/main/lichbridge/sqliteReader.ts` — IPC handlers: `lich:get-vars`, `lich:get-settings`, `lich:get-sessions`; correct column names (`hash`, `name`, `session_name`, `game_code`); read-only WAL-mode open; lazy `require('better-sqlite3')`
+- [x] Preload + `global.d.ts` updated with `lichGetVars`, `lichGetSettings`, `lichGetSessions`, `lichDbInfo`
 
-#### YAML Profile Editor (extends Release B viewer)
-- [ ] Write path: after editing, show a diff view (current vs. proposed) before saving
-- [ ] Confirmation modal: "Overwrite {LichDir}/scripts/profiles/Sekmeht-setup.yaml?" with explicit file path shown
-- [ ] Schema-aware editing for well-known script keys:
-  - t2 `training_list` — skill picker list (known skills from DRDefs)
-  - setup `combat_teaching_skill` — single skill picker dropdown
-  - setup `hunting_buddy` — character name input with validation
-- [ ] Fallback to raw YAML text editing for unrecognized keys
+#### Lich Dashboard Shell ✅
+- [x] `LichDashboard.tsx` — unified 4-tab modal (Scripts / Variables / Settings / Profiles) replacing `LichScriptsPanel` + `LichProfileModal`
+- [x] Toolbar: single "Lich" button with `btn-lich-dash` + `--active` state; `game.css` updated
+- [x] `SessionPill` — queries `session_summary_state` (heartbeat < 60s, state ≠ exited); green dot when live; matches on `session_name` + `game_code`
+
+#### Variables Tab ✅
+- [x] Scope dropdown (all scopes from DB); pre-selects `GAME:CharName`; search by key; refresh button
+- [x] Recursive `VarValue` component — null/bool/num/str color-coded; arrays and objects collapsible with `▾/▸`; depth-0 expanded by default
+
+#### Settings Tab ✅
+- [x] Feature flags section (prefix stripped, ON/OFF badge) + System settings section (key/value table); search filter across both
+
+#### YAML Profile Editor ✅
+- [x] Raw textarea editor with `highlight.js` syntax highlighting in view mode (VS Code dark+ palette: keys #9cdcfe, comments #6a9955 italic, booleans #569cd6, strings #ce9178, numbers #b5cea8)
+- [x] Line number gutter (synchronized scroll) in both preview and edit modes
+- [x] `combat_teaching_skill` quick-edit field extracted from live buffer via regex; syncs bidirectionally with textarea
+- [x] LCS diff algorithm (Uint16Array DP table, 4000-line threshold) with context-only view (3 lines) and "Show all lines" toggle
+- [x] Diff overlay: full file path, `+` green / `−` red / space unchanged lines, collapsed hunks with line count
+- [x] YAML validation via `js-yaml` (`loadAll`): dismissable banner with line number on error, green "valid" on success; works in both view and edit mode
+- [x] `write-lich-profile` IPC handler with path-traversal guard; CRLF → LF normalization on load
+- [x] File list locks during edit; Cancel discards; Go Back returns to editor from diff
 
 #### Richer Highlight Engine
 - [ ] Named highlight groups (Combat, Magic, RP, Navigation, Custom) — group-level enable/disable toggle
-- [ ] Live test input in the highlight editor — type a sample line; see which rules match and how the line renders
-- [ ] Highlight set export/import — save the full highlight list as a named JSON file; share or restore
-- [ ] Priority/ordering — drag to reorder rules within a group; first-match vs. all-match mode per group (stored in profile)
+- [ ] Live test input — type a sample line; see which rules match and how the line renders
+- [ ] Highlight set export/import — save as named JSON file; share or restore
+- [ ] Priority/ordering — drag to reorder rules within a group; first-match vs. all-match mode per group
 
 ---
 
@@ -1165,8 +1192,8 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 | A | v0.2.0 | Honest Client | None | Import reframe, automation reframe, 17 import bug fixes | ✅ Released |
 | B | v0.3.x | Lich Visibility | File system (read) | Map auto-detect, script browser, YAML profile viewer, hybrid graph map | ✅ Released |
 | C | v0.4 | Lich Dashboard | File + Stream + Upstream | LichBridge module, Active Scripts Panel, Script Palette | ✅ Released |
-| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, Lich Settings, Session Awareness | 🔲 Next |
-| E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log | 🔲 Planned |
+| D | v0.5 | Deep Lich | SQLite + File (write) | Variable Inspector, YAML editor, Lich Settings, Session Awareness | ✅ Released |
+| E | v0.6 | Character Awareness | XML (already parsed) | Guild exp layout, character panels, session log | 🔲 Next |
 | F | v0.7 | Hook Layer | Lich TCP API (new) | Hook Registry, real-time Lich IPC | 🔲 Long-term |
 
 ---
@@ -1304,6 +1331,10 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 | 2026-05-05 | Prefill effect dependencies: HighlightsPanel depends on prefill?.id, TriggersPanel on prefillPattern — newHighlight/newTrigger always generate fresh UUIDs so each right-click is guaranteed to be a new id and the effect re-fires |
 | 2026-05-05 | onSaved propagated to all panels — TriggersPanel and MacrosPanel had no onSaved prop; added to both; AutomationsPanel forwards it to all four inline panels; GameWindow reloads all four rule sets from localStorage on any inline save so live engine state stays current without closing the modal |
 | 2026-05-05 | Context menu separators — `ContextMenu` Item type extended to union (action \| separator); items built as three named groups (Highlights, Triggers, Clear), filtered to remove empty ones, joined with `<hr class="ctx-menu-sep">` only between non-empty groups; right-clicking blank space (no word) renders no orphan separators |
+| 2026-05-14 | Release D shipped (v0.5.0) — `better-sqlite3` v11 rebuilt against Electron 31 ABI; `marshalParser.ts` full Ruby Marshal deserializer; Ruby Time binary format is little-endian (w1/w2 stored LSB-first by Ruby's `_dump`), new format bits: [31]=new, [30]=UTC, [29:14]=year-1900, [13:10]=month(0-based), [9:5]=mday, [4:0]=hour; `session_summary_state` real columns are `session_name`/`game_code`/`role`/`frontend` (not `character`/`game`); uservars column is `hash` (not `data`); lich_settings column is `name` (not `key`); `better-sqlite3` must be in `external` array of esbuild config or native `.node` binary path breaks at runtime |
+| 2026-05-14 | YAML Profile Editor diff: CRLF → LF normalization on file load is essential — Windows files have `\r\n`, textarea normalizes to `\n`, without normalization LCS sees zero common lines and marks entire file as changed |
+| 2026-05-14 | highlight.js chosen over hand-rolled YAML regex highlighter — regex approach fails on block scalars, anchors/aliases, flow sequences, inline comments; hljs YAML grammar handles all these correctly; styled with CSS targeting `.hljs-attr`, `.hljs-comment` etc. using VS Code dark+ palette rather than importing a theme file |
+| 2026-05-14 | Richer Highlight Engine deferred to Release E — YAML Profile Editor + SQLite foundation were sufficient scope for v0.5.0; highlight groups/export/import/reorder moved to next release |
 | 2026-05-06 | Debug panel gains Raw XML tab — two-tab layout (Events / Raw XML) replaces single-view panel; raw lines sent via dedicated `raw-xml` IPC channel before parsing so the tab shows exactly what the server sent; both tabs auto-scroll and pin independently; Clear button scoped to active tab; docked Debug panel in PanelFrame updated identically |
 | 2026-05-06 | LichScripts STREAM_MAP entry changed from `'raw'` (discard) to `'LichScripts'` — `script-watch.lic` periodically pushes running script list; stream is now discoverable and displayable as a panel |
 | 2026-05-06 | `<d cmd='...'>` clickable command links implemented — `d` removed from `SILENT_TAGS`; `linkCmd` field in parser tracks active cmd; `cmd` added to `TextSegment`; `renderSegment` renders as `.cmd-link` span when `onSendCommand` provided; prompt and `</d>` both clear `linkCmd`; plain `<d>south</d>` exit labels unaffected (no `cmd` attr) |

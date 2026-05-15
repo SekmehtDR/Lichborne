@@ -79,6 +79,12 @@ contextBridge.exposeInMainWorld('api', {
   debugPanelToggle: (open: boolean) => ipcRenderer.send('debug-panel-toggle', open),
 
   // ── LichBridge ───────────────────────────────────────────────────────────────
+  // ── Lich SQLite readers ──────────────────────────────────────────────────────
+  lichDbInfo:       (lichPath: string):                    Promise<unknown>                            => ipcRenderer.invoke('lich:db-info', lichPath),
+  lichGetVars:      (lichPath: string, scope?: string):    Promise<{ scope: string; vars: unknown }[]> => ipcRenderer.invoke('lich:get-vars', lichPath, scope),
+  lichGetSettings:  (lichPath: string):                    Promise<{ name: string; value: string }[]>  => ipcRenderer.invoke('lich:get-settings', lichPath),
+  lichGetSessions:  (lichPath: string):                    Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]> => ipcRenderer.invoke('lich:get-sessions', lichPath),
+
   lichPollScripts:  ():                                    Promise<void>   => ipcRenderer.invoke('lich:poll-scripts'),
   lichPauseScript:  (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:pause-script', name),
   lichResumeScript: (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:resume-script', name),
@@ -115,6 +121,9 @@ contextBridge.exposeInMainWorld('api', {
 
   listLichProfiles: (lichPath: string): Promise<string[]> =>
     ipcRenderer.invoke('list-lich-profiles', lichPath),
+
+  writeLichProfile: (lichPath: string, filename: string, content: string): Promise<void> =>
+    ipcRenderer.invoke('write-lich-profile', lichPath, filename, content),
 
   // ── Password store ───────────────────────────────────────────────────────────
   savePassword:   (account: string, password: string): Promise<void>          => ipcRenderer.invoke('password:save',   account, password),

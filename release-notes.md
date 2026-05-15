@@ -1,3 +1,24 @@
+## What's new in v0.5.0
+
+### Lich Dashboard — deep read access to your Lich installation
+
+- **Variables tab** — browse every Lich variable in scope (`global`, `server`, `char`, and others) directly from the client. Includes decoded Ruby types: symbols, arrays, hashes, booleans, and Time values all display in readable form.
+- **Settings tab** — view your current `lich_settings` values pulled directly from Lich's SQLite database.
+- **Sessions tab** — see every active Lich session with PID, character name, game code, role, frontend type, and start time. Active sessions (heartbeat within the last 30 seconds) are highlighted.
+- **Profiles tab — YAML profile editor** — view and edit your Lich character profile files (`.yaml` scripts in the profiles folder) directly from Lichborne. Features include:
+  - Full YAML syntax highlighting using highlight.js with VS Code dark+ palette (comments, keys, strings, numbers all color-coded distinctly)
+  - Line number gutter synchronized with the editor scroll
+  - Inline YAML validator — click **Validate** to check for syntax errors; errors report the exact line number
+  - `combat_teaching_skill` quick-edit field for fast skill swaps without touching the raw YAML
+  - **Review & Save** diff view — before committing any change, a side-by-side diff highlights exactly which lines were added or removed; changed hunks shown in context with a "Show all lines" toggle to see the complete file
+  - Live sessions lock the profile selector row while an edit is in progress so you can't switch files mid-edit
+
+### Bug fixes
+
+- **Ruby Time values now display correctly** — variables containing Ruby `Time` objects (e.g. `repair_timer_snap`) were showing garbled binary characters. The Marshal decoder now correctly reads the little-endian 8-byte Time format and renders a clean `YYYY-MM-DD HH:MM:SS` timestamp.
+- **Sessions tab columns corrected** — the Sessions tab was failing with a SQLite column error due to mismatched column names. Fixed to match the actual `session_summary_state` schema (`session_name`, `game_code`, `last_heartbeat_at` as integer seconds).
+- **Health and exp output no longer runs off screen** — lines inside `<output class="mono"/>` blocks (the `>health` wound list, `>exp` output, etc.) were displayed with `white-space: pre`, which suppresses all wrapping. Long wound descriptions ran off the right edge of the panel. Fixed: changed to `white-space: pre-wrap` so column spacing is preserved while lines still wrap at the panel boundary. (Thanks Legiro for the report.)
+
 ## What's new in v0.4.0
 
 ### Active Scripts Panel — see what Lich is running
@@ -74,7 +95,7 @@
 
 ## How to install
 
-1. Download `Lichborne-0.3.2-setup.exe` below
+1. Download `Lichborne-0.5.0-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -86,4 +107,4 @@
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.3.1...v0.3.2
+https://github.com/SekmehtDR/Lichborne/compare/v0.4.0...v0.5.0

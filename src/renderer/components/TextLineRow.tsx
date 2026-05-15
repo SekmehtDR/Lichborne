@@ -28,7 +28,7 @@ export const TextLineRow = memo(function TextLineRow({
   onContactClick, onSendCommand, autoLinkUrls = true, showTimestamp,
 }: TextLineRowProps) {
   const lineStyle = getLineHighlightStyle(line.segments, lineRules)
-  const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre' as const } : lineStyle
+  const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre-wrap' as const } : lineStyle
   const hasExtras = !!nameRegex || matchRules.length > 0
   return (
     <div className="text-line" style={monoStyle ?? undefined}>

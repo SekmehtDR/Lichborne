@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "DragonRealms game client with Lich support and AI features",
   "main": "dist/main/main.js",
   "scripts": {
@@ -55,6 +55,8 @@
     "releaseInfo": {}
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",
@@ -63,12 +65,15 @@
     "concurrently": "^8.0.0",
     "electron": "^31.0.0",
     "electron-builder": "^26.8.1",
+    "electron-rebuild": "^3.2.9",
     "esbuild": "^0.28.0",
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   },
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "electron-updater": "^6.8.3",
+    "highlight.js": "^11.11.1",
     "js-yaml": "^4.1.1",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",

@@ -46,8 +46,7 @@
 .btn-panel-manager,
 .btn-contacts,
 .btn-automations,
-.btn-lich-scripts,
-.btn-lich-profile,
+.btn-lich-dash,
 .btn-map,
 .btn-theme,
 .btn-settings,
@@ -67,8 +66,7 @@
 .btn-panel-manager:hover,
 .btn-contacts:hover,
 .btn-automations:hover,
-.btn-lich-scripts:hover,
-.btn-lich-profile:hover,
+.btn-lich-dash:hover,
 .btn-map:hover,
 .btn-theme:hover,
 .btn-settings:hover {
@@ -88,8 +86,7 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.btn-lich-scripts--active,
-.btn-lich-profile--active {
+.btn-lich-dash--active {
   border-color: var(--accent-dim);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);

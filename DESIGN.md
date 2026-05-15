@@ -3912,3 +3912,311 @@ These will not be built in Release C regardless of how easy they look:
 - **Trigger logic / WatchFor** — belongs in Lich scripts
 - **Anything that requires modifying Lich source** — Lichborne is a consumer, not a contributor to Lich core
 
+---
+
+## 27. Release D — Lich Dashboard Deep Integration
+
+> **Target version:** v0.5.0
+> **Theme:** Lich config management from within the client. Introduces `better-sqlite3` for SQLite reads, a TypeScript Ruby Marshal parser for `uservars`, and a unified Lich Dashboard modal that consolidates all Lich-facing surfaces.
+
+### 27.1 Motivation
+
+Release C shipped the Active Scripts Panel and Script Palette as standalone surfaces. By Release D there are four Lich-facing UI surfaces: Script List, Script Palette, YAML Profile Viewer (from Release B), and two planned new ones (Variable Inspector, Settings Viewer). Without consolidation these become a scattered set of unrelated modals. Release D unifies them into a single **Lich Dashboard** — one toolbar button, one modal, four tabs. This is the moment Lichborne earns its identity as the Lich-native client.
+
+---
+
+### 27.2 Lich Dashboard — Shell
+
+A single modal opened by a **"Lich"** toolbar button (between Automations and Theme). Four tabs:
+
+```
+┌─ Lich Dashboard ─────────────────────────────────────────────── ✕ ─┐
+│  [ Scripts ]  [ Variables ]  [ Profiles ]  [ Settings ]            │
+├────────────────────────────────────────────────────────────────────┤
+│  (active tab content)                                              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Session awareness badge** — when `session_summary_state` contains more than one non-exited row, a subtle counter appears in the modal header:
+
+```
+┌─ Lich Dashboard ───────────────────── 2 sessions active ────── ✕ ─┐
+```
+
+The main toolbar "Lich" button gets a small unread-style dot badge when multiple sessions are detected, consistent with the existing tab unread indicator pattern. Single session or empty table — nothing shown anywhere.
+
+The Script Palette strip in the main toolbar remains independent — it is a quick-fire action surface, not an information panel, and belongs in the toolbar chrome.
+
+**Connected-only content** — the Variables tab requires an active connection (needs `game:character` scope to query the right row). Scripts tab is already connection-gated. Profiles and Settings tabs work without a connection since they are file/database reads. Disconnected state for Variables: dimmed tab with "Connect to view variables for a character" placeholder.
+
+---
+
+### 27.3 Scripts Tab
+
+The existing `ScriptListPanel` content moves here verbatim. No functional changes — just a new home inside the modal chrome. The `lichScripts` PanelFrame panel type remains available as a dockable panel for users who want the list embedded in their layout.
+
+---
+
+### 27.4 Variables Tab
+
+Searchable read-only view of `Vars` for the connected character, sourced from the `uservars` table in `lich.db3`.
+
+#### Layout
+
+```
+┌─ Variables ─────────────────────────────────────────────────────────┐
+│  🔍  Search variables…                          [↺ Refresh]         │
+│  Sekmeht · DR                       Last saved: ~2 min ago         │
+├──────────────────────────────────────────────────────────────────────┤
+│  Key                    Value                    Type               │
+│  ─────────────────────────────────────────────────────────────────  │
+│  buddy                  Muse                     string             │
+│  combat_teaching_skill  sling                    string             │
+│  health_threshold       65                       integer            │
+│  hunting_buddies        ["Totenus", "Enwah"]     array (2)          │
+│  target                 Fenvaok                  string             │
+│  whisper                Sekmeht                  string             │
+│  …                                                                  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **Scope label** — shows `CharacterName · GAME` so the player knows which character's vars are displayed
+- **Last saved** — approximate staleness indicator derived from the 5-minute auto-save cycle; shown as "~N min ago" if the row's write time can be inferred, otherwise omitted
+- **Search** — filters by key name, case-insensitive substring; results update instantly
+- **Refresh button** — re-reads the BLOB from `lich.db3`; useful since Lich saves every 5 minutes and the panel opens stale
+- **Type column** — shows the inferred type for each value (`string`, `integer`, `float`, `boolean`, `nil`, `array (N)`, `hash (N keys)`). Helps users debug scripts that store unexpected types.
+- **Value column** — strings shown as-is; numbers as plain values; booleans as `true`/`false`; arrays and hashes as compact JSON; `nil` shown as `null`; unrecognized Marshal types shown as `[unsupported type]`
+- **Sort** — alphabetical by key name; no user-defined sorting (the use case is "find a specific var", not "browse everything")
+- **Read-only** — no write path; the Variable Inspector is a debugging tool, not an editor. Vars belong to Lich.
+
+#### Data Source
+
+```
+Table:  uservars
+Scope:  "DR:Sekmeht"   (XMLData.game + ":" + XMLData.name)
+Column: hash           (Ruby Marshal BLOB)
+```
+
+Read via `better-sqlite3` in the main process. IPC handler `get-lich-vars` returns the deserialized key-value pairs as a plain JSON object.
+
+#### TypeScript Marshal Parser
+
+Ruby Marshal is a well-documented binary format. The values stored in `uservars` are always a plain Ruby Hash with string keys (Lich normalizes all keys to strings via `key.to_s` on write — see `vars.rb` line 41). Values are limited to the types that scripts actually use:
+
+| Marshal code | Ruby type | TypeScript representation |
+|---|---|---|
+| `\x30` (`0`) | `nil` | `null` |
+| `\x54` (`T`) | `true` | `true` |
+| `\x46` (`F`) | `false` | `false` |
+| `\x69` (`i`) | Integer | `number` |
+| `\x66` (`f`) | Float | `number` |
+| `\x22` (`"`) | String | `string` |
+| `\x5b` (`[`) | Array | `JsonValue[]` |
+| `\x7b` (`{`) | Hash | `Record<string, JsonValue>` |
+| `\x3a` (`:`) | Symbol | `string` (converted, used for keys only) |
+| `\x3b` (`;`) | Symbol link | `string` (cached symbol reference) |
+| `\x40` (`@`) | Object link | resolved from cache |
+
+The parser lives in `src/main/lichbridge/marshalParser.ts`. It consumes a `Buffer` and returns a `JsonValue`. Unknown type codes surface as `{ __unsupported: true, code: number }` — never throws, never crashes.
+
+Since all keys in `uservars` are strings (not symbols), the most common outer shape is simply:
+
+```
+\x04\x08  {  length  (string_key => value)*
+```
+
+Where each string key is `\x22 + encoded_length + bytes` and values are any of the above types.
+
+The parser does not need to handle `Object`, `Class`, `Module`, `Regexp`, `Bignum`, `Data`, `UserDefined`, or any custom Ruby types — these never appear in Vars. If an unknown code is encountered, the key is still shown with `[unsupported type]` as its value.
+
+---
+
+### 27.5 Profiles Tab
+
+Extends the existing `LichProfileModal` (Release B viewer) with a write path.
+
+#### Read path (existing)
+
+- Lists all `{LichDir}/scripts/profiles/*.yaml` files
+- Groups into character profiles (`Sekmeht-setup.yaml`, `Agan-setup.yaml`, etc.) and shared files (`base.yaml`, `base-empty.yaml`, `include-*.yaml`)
+- Shows raw YAML in a read-only code view with syntax highlighting
+
+#### Write path (new in Release D)
+
+**Editing model** — two tiers:
+
+1. **Schema-aware fields** — well-known top-level keys rendered as typed inputs rather than raw YAML. When the user selects a profile, the panel reads recognized keys and presents them as a form:
+
+| Key | Field type |
+|---|---|
+| `hometown` | Text input |
+| `safe_room` | Number input (Lich room ID) |
+| `health_threshold` | Number input (0–100) |
+| `repair_timer` | Number input (seconds, with `h/m/s` conversion hint) |
+| `skip_repair` | Checkbox |
+| `depart_on_death` | Checkbox |
+| `combat_teaching_skill` | Text input |
+| `hunting_buddies` | Tag list (add/remove names) |
+| `training_list` | Read-only summary with item count and a link to raw YAML |
+
+2. **Raw YAML editor** — all other keys, and a fallback for `training_list`, shown in a text area. The raw editor is always available via a "Edit raw YAML" toggle below the form fields.
+
+**Diff before commit** — when the user clicks Save, a diff view appears before the file is written:
+
+```
+┌─ Save changes to Sekmeht-setup.yaml? ───────────────────────────┐
+│                                                                  │
+│  - health_threshold: 65                                          │
+│  + health_threshold: 70                                          │
+│                                                                  │
+│  - hometown: Shard                                               │
+│  + hometown: Crossing                                            │
+│                                                                  │
+│                              [Cancel]  [Save file]              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Diff is line-by-line, unified format, with red/green coloring using `--color-danger` and `--color-success`. Save writes the file atomically (write to `.tmp`, rename) so a crash during write never corrupts the original.
+
+**IPC handlers:**
+- `lich:list-profiles` — lists `*.yaml` files in `{LichDir}/scripts/profiles/`
+- `lich:read-profile` — returns raw YAML string for a given filename (already exists from Release B)
+- `lich:write-profile` — writes validated YAML string to a given filename; main process validates it parses as YAML before writing
+
+**No schema enforcement** — Lichborne writes exactly what the user typed. It does not validate against script schemas. If the user breaks their training_list, that is their problem. The diff view is the safety net.
+
+---
+
+### 27.6 Settings Tab
+
+Read-only view of `lich_settings` from `lich.db3`. Two sections:
+
+#### Feature Flags section
+
+Rows with `feature_flag:` prefix, displayed as clean toggle badges:
+
+```
+┌─ Feature Flags ──────────────────────────────────────────────────┐
+│  session_summary_reporting           [OFF]                       │
+│  log_enabled                         [ON]                        │
+│  display_inline_exp                  [OFF]                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+- Prefix stripped from display name (`feature_flag:session_summary_reporting` → `session_summary_reporting`)
+- Toggle badges are styled and color-coded but **not interactive** — read-only
+- Values interpreted using the same truthy pattern as Lich: `1`, `true`, `on`, `yes` = ON; anything else = OFF
+
+#### Other Settings section
+
+All remaining `lich_settings` rows displayed as a key → value table:
+
+```
+┌─ Lich Settings ──────────────────────────────────────────────────┐
+│  db_maint_last_at          2026-02-20T10:32:33Z                  │
+│  db_maint_last_note        VACUUM ok pages 462->438, free 24->0  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Graceful fallback** — if `lich.db3` cannot be opened (Lich not installed, path wrong, DB locked), all four tabs that require it show an inline "Lich database unavailable — check your Lich path in Advanced Settings" notice rather than crashing or showing empty content.
+
+**Refresh button** in the Settings tab header re-reads from disk.
+
+---
+
+### 27.7 Session Awareness
+
+Queried from `session_summary_state` in `lich.db3` on every connection and on Dashboard open.
+
+**Active session criteria:** `state != 'exited'` AND `last_heartbeat_at` within the last 60 seconds. The heartbeat column is a Unix integer timestamp — compare against `Math.floor(Date.now() / 1000) - 60`.
+
+**Multi-session badge:** appears in the Lich Dashboard modal header when active session count > 1. Shows character names from the `session_name` column (which maps to `game_code:character_name` — strip the game prefix for display). Example: "2 sessions active: Sekmeht, Agan".
+
+**Toolbar dot badge** on the "Lich" button — appears when multi-session is detected. Same dot style as the panel tab unread indicator. Clears when Dashboard is opened and only one session is found.
+
+**Feature flag check** — Lichborne does NOT check `feature_flag:session_summary_store_and_reporting` before querying. It simply queries and shows nothing if the table is empty or all rows are expired. This avoids an extra read and handles the off-by-default case gracefully.
+
+---
+
+### 27.8 Richer Highlight Engine
+
+Independent of the Lich Dashboard, Release D upgrades the highlight system:
+
+#### Named Groups (visual only)
+
+Four built-in semantic groups with color identities:
+
+| Group | Color | Intended use |
+|---|---|---|
+| Danger | `#e05050` red | Bleeding, stunned, death messages, hostile targets |
+| Alerts | `#e0a030` amber | Roundtime warnings, mana warnings, expiry timers |
+| Info | `#5080d0` blue | Rank gains, skill updates, system notices |
+| Social | `#60b870` green | Player names, tells, group messages |
+
+Groups are visible in the sidebar as colored filter chips. A rule can belong to one group (or none). Groups here are **organizational only** — they are separate from the Groups & Modes system (which is about automation activation). A highlight rule can belong to a highlight group AND have automation group assignments simultaneously.
+
+#### Live Test Input
+
+The existing test input field in the rule editor gains a "Test against session" button: feeds the last N lines from the current session through the rule and shows match/no-match results inline.
+
+#### Import / Export
+
+- **Export** — all highlight rules as a single JSON file; one-click from the Highlights tab header
+- **Import** — merges an exported JSON into the current rule set; duplicate IDs are skipped; new rules are appended with `allGroups: true`
+
+#### Priority Ordering
+
+Each rule row in the sidebar gets a drag handle. Drag-to-reorder controls which whole-line rule wins when multiple rules match the same line (currently first-match-wins by list order, but order isn't visible or adjustable). The drag handle uses the same pattern as the Automations panel.
+
+---
+
+### 27.9 Implementation Plan
+
+#### New files
+
+| File | Purpose |
+|---|---|
+| `src/main/lichbridge/sqliteReader.ts` | `get-lich-vars`, `get-lich-settings`, `get-lich-sessions` IPC handlers; opens `lich.db3` read-only via `better-sqlite3` |
+| `src/main/lichbridge/marshalParser.ts` | TypeScript Ruby Marshal BLOB deserializer; handles string, integer, float, boolean, nil, array, hash; returns `JsonValue` |
+| `src/renderer/components/LichDashboard.tsx` | Unified modal shell with four tabs; session badge in header |
+| `src/renderer/components/LichVariablesTab.tsx` | Variables tab content; search, table, refresh |
+| `src/renderer/components/LichSettingsTab.tsx` | Settings tab content; feature flags + other settings |
+| `src/renderer/styles/lich-dashboard.css` | All dashboard styles; `ld-*` class namespace |
+
+#### Modified files
+
+| File | Change |
+|---|---|
+| `src/main/lichbridge/index.ts` | Register new IPC handlers from `sqliteReader.ts` |
+| `src/renderer/components/LichProfileModal.tsx` | Add write path: schema-aware form fields, raw YAML editor toggle, diff-before-save modal |
+| `src/renderer/components/GameWindow.tsx` | Replace standalone Lich panels with `LichDashboard`; add `showLichDashboard` state; toolbar "Lich" button; session badge state |
+| `src/renderer/components/HighlightsPanel.tsx` | Add group sidebar filter chips; drag-to-reorder; import/export buttons |
+| `src/renderer/styles/lich-panels.css` | Extend for Dashboard tab content |
+| `src/main/preload.ts` | Expose `get-lich-vars`, `get-lich-settings`, `get-lich-sessions` on `window.api` |
+| `src/renderer/global.d.ts` | Add type declarations for new IPC calls |
+| `package.json` | Add `better-sqlite3` dependency (if not already added in Release C) |
+
+#### Build order
+
+1. `better-sqlite3` + `sqliteReader.ts` — SQLite read pipeline foundation
+2. Settings tab — plain text reads; validates the full IPC pipeline in minimal code
+3. Session awareness — query `session_summary_state`; wire header badge and toolbar dot
+4. `marshalParser.ts` — Marshal BLOB deserializer; unit test with a known BLOB
+5. Variables tab — `get-lich-vars` IPC + Variables tab UI
+6. Profiles tab write path — form fields, raw editor, diff view, `lich:write-profile` IPC
+7. Lich Dashboard shell — assemble tabs into unified modal, replace existing surfaces
+8. Highlight engine upgrades — groups sidebar, import/export, priority drag
+
+#### Dependencies
+
+- `better-sqlite3` — synchronous SQLite3 bindings for Node.js; must be listed in `dependencies` (not `devDependencies`) so it's bundled by electron-builder
+- No other new runtime dependencies
+
+#### Explicit non-starters for Release D
+
+- **Writing `uservars`** — Vars belong to Lich; client write access would race with Lich's own 5-minute save cycle and corrupt script state
+- **`script_setting` / `script_auto_settings` tables** — per-script private settings; not user-facing
+- **`alias.db3`** — managed by `alias.lic`; not part of the Lich core surface area
+- **`simu_game_entry`** — authentication blobs; no display value
+- **YAML profile schema validation** — Lichborne writes what the user types; schema enforcement belongs to the scripts themselves
+

@@ -11,7 +11,12 @@ declare global {
       onError: (cb: (message: string) => void) => () => void
       onRawXml: (cb: (line: string) => void) => () => void
       debugPanelToggle: (open: boolean) => void
-      // LichBridge
+      // Lich SQLite readers
+      lichDbInfo:       (lichPath: string) => Promise<unknown>
+      lichGetVars:      (lichPath: string, scope?: string) => Promise<{ scope: string; vars: unknown }[]>
+      lichGetSettings:  (lichPath: string)                 => Promise<{ name: string; value: string }[]>
+      lichGetSessions:  (lichPath: string)                 => Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]>
+      // LichBridge script control
       lichPollScripts:     ()                                           => Promise<void>
       lichPauseScript:     (name: string)                               => Promise<void>
       lichResumeScript:    (name: string)                               => Promise<void>
@@ -41,7 +46,12 @@ declare global {
       findLichMapFile: (lichPath: string) => Promise<{ jsonPath: string; mapsDir: string } | null>
       readMapImage: (mapsDir: string, imageName: string) => Promise<string | null>
       listLichScripts: (lichPath: string) => Promise<{ name: string; source: 'core' | 'custom'; lastModified: number }[]>
-      listLichProfiles: (lichPath: string) => Promise<string[]>
+      listLichProfiles:  (lichPath: string) => Promise<string[]>
+      writeLichProfile:  (lichPath: string, filename: string, content: string) => Promise<void>
+      // Password store
+      savePassword:   (account: string, password: string) => Promise<void>
+      loadPassword:   (account: string)                   => Promise<string | null>
+      deletePassword: (account: string)                   => Promise<void>
       // Profile I/O
       readSharedProfile: () => Promise<unknown | null>
       writeSharedProfile: (data: unknown) => Promise<void>
