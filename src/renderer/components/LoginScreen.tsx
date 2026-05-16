@@ -107,9 +107,8 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
     const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
     return () => clearTimeout(t)
   }, [adv])
-  useEffect(() => {
-    if (!isModal) document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}`
-  }, [isModal])
+  // document.title is owned by AppShell now — it watches the active session
+  // and re-applies on tab switch / add / disconnect.
 
   useEffect(() => {
     if (!account) return

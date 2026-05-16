@@ -337,9 +337,13 @@ export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, on
   const [focusMode, setFocusMode] = useState<FocusMode>(() =>
     (localStorage.getItem(scopedKey(character, 'expFocusMode')) as FocusMode | null) ?? 'none'
   )
-  const [sortDesc, setSortDesc] = useState<boolean>(() =>
-    localStorage.getItem(scopedKey(character, 'expSortDesc')) === 'desc'
-  )
+  // Default to descending when no value is stored — matches the user's
+  // expectation that high-rank skills appear first on a fresh install. User
+  // can still flip to ascending via the toggle and it persists.
+  const [sortDesc, setSortDesc] = useState<boolean>(() => {
+    const stored = localStorage.getItem(scopedKey(character, 'expSortDesc'))
+    return stored === null ? true : stored === 'desc'
+  })
 
   function handleModeChange(next: SortMode) {
     setSortMode(next)

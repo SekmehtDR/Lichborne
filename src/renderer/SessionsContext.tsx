@@ -19,6 +19,7 @@ export interface SessionStatus {
   healthPct: number | null  // null when no health vital received yet
   rtExpires: number         // 0 when no RT active; ms timestamp otherwise
   bleeding: boolean
+  stunned: boolean
   dead: boolean
 }
 
@@ -27,6 +28,7 @@ const DEFAULT_STATUS: SessionStatus = {
   healthPct: null,
   rtExpires: 0,
   bleeding: false,
+  stunned: false,
   dead: false,
 }
 
@@ -48,6 +50,11 @@ interface SessionsContextValue {
   removeSession: (id: CharacterId) => void
   getSession: (id: CharacterId) => SessionRecord | undefined
   updateStatus: (id: CharacterId, partial: Partial<SessionStatus>) => void
+  // Update the display name of a session to the server-canonical case (from
+  // the player-info XML event). The user may have typed "sekmeht" but the
+  // server says "Sekmeht" — show the server's casing in the tab bar and title.
+  // The characterId is unchanged (it's lowercased) so all lookups still work.
+  updateCharacterName: (id: CharacterId, character: string) => void
 }
 
 const SessionsContext = createContext<SessionsContextValue | null>(null)
@@ -101,6 +108,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
     return sessions.find(s => s.characterId === id)
   }, [sessions])
 
+  const updateCharacterName = useCallback((id: CharacterId, character: string) => {
+    setSessions(prev => {
+      const idx = prev.findIndex(s => s.characterId === id)
+      if (idx < 0 || prev[idx].character === character) return prev
+      const arr = prev.slice()
+      arr[idx] = { ...prev[idx], character }
+      return arr
+    })
+  }, [])
+
   const updateStatus = useCallback((id: CharacterId, partial: Partial<SessionStatus>) => {
     setSessions(prev => {
       const idx = prev.findIndex(s => s.characterId === id)
@@ -113,6 +130,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
           && next.healthPct === curr.healthPct
           && next.rtExpires === curr.rtExpires
           && next.bleeding === curr.bleeding
+          && next.stunned  === curr.stunned
           && next.dead === curr.dead) return prev
       const arr = prev.slice()
       arr[idx] = { ...prev[idx], status: next }
@@ -121,8 +139,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<SessionsContextValue>(() => ({
-    sessions, activeId, setActive, addSession, removeSession, getSession, updateStatus,
-  }), [sessions, activeId, setActive, addSession, removeSession, getSession, updateStatus])
+    sessions, activeId, setActive, addSession, removeSession, getSession, updateStatus, updateCharacterName,
+  }), [sessions, activeId, setActive, addSession, removeSession, getSession, updateStatus, updateCharacterName])
 
   return <SessionsContext.Provider value={value}>{children}</SessionsContext.Provider>
 }

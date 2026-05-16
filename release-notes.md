@@ -1,3 +1,54 @@
+## What's new in v0.6.2
+
+A multi-character UX polish pass. Tab indicators got a redesign, several small annoyances got fixed, and the Session Log design is now locked in for the next build cycle.
+
+### Tab status indicators redesigned
+
+The character tab bar's status icons are now a single, prioritized slot per tab. The top-priority active condition wins the slot — lower-priority ones are still active in the game, just not surfaced on the tab. Priority order:
+
+1. **💀 Dead**
+2. **💫 Stunned** *(new — was already tracked internally but never shown on the tab)*
+3. **🩸 Bleeding**
+4. **⏳ Roundtime** *(was the misfit ⚠ warning triangle; now a colored hourglass)*
+
+**Health % is always visible** now — no more "skull replaces health" behavior. When dead, 💀 lives in the icon slot and the health % stays showing (naturally red at low values, which already communicates the death state).
+
+**Disconnect dropped its dedicated icon.** A disconnected tab now reads simply as **dimmed + italic** with the last-known icon preserved. To reconnect, click the tab and use the existing Login button in the toolbar. The previous reconnect glyph (↺) was redundant with the dim styling.
+
+**Tab width is now locked at character-add time.** Toggling any state (bleeding clearing, RT expiring, health dropping from 100% to 9%) no longer shifts the tab — fixed-width slots with tabular numerals keep everything pixel-stable. The only thing that varies tab width between tabs is the character name length.
+
+### Window title bar now follows the active tab
+
+Switching between character tabs now correctly updates the OS window title. Previously the title would stick on whichever character last triggered a connection-status event, so the title might still say "Agan" after you switched to Sekmeht's tab. Title is now centralized and re-applies on tab switch.
+
+### Character names display in the server's canonical case
+
+If you typed "sekmeht" lowercase at login but the server returns "Sekmeht," the tab bar now shows "Sekmeht." Previously the tab kept whatever case you typed regardless of what the server said.
+
+### Tab status glyphs no longer cause layout shift
+
+Toggling any indicator (bleeding starting/stopping, RT pulsing on/off) no longer changes the tab's width or shifts neighboring tabs. The glyph slots always reserve their space — they just don't paint when no condition is active.
+
+### Exp panel default sort flipped to descending
+
+On a fresh install, the Exp panel now defaults to descending sort (high-rank skills first), which is what most DR players expect from other clients. Once you toggle it, your choice persists.
+
+### Ctrl+1..9 and Ctrl+Tab work from the command bar
+
+The tab-switch hotkeys (Ctrl+1, Ctrl+2, … Ctrl+9 to jump to a tab by slot; Ctrl+Tab to cycle) were previously blocked whenever the command bar was focused — which is basically always during play. They now work regardless of where focus is. Ctrl+Shift+Enter (Quick-Send) was already correctly unguarded.
+
+### Login button on a disconnected tab now opens the login UI
+
+If you have multiple characters open and one is disconnected, clicking "Login" in its toolbar used to close the tab and dump you on whatever other tab was active — with no way to actually re-login. Now closing the tab also opens the Add Character form so you can re-add that character (or any other) immediately. If it was your only tab, the full Login screen appears as before.
+
+### Smaller polish
+
+- Per-character `localStorage` is now correctly cleaned up when you close the last tab and start over.
+
+### Looking ahead — Session Log spec locked
+
+The full design for the upcoming **Session Log** feature is now captured in DESIGN.md §28 and the Release E2 checklist. It will write per-character daily log files in plain text (one file per day per character, `[timestamp][stream] text` format) that you can open in any external editor. An in-client modal will provide tactical lookups — Recent Tail for "what just happened," Quick Search for "when did X occur," and an Open Logs Folder button to jump straight to the files in your OS. Build starts after v0.6.2 ships.
+
 ## What's new in v0.6.1
 
 A post-v0.6.0 polish pass focused on multi-character bugs and the profile-save system. Nothing visible has changed for single-character users — every fix shores up something that only manifested once you started running multiple characters in one Lichborne instance.

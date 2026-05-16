@@ -45,9 +45,10 @@ import '../styles/map-panel.css'
 interface Props {
   session: SessionInfo
   onDisconnect: () => void
-  // When false (this tab is in the background), suppress document.title writes
-  // so the active tab owns the window title. Defaults to true for backward
-  // compatibility with the single-session entry path.
+  // When false (this tab is in the background), suppress side effects that
+  // would otherwise compete with the active tab — global keyboard handlers,
+  // auto-copy on text selection, settings/theme application to the DOM.
+  // Defaults to true for backward compatibility with the single-session entry path.
   isActive?: boolean
 }
 
@@ -180,7 +181,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Push status snapshots into the SessionsContext so the character tab bar
   // can render health %, RT/bleeding/dead glyphs, and the disconnected dim
   // state for this tab. Bails out fast when nothing has actually changed.
-  const { updateStatus } = useSessions()
+  const { updateStatus, updateCharacterName } = useSessions()
   const characterId = useMemo(
     () => makeCharacterId(session.account, session.character),
     [session.account, session.character],
@@ -269,9 +270,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       healthPct,
       rtExpires,
       bleeding: !!indicators.bleeding,
+      stunned:  !!indicators.stunned,
       dead:     !!indicators.dead,
     })
-  }, [characterId, updateStatus, dropped, vitals.health, indicators.bleeding, indicators.dead, rtExpires])
+  }, [characterId, updateStatus, dropped, vitals.health, indicators.bleeding, indicators.stunned, indicators.dead, rtExpires])
 
   const [stance, setStance]         = useState('')
   const [spell, setSpell]           = useState('')
@@ -819,7 +821,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             break
           case 'player-info':
             playerTitleRef.current = `${evt.char} · ${evt.game}`
-            if (isActiveRef.current) document.title = `${playerTitleRef.current} [Connected] | Lichborne v${__APP_VERSION__}`
+            // Update the SessionsContext to the server-canonical character
+            // case (the user may have typed "sekmeht" but the server says
+            // "Sekmeht"). The tab bar reads SessionRecord.character so this
+            // re-casts the tab label. AppShell owns document.title.
+            updateCharacterName(characterId, evt.char)
             break
           case 'game-exit':
             break
@@ -907,7 +913,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         setDropped(true)
         setStatus(s.clean ? 'Disconnected' : 'Connection lost')
         if (!s.clean) setShowDebug(true)
-        if (isActiveRef.current) document.title = `${playerTitleRef.current} [Disconnected] | Lichborne v${__APP_VERSION__}`
+        // document.title is owned by AppShell — it watches session.status.connected
+        // and re-applies on tab switch, so we don't write it here.
         exportCharacterProfile(session.account, session.character, session.game, session.useLich)
           .catch(console.error)
       }

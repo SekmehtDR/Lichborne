@@ -52,11 +52,16 @@
   text-transform: uppercase;
 }
 
+/* Fixed-width right-aligned column so "9%", "85%", "100%" all reserve the
+   same horizontal slot — tab width never shifts as health changes. */
 .character-tab-health {
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   margin-left: 4px;
+  width: 4ch;
+  text-align: right;
+  display: inline-block;
 }
 
 .character-tab-health.health-ok   { color: var(--color-success, #4caf50); }
@@ -64,24 +69,25 @@
 .character-tab-health.health-bad  { color: #e08040; }
 .character-tab-health.health-crit { color: var(--color-danger, #c04040); }
 
-.character-tab-skull {
-  font-size: 0.9rem;
-  margin-left: 4px;
-  filter: grayscale(0.3);
-}
-
+/* Single icon slot per tab — fixed width + centered so swapping between
+   💀 / 💫 / 🩸 / ⏳ never resizes the tab, and the slot reserves its space
+   when no icon is active so toggling on/off doesn't shift either. */
 .character-tab-glyph {
   font-size: 0.85rem;
   line-height: 1;
+  width: 1.5em;
+  text-align: center;
+  display: inline-block;
 }
 
-.character-tab-glyph--reconnect {
-  cursor: pointer;
-  color: var(--accent, #6aa);
+.character-tab-glyph--empty {
+  visibility: hidden;
 }
 
-/* Disconnected tabs go visually quiet — health/glyphs dim but preserve last-known
-   state so a player can still see "Sekmeht 51% 🩸 ↺" while away. */
+/* Disconnected tabs go visually quiet — last-known icon stays visible (so the
+   player can see what state a character was in when they dropped) but dimmed
+   and italic so the tab clearly reads as "stale / away." Reconnect happens
+   via the toolbar Login button on the active tab; no separate tab glyph. */
 .character-tab--disconnected {
   opacity: 0.55;
   font-style: italic;
@@ -92,14 +98,6 @@
 .character-tab--disconnected .character-tab-name,
 .character-tab--disconnected .character-tab-game {
   color: var(--text-dim, #888) !important;
-}
-
-.character-tab--disconnected .character-tab-glyph--reconnect {
-  color: var(--accent, #6aa) !important;  /* keep the reconnect cue visible */
-}
-
-.character-tab--dead .character-tab-name {
-  color: var(--color-danger, #c66);
 }
 
 .character-tab-close {

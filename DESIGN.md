@@ -1304,32 +1304,40 @@ Tabs anchor to the left. Toolbar buttons anchor to the right. The `+` button sit
 
 ### 13.4 Status Glyphs
 
-| Glyph | Meaning |
-|---|---|
-| `●` | Connected, idle |
-| `⚠` | Roundtime active |
-| `🩸` | Bleeding |
-| `💀` | Dead (replaces health %) |
-| `↺` | Disconnected — click to reconnect |
+> Revised in v0.6.2 — single icon slot per tab, priority-resolved, no reconnect glyph.
 
-Multiple glyphs can appear together (e.g. `🩸⚠` = bleeding with RT active).
+Each tab has **one icon slot** in a fixed-width (1.5em centered) position after the health %. The top-priority active condition resolves the slot:
+
+| Priority | Glyph | Meaning |
+|---|---|---|
+| 1 | `💀` | Dead |
+| 2 | `💫` | Stunned |
+| 3 | `🩸` | Bleeding |
+| 4 | `⏳` | Roundtime active |
+| — | *empty* | Idle (slot reserved via `visibility: hidden`) |
+
+Lower-priority conditions are still active in-game, just not surfaced on the tab (e.g. a stunned + bleeding character shows `💫`; bleeding is still happening and shows in other UI surfaces like the HUD, just not on this tab).
+
+**Health % is always visible** (no skull-replaces-health behavior — `💀` lives in the icon slot; health % naturally goes red at low values which already communicates the death state).
+
+**Disconnect is conveyed purely by tab styling** (dim + italic) — no separate disconnect glyph. The last-known icon stays visible so a player can see what state a character was in when they dropped. Reconnect happens via the existing toolbar Login button on the active tab.
 
 ### 13.5 Tab State Matrix
 
 | State | Appearance |
 |---|---|
-| Connected, idle | `⚔ Sekmeht 82% ●` — clean, colored health % |
-| Connected, RT active | `⚔ Sekmeht 82% ⚠` |
-| Connected, bleeding | `⚔ Sekmeht 51% 🩸` |
-| Connected, dead | `⚔ Sekmeht 💀` — health % replaced by skull |
-| Disconnected, last known ok | `⚔ Sekmeht 82% ↺` — all dimmed/gray, stale data preserved |
-| Disconnected, last known bleeding | `⚔ Sekmeht 51% 🩸 ↺` — dimmed, glyphs preserved |
-| Disconnected, last known dead | `⚔ Sekmeht 💀 ↺` — dimmed, skull preserved |
-| Never connected / fresh tab | `⚔ Sekmeht ↺` — no health shown |
+| Connected, idle | `Sekmeht  DR  100%        ×` — slot reserved but invisible |
+| Connected, RT active | `Sekmeht  DR  100%  ⏳    ×` |
+| Connected, bleeding | `Sekmeht  DR   85%  🩸    ×` |
+| Connected, stunned | `Sekmeht  DR  100%  💫    ×` |
+| Connected, bleeding + RT | `Sekmeht  DR   85%  🩸    ×` *(bleeding wins priority)* |
+| Connected, stunned + bleeding + RT | `Sekmeht  DR   35%  💫    ×` *(stunned wins priority)* |
+| Connected, **dead** | `Sekmeht  DR    0%  💀    ×` *(health % stays visible — red at low %)* |
+| Disconnected, last-known healthy | `Sekmeht  DR  100%        ×` *(dim + italic)* |
+| Disconnected, last-known bleeding | `Sekmeht  DR   51%  🩸    ×` *(dim + italic)* |
+| Disconnected, last-known dead | `Sekmeht  DR    0%  💀    ×` *(dim + italic)* |
 
-Dimming signals stale data — even alarming glyphs are clearly historical when the tab is gray.
-
-Clicking `↺` attempts reconnect inline without switching to that character's session. If reconnect fails, the client switches to that tab to show the error.
+**Width stability:** the icon slot has fixed `1.5em` centered width and the health % has fixed `4ch` right-aligned width with `tabular-nums`. Toggling the icon (or transitioning between e.g. `100%` → `9%`) never shifts the tab — only the character name varies width across tabs.
 
 ### 13.6 Adding Characters
 
@@ -4243,4 +4251,200 @@ Each rule row in the sidebar gets a drag handle. Drag-to-reorder controls which 
 - **`alias.db3`** — managed by `alias.lic`; not part of the Lich core surface area
 - **`simu_game_entry`** — authentication blobs; no display value
 - **YAML profile schema validation** — Lichborne writes what the user types; schema enforcement belongs to the scripts themselves
+
+---
+
+## 28. Session Log — Release E2
+
+> **Target version:** v0.6.x (the only remaining Release E2 deliverable after Sessions/multi-character shipped as E1 in v0.6.0)
+> **Theme:** Lichborne writes clean per-character daily log files in plain text that players review in their own tools. The in-client UI is small and tactical — for "what just happened?" and "when did X occur?" — not a megabyte-scale log browser.
+
+### 28.1 What it does
+
+Captures every event that crosses the wire for each connected character — game text, per-stream content, script `echo` output, command echoes, and Lichborne system messages — and writes them to disk as structured records that can be filtered, searched, and exported. Players use external tools (VSCode, Notepad++, `rg`, `less`) for deep review; the in-client modal handles fast tactical lookups.
+
+### 28.2 What gets captured
+
+**By default:**
+- `[main]` — game text
+- `[thoughts]`, `[conversations]`, `[deaths]`, `[arrivals]`, `[spells]`, etc. — all named streams
+- `[combat]`, `[atmospherics]`, `[group]`, `[log]`, `[LichScripts]`, custom Lich-script streams
+- `[cmd]` — command echo (`>command`)
+- `[sys]` — Connected/Disconnected/errors
+
+**Off by default (opt-in for debugging):**
+- Trigger / highlight fires (already covered by the Debug Fires tab)
+
+**Never captured:**
+- Vital ticks, RT timer updates, room title pings, indicator state changes — those are *state*, not history. Capturing them turns the log into noise. Raw XML lives in the Debug panel for the moments you need it.
+
+Per-stream capture toggles live in Settings, per-character, so a player who only cares about thought-channel history can drop log volume by 95%.
+
+### 28.3 Storage
+
+**File layout:**
+```
+{userData}/Logs/
+  Sekmeht/
+    Sekmeht_2026-05-15.log     ← today, being appended
+    Sekmeht_2026-05-14.log
+    Sekmeht_2026-05-13.log
+  Agan/
+    Agan_2026-05-15.log
+```
+
+One file per character per day. Character-prefixed filename so logs are identifiable when moved or shared. Sessions inferred from `[sys] Connected` / `Disconnected` markers within the file — multiple sessions per day collapse into one daily file.
+
+**Format — plain text with `[timestamp][stream] text` prefix:**
+```
+[2026-05-15 18:32:04.123][sys]         Connected
+[2026-05-15 18:32:05.012][cmd]         >look
+[2026-05-15 18:32:05.221][main]        [The Crossing, Town Square]
+[2026-05-15 18:32:42.180][combat]      The troll swings at you and connects!
+[2026-05-15 18:32:42.245][LichScripts] T2: Pausing — combat detected.
+[2026-05-15 19:14:33.000][sys]         Disconnected
+```
+
+Plain text — double-click opens in Notepad. No compression by default (toggle in settings for disk-conscious users). Greppable: `rg '\[combat\]' Sekmeht_2026-05-15.log` filters by stream from the shell, same as the in-client modal does.
+
+**Format rationale:** considered JSONL (more structured) and per-stream files (one file per stream per day) — both rejected. JSONL costs ~50% more disk and isn't human-eyeball-readable. Per-stream files explode file count and complicate the multi-stream "layered view" use case. Single file with stream tags is the best balance of greppability + filterability + size.
+
+**Retention:** 30 days default, configurable per-character. Disk-conscious users can enable compression on logs older than 7 days (saves ~80-90% via gzip on game text).
+
+**Disk reality:** active DR combat sessions can hit 25-30 MB per 8-hour day. Uncompressed, default capture = ~900 MB per character per 30 days. With compression on older logs: ~200 MB per character. A 3-character boxer = 600 MB - 2.7 GB depending on settings — comfortable for modern disks.
+
+### 28.4 In-client UI
+
+A single **"Logs" toolbar button** (next to Debug) opens a modal with three affordances. The modal does *not* try to be a viewer for 30 MB files — for that, players use their preferred external editor.
+
+#### 28.4.1 Recent Tail — "what just happened?"
+
+```
+┌─ Sekmeht — Recent (current session) ───────────────────────────── ✕ ─┐
+│ Streams: [✓] main  [✓] combat  [✓] thoughts  [ ] deaths              │
+│          [ ] arrivals  [ ] conversations  [✓] cmd  [✓] sys           │
+│ Presets: [ Everything ]  [ Combat ]  [ Social ]  [ Quiet ]           │
+│ [☐] Dedup near-identical lines          ⬇ load older                 │
+│ ──────────────────────────────────────────────────────────────────── │
+│ 18:32:42 main      A troll lurches into view!                        │
+│ 18:32:42 combat    The troll swings at you and connects!             │
+│ 18:32:42 combat    The troll's swing nicks your left arm...          │
+│ 18:32:50 cmd       >parry troll                                      │
+│ 18:32:50 main      You parry the troll's blow.                       │
+│ ──────────────────────────────────────────────────────────────────── │
+│  [Open Logs Folder]    [Quick Search…]    [Export…]                  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- Last ~200 lines on open; "load older" paginates upward (never loads whole file at once)
+- **Stream multi-select**: checkboxes populated by scanning unique `[stream]` tags in the file at modal-open time. Built-in game streams + custom Lich-script streams (`LichScripts`, `moonWindow`, character-defined echo streams) all appear automatically — no hardcoded list to maintain
+- **Preset layer buttons** flip multiple checkboxes at once:
+  - **Everything** — all streams checked
+  - **Combat** — `main`, `combat`, `group`, `thoughts`, `cmd`
+  - **Social** — `thoughts`, `conversations`, `arrivals`, `deaths`
+  - **Quiet** — `main`, `sys` only (just the prose)
+- **Dedup toggle** collapses identical text across streams into one row with combined tags (e.g. `[main, combat] A troll swings at you...`) — useful when scripts double-emit via `respond` + `echo`
+- Filter state, dedup preference, capture toggles all persist per-character via the existing `scopedKey` profile system
+
+#### 28.4.2 Quick Search — "when did X happen?"
+
+```
+┌─ Sekmeht — Quick Search ─────────────────────────── ✕ ─┐
+│ Search:  [tendcuts___________]  [☐ Regex]             │
+│ Time:    [Today ▼]  from [00:00] to [now]             │
+│ Streams: [✓] main  [✓] thoughts  [ ] combat ...       │
+│ ──────────────────────────────────────────────────── │
+│  3 matches in Sekmeht_2026-05-15.log                   │
+│ ──────────────────────────────────────────────────── │
+│ 14:08:11 main     You begin to tend the cuts on...     │
+│ 14:08:14 main     Your tending efforts pay off.        │
+│                                                         │
+│ 18:43:02 main     Kaela tends your minor injury.       │
+│                                                         │
+│ 21:11:55 thoughts Sek thinks, "anyone got tendcuts?"   │
+└─────────────────────────────────────────────────────────┘
+```
+
+- Substring or regex match across selected streams in selected time window
+- Today / Last 7 days / Last 30 days / custom range
+- Click a result → jumps into Recent Tail centered on that line with context above and below
+
+#### 28.4.3 Open Logs Folder
+
+Single button. Opens `Logs/{character}/` in the OS file manager. Player uses VSCode / Notepad++ / `less` / `rg` / whatever they prefer. **This is the primary surface for serious log review** — the modal exists for quick lookups.
+
+#### 28.4.4 Right-click "Show in Log"
+
+Right-click any line in the main game text → context menu adds **"Show in Log"** → opens Recent Tail centered on that timestamp. Players can scroll back from a moment in the game window straight to its context in the log.
+
+### 28.5 Export
+
+`.txt` only for v1. Dumps the currently-filtered view (current stream selection, current time range, current dedup setting) via the standard save dialog. Preserves the `[timestamp][stream] text` format. JSON / other formats deferred unless a tester requests it.
+
+### 28.6 Settings (per-character)
+
+```
+┌─ Settings — Session Log ─────────────────────────┐
+│ Capture:                                          │
+│   [✓] Game text (main)         ~80% of volume     │
+│   [✓] Stream content (thoughts, deaths, ...)      │
+│   [✓] Script echo                                 │
+│   [✓] System messages                             │
+│   [ ] Trigger / highlight fires  (debug only)     │
+│                                                   │
+│ Retention:  Keep logs for [30  ] days             │
+│ Storage:    [☐] Compress logs older than 7 days   │
+│                                                   │
+│ Disk usage: 142 MB across 8 days (Sekmeht)        │
+│ [Open Logs Folder]   [Delete all my logs…]        │
+└───────────────────────────────────────────────────┘
+```
+
+All per-character — lives in the existing profile YAML state map via `scopedKey(character, ...)`.
+
+### 28.7 Multi-character semantics
+
+- Each character writes independently to its own folder — no cross-tab contention
+- Filter state, dedup preference, capture toggles all per-character
+- Window close: log buffer flush is added to the existing `window.__flushProfileSaves` handler so it runs alongside YAML save + `.bak` backup
+- Tab close mid-session: graceful flush + `[sys] Disconnected` marker appended before destroy
+- Modal is per-tab (opened from each GameWindow's toolbar) — shows only that character's logs
+
+### 28.8 Performance
+
+- Buffered write: accumulate records in memory, flush every 1 second OR when buffer hits 100 records, whichever first
+- Memory cap: 1 MB buffer — runaway flood (3600+ lines in a single combat) force-flushes and starts fresh
+- Modal open: ~200 ms file scan for stream-tag discovery on a 100 MB file; "Loading streams…" placeholder
+- Writes go through the existing `writeLog` IPC pattern (append-only sync write in main process); switch to async stream if profiling shows contention
+
+### 28.9 Capture pipeline
+
+Intercepts at the same point as the trigger engine and highlight engine — `GameWindow.onGameEvent` handler. The handler already iterates every event in the batch; logging adds one line per event-type. Per-character because we're inside the per-tab `GameWindow` already.
+
+For events the user has opted out of (e.g. trigger/highlight fires), the capture check is a single bit-flag lookup against the per-character capture-config — zero cost when off.
+
+### 28.10 What's explicitly deferred
+
+- **Live tail** — Recent Tail uses a "refresh" button rather than streaming the file. Live-tail would require Virtuoso-over-streaming-source plumbing; add later if testers ask
+- **JSON export format** — `.txt` only for v1
+- **Manifest files** (per-day metadata sidecar for sub-100ms modal opens) — scan is fast enough; add only if perf demands
+- **Per-stream files** — single file with stream tags is simpler and fits the layered-view model
+- **Cross-character search** — search is per-character (the modal lives in a per-tab context). Could be added later as a separate global-search modal if requested
+
+### 28.11 Implementation effort estimate
+
+~2–3 days total:
+
+| Slice | Effort |
+|---|---|
+| Capture pipeline + buffered file writer (main process) | 0.5 day |
+| Log directory + retention pruner + per-character folders | 0.5 day |
+| Settings panel section + per-character toggle persistence | 0.5 day |
+| Recent Tail modal (scan, multi-select, presets, dedup, pagination) | 0.5 day |
+| Quick Search modal (time range, regex, result navigation, jump-to-tail) | 0.5 day |
+| Right-click "Show in Log" + Export + Open Folder + polish | 0.5 day |
+
+### 28.12 Done when
+
+A tester logs in, plays for an hour, opens the modal, sees their session, scrolls back, switches stream filters, hits a preset, searches for "tendcuts," exports a slice to a text file, opens the raw log file in Notepad, and right-clicks a line in the game window to jump straight to it in the log — all without surprises.
 

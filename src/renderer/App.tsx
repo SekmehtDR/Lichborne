@@ -57,15 +57,33 @@ function AppShell() {
     return () => { delete window.__flushProfileSaves }
   }, [sessions])
 
+  // Single source of truth for document.title. Re-fires on tab switch (activeId)
+  // and on the active session's character / game / connection-status changes.
+  // GameWindow and LoginScreen no longer touch document.title — they'd each
+  // write only on specific events (player-info / disconnect) and the title
+  // would stall on whatever was last written when the user switched tabs.
+  const activeSession = activeId ? sessions.find(s => s.characterId === activeId) : null
+  const activeCharacter = activeSession?.character ?? ''
+  const activeGame      = activeSession?.game ?? ''
+  const activeConnected = activeSession?.status.connected ?? false
+  useEffect(() => {
+    if (!activeSession) {
+      document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}`
+    } else {
+      const state = activeConnected ? 'Connected' : 'Disconnected'
+      document.title = `${activeCharacter} · ${activeGame} [${state}] | Lichborne v${__APP_VERSION__}`
+    }
+  // activeSession is intentionally not in deps — its identity changes on every
+  // sessions array update; we re-derive title from the primitive fields only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCharacter, activeGame, activeConnected])
+
   // §13.7 — App-level keyboard shortcuts. Ctrl+1..9 jump to a tab by slot;
   // Ctrl+Tab cycles to the next connected character; Ctrl+Shift+Enter opens
   // the Quick-Send overlay. The active GameWindow's local keydown handler
   // already early-returns when not active, so these don't collide.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      // Skip when typing in a text field unless the chord is unambiguous.
-      const inField = document.activeElement instanceof HTMLInputElement
-                   || document.activeElement instanceof HTMLTextAreaElement
       // Ctrl+Shift+Enter: Quick-Send — works even from a text field so a player
       // can hit it from the main command bar.
       if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
@@ -74,9 +92,10 @@ function AppShell() {
         setShowQuickSend(true)
         return
       }
-      // Tab-jump and cycle don't fire when inside an input — they'd interfere
-      // with text editing (Ctrl+1 is rare but Tab is everywhere).
-      if (inField) return
+      // Ctrl+1..9 and Ctrl+Tab fire regardless of text-field focus — the whole
+      // point of tab-switch hotkeys is "jump from wherever your hands are."
+      // Neither chord has a text-editing meaning, so allowing them inside the
+      // command bar is the right call.
       if (e.ctrlKey && !e.shiftKey && !e.altKey) {
         if (e.key === 'Tab') {
           if (sessions.length < 2) return
@@ -207,6 +226,16 @@ function AppShell() {
                     onDisconnect={() => {
                       window.api.destroySession(s.sessionId)
                       removeSession(s.characterId)
+                      // Clicking the toolbar's Login button (visible after a
+                      // disconnect) was previously a dead end — it closed the
+                      // tab and dropped the player on whichever other tab was
+                      // active, with no path to actually re-login. Now we also
+                      // surface the login UI: if this was the last session,
+                      // AppShell re-renders the full-screen LoginScreen
+                      // automatically (showAdd is moot when empty). If other
+                      // tabs remain, opening the Add Character modal lets them
+                      // re-add this character (or a different one) immediately.
+                      setShowAdd(true)
                     }}
                   />
                 </GroupsProvider>
