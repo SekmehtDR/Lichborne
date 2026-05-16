@@ -3,6 +3,7 @@ import type { LichRoom, GenieNode, GenieAugment } from './mapTypes'
 import { lichTitle, shortName, normalizeDesc, noteAliases, bfsPath, cmdLabel, COLOR_LEGEND } from './mapTypes'
 import { scopedKey } from '../../characterScope'
 import { useCharacter } from '../../CharacterContext'
+import { useProfileSaver } from '../../hooks/useProfileSaver'
 
 interface Props {
   lichDb:        Map<number, LichRoom>
@@ -50,6 +51,7 @@ export default function MapGraphView({
   lichDb, augments, orphansByZone, currentRoom, roomTitle, roomId, onSendCommand, genieReady, genieStatus,
 }: Props) {
   const character = useCharacter()
+  const saveProfile = useProfileSaver()
   // Current zone name being displayed
   const [currentZone, setCurrentZone] = useState<string>('')
   const [transform,   setTransform]   = useState<Transform>({ x: 0, y: 0, scale: 1 })
@@ -61,12 +63,38 @@ export default function MapGraphView({
   const [pathRooms,   setPathRooms]   = useState<Set<number>>(new Set())
   const [walking,     setWalking]     = useState(false)
   const [searchText,  setSearchText]  = useState('')
-  const [showAllZ,    setShowAllZ]    = useState(true)
-  const [zLevels,     setZLevels]     = useState<Set<number>>(new Set([0]))
+  const [showAllZ,    setShowAllZ]    = useState<boolean>(() => {
+    const raw = localStorage.getItem(scopedKey(character, 'mapShowAllZ'))
+    return raw === null ? true : raw === 'true'
+  })
+  const [zLevels,     setZLevels]     = useState<Set<number>>(() => {
+    try {
+      const raw = localStorage.getItem(scopedKey(character, 'mapZLevels'))
+      const parsed = raw ? JSON.parse(raw) : null
+      if (Array.isArray(parsed) && parsed.every(n => typeof n === 'number')) return new Set(parsed)
+    } catch {}
+    return new Set([0])
+  })
   const [labelMode,   setLabelMode]   = useState<LabelMode>(() =>
     (localStorage.getItem(scopedKey(character, 'mapLabelMode.v2')) as LabelMode | null) ?? 'none'
   )
-  const [showLegend, setShowLegend] = useState(false)
+  const [showLegend, setShowLegend] = useState<boolean>(() =>
+    localStorage.getItem(scopedKey(character, 'mapShowLegend')) === 'true'
+  )
+
+  // Persist showAllZ / zLevels / showLegend per-character + schedule YAML save.
+  useEffect(() => {
+    localStorage.setItem(scopedKey(character, 'mapShowAllZ'), String(showAllZ))
+    saveProfile()
+  }, [character, showAllZ, saveProfile])
+  useEffect(() => {
+    localStorage.setItem(scopedKey(character, 'mapZLevels'), JSON.stringify([...zLevels]))
+    saveProfile()
+  }, [character, zLevels, saveProfile])
+  useEffect(() => {
+    localStorage.setItem(scopedKey(character, 'mapShowLegend'), String(showLegend))
+    saveProfile()
+  }, [character, showLegend, saveProfile])
 
   const [svgReady, setSvgReady] = useState(false)
 
@@ -657,7 +685,7 @@ export default function MapGraphView({
         </>)}
         <span style={{ flex: 1 }} />
         <select className="map-label-select map-label-select--sm" value={labelMode}
-          onChange={e => { const m = e.target.value as LabelMode; setLabelMode(m); localStorage.setItem(scopedKey(character, 'mapLabelMode.v2'), m) }}>
+          onChange={e => { const m = e.target.value as LabelMode; setLabelMode(m); localStorage.setItem(scopedKey(character, 'mapLabelMode.v2'), m); saveProfile() }}>
           <option value="none">Labels: off</option>
           <option value="short">Labels: short</option>
           <option value="full">Labels: full</option>

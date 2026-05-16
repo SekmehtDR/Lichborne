@@ -1,4 +1,4 @@
-import type { SharedProfile, CharacterProfile, LegacyCharacterProfileV1 } from './profile-types'
+import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter } from './characterScope'
 
@@ -125,23 +125,19 @@ export async function importSharedProfile(): Promise<void> {
 export async function importCharacterProfile(character: string): Promise<CharacterProfile | null> {
   const raw = await window.api.readCharacterProfile(character)
   if (!raw || typeof raw !== 'object') return null
-  const data = raw as Partial<CharacterProfile> & LegacyCharacterProfileV1
+  const data = raw as Partial<CharacterProfile>
 
-  // Shared boot-fallback theme — always top-level in both v1 and v2.
+  // Shared boot-fallback theme
   if (data.theme) localStorage.setItem('lichborne.theme', data.theme)
 
-  if (data.profileVersion === 2 && data.state && typeof data.state === 'object') {
-    // v2 path: pour state map into localStorage. The renderer's per-domain
-    // loaders read these same keys on next mount and pick up the values.
+  // v2 dynamic state map. Pre-v0.6.0 profiles aren't supported — testers wipe
+  // profiles/{Character}.yaml to start fresh.
+  if (data.state && typeof data.state === 'object') {
     for (const [suffix, value] of Object.entries(data.state)) {
       if (value === undefined || value === null) continue
       const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
       localStorage.setItem(scopedKey(character, suffix), stringValue)
     }
-  } else {
-    // v1 path: hand-map legacy typed shape into localStorage scope keys. After
-    // this runs once, the next exportCharacterProfile will write v2 format.
-    migrateLegacyV1(character, data)
   }
 
   return buildCharacterProfile(
@@ -150,54 +146,6 @@ export async function importCharacterProfile(character: string): Promise<Charact
     data.game ?? 'DR',
     data.useLich ?? true,
   )
-}
-
-function migrateLegacyV1(character: string, data: LegacyCharacterProfileV1): void {
-  const put = (suffix: string, value: unknown) => {
-    if (value === undefined || value === null) return
-    const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
-    localStorage.setItem(scopedKey(character, suffix), stringValue)
-  }
-
-  if (data.settings) put('settings', data.settings)
-
-  if (data.layout) {
-    const l = data.layout
-    if (l.panelWidth     != null) put('panelWidth',     l.panelWidth)
-    if (l.topPanelHeight != null) put('topPanelHeight', l.topPanelHeight)
-    if (l.midPanelHeight != null) put('midPanelHeight', l.midPanelHeight)
-    if (l.topTabs)        put('topTabs',       l.topTabs)
-    if (l.topActiveId)    put('topActiveId',   l.topActiveId)
-    if (l.midTabs)        put('midTabs',       l.midTabs)
-    if (l.midActiveId)    put('midActiveId',   l.midActiveId)
-    if (l.bottomTabs)     put('bottomTabs',    l.bottomTabs)
-    if (l.bottomActiveId) put('bottomActiveId', l.bottomActiveId)
-    if (l.streamTimestamps) put('streamTimestamps', l.streamTimestamps)
-    if (l.mapLabelMode)     put('mapLabelMode.v2',   l.mapLabelMode)
-    if (l.exp) {
-      const e = l.exp
-      if (e.focus        != null) put('focus',        e.focus)
-      if (e.pinnedSkills != null) put('expPins',      e.pinnedSkills)
-      if (e.sortMode     != null) put('expSort',      e.sortMode)
-      if (e.sortDesc     != null) put('expSortDesc',  e.sortDesc ? 'desc' : 'asc')
-      if (e.focusMode    != null) put('expFocusMode', e.focusMode)
-    }
-  }
-
-  if (data.automations) {
-    const a = data.automations
-    if (a.highlights)        put('highlights',        a.highlights)
-    if (a.triggers)          put('triggers',          a.triggers)
-    if (a.macros)            put('macros',            a.macros)
-    if (a.aliases)           put('aliases',           a.aliases)
-    if (a.groups)            put('groups',            a.groups)
-    if (a.modes)             put('modes',             a.modes)
-    if (a.activeGroupStates) put('activeGroupStates', a.activeGroupStates)
-    if (a.activeModeId)      put('activeModeId',      a.activeModeId)
-  }
-
-  if (data.contacts)         put('contacts',          data.contacts)
-  if (data.contactTemplates) put('contact-templates', data.contactTemplates)
 }
 
 // ── Clear character localStorage ─────────────────────────────────────────────

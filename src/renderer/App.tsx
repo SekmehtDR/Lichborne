@@ -6,7 +6,7 @@ import QuickSend from './components/QuickSend'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
 import { CharacterProvider } from './CharacterContext'
-import { flushPendingProfileSaves } from './profile'
+import { flushPendingProfileSaves, exportCharacterProfile } from './profile'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -37,10 +37,25 @@ function AppShell() {
   const [checking, setChecking] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
 
+  // __flushProfileSaves is called by main's window-close handler. It fires every
+  // pending debounced save AND unconditionally saves every active character's
+  // profile as a defense-in-depth measure: any per-character localStorage write
+  // that wrote a value but didn't also call scheduleProfileSave still reaches
+  // YAML before the window destroys. Without this, settings toggled on the
+  // map's label dropdown / panel layout / exp sort / etc. would be lost on
+  // close if no other change triggered a save in the same session.
+  //
+  // Re-binds whenever `sessions` changes so the closure always sees the current
+  // list. Main only invokes this once on close, so there's no race window.
   useEffect(() => {
-    window.__flushProfileSaves = () => flushPendingProfileSaves()
+    window.__flushProfileSaves = async () => {
+      await flushPendingProfileSaves()
+      await Promise.all(sessions.map(s =>
+        exportCharacterProfile(s.account, s.character, s.game, s.useLich).catch(console.error)
+      ))
+    }
     return () => { delete window.__flushProfileSaves }
-  }, [])
+  }, [sessions])
 
   // §13.7 — App-level keyboard shortcuts. Ctrl+1..9 jump to a tab by slot;
   // Ctrl+Tab cycles to the next connected character; Ctrl+Shift+Enter opens
@@ -122,7 +137,13 @@ function AppShell() {
   function handleCloseTab(id: CharacterId) {
     const target = sessions.find(s => s.characterId === id)
     if (target) {
-      window.api.disconnect(target.sessionId)
+      // Only fire the graceful-disconnect IPC if the session is actually still
+      // connected. For a tab that's already disconnected (death, server drop,
+      // earlier user disconnect), the IPC would queue a phantom QUIT against a
+      // dead socket and hold a 5s gracefulDisconnect timer for no reason.
+      if (target.status.connected) {
+        window.api.disconnect(target.sessionId)
+      }
       window.api.destroySession(target.sessionId)
     }
     removeSession(id)
@@ -203,7 +224,7 @@ function AppShell() {
             onClick={() => setShowAdd(false)}
             title="Cancel"
           >✕</button>
-          <LoginScreen onConnected={handleConnected} />
+          <LoginScreen onConnected={handleConnected} isModal />
         </div>
       )}
 

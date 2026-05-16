@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
 import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile, clearCharacterLocalStorage } from '../profile'
+import { useSessions } from '../SessionsContext'
 import '../styles/login.css'
 
 const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
@@ -67,9 +68,14 @@ function gameCodeFromPort(port: number): string {
 
 interface Props {
   onConnected: (session: SessionInfo) => void
+  // When true, this LoginScreen is mounted as the "Add Character" modal over
+  // existing tabs. In that mode it doesn't touch document.title (the active
+  // tab's GameWindow owns it).
+  isModal?: boolean
 }
 
-export default function LoginScreen({ onConnected }: Props) {
+export default function LoginScreen({ onConnected, isModal = false }: Props) {
+  const { sessions } = useSessions()
   const [account, setAccount] = useState(() => localStorage.getItem(ACCOUNT_KEY) ?? '')
   const [password, setPassword] = useState('')
   const [character, setCharacter] = useState('')
@@ -101,7 +107,9 @@ export default function LoginScreen({ onConnected }: Props) {
     const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
     return () => clearTimeout(t)
   }, [adv])
-  useEffect(() => { document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}` }, [])
+  useEffect(() => {
+    if (!isModal) document.title = `DR [Not connected] | Lichborne v${__APP_VERSION__}`
+  }, [isModal])
 
   useEffect(() => {
     if (!account) return
@@ -154,6 +162,17 @@ export default function LoginScreen({ onConnected }: Props) {
       setError('Please enter your character name.')
       return
     }
+
+    // DragonRealms allows only one active character per SimuCo account. If a
+    // session for this account is already connected, blocking here avoids the
+    // server-side kick (which surfaces to the player as a confusing "Invalid
+    // login key" error and would drop their existing character).
+    const conflict = sessions.find(s => s.account.toLowerCase() === account.toLowerCase() && s.status.connected)
+    if (conflict) {
+      setError(`${conflict.character} is already connected on account ${account}. Disconnect them first to log in another character on this account.`)
+      return
+    }
+
     setError('')
     setStatusLog([])
     setConnecting(true)
@@ -173,7 +192,15 @@ export default function LoginScreen({ onConnected }: Props) {
 
     const result = await window.api.login(creds)
     if (!result.ok) {
-      setError(result.error ?? 'Connection failed')
+      // Defense-in-depth: if the same-account guard above somehow misses (a
+      // race where the existing session is mid-disconnect, or Simu's error
+      // wording changes), translate the cryptic "Invalid login key" into a
+      // hint about the most common cause.
+      const raw = result.error ?? 'Connection failed'
+      const friendly = /invalid login key/i.test(raw)
+        ? `${raw} — this usually means another character on account ${account} is already connected. Disconnect them first.`
+        : raw
+      setError(friendly)
       setConnecting(false)
       return
     }

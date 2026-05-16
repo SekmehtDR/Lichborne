@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type SkillBadge } from '../../focusTemplates'
 import { scopedKey } from '../../characterScope'
 import { useCharacter } from '../../CharacterContext'
+import { useProfileSaver } from '../../hooks/useProfileSaver'
 
 type FocusMode = 'none' | 'primary' | 'secondary' | 'tertiary'
 const FOCUS_MODES: FocusMode[] = ['none', 'primary', 'secondary', 'tertiary']
@@ -327,6 +328,7 @@ function sortEntries(
 
 export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin }: Props) {
   const character = useCharacter()
+  const saveProfile = useProfileSaver()
   const [sortMode, setSortMode] = useState<SortMode>(() => {
     const stored = localStorage.getItem(scopedKey(character, 'expSort'))
     if (stored === 'guild' || stored === 'focus') return 'alpha'
@@ -342,16 +344,19 @@ export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, on
   function handleModeChange(next: SortMode) {
     setSortMode(next)
     localStorage.setItem(scopedKey(character, 'expSort'), next)
+    saveProfile()
   }
 
   function handleDescChange(next: boolean) {
     setSortDesc(next)
     localStorage.setItem(scopedKey(character, 'expSortDesc'), next ? 'desc' : 'asc')
+    saveProfile()
   }
 
   function handleFocusModeChange(next: FocusMode) {
     setFocusMode(next)
     localStorage.setItem(scopedKey(character, 'expFocusMode'), next)
+    saveProfile()
   }
 
 

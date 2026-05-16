@@ -2,6 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import type { LichRoom, GenieNode, GenieAugment } from './mapTypes'
 import { lichTitle, normalizeDesc, findRoom, noteAliases, parseGenieZone } from './mapTypes'
 import { scheduleSharedProfileSave } from '../../profile'
+import { scopedKey } from '../../characterScope'
+import { useCharacter } from '../../CharacterContext'
+import { useProfileSaver } from '../../hooks/useProfileSaver'
 import MapImageView from './MapImageView'
 import MapGraphView from './MapGraphView'
 import '../../styles/map-panel.css'
@@ -16,7 +19,6 @@ interface Props {
 }
 
 const GENIE_DIR_KEY  = 'lichborne.genieMapsDir'
-const VIEW_MODE_KEY  = 'lichborne.mapViewMode'
 
 function getLichPath(): string {
   try {
@@ -26,13 +28,19 @@ function getLichPath(): string {
 }
 
 export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMapVersion = 0, onSendCommand, large = false }: Props) {
-  // ── View mode ────────────────────────────────────────────────────────────────
+  const character = useCharacter()
+  const saveProfile = useProfileSaver()
+
+  // ── View mode (per-character) ────────────────────────────────────────────────
   const [viewMode, setViewMode] = useState<'image' | 'graph'>(() => {
-    try { return (localStorage.getItem(VIEW_MODE_KEY) as 'image' | 'graph' | null) ?? 'image' } catch { return 'image' }
+    try { return (localStorage.getItem(scopedKey(character, 'mapViewMode')) as 'image' | 'graph' | null) ?? 'image' } catch { return 'image' }
   })
   useEffect(() => {
-    try { localStorage.setItem(VIEW_MODE_KEY, viewMode) } catch {}
-  }, [viewMode])
+    try {
+      localStorage.setItem(scopedKey(character, 'mapViewMode'), viewMode)
+      saveProfile()
+    } catch {}
+  }, [character, viewMode, saveProfile])
 
   // ── Lich database ────────────────────────────────────────────────────────────
   const [dbStatus, setDbStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')

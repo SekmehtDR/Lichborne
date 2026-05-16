@@ -2653,7 +2653,7 @@ Labels render above the node rect at a constant 10px font size (scaled by `1/sca
 
 ## 20. Profile System
 
-> Status: v2 (dynamic) — shipped in v0.6.0 as part of Release E1. v1 (typed) format from v0.5.x and earlier is auto-migrated on first read.
+> Status: v2 (dynamic) — shipped in v0.6.0 as part of Release E1. v1 migration code removed in v0.6.1; tester upgrade path is to wipe `profiles/` (Lichborne re-creates them on next login).
 
 ### 20.1 Overview
 
@@ -2662,9 +2662,28 @@ The profile system provides portable, file-based persistence for all character a
 **Design principles:**
 - YAML files are the source of truth — `localStorage` is the live runtime working copy.
 - Per-character `localStorage` keys live under the scope `lichborne.{character}.{suffix}` (see `characterScope.ts`) so multiple characters running concurrently in one app instance never collide. Shared keys (account, advancedSettings, mapDir, myThemes) stay unnamespaced.
-- The character YAML's `state:` map mirrors `lichborne.{character}.*` 1:1. Adding a new per-character setting requires only writing to its scoped key — the profile system picks it up dynamically with no further plumbing.
+- The character YAML's `state:` map mirrors `lichborne.{character}.*` 1:1. Adding a new per-character setting requires only writing to its scoped key via `useProfileSaver()` — the profile system picks it up dynamically with no further plumbing.
 - Atomic writes (`.tmp` + rename) and rolling backup on graceful shutdown (`{name}.yaml.bak`) protect against corruption from mid-write crashes.
 - Per-character debounced saves use a `Map<character, timer>` so two concurrent characters never race their YAML writes.
+- Defense-in-depth on graceful shutdown: `App.tsx` exposes `window.__flushProfileSaves` which fires every pending debounced timer AND unconditionally saves every active character's profile. Catches any per-character `setItem` that didn't trigger `scheduleProfileSave` directly.
+
+### 20.1a `useProfileSaver()` hook
+
+Lives at `src/renderer/hooks/useProfileSaver.ts`. Returns a stable `saveProfile()` callback bound to the current character's session info (account/character/game/useLich looked up from `SessionsContext` via a ref so the callback identity doesn't churn when other tabs update their status).
+
+**Usage pattern** — every per-character `localStorage.setItem(scopedKey(...), value)` call site is paired with `saveProfile()`:
+
+```ts
+const saveProfile = useProfileSaver()
+
+function handleThingChange(next: string) {
+  setThing(next)
+  localStorage.setItem(scopedKey(character, 'thing'), next)
+  saveProfile()
+}
+```
+
+This guarantees the change reaches the YAML within the 2.5s debounce window — crash-resilient even before the graceful-shutdown defense kicks in. Sites using it: `GameWindow` (streamTimestamps, top/mid/bottom tabs + active IDs, panel sizes during drag + reset), `ExpPanel` (sort mode, sort direction, focus mode), `MapPanel` (view mode), `MapGraphView` (label mode, Z-level filter, legend toggle, showAllZ).
 
 ---
 
@@ -2776,7 +2795,11 @@ state:
   bottomTabs: [...]
   bottomActiveId: exp
   streamTimestamps: { thoughts: true }
-  mapLabelMode.v2: short
+  mapLabelMode.v2: short                        # graph view label mode
+  mapViewMode: graph                            # 'image' | 'graph'
+  mapShowAllZ: 'false'                          # graph view Z-level filter mode (stored as string)
+  mapZLevels: [0, 1]                            # graph view selected Z levels
+  mapShowLegend: 'true'                         # graph view legend toggle (stored as string)
   focus: Ranger
   expPins: [Athletics, Stealth]
   expSort: alpha
@@ -2793,7 +2816,7 @@ state:
 
 #### v1 → v2 migration
 
-Old v1 YAMLs (typed `settings:` / `layout:` / `automations:` / `contacts:` / `contactTemplates:` shape, no `profileVersion`) are detected on `importCharacterProfile` and converted field-by-field into `state:` entries the first time they're loaded. The very next save writes v2 format. Single one-shot migration; no user action required.
+> Removed in v0.6.1. Pre-v0.6.0 testers should wipe `profiles/{Character}.yaml` before first launch on v0.6.1+ so Lichborne re-creates clean v2 files from a fresh login. (Decision was viable because the tester pool is small — see `Tracker.md` for the decision log entry.)
 
 ---
 
@@ -2859,12 +2882,13 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 | File | Role |
 |---|---|
 | `src/renderer/characterScope.ts` | `scopedKey(character, suffix)` and `normalizeCharacter(name)` — single source of truth for the `lichborne.{character}.{suffix}` namespace |
-| `src/renderer/profile-types.ts` | `SharedProfile`, `CharacterProfile` (v2), `LegacyCharacterProfileV1` for migration |
+| `src/renderer/profile-types.ts` | `SharedProfile`, `CharacterProfile` (v2) |
+| `src/renderer/hooks/useProfileSaver.ts` | `useProfileSaver()` — returns a stable `saveProfile()` callback bound to the current character's session info; called at every per-character `setItem` site |
 | `src/main/profiles.ts` | Main YAML file I/O — `readSharedProfile`, `writeSharedProfile`, `readCharacterProfile`, `writeCharacterProfile`, `listCharacterProfiles`, `backupAllProfiles`. `atomicWriteFile` is the internal `.tmp`-then-rename helper |
-| `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile` (scans `lichborne.{char}.*`), `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile` (v1 + v2 branches), `migrateLegacyV1`, `clearCharacterLocalStorage`, `scheduleProfileSave` (per-character `Map`), `scheduleSharedProfileSave`, `flushPendingProfileSaves` |
+| `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile` (scans `lichborne.{char}.*`), `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile` (v2 only as of v0.6.1), `clearCharacterLocalStorage`, `scheduleProfileSave` (per-character `Map`), `scheduleSharedProfileSave`, `flushPendingProfileSaves` |
 | `src/main/main.ts` | IPC handlers: `profile:read-shared`, `profile:write-shared`, `profile:read-character`, `profile:write-character`, `profile:list`. Window-close handler invokes `window.__flushProfileSaves` then `backupAllProfiles` |
 | `src/main/preload.ts` | IPC bridge — exposes profile API to renderer |
-| `src/renderer/App.tsx` | Exposes `window.__flushProfileSaves = () => flushPendingProfileSaves()` for the main-side close handler to invoke |
+| `src/renderer/App.tsx` | Exposes `window.__flushProfileSaves` which fires every pending debounced save AND unconditionally saves every active character — defense-in-depth catch for setItem-without-schedule sites |
 | `src/renderer/global.d.ts` | `window.api` type declarations for profile methods |
 
 ---
@@ -2888,6 +2912,7 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 | 3 | Import character: `importCharacterProfile()` on connect before GameWindow renders; YAML is authority | ✅ Complete (v0.3.x) |
 | 4 | Game dropdown: populate login screen game selector from `games` table in `_shared.yaml` | Planned |
 | **v2** | Dynamic `state:` map (scan `lichborne.{character}.*`); v1 migration; atomic write; `flushPendingProfileSaves`; `backupAllProfiles` on graceful close; per-character `scheduleProfileSave` map; per-character `localStorage` namespacing | ✅ Complete (v0.6.0) |
+| **v2.1** | `useProfileSaver()` hook at every setItem site (crash-resilient saves); v1 migration code removed; missing map options persisted (mapViewMode, showAllZ, zLevels, showLegend); defense-in-depth shutdown save covers any setItem-without-schedule edge | ✅ Complete (v0.6.1) |
 
 ---
 

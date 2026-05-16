@@ -36,6 +36,7 @@ import { useSessions, makeCharacterId } from '../SessionsContext'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
 import { useLichBridge } from '../hooks/useLichBridge'
+import { useProfileSaver } from '../hooks/useProfileSaver'
 import type { ScriptPaletteEntry } from '../../shared/types'
 import '../styles/game.css'
 import '../styles/panels.css'
@@ -167,6 +168,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const isActiveRef = useRef(isActive)
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
 
+  // Stable identity ref for the *current* session — re-assigned when this tab
+  // reconnects (server-drop + click-+-to-re-add fires SessionsContext.addSession
+  // with the same characterId, which keeps this component mounted but swaps
+  // session.sessionId). The big event-listener useEffect below has empty deps,
+  // so listener filters must read from this ref rather than the captured closure
+  // value to route events for the new sessionId after reconnect.
+  const sessionIdRef = useRef(session.sessionId)
+  useEffect(() => { sessionIdRef.current = session.sessionId }, [session.sessionId])
+
   // Push status snapshots into the SessionsContext so the character tab bar
   // can render health %, RT/bleeding/dead glyphs, and the disconnected dim
   // state for this tab. Bails out fast when nothing has actually changed.
@@ -175,6 +185,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     () => makeCharacterId(session.account, session.character),
     [session.account, session.character],
   )
+
+  // Schedule a debounced YAML save after any per-character localStorage write.
+  // Stable identity — safe to use in useEffect dep arrays.
+  const saveProfile = useProfileSaver()
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
@@ -235,6 +249,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const toggleStreamTimestamp = (id: string) => setStreamTimestamps(prev => {
     const next = { ...prev, [id]: !prev[id] }
     localStorage.setItem(scopedKey(session.character, 'streamTimestamps'), JSON.stringify(next))
+    saveProfile()
     return next
   })
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
@@ -561,6 +576,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     inputRef.current?.focus()
 
     function onMouseUp() {
+      // Multi-character: every mounted GameWindow attaches this listener but
+      // only the active tab should own the auto-copy. Without this gate, N tabs
+      // would each call writeClipboard with the same selection on every mouseup.
+      if (!isActiveRef.current) return
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed) return
       const text = sel.toString()
@@ -622,7 +641,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Re-apply theme then settings overlays whenever either changes ────────
 
+  // Apply this tab's theme + settings to the DOM whenever they change, AND when
+  // this tab becomes active. Themes + settings are applied to document.documentElement
+  // globally, so without the isActive dependency, switching from char A (with a
+  // dark theme) to char B (saved with a light theme) would leave char A's CSS
+  // visible until B changed a setting.
   useEffect(() => {
+    if (!isActive) return  // inactive tabs don't own the DOM
     const base = THEMES.find(t => t.id === currentThemeId)
     if (base) applyTheme(base)
     else {
@@ -630,22 +655,24 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (custom) applyCustomTheme(custom.vars)
     }
     applySettingsToDOM(settings)
-  }, [currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActive, currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist panel layout ─────────────────────────────────────────────────
 
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topTabs'),       JSON.stringify(topTabs))      }, [session.character, topTabs])
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topActiveId'),   topActiveId)                  }, [session.character, topActiveId])
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midTabs'),       JSON.stringify(midTabs))      }, [session.character, midTabs])
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midActiveId'),   midActiveId)                  }, [session.character, midActiveId])
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomTabs'),    JSON.stringify(bottomTabs))   }, [session.character, bottomTabs])
-  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomActiveId'), bottomActiveId)              }, [session.character, bottomActiveId])
+  // Persist panel layout state to per-character localStorage AND schedule a
+  // YAML save so the change reaches disk even if no other event triggers one.
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topTabs'),       JSON.stringify(topTabs));      saveProfile() }, [session.character, topTabs, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topActiveId'),   topActiveId);                  saveProfile() }, [session.character, topActiveId, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midTabs'),       JSON.stringify(midTabs));      saveProfile() }, [session.character, midTabs, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midActiveId'),   midActiveId);                  saveProfile() }, [session.character, midActiveId, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomTabs'),    JSON.stringify(bottomTabs));   saveProfile() }, [session.character, bottomTabs, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomActiveId'), bottomActiveId);              saveProfile() }, [session.character, bottomActiveId, saveProfile])
 
   // ── Event stream ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     const unsubEvents = window.api.onGameEvent((batch) => {
-      if (batch.sessionId !== session.sessionId) return
+      if (batch.sessionId !== sessionIdRef.current) return
       const events: GameEvent[] = batch.events
       const newMain: TextLine[] = []
       const newStream: Record<string, TextLine[]> = {}
@@ -871,7 +898,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
-      if (s.sessionId !== session.sessionId) return
+      if (s.sessionId !== sessionIdRef.current) return
       setStatus(s.message)
       if (s.message === 'Disconnecting...') {
         setDisconnecting(true)
@@ -887,7 +914,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     })
 
     const unsubRawXml = window.api.onRawXml((payload) => {
-      if (payload.sessionId !== session.sessionId) return
+      if (payload.sessionId !== sessionIdRef.current) return
       rawXmlBufRef.current.push(payload.line)
       if (rawXmlBufRef.current.length > MAX_RAW_XML_LINES) rawXmlBufRef.current.shift()
       if (showDebugRef.current) setRawXmlLines([...rawXmlBufRef.current])
@@ -981,12 +1008,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
         localStorage.setItem(scopedKey(session.character, 'panelWidth'), String(panelWidthRef.current))
+        saveProfile()
       }
       if (draggingRow.current === 'top-mid') {
         localStorage.setItem(scopedKey(session.character, 'topPanelHeight'), String(topHeightRef.current))
+        saveProfile()
       }
       if (draggingRow.current === 'mid-bot') {
         localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(midHeightRef.current))
+        saveProfile()
       }
       if (draggingRow.current) {
         draggingRow.current = null
@@ -1024,6 +1054,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     localStorage.setItem(scopedKey(session.character, 'panelWidth'),    String(DEFAULT_PANEL_WIDTH))
     localStorage.setItem(scopedKey(session.character, 'topPanelHeight'), String(DEFAULT_TOP_HEIGHT))
     localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(DEFAULT_MID_HEIGHT))
+    saveProfile()
     const defaultTop = [makeTab('room'), makeTab('conversations')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
     const defaultBot = [makeTab('exp'), makeTab('log')]

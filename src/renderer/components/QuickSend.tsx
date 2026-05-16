@@ -12,14 +12,16 @@ interface Props {
 export default function QuickSend({ onClose }: Props) {
   const { sessions, activeId } = useSessions()
 
-  // Default target: the next character after the active one (so boxers who
-  // most commonly send "from main to alt" land on the alt with no extra clicks).
+  // Default target: the next *connected* character after the active one. Skip
+  // disconnected sessions — sending to them would silently fail (main's IPC
+  // handler no-ops when the SessionId is gone from the SessionStore).
   const initialTarget = (() => {
-    if (sessions.length === 0) return null
-    if (!activeId) return sessions[0].characterId
-    const idx = sessions.findIndex(s => s.characterId === activeId)
-    if (idx < 0) return sessions[0].characterId
-    return sessions[(idx + 1) % sessions.length].characterId
+    const connected = sessions.filter(s => s.status.connected)
+    if (connected.length === 0) return null
+    if (!activeId) return connected[0].characterId
+    const idx = connected.findIndex(s => s.characterId === activeId)
+    if (idx < 0) return connected[0].characterId
+    return connected[(idx + 1) % connected.length].characterId
   })()
 
   const [target, setTarget]   = useState<CharacterId | null>(initialTarget)
@@ -43,6 +45,8 @@ export default function QuickSend({ onClose }: Props) {
 
   if (sessions.length === 0) return null
 
+  const noConnected = !sessions.some(s => s.status.connected)
+
   return (
     <div className="quick-send-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <form className="quick-send-card" onSubmit={handleSend} onKeyDown={handleKey}>
@@ -52,9 +56,10 @@ export default function QuickSend({ onClose }: Props) {
         </div>
         <label className="quick-send-target">
           Send to:
-          <select value={target ?? ''} onChange={e => setTarget(e.target.value as CharacterId)}>
+          <select value={target ?? ''} onChange={e => setTarget(e.target.value as CharacterId)} disabled={noConnected}>
+            {noConnected && <option value="">No connected characters</option>}
             {sessions.map(s => (
-              <option key={s.characterId} value={s.characterId}>
+              <option key={s.characterId} value={s.characterId} disabled={!s.status.connected}>
                 {s.character} · {s.game}{!s.status.connected ? ' (disconnected)' : ''}
               </option>
             ))}
