@@ -10,6 +10,7 @@ import {
   INTERPOLATABLE_VARS, WATCH_STREAM_OPTIONS,
 } from '../triggers'
 import { playWavFile } from '../hooks/useTriggerEngine'
+import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
 import '../styles/triggers.css'
 import '../styles/groups.css'
@@ -376,7 +377,8 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline = false }: Props) {
-  const [rules, setRules]       = useState<TriggerRule[]>(loadTriggers)
+  const character = useCharacter()
+  const [rules, setRules]       = useState<TriggerRule[]>(() => loadTriggers(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]       = useState<TriggerRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
@@ -470,7 +472,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
       updated = rules.map(r => r.id === trimmed.id ? trimmed : r)
     }
     setRules(updated)
-    saveTriggers(updated)
+    saveTriggers(character, updated)
     onSaved?.()
     setDraft(trimmed)
     setIsPendingNew(false)
@@ -496,7 +498,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
   function deleteRuleById(id: string) {
     const updated = rules.filter(r => r.id !== id)
     setRules(updated)
-    saveTriggers(updated)
+    saveTriggers(character, updated)
     onSaved?.()
     if (selectedId === id) {
       setSelectedId(null)
@@ -509,7 +511,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
   function toggleEnabled(id: string) {
     const updated = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setRules(updated)
-    saveTriggers(updated)
+    saveTriggers(character, updated)
     onSaved?.()
     if (draft?.id === id) setDraft(prev => prev ? { ...prev, enabled: !prev.enabled } : prev)
   }

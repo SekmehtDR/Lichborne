@@ -1,3 +1,45 @@
+## What's new in v0.6.0
+
+### Run multiple characters in one Lichborne
+
+Lichborne now manages multiple characters in a single running app — each in its own tab, with no more juggling separate exe instances and no more cross-character profile collisions.
+
+- **Character tab bar** — every connected character gets a tab showing name, game code, live health % (color-coded by threshold), and status glyphs: 🩸 bleeding, ⚠ roundtime active, 💀 dead.
+- **Click to switch, instantly** — switching tabs is zero-cost. Every tab stays mounted in the background, so vitals, scroll position, panel layout, and game text are all exactly where you left them. No remount flash.
+- **Disconnected tabs stay informative** — dim with an ↺ reconnect marker, but last-known health and glyphs are preserved. You can see at a glance that "Sekmeht 51% 🩸 ↺" is in trouble even while AFK.
+- **Add a character with `+`** — opens the standard login form as a modal. The first character on a fresh launch still shows the full login screen.
+- **Close a tab with `×`** — gracefully QUITs that character; other tabs unaffected.
+
+### Quick-Send — Ctrl+Shift+Enter
+
+A floating command input that targets any character without switching tabs. Tell your Empath to heal your main, ask your alt to grab a gem — Quick-Send defaults to the next character after your active one, sends on Enter, cancels on Esc.
+
+### Keyboard shortcuts
+
+- **Ctrl+1** through **Ctrl+9** — jump to a tab by slot.
+- **Ctrl+Tab** — cycle to the next tab.
+- **Ctrl+Shift+Enter** — open Quick-Send.
+
+Macros, mode hotkeys, and PageUp/Down/Home/End now correctly route only to the active tab — pressing F1 in your main's tab won't fire your alt's macros.
+
+### Profile system rewritten
+
+The way per-character settings round-trip to `{Character}.yaml` was rebuilt from scratch.
+
+- **Per-character isolation** — highlights, triggers, contacts, panel layout, exp settings, automations, themes — each character's data is fully isolated. Editing in one tab no longer leaks to another.
+- **Backup on graceful shutdown** — every time you close the app cleanly, your live `{Character}.yaml` and `_shared.yaml` are copied alongside as `.yaml.bak`. If the live file is ever corrupted, rename the `.bak` to recover your last known-good state.
+- **Atomic writes** — profiles now write to a `.tmp` file and rename in place. A crash mid-save can no longer leave you with a half-written, unparseable YAML.
+- **Race-safe concurrent saves** — two characters editing settings at the same time each have their own debounced save timer; one's save never clobbers the other's.
+
+### Migration to profile v2
+
+Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically the first time each character logs in — no manual steps. The new file shape collapses everything previously nested under `settings:` / `layout:` / `automations:` / `contacts:` into a flat `state:` map; values are identical, just reorganized. Adding new per-character features no longer requires editing the profile system in three places — anything the client writes to a character-scoped key now flows into the YAML automatically.
+
+### Polish
+
+- Window title bar reflects only the active character, not whichever tab most recently received game text.
+- Tab status updates skip when nothing has actually changed, so vital ticks that don't move your health % don't redraw the bar.
+
 ## What's new in v0.5.1
 
 ### Exp panel — learning rate bars and guild badging

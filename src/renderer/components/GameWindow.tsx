@@ -31,6 +31,8 @@ import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
+import { scopedKey } from '../characterScope'
+import { useSessions, makeCharacterId } from '../SessionsContext'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
 import { useLichBridge } from '../hooks/useLichBridge'
@@ -42,6 +44,10 @@ import '../styles/map-panel.css'
 interface Props {
   session: SessionInfo
   onDisconnect: () => void
+  // When false (this tab is in the background), suppress document.title writes
+  // so the active tab owns the window title. Defaults to true for backward
+  // compatibility with the single-session entry path.
+  isActive?: boolean
 }
 
 let lineId = 0
@@ -157,7 +163,18 @@ const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, timerSty
   </>)
 })
 
-export default function GameWindow({ session, onDisconnect }: Props) {
+export default function GameWindow({ session, onDisconnect, isActive = true }: Props) {
+  const isActiveRef = useRef(isActive)
+  useEffect(() => { isActiveRef.current = isActive }, [isActive])
+
+  // Push status snapshots into the SessionsContext so the character tab bar
+  // can render health %, RT/bleeding/dead glyphs, and the disconnected dim
+  // state for this tab. Bails out fast when nothing has actually changed.
+  const { updateStatus } = useSessions()
+  const characterId = useMemo(
+    () => makeCharacterId(session.account, session.character),
+    [session.account, session.character],
+  )
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
@@ -166,33 +183,32 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
   const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
-  const charKey = session.character || '_'
   const [expFocus, setExpFocus] = useState<string>(() =>
-    localStorage.getItem(`lichborne.focus.${charKey}`) ?? 'None'
+    localStorage.getItem(scopedKey(session.character, 'focus')) ?? 'None'
   )
   const [pinnedSkills, setPinnedSkills] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(`lichborne.expPins.${charKey}`)
+      const raw = localStorage.getItem(scopedKey(session.character, 'expPins'))
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
     } catch { return new Set() }
   })
 
   const handleFocusChange = useCallback((focus: string) => {
     setExpFocus(focus)
-    localStorage.setItem(`lichborne.focus.${charKey}`, focus)
+    localStorage.setItem(scopedKey(session.character, 'focus'), focus)
     scheduleProfileSave(session.account, session.character, session.game, session.useLich)
-  }, [charKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session.character]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTogglePin = useCallback((skill: string) => {
     setPinnedSkills(prev => {
       const next = new Set(prev)
       if (next.has(skill)) next.delete(skill)
       else next.add(skill)
-      localStorage.setItem(`lichborne.expPins.${charKey}`, JSON.stringify([...next]))
+      localStorage.setItem(scopedKey(session.character, 'expPins'), JSON.stringify([...next]))
       return next
     })
     scheduleProfileSave(session.account, session.character, session.game, session.useLich)
-  }, [charKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session.character]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [command, setCommand] = useState('')
   const historyRef    = useRef<string[]>([])
@@ -214,11 +230,11 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const clearLines       = () => { pinnedRef.current = true; setLines([]) }
   const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
   const [streamTimestamps, setStreamTimestamps] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('lichborne.streamTimestamps') ?? '{}') } catch { return {} }
+    try { return JSON.parse(localStorage.getItem(scopedKey(session.character, 'streamTimestamps')) ?? '{}') } catch { return {} }
   })
   const toggleStreamTimestamp = (id: string) => setStreamTimestamps(prev => {
     const next = { ...prev, [id]: !prev[id] }
-    localStorage.setItem('lichborne.streamTimestamps', JSON.stringify(next))
+    localStorage.setItem(scopedKey(session.character, 'streamTimestamps'), JSON.stringify(next))
     return next
   })
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
@@ -228,6 +244,20 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [rtExpires, setRtExpires]   = useState(0)
   const [ctExpires, setCtExpires]   = useState(0)
   const [indicators, setIndicators] = useState<Record<string, boolean>>({})
+
+  // Propagate vital/RT/indicator changes into the tab bar's session status.
+  useEffect(() => {
+    const h = vitals.health
+    const healthPct = h && h.max > 0 ? Math.round((h.current / h.max) * 100) : null
+    updateStatus(characterId, {
+      connected: !dropped,
+      healthPct,
+      rtExpires,
+      bleeding: !!indicators.bleeding,
+      dead:     !!indicators.dead,
+    })
+  }, [characterId, updateStatus, dropped, vitals.health, indicators.bleeding, indicators.dead, rtExpires])
+
   const [stance, setStance]         = useState('')
   const [spell, setSpell]           = useState('')
   const playerTitleRef              = useRef('')
@@ -241,27 +271,27 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     try { return JSON.parse(localStorage.getItem('lichborne.advancedSettings') ?? '{}').lichPath ?? '' } catch { return '' }
   })()
   const { scripts: lichScripts, lastUpdated: lichLastUpdated, pending: lichPending,
-          pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(!dropped)
+          pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(session.sessionId, !dropped)
 
   // Script Palette — user-configured quick-launch buttons
   const [scriptPalette, setScriptPalette] = useState<ScriptPaletteEntry[]>(() => {
-    try { return JSON.parse(localStorage.getItem('lichborne.scriptPalette') ?? '[]') } catch { return [] }
+    try { return JSON.parse(localStorage.getItem(scopedKey(session.character, 'scriptPalette')) ?? '[]') } catch { return [] }
   })
   void setScriptPalette  // exposed via settings in a later release; suppress lint for now
   void lichPath
 
   // Layout sizes
-  const [panelWidth, setPanelWidth]       = useState(() => loadInt('lichborne.panelWidth', DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
-  const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt('lichborne.topPanelHeight', DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
-  const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt('lichborne.midPanelHeight', DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
+  const [panelWidth, setPanelWidth]       = useState(() => loadInt(scopedKey(session.character, 'panelWidth'), DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
+  const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt(scopedKey(session.character, 'topPanelHeight'), DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
+  const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt(scopedKey(session.character, 'midPanelHeight'), DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
 
-  // Panel tabs — 3 zones, persisted to localStorage
-  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs('lichborne.topTabs',    [makeTab('room'), makeTab('conversations')]))
-  const [topActiveId, setTopActiveId]   = useState(() => loadStr('lichborne.topActiveId',    'room'))
-  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs('lichborne.midTabs',    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
-  const [midActiveId, setMidActiveId]   = useState(() => loadStr('lichborne.midActiveId',    'thoughts'))
-  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs('lichborne.bottomTabs', [makeTab('exp'), makeTab('log')]))
-  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr('lichborne.bottomActiveId', 'exp'))
+  // Panel tabs — 3 zones, persisted to localStorage (per-character)
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'topTabs'),    [makeTab('room'), makeTab('conversations')]))
+  const [topActiveId, setTopActiveId]   = useState(() => loadStr(scopedKey(session.character, 'topActiveId'),    'room'))
+  const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'midTabs'),    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
+  const [midActiveId, setMidActiveId]   = useState(() => loadStr(scopedKey(session.character, 'midActiveId'),    'thoughts'))
+  const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'bottomTabs'), [makeTab('exp'), makeTab('log')]))
+  const [bottomActiveId, setBottomActiveId] = useState(() => loadStr(scopedKey(session.character, 'bottomActiveId'), 'exp'))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -276,10 +306,10 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
 
-  const [contacts,  setContacts]  = useState(() => loadContacts())
-  const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates())
+  const [contacts,  setContacts]  = useState(() => loadContacts(session.character))
+  const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates(session.character))
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
-  const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights())
+  const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights(session.character))
   const { activeGroupStates, modes, applyMode, activeModeId } = useGroups()
   const activeContactTemplates = useMemo(
     () => contactTemplates.filter(t => isRuleActive(t.groupIds ?? [], activeGroupStates, t.allGroups ?? true)),
@@ -297,9 +327,9 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     scheduleProfileSave(session.account, session.character, session.game, session.useLich)
   }, [activeModeId]) // eslint-disable-line react-hooks/exhaustive-deps
   const { matchRules, lineRules } = useCompiledHighlights(highlights, activeGroupStates)
-  const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers())
-  const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases())
-  const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros())
+  const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers(session.character))
+  const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases(session.character))
+  const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros(session.character))
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
@@ -328,7 +358,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   const pendingContactsRef = useRef<Contact[] | null>(null)
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('lichborne.theme') ?? 'classic')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
-  const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings())
+  const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings(session.character))
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
   const [injuryState, setInjuryState]             = useState<InjuryState>({})
@@ -346,7 +376,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   }, [])
 
   const triggerCallbacks = useMemo(() => ({
-    sendCommand:  (cmd: string) => window.api.sendCommand(cmd),
+    sendCommand:  (cmd: string) => window.api.sendCommand(session.sessionId,cmd),
     echoToStream,
     setVariable:  (name: string, value: string) => {
       triggerCtxRef.current.variables[name] = value
@@ -354,7 +384,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     },
     disableTrigger: (id: string) => setTriggers(prev => {
       const updated = prev.map(r => r.id === id ? { ...r, enabled: false } : r)
-      saveTriggers(updated)
+      saveTriggers(session.character, updated)
       return updated
     }),
     flashWindow:  () => window.api.flashWindow(),
@@ -453,7 +483,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   useEffect(() => {
     showDebugRef.current = showDebug
-    window.api.debugPanelToggle(showDebug)
+    window.api.debugPanelToggle(session.sessionId, showDebug)
     if (showDebug) {
       setDebugEvents([...debugEventsBufRef.current])
       setRawXmlLines([...rawXmlBufRef.current])
@@ -582,7 +612,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       if (lastSeenTimerRef.current) clearTimeout(lastSeenTimerRef.current)
       lastSeenTimerRef.current = setTimeout(() => {
         const toSave = pendingContactsRef.current!
-        saveContacts(toSave)
+        saveContacts(session.character, toSave)
         setContacts([...toSave])
         pendingContactsRef.current = null
         scheduleProfileSave(session.account, session.character, session.game, session.useLich)
@@ -604,17 +634,19 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   // ── Persist panel layout ─────────────────────────────────────────────────
 
-  useEffect(() => { localStorage.setItem('lichborne.topTabs',       JSON.stringify(topTabs))      }, [topTabs])
-  useEffect(() => { localStorage.setItem('lichborne.topActiveId',   topActiveId)                  }, [topActiveId])
-  useEffect(() => { localStorage.setItem('lichborne.midTabs',       JSON.stringify(midTabs))      }, [midTabs])
-  useEffect(() => { localStorage.setItem('lichborne.midActiveId',   midActiveId)                  }, [midActiveId])
-  useEffect(() => { localStorage.setItem('lichborne.bottomTabs',    JSON.stringify(bottomTabs))   }, [bottomTabs])
-  useEffect(() => { localStorage.setItem('lichborne.bottomActiveId', bottomActiveId)              }, [bottomActiveId])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topTabs'),       JSON.stringify(topTabs))      }, [session.character, topTabs])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topActiveId'),   topActiveId)                  }, [session.character, topActiveId])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midTabs'),       JSON.stringify(midTabs))      }, [session.character, midTabs])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midActiveId'),   midActiveId)                  }, [session.character, midActiveId])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomTabs'),    JSON.stringify(bottomTabs))   }, [session.character, bottomTabs])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomActiveId'), bottomActiveId)              }, [session.character, bottomActiveId])
 
   // ── Event stream ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const unsubEvents = window.api.onGameEvent((events: GameEvent[]) => {
+    const unsubEvents = window.api.onGameEvent((batch) => {
+      if (batch.sessionId !== session.sessionId) return
+      const events: GameEvent[] = batch.events
       const newMain: TextLine[] = []
       const newStream: Record<string, TextLine[]> = {}
       const clearedStreams = new Set<string>()
@@ -760,7 +792,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             break
           case 'player-info':
             playerTitleRef.current = `${evt.char} · ${evt.game}`
-            document.title = `${playerTitleRef.current} [Connected] | Lichborne v${__APP_VERSION__}`
+            if (isActiveRef.current) document.title = `${playerTitleRef.current} [Connected] | Lichborne v${__APP_VERSION__}`
             break
           case 'game-exit':
             break
@@ -839,6 +871,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
+      if (s.sessionId !== session.sessionId) return
       setStatus(s.message)
       if (s.message === 'Disconnecting...') {
         setDisconnecting(true)
@@ -847,14 +880,15 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         setDropped(true)
         setStatus(s.clean ? 'Disconnected' : 'Connection lost')
         if (!s.clean) setShowDebug(true)
-        document.title = `${playerTitleRef.current} [Disconnected] | Lichborne v${__APP_VERSION__}`
+        if (isActiveRef.current) document.title = `${playerTitleRef.current} [Disconnected] | Lichborne v${__APP_VERSION__}`
         exportCharacterProfile(session.account, session.character, session.game, session.useLich)
           .catch(console.error)
       }
     })
 
-    const unsubRawXml = window.api.onRawXml((line: string) => {
-      rawXmlBufRef.current.push(line)
+    const unsubRawXml = window.api.onRawXml((payload) => {
+      if (payload.sessionId !== session.sessionId) return
+      rawXmlBufRef.current.push(payload.line)
       if (rawXmlBufRef.current.length > MAX_RAW_XML_LINES) rawXmlBufRef.current.shift()
       if (showDebugRef.current) setRawXmlLines([...rawXmlBufRef.current])
     })
@@ -882,6 +916,10 @@ export default function GameWindow({ session, onDisconnect }: Props) {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Multi-character: every mounted GameWindow attaches this listener but
+      // only the active tab should respond. Inactive tabs ignore all keyboard.
+      if (!isActiveRef.current) return
+
       const active = document.activeElement
       const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
       if (active !== inputRef.current && !inTextField) {
@@ -942,13 +980,13 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         isDraggingColRef.current = false
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
-        localStorage.setItem('lichborne.panelWidth', String(panelWidthRef.current))
+        localStorage.setItem(scopedKey(session.character, 'panelWidth'), String(panelWidthRef.current))
       }
       if (draggingRow.current === 'top-mid') {
-        localStorage.setItem('lichborne.topPanelHeight', String(topHeightRef.current))
+        localStorage.setItem(scopedKey(session.character, 'topPanelHeight'), String(topHeightRef.current))
       }
       if (draggingRow.current === 'mid-bot') {
-        localStorage.setItem('lichborne.midPanelHeight', String(midHeightRef.current))
+        localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(midHeightRef.current))
       }
       if (draggingRow.current) {
         draggingRow.current = null
@@ -983,9 +1021,9 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     panelWidthRef.current = DEFAULT_PANEL_WIDTH; setPanelWidth(DEFAULT_PANEL_WIDTH)
     topHeightRef.current = DEFAULT_TOP_HEIGHT;   setTopPanelHeight(DEFAULT_TOP_HEIGHT)
     midHeightRef.current = DEFAULT_MID_HEIGHT;   setMidPanelHeight(DEFAULT_MID_HEIGHT)
-    localStorage.setItem('lichborne.panelWidth',    String(DEFAULT_PANEL_WIDTH))
-    localStorage.setItem('lichborne.topPanelHeight', String(DEFAULT_TOP_HEIGHT))
-    localStorage.setItem('lichborne.midPanelHeight', String(DEFAULT_MID_HEIGHT))
+    localStorage.setItem(scopedKey(session.character, 'panelWidth'),    String(DEFAULT_PANEL_WIDTH))
+    localStorage.setItem(scopedKey(session.character, 'topPanelHeight'), String(DEFAULT_TOP_HEIGHT))
+    localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(DEFAULT_MID_HEIGHT))
     const defaultTop = [makeTab('room'), makeTab('conversations')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
     const defaultBot = [makeTab('exp'), makeTab('log')]
@@ -1044,7 +1082,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
   function sendCommandSequence(commands: string[], delayMs: number) {
     const echoCmd = (cmd: string) => {
       setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
-      window.api.sendCommand(cmd)
+      window.api.sendCommand(session.sessionId,cmd)
     }
     if (delayMs > 0) {
       commands.forEach((cmd, i) => {
@@ -1072,15 +1110,15 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       if (resolved.passThrough) {
         const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
         if (delay > 0) {
-          const h = setTimeout(() => window.api.sendCommand(command), delay)
+          const h = setTimeout(() => window.api.sendCommand(session.sessionId,command), delay)
           macroTimersRef.current.add(h)
         } else {
-          window.api.sendCommand(command)
+          window.api.sendCommand(session.sessionId,command)
         }
       }
     } else {
       setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
-      window.api.sendCommand(command)
+      window.api.sendCommand(session.sessionId,command)
     }
     setCommand('')
   }
@@ -1114,12 +1152,12 @@ export default function GameWindow({ session, onDisconnect }: Props) {
     cancelPendingRef.current()
     for (const h of macroTimersRef.current) clearTimeout(h)
     macroTimersRef.current.clear()
-    window.api.disconnect()
+    window.api.disconnect(session.sessionId)
   }
 
   // ── Shared PanelFrame props ───────────────────────────────────────────────
 
-  const sendCommand = useCallback((cmd: string) => window.api.sendCommand(cmd), [])
+  const sendCommand = useCallback((cmd: string) => window.api.sendCommand(session.sessionId,cmd), [])
 
   const sharedFrameProps = {
     streamLines, roomState, expSkills, rankUpSkills,
@@ -1213,7 +1251,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
         <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
         <button
           className={`btn-disconnect${dropped ? ' btn-disconnect--login' : ''}`}
-          onClick={dropped ? () => { playerTitleRef.current = ''; onDisconnect() } : handleDisconnect}
+          onClick={dropped ? () => { playerTitleRef.current = ''; window.api.destroySession(session.sessionId); onDisconnect() } : handleDisconnect}
           disabled={disconnecting && !dropped}
         >
           {dropped ? 'Login' : disconnecting ? 'Disconnecting…' : 'Disconnect'}
@@ -1356,7 +1394,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={cmd => window.api.sendCommand(cmd)} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={cmd => window.api.sendCommand(session.sessionId,cmd)} large />
             </div>
           </div>
         </div>
@@ -1389,7 +1427,7 @@ export default function GameWindow({ session, onDisconnect }: Props) {
       {showSettings && (
         <SettingsPanel
           settings={settings}
-          onChange={s => { setSettings(s); saveSettings(s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
+          onChange={s => { setSettings(s); saveSettings(session.character, s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
           onClose={() => setShowSettings(false)}
         />
       )}
@@ -1399,8 +1437,8 @@ export default function GameWindow({ session, onDisconnect }: Props) {
           openContactId={openContactId}
           onClose={() => { setShowContacts(false); setOpenContactId(null) }}
           onSaved={() => {
-            setContacts(loadContacts())
-            setContactTemplates(loadContactTemplates())
+            setContacts(loadContacts(session.character))
+            setContactTemplates(loadContactTemplates(session.character))
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
         />
@@ -1440,12 +1478,12 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
           onSaved={() => {
-            setHighlights(loadHighlights())
-            setTriggers(loadTriggers())
-            setAliases(loadAliases())
-            setMacros(loadMacros())
-            setContacts(loadContacts())
-            setContactTemplates(loadContactTemplates())
+            setHighlights(loadHighlights(session.character))
+            setTriggers(loadTriggers(session.character))
+            setAliases(loadAliases(session.character))
+            setMacros(loadMacros(session.character))
+            setContacts(loadContacts(session.character))
+            setContactTemplates(loadContactTemplates(session.character))
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
           onClose={() => {
@@ -1453,10 +1491,10 @@ export default function GameWindow({ session, onDisconnect }: Props) {
             setHighlightPrefill(undefined)
             setHighlightTestText(undefined)
             setTriggerPrefillPattern(undefined)
-            setHighlights(loadHighlights())
-            setTriggers(loadTriggers())
-            setAliases(loadAliases())
-            setMacros(loadMacros())
+            setHighlights(loadHighlights(session.character))
+            setTriggers(loadTriggers(session.character))
+            setAliases(loadAliases(session.character))
+            setMacros(loadMacros(session.character))
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
         />

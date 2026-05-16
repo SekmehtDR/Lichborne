@@ -23,8 +23,10 @@ export interface Contact {
   lastRoom: string | null
 }
 
-const STORAGE_CONTACTS  = 'lichborne.contacts'
-const STORAGE_TEMPLATES = 'lichborne.contact-templates'
+import { scopedKey } from './characterScope'
+
+const storageContacts  = (character: string) => scopedKey(character, 'contacts')
+const storageTemplates = (character: string) => scopedKey(character, 'contact-templates')
 
 export const DEFAULT_TEMPLATES: ContactTemplate[] = [
   { id: 'tpl-friends', name: 'Friends', textColor: '#A0D080', bgColor: 'transparent', bold: false, tagText: '',        tagColor: '#A0D080', tagBgColor: 'transparent', groupIds: [], allGroups: true, isDefault: true },
@@ -37,16 +39,16 @@ export const DR_GUILDS = [
   'Ranger', 'Thief', 'Trader', 'Warrior Mage',
 ]
 
-export function loadContacts(): Contact[] {
+export function loadContacts(character: string): Contact[] {
   try {
-    const raw = localStorage.getItem(STORAGE_CONTACTS)
+    const raw = localStorage.getItem(storageContacts(character))
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { return [] }
 }
 
-export function saveContacts(contacts: Contact[]): void {
-  localStorage.setItem(STORAGE_CONTACTS, JSON.stringify(contacts))
+export function saveContacts(character: string, contacts: Contact[]): void {
+  localStorage.setItem(storageContacts(character), JSON.stringify(contacts))
 }
 
 function normalizeTemplate(t: Partial<ContactTemplate> & { id: string; name: string }): ContactTemplate {
@@ -65,9 +67,9 @@ function normalizeTemplate(t: Partial<ContactTemplate> & { id: string; name: str
   }
 }
 
-export function loadContactTemplates(): ContactTemplate[] {
+export function loadContactTemplates(character: string): ContactTemplate[] {
   try {
-    const raw = localStorage.getItem(STORAGE_TEMPLATES)
+    const raw = localStorage.getItem(storageTemplates(character))
     const parsed = raw ? JSON.parse(raw) : null
     if (!Array.isArray(parsed)) return [...DEFAULT_TEMPLATES]
     const map = new Map(parsed.map((t: ContactTemplate) => [t.id, normalizeTemplate(t)]))
@@ -78,8 +80,8 @@ export function loadContactTemplates(): ContactTemplate[] {
   } catch { return [...DEFAULT_TEMPLATES] }
 }
 
-export function saveContactTemplates(templates: ContactTemplate[]): void {
-  localStorage.setItem(STORAGE_TEMPLATES, JSON.stringify(templates))
+export function saveContactTemplates(character: string, templates: ContactTemplate[]): void {
+  localStorage.setItem(storageTemplates(character), JSON.stringify(templates))
 }
 
 export function newContact(): Contact {

@@ -1263,7 +1263,7 @@ Any panel type can be floated. "Create floating panel" spawns a new panel immedi
 
 ## 13. Multi-Character Support
 
-> Status: Backlog — not scheduled. Full design spec for when this becomes a phase.
+> Status: ✅ Implemented in v0.6.0 (Release E1 — "Sessions"). One running app instance manages all characters; each character is a tab in the main toolbar row. Pop-out windows (§13.9) deferred — single-window-with-tabs ships first.
 
 ### 13.1 Concept
 
@@ -1271,9 +1271,11 @@ DragonRealms requires a separate account login per character. Players commonly r
 
 ### 13.2 The Session Model
 
-Each character is a **GameSession** — a fully independent unit containing its own connection, game state, panel layout, command history, and theme. Sessions run in parallel; background sessions remain connected but do not render.
+Each character is a **GameSession** — a fully independent unit containing its own connection, game state, panel layout, command history, and theme. Sessions run in parallel; background sessions remain connected and continue receiving game events.
 
-The current `GameWindow` becomes one session instance. A **session manager** owns all active sessions and controls which one is currently displayed.
+**Main process side** — `SessionStore` (`Map<SessionId, Session>`) in `main.ts`. Each `Session` owns its own `ConnectionManager`, `StormFrontParser`, `LichBridge`, event queue, and lifecycle flags. `SessionId` is minted via `crypto.randomUUID()` on each successful `login` IPC and returned to the renderer; the renderer threads it through every per-session IPC call (`send-command`, `disconnect`, `debug-panel-toggle`, `lich:poll-scripts`, etc). Every push channel (`game-event`, `connection-status`, `raw-xml`, `error`, `lich:scripts-update`) carries the originating `sessionId` so the renderer can route to the correct tab.
+
+**Renderer side** — `SessionsProvider` (`src/renderer/SessionsContext.tsx`) holds the `SessionRecord[]` and `activeId`. Each tab is identified by a stable `CharacterId` (`{account}::{character}`, normalized lowercase) that survives across reconnects within the tab. Every `GameWindow` instance stays mounted; only the active one is visible (`display: block`), inactive ones render with `display: none` so vitals, virtuoso scroll position, panel layout, and game text all persist while switching tabs.
 
 ### 13.3 Character Tab Bar
 
@@ -1370,6 +1372,8 @@ A floating input that sends a command to any character without switching tabs. U
 Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends the command and closes without switching sessions.
 
 ### 13.9 Pop-Out Windows
+
+> Status: Deferred. Not in the v0.6.0 ship. Requires a second `BrowserWindow` per pop-out and IPC routing per window — non-trivial additional refactor. Single-window-with-tabs is sufficient for v1 multi-character.
 
 Any character tab can be dragged off the tab bar to become an independent OS window — useful for multi-monitor setups. Each popped window is a full session with its own toolbar and layout. A `⬛ Dock` button in the popped window's toolbar returns it to the tab bar.
 
@@ -2649,14 +2653,18 @@ Labels render above the node rect at a constant 10px font size (scaled by `1/sca
 
 ## 20. Profile System
 
+> Status: v2 (dynamic) — shipped in v0.6.0 as part of Release E1. v1 (typed) format from v0.5.x and earlier is auto-migrated on first read.
+
 ### 20.1 Overview
 
 The profile system provides portable, file-based persistence for all character and application settings. Each character's configuration is stored in a YAML file inside a `profiles\` folder in the installation directory. Copying the installation folder to another machine carries all profiles with it.
 
 **Design principles:**
-- YAML files are the source of truth — `localStorage` is the live runtime working copy
-- Settings flow: YAML → `localStorage` on launch; `localStorage` → YAML on change/disconnect
-- Additive and safe — the system is purely read/write on top of existing `localStorage`; it does not replace or bypass any existing save logic
+- YAML files are the source of truth — `localStorage` is the live runtime working copy.
+- Per-character `localStorage` keys live under the scope `lichborne.{character}.{suffix}` (see `characterScope.ts`) so multiple characters running concurrently in one app instance never collide. Shared keys (account, advancedSettings, mapDir, myThemes) stay unnamespaced.
+- The character YAML's `state:` map mirrors `lichborne.{character}.*` 1:1. Adding a new per-character setting requires only writing to its scoped key — the profile system picks it up dynamically with no further plumbing.
+- Atomic writes (`.tmp` + rename) and rolling backup on graceful shutdown (`{name}.yaml.bak`) protect against corruption from mid-write crashes.
+- Per-character debounced saves use a `Map<character, timer>` so two concurrent characters never race their YAML writes.
 
 ---
 
@@ -2683,7 +2691,7 @@ The profile system provides portable, file-based persistence for all character a
 Machine-level and game-level config shared across all characters and accounts:
 
 ```yaml
-account: FORTISSABROK   # last account name used; pre-fills the login form
+account: EXAMPLEACCT   # last account name used; pre-fills the login form
 
 advancedSettings:
   lichPath: C:\Ruby4Lich5\Lich5\lich.rbw
@@ -2727,31 +2735,38 @@ myThemes:
 
 **`lichClientFlag`** is combined with the game's `lichArguments` to form the full Lich launch command: `ruby lich.rbw --stormfront --dragonrealms`. Swapping the flag in one place updates it for all games. Adding a new game server requires only a new entry in the `games` table — no code changes needed; the login screen game dropdown is populated from this table at runtime.
 
-#### `CharacterName.yaml`
-Everything specific to one character:
+#### `{Character}.yaml` (v2 — dynamic shape)
+
+A small set of top-level fields plus a dynamic `state:` map that mirrors localStorage. Every entry under `state` corresponds to one `lichborne.{character}.{suffix}` localStorage key:
 
 ```yaml
-account: FORTISSABROK
+profileVersion: 2
+account: EXAMPLEACCT
 character: Sekmeht
-game: DR          # references games table in _shared.yaml for auth + lich config
+game: DR
 useLich: true
+theme: classic     # boot fallback (unnamespaced lichborne.theme — applied before any tab mounts)
 
-theme: dark
-settings:
-  fontSize: 12
-  fontFamily: Consolas
-  lineHeight: 1.2
-  largePrint: false
-  highContrast: false
-  colorBlind: none
-  epilepsySafe: false
-  vitalsBarPosition: bottom
-  iconBarPosition: top
-  timerStyle: chips
-  autoLinkUrls: true
-
-layout:
-  panelWidth: 320
+state:
+  settings:                                     # ← lichborne.{char}.settings
+    fontSize: 12
+    fontFamily: Consolas
+    lineHeight: 1.2
+    vitalsBarPosition: bottom
+    iconBarPosition: top
+    timerStyle: chips
+    autoLinkUrls: true
+  highlights: [...]                             # ← lichborne.{char}.highlights
+  triggers: [...]                               # ← lichborne.{char}.triggers
+  macros: [...]                                 # ← lichborne.{char}.macros
+  aliases: [...]                                # ← lichborne.{char}.aliases
+  groups: [...]                                 # ← lichborne.{char}.groups
+  modes: [...]                                  # ← lichborne.{char}.modes
+  activeGroupStates: { grp-combat: true }       # ← lichborne.{char}.activeGroupStates
+  activeModeId: mode-hunting                    # ← lichborne.{char}.activeModeId
+  contacts: [...]                               # ← lichborne.{char}.contacts
+  contact-templates: [...]                      # ← lichborne.{char}.contact-templates
+  panelWidth: 320                               # ← lichborne.{char}.panelWidth
   topPanelHeight: 200
   midPanelHeight: 200
   topTabs: [...]
@@ -2760,60 +2775,25 @@ layout:
   midActiveId: thoughts
   bottomTabs: [...]
   bottomActiveId: exp
-  streamTimestamps: { thoughts: true, arrivals: false }
-  mapLabelMode: short   # none | short | full | id | note
-  exp:
-    focus: Ranger           # selected guild/badging; 'None' = no badging
-    pinnedSkills: [Athletics, Stealth]
-    sortMode: alpha         # alpha | guild | rank | rate
-    sortDesc: false
-    focusMode: none         # none | primary | secondary | tertiary
-
-automations:
-  highlights: [...]
-  triggers: [...]
-  macros: [...]
-  aliases: [...]
-  groups: [...]
-  modes: [...]
-  activeGroupStates: { grp-combat: true, ... }
-  activeModeId: mode-hunting
-
-contacts: [...]
-contactTemplates: [...]
+  streamTimestamps: { thoughts: true }
+  mapLabelMode.v2: short
+  focus: Ranger
+  expPins: [Athletics, Stealth]
+  expSort: alpha
+  expSortDesc: asc                              # 'asc' | 'desc' (string, not boolean)
+  expFocusMode: none
+  scriptPalette: [...]
 ```
 
-**`localStorage` key → YAML field mapping:**
+**Round-trip behavior:** every JSON-stringifiable value localStorage holds becomes a typed value in YAML. Strings stay strings, numbers stay numbers, objects/arrays serialize. On import, values that are objects/arrays are `JSON.stringify`d back into localStorage; primitives are stored as `String(value)`. Mirrors localStorage's string-only API exactly.
 
-| `localStorage` key | YAML location | Scope |
-|---|---|---|
-| `lichborne.account` | `_shared.account` | shared |
-| `lichborne.advancedSettings` (lichPath, rubyPath, lichMode, lichDelay, hideLichWindow, lichPort, portLocked, modeLocked) | `_shared.advancedSettings` | shared |
-| `lichborne.advancedSettings` (useLich) | `useLich` | character |
-| `lichborne.theme` | `theme` | character |
-| `lichborne.myThemes` | `_shared.myThemes` | shared |
-| `lichborne.settings` | `settings` | character |
-| `lichborne.highlights` | `automations.highlights` | character |
-| `lichborne.triggers` | `automations.triggers` | character |
-| `lichborne.macros` | `automations.macros` | character |
-| `lichborne.aliases` | `automations.aliases` | character |
-| `lichborne.groups` | `automations.groups` | character |
-| `lichborne.modes` | `automations.modes` | character |
-| `lichborne.activeGroupStates` | `automations.activeGroupStates` | character |
-| `lichborne.activeModeId` | `automations.activeModeId` | character |
-| `lichborne.contacts` | `contacts` | character |
-| `lichborne.contact-templates` | `contactTemplates` | character |
-| `lichborne.topTabs` / `midTabs` / `bottomTabs` + active IDs | `layout.*Tabs` / `*ActiveId` | character |
-| `lichborne.panelWidth` / `topPanelHeight` / `midPanelHeight` | `layout.*` | character |
-| `lichborne.streamTimestamps` | `layout.streamTimestamps` | character |
-| `lichborne.mapLabelMode` | `layout.mapLabelMode` | character |
-| `lichborne.focus.${charKey}` | `layout.exp.focus` | character (character-keyed) |
-| `lichborne.expPins.${charKey}` | `layout.exp.pinnedSkills` | character (character-keyed) |
-| `lichborne.expSort` | `layout.exp.sortMode` | character |
-| `lichborne.expSortDesc` | `layout.exp.sortDesc` | character |
-| `lichborne.expFocusMode` | `layout.exp.focusMode` | character |
-| `lichborne.mapDir` | `_shared.mapDir` | shared |
-| `lichborne.mapFile` | — (transient, not persisted to YAML) | — |
+**Adding a new per-character feature:** call `localStorage.setItem(scopedKey(character, 'mything'), JSON.stringify(value))`. No profile-system changes needed; `state.mything` appears in the next YAML save automatically, and `importCharacterProfile` will write it back on next login.
+
+**Shared keys (unnamespaced — not under any character scope):** `lichborne.account`, `lichborne.advancedSettings`, `lichborne.rememberPassword`, `lichborne.mapDir`, `lichborne.genieMapsDir`, `lichborne.myThemes`, `lichborne.theme` (boot fallback). These live in `_shared.yaml` or stay in localStorage and never appear in per-character YAMLs.
+
+#### v1 → v2 migration
+
+Old v1 YAMLs (typed `settings:` / `layout:` / `automations:` / `contacts:` / `contactTemplates:` shape, no `profileVersion`) are detected on `importCharacterProfile` and converted field-by-field into `state:` entries the first time they're loaded. The very next save writes v2 format. Single one-shot migration; no user action required.
 
 ---
 
@@ -2829,11 +2809,14 @@ contactTemplates: [...]
 
 ### 20.5 Write Flow
 
-1. Any setting changes → `localStorage` immediately (existing behavior, unchanged)
-2. Debounced 2.5 seconds after last change → YAML written
-3. On disconnect (clean or dropped) → immediate final character write regardless of debounce state
+1. Any setting changes → character-scoped `localStorage` key immediately (existing behavior, unchanged).
+2. Debounced 2.5 seconds after last change → YAML written via `scheduleProfileSave(account, character, game, useLich)`. Each character has its own pending timer in a `Map<character, {timer, account, game, useLich}>` so two active characters never race their writes.
+3. On disconnect (clean or dropped) → immediate final character write regardless of debounce state.
+4. On window close (graceful shutdown) → main fires `window.__flushProfileSaves` in the renderer via `executeJavaScript`; the renderer runs every pending timer immediately and `await`s all writes. Main then runs `backupAllProfiles()` which copies each `{Character}.yaml` and `_shared.yaml` to `.yaml.bak` in the same directory. Single rolling backup per file from the last clean shutdown.
 
-**Character profile debounce triggers** (`scheduleProfileSave` in `GameWindow`):
+**Atomic write:** `writeCharacterProfile` / `writeSharedProfile` write to `{path}.tmp` and then rename in place (after removing the existing target on Windows). The corruption window collapses to a single rename syscall.
+
+**Character profile debounce triggers** (`scheduleProfileSave` in `GameWindow` and panels):
 - Settings panel `onChange`
 - Automations panel `onSaved` and `onClose`
 - Contacts panel `onSaved`
@@ -2875,11 +2858,13 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 
 | File | Role |
 |---|---|
-| `src/renderer/profile-types.ts` | TypeScript interfaces (`SharedProfile`, `SharedAdvancedSettings`, `CharacterProfile`, `LayoutProfile`, `AutomationsProfile`, `ExpProfile`, `GameDefinition`) |
-| `src/main/profiles.ts` | Main process YAML file I/O — `readSharedProfile`, `writeSharedProfile`, `readCharacterProfile`, `writeCharacterProfile`, `listCharacterProfiles` |
-| `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile`, `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile`, `scheduleProfileSave`, `scheduleSharedProfileSave` |
-| `src/main/main.ts` | IPC handlers: `profile:read-shared`, `profile:write-shared`, `profile:read-character`, `profile:write-character`, `profile:list` |
+| `src/renderer/characterScope.ts` | `scopedKey(character, suffix)` and `normalizeCharacter(name)` — single source of truth for the `lichborne.{character}.{suffix}` namespace |
+| `src/renderer/profile-types.ts` | `SharedProfile`, `CharacterProfile` (v2), `LegacyCharacterProfileV1` for migration |
+| `src/main/profiles.ts` | Main YAML file I/O — `readSharedProfile`, `writeSharedProfile`, `readCharacterProfile`, `writeCharacterProfile`, `listCharacterProfiles`, `backupAllProfiles`. `atomicWriteFile` is the internal `.tmp`-then-rename helper |
+| `src/renderer/profile.ts` | Renderer-side logic — `buildSharedProfile`, `buildCharacterProfile` (scans `lichborne.{char}.*`), `exportSharedProfile`, `exportCharacterProfile`, `importSharedProfile`, `importCharacterProfile` (v1 + v2 branches), `migrateLegacyV1`, `clearCharacterLocalStorage`, `scheduleProfileSave` (per-character `Map`), `scheduleSharedProfileSave`, `flushPendingProfileSaves` |
+| `src/main/main.ts` | IPC handlers: `profile:read-shared`, `profile:write-shared`, `profile:read-character`, `profile:write-character`, `profile:list`. Window-close handler invokes `window.__flushProfileSaves` then `backupAllProfiles` |
 | `src/main/preload.ts` | IPC bridge — exposes profile API to renderer |
+| `src/renderer/App.tsx` | Exposes `window.__flushProfileSaves = () => flushPendingProfileSaves()` for the main-side close handler to invoke |
 | `src/renderer/global.d.ts` | `window.api` type declarations for profile methods |
 
 ---
@@ -2898,10 +2883,11 @@ This means adding a new game server (e.g. Briarmoon Cove) requires only a new en
 
 | Phase | Description | Status |
 |---|---|---|
-| 1 | Infrastructure + export: IPC, file I/O, `buildProfile`, write on connect/disconnect/change | ✅ Complete |
-| 2 | Import shared: `importSharedProfile()` on login screen mount; pre-fills account name and all Lich/port/mode settings | ✅ Complete |
-| 3 | Import character: `importCharacterProfile()` on connect before GameWindow renders; YAML is authority | ✅ Complete |
+| 1 | Infrastructure + export: IPC, file I/O, `buildProfile`, write on connect/disconnect/change | ✅ Complete (v0.3.x) |
+| 2 | Import shared: `importSharedProfile()` on login screen mount; pre-fills account name and all Lich/port/mode settings | ✅ Complete (v0.3.x) |
+| 3 | Import character: `importCharacterProfile()` on connect before GameWindow renders; YAML is authority | ✅ Complete (v0.3.x) |
 | 4 | Game dropdown: populate login screen game selector from `games` table in `_shared.yaml` | Planned |
+| **v2** | Dynamic `state:` map (scan `lichborne.{character}.*`); v1 migration; atomic write; `flushPendingProfileSaves`; `backupAllProfiles` on graceful close; per-character `scheduleProfileSave` map; per-character `localStorage` namespacing | ✅ Complete (v0.6.0) |
 
 ---
 

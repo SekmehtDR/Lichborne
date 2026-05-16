@@ -7,6 +7,7 @@ import {
   formatKeyCombo,
   ALIAS_VARS, MACRO_VARS,
 } from '../macros'
+import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
 import '../styles/macros.css'
 import '../styles/groups.css'
@@ -178,8 +179,9 @@ export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab }: Props) {
   const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
-  const [aliases, setAliases]   = useState<AliasRule[]>(loadAliases)
-  const [macros,  setMacros]    = useState<MacroRule[]>(loadMacros)
+  const character = useCharacter()
+  const [aliases, setAliases]   = useState<AliasRule[]>(() => loadAliases(character))
+  const [macros,  setMacros]    = useState<MacroRule[]>(() => loadMacros(character))
 
   const [selectedId,   setSelectedId]   = useState<string | null>(null)
   const [aliasDraft,   setAliasDraft]   = useState<AliasRule | null>(null)
@@ -230,7 +232,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
       ? [...aliases, trimmed]
       : aliases.map(r => r.id === trimmed.id ? trimmed : r)
     setAliases(updated)
-    saveAliases(updated)
+    saveAliases(character, updated)
     onSaved?.()
     setAliasDraft(trimmed)
     setIsPendingNew(false)
@@ -254,7 +256,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   function deleteAliasById(id: string) {
     const updated = aliases.filter(r => r.id !== id)
     setAliases(updated)
-    saveAliases(updated)
+    saveAliases(character, updated)
     onSaved?.()
     if (selectedId === id) {
       setSelectedId(null); setAliasDraft(null)
@@ -265,7 +267,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   function toggleAlias(id: string) {
     const updated = aliases.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setAliases(updated)
-    saveAliases(updated)
+    saveAliases(character, updated)
     onSaved?.()
     if (aliasDraft?.id === id) setAliasDraft(p => p ? { ...p, enabled: !p.enabled } : p)
   }
@@ -300,7 +302,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
       ? [...macros, trimmed]
       : macros.map(r => r.id === trimmed.id ? trimmed : r)
     setMacros(updated)
-    saveMacros(updated)
+    saveMacros(character, updated)
     onSaved?.()
     setMacroDraft(trimmed)
     setIsPendingNew(false)
@@ -324,7 +326,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   function deleteMacroById(id: string) {
     const updated = macros.filter(r => r.id !== id)
     setMacros(updated)
-    saveMacros(updated)
+    saveMacros(character, updated)
     onSaved?.()
     if (selectedId === id) {
       setSelectedId(null); setMacroDraft(null)
@@ -335,7 +337,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   function toggleMacro(id: string) {
     const updated = macros.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setMacros(updated)
-    saveMacros(updated)
+    saveMacros(character, updated)
     onSaved?.()
     if (macroDraft?.id === id) setMacroDraft(p => p ? { ...p, enabled: !p.enabled } : p)
   }

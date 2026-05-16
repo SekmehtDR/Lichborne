@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { ScriptRecord } from '../../shared/types'
+import type { ScriptRecord, SessionId } from '../../shared/types'
 
 const POLL_INTERVAL_MS   = 5000
 const PENDING_TIMEOUT_MS = 3000
@@ -14,7 +14,7 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export function useLichBridge(connected: boolean) {
+export function useLichBridge(sessionId: SessionId, connected: boolean) {
   const [scripts, setScripts]       = useState<ScriptRecord[]>([])
   const [lastUpdated, setLastUpdated] = useState(0)
   const [pending, setPending]       = useState(false)
@@ -51,7 +51,9 @@ export function useLichBridge(connected: boolean) {
       return
     }
 
-    const unsub = window.api.onLichScriptsUpdate((raw) => {
+    const unsub = window.api.onLichScriptsUpdate((payload) => {
+      if (payload.sessionId !== sessionId) return
+      const raw = payload.entries
       if (pendingTimerRef.current) { clearTimeout(pendingTimerRef.current); pendingTimerRef.current = null }
       pendingRef.current = false
       setPending(false)
@@ -101,7 +103,7 @@ export function useLichBridge(connected: boolean) {
     })
 
     return unsub
-  }, [connected])
+  }, [connected, sessionId])
 
   // Poll loop — fires immediately on connect, then every POLL_INTERVAL_MS
   useEffect(() => {
@@ -111,7 +113,7 @@ export function useLichBridge(connected: boolean) {
       if (pendingRef.current) return  // skip if previous poll hasn't responded
       pendingRef.current = true
       setPending(true)
-      window.api.lichPollScripts()
+      window.api.lichPollScripts(sessionId)
       pendingTimerRef.current = setTimeout(() => {
         pendingRef.current = false
         setPending(false)
@@ -126,26 +128,26 @@ export function useLichBridge(connected: boolean) {
       if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current)
       pendingRef.current = false
     }
-  }, [connected])
+  }, [connected, sessionId])
 
-  const pauseScript  = useCallback((name: string) => window.api.lichPauseScript(name),  [])
-  const resumeScript = useCallback((name: string) => window.api.lichResumeScript(name), [])
+  const pauseScript  = useCallback((name: string) => window.api.lichPauseScript(sessionId, name),  [sessionId])
+  const resumeScript = useCallback((name: string) => window.api.lichResumeScript(sessionId, name), [sessionId])
   const killScript   = useCallback((name: string) => {
     killingRef.current.add(name)
     // Optimistically reflect the killing state before the next poll
     setScripts(prev => prev.map(s => s.name === name ? { ...s, killing: true } : s))
-    window.api.lichKillScript(name)
-  }, [])
+    window.api.lichKillScript(sessionId, name)
+  }, [sessionId])
   const refresh      = useCallback(() => {
     if (pendingRef.current) return
     pendingRef.current = true
     setPending(true)
-    window.api.lichPollScripts()
+    window.api.lichPollScripts(sessionId)
     pendingTimerRef.current = setTimeout(() => {
       pendingRef.current = false
       setPending(false)
     }, PENDING_TIMEOUT_MS)
-  }, [])
+  }, [sessionId])
 
   return { scripts, lastUpdated, pending, pauseScript, resumeScript, killScript, refresh }
 }

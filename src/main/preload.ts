@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { GameEvent } from '../shared/types'
+import type {
+  GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
+  LichScriptsUpdatePayload, LoginResult, SessionId,
+} from '../shared/types'
 
 const CH = {
   LOGIN:             'login',
   SEND_COMMAND:      'send-command',
   DISCONNECT:        'disconnect',
+  SESSION_DESTROY:   'session:destroy',
   GAME_EVENT:        'game-event',
   RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
@@ -12,35 +16,47 @@ const CH = {
 } as const
 
 contextBridge.exposeInMainWorld('api', {
-  login: (creds: unknown) =>
+  // ── Session lifecycle ────────────────────────────────────────────────────────
+  // login mints a fresh SessionId in main on success. Renderer keeps that id and
+  // threads it through every per-session call below.
+  login: (creds: unknown): Promise<LoginResult> =>
     ipcRenderer.invoke(CH.LOGIN, creds),
 
-  sendCommand: (command: string) =>
-    ipcRenderer.send(CH.SEND_COMMAND, command),
+  sendCommand: (sessionId: SessionId, command: string) =>
+    ipcRenderer.send(CH.SEND_COMMAND, sessionId, command),
 
-  disconnect: () =>
-    ipcRenderer.send(CH.DISCONNECT),
+  disconnect: (sessionId: SessionId) =>
+    ipcRenderer.send(CH.DISCONNECT, sessionId),
 
-  onGameEvent: (cb: (events: GameEvent[]) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, events: GameEvent[]) => cb(events)
+  // Explicit teardown — call when the renderer is done with a session entry
+  // (tab closed, app shutting down). Idempotent: main looks up by id and
+  // silently no-ops if the session has already been removed.
+  destroySession: (sessionId: SessionId) =>
+    ipcRenderer.send(CH.SESSION_DESTROY, sessionId),
+
+  // ── Per-session push channels ───────────────────────────────────────────────
+  // All four carry sessionId in their payload. The renderer's SessionsContext
+  // routes each event to the matching tab.
+  onGameEvent: (cb: (batch: GameEventBatch) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, batch: GameEventBatch) => cb(batch)
     ipcRenderer.on(CH.GAME_EVENT, listener)
     return () => ipcRenderer.removeListener(CH.GAME_EVENT, listener)
   },
 
-  onConnectionStatus: (cb: (status: { connected: boolean; message: string }) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, status: { connected: boolean; message: string }) => cb(status)
+  onConnectionStatus: (cb: (status: ConnectionStatusPayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, status: ConnectionStatusPayload) => cb(status)
     ipcRenderer.on(CH.CONNECTION_STATUS, listener)
     return () => ipcRenderer.removeListener(CH.CONNECTION_STATUS, listener)
   },
 
-  onError: (cb: (message: string) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, message: string) => cb(message)
+  onError: (cb: (payload: ErrorPayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: ErrorPayload) => cb(payload)
     ipcRenderer.on(CH.ERROR, listener)
     return () => ipcRenderer.removeListener(CH.ERROR, listener)
   },
 
-  onRawXml: (cb: (line: string) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, line: string) => cb(line)
+  onRawXml: (cb: (payload: RawXmlPayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: RawXmlPayload) => cb(payload)
     ipcRenderer.on(CH.RAW_XML, listener)
     return () => ipcRenderer.removeListener(CH.RAW_XML, listener)
   },
@@ -76,22 +92,23 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('updater-log', listener)
   },
 
-  debugPanelToggle: (open: boolean) => ipcRenderer.send('debug-panel-toggle', open),
+  debugPanelToggle: (sessionId: SessionId, open: boolean) =>
+    ipcRenderer.send('debug-panel-toggle', sessionId, open),
 
-  // ── LichBridge ───────────────────────────────────────────────────────────────
-  // ── Lich SQLite readers ──────────────────────────────────────────────────────
+  // ── Lich SQLite readers (session-agnostic — read the shared lich.db3) ────────
   lichDbInfo:       (lichPath: string):                    Promise<unknown>                            => ipcRenderer.invoke('lich:db-info', lichPath),
   lichGetVars:      (lichPath: string, scope?: string):    Promise<{ scope: string; vars: unknown }[]> => ipcRenderer.invoke('lich:get-vars', lichPath, scope),
   lichGetSettings:  (lichPath: string):                    Promise<{ name: string; value: string }[]>  => ipcRenderer.invoke('lich:get-settings', lichPath),
   lichGetSessions:  (lichPath: string):                    Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]> => ipcRenderer.invoke('lich:get-sessions', lichPath),
 
-  lichPollScripts:  ():                                    Promise<void>   => ipcRenderer.invoke('lich:poll-scripts'),
-  lichPauseScript:  (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:pause-script', name),
-  lichResumeScript: (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:resume-script', name),
-  lichKillScript:   (name: string):                        Promise<void>   => ipcRenderer.invoke('lich:kill-script', name),
-  lichStartScript:  (name: string, args?: string):         Promise<void>   => ipcRenderer.invoke('lich:start-script', name, args),
-  onLichScriptsUpdate: (cb: (entries: Array<{ name: string; paused: boolean }>) => void) => {
-    const listener = (_e: Electron.IpcRendererEvent, entries: Array<{ name: string; paused: boolean }>) => cb(entries)
+  // ── Lich command injection (per-session — commands route to that character's Lich) ──
+  lichPollScripts:  (sessionId: SessionId):                                    Promise<void>   => ipcRenderer.invoke('lich:poll-scripts', sessionId),
+  lichPauseScript:  (sessionId: SessionId, name: string):                      Promise<void>   => ipcRenderer.invoke('lich:pause-script', sessionId, name),
+  lichResumeScript: (sessionId: SessionId, name: string):                      Promise<void>   => ipcRenderer.invoke('lich:resume-script', sessionId, name),
+  lichKillScript:   (sessionId: SessionId, name: string):                      Promise<void>   => ipcRenderer.invoke('lich:kill-script', sessionId, name),
+  lichStartScript:  (sessionId: SessionId, name: string, args?: string):       Promise<void>   => ipcRenderer.invoke('lich:start-script', sessionId, name, args),
+  onLichScriptsUpdate: (cb: (payload: LichScriptsUpdatePayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: LichScriptsUpdatePayload) => cb(payload)
     ipcRenderer.on('lich:scripts-update', listener)
     return () => ipcRenderer.removeListener('lich:scripts-update', listener)
   },

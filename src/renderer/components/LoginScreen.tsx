@@ -48,7 +48,10 @@ function saveAdvanced(s: AdvancedSettings) {
   localStorage.setItem(ADV_KEY, JSON.stringify(s))
 }
 
+import type { SessionId } from '../../shared/types'
+
 export interface SessionInfo {
+  sessionId: SessionId
   account: string
   character: string
   game: string
@@ -132,36 +135,18 @@ export default function LoginScreen({ onConnected }: Props) {
   }, [statusLog])
 
   useEffect(() => {
+    // Status pushes carry sessionId now, but the login screen only ever has one
+    // connect attempt in flight at a time so unfiltered append is fine here.
     const unsub = window.api.onConnectionStatus((s) => {
       setStatusLog(prev => [...prev, s.message])
-      if (s.connected) {
-        const acc = accountRef.current
-        const chr = characterRef.current.trim()
-        const curAdv = advRef.current
-        const game = gameCodeFromPort(curAdv.lichPort)
-        // Import character YAML first (restores saved settings into localStorage).
-        // If the YAML is missing, clear stale localStorage so the new profile
-        // starts blank rather than inheriting data from a previous session.
-        importCharacterProfile(chr)
-          .then(loaded => { if (!loaded) clearCharacterLocalStorage() })
-          .catch(console.error)
-          .finally(() => {
-          Promise.all([
-            exportSharedProfile(),
-            exportCharacterProfile(acc, chr, game, curAdv.useLich),
-          ]).catch(console.error).finally(() => {
-            onConnected({ account: acc, character: chr, game, useLich: curAdv.useLich })
-          })
-        })
-      }
     })
-    const unsubErr = window.api.onError((msg) => {
-      setError(msg)
-      setStatusLog(prev => [...prev, `ERROR: ${msg}`])
+    const unsubErr = window.api.onError((payload) => {
+      setError(payload.message)
+      setStatusLog(prev => [...prev, `ERROR: ${payload.message}`])
       setConnecting(false)
     })
     return () => { unsub(); unsubErr() }
-  }, [onConnected])
+  }, [])
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault()
@@ -190,11 +175,32 @@ export default function LoginScreen({ onConnected }: Props) {
     if (!result.ok) {
       setError(result.error ?? 'Connection failed')
       setConnecting(false)
-    } else if (rememberPassword) {
-      window.api.savePassword(account, password)
-    } else {
-      window.api.deletePassword(account)
+      return
     }
+
+    if (rememberPassword) window.api.savePassword(account, password)
+    else                  window.api.deletePassword(account)
+
+    const acc = accountRef.current
+    const chr = characterRef.current.trim()
+    const curAdv = advRef.current
+    const game = gameCodeFromPort(curAdv.lichPort)
+
+    // Import character YAML first so saved settings repopulate localStorage.
+    // Missing YAML → clear stale localStorage so the new profile starts blank.
+    try {
+      const loaded = await importCharacterProfile(chr)
+      if (!loaded) clearCharacterLocalStorage(chr)
+    } catch (err) { console.error(err) }
+
+    try {
+      await Promise.all([
+        exportSharedProfile(),
+        exportCharacterProfile(acc, chr, game, curAdv.useLich),
+      ])
+    } catch (err) { console.error(err) }
+
+    onConnected({ sessionId: result.sessionId, account: acc, character: chr, game, useLich: curAdv.useLich })
   }
 
   return (

@@ -6,6 +6,7 @@ import {
   loadHighlights, saveHighlights, newHighlight,
 } from '../highlights'
 import { playWavFile } from '../hooks/useTriggerEngine'
+import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
 import '../styles/groups.css'
@@ -31,7 +32,8 @@ interface Props {
 }
 
 export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, inline = false }: Props) {
-  const [rules, setRules]       = useState<HighlightRule[]>(loadHighlights)
+  const character = useCharacter()
+  const [rules, setRules]       = useState<HighlightRule[]>(() => loadHighlights(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]       = useState<HighlightRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
@@ -134,7 +136,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
       updated = rules.map(r => r.id === trimmed.id ? trimmed : r)
     }
     setRules(updated)
-    saveHighlights(updated)
+    saveHighlights(character, updated)
     setDraft(trimmed)
     setIsPendingNew(false)
     onSaved?.()
@@ -160,7 +162,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
   function deleteRuleById(id: string) {
     const updated = rules.filter(r => r.id !== id)
     setRules(updated)
-    saveHighlights(updated)
+    saveHighlights(character, updated)
     if (selectedId === id) {
       setSelectedId(null)
       setDraft(null)
@@ -173,7 +175,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
   function toggleEnabled(id: string) {
     const updated = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r)
     setRules(updated)
-    saveHighlights(updated)
+    saveHighlights(character, updated)
     if (draft?.id === id) setDraft(prev => prev ? { ...prev, enabled: !prev.enabled } : prev)
     onSaved?.()
   }

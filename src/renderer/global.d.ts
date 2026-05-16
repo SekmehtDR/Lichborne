@@ -1,28 +1,39 @@
-import type { LoginCredentials, GameEvent } from '../shared/types'
+import type {
+  LoginCredentials, LoginResult, SessionId,
+  GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
+  LichScriptsUpdatePayload,
+} from '../shared/types'
 
 declare global {
   interface Window {
     api: {
-      login: (creds: LoginCredentials) => Promise<{ ok: boolean; error?: string }>
-      sendCommand: (command: string) => void
-      disconnect: () => void
-      onGameEvent: (cb: (events: GameEvent[]) => void) => () => void
-      onConnectionStatus: (cb: (status: { connected: boolean; message: string; clean?: boolean }) => void) => () => void
-      onError: (cb: (message: string) => void) => () => void
-      onRawXml: (cb: (line: string) => void) => () => void
-      debugPanelToggle: (open: boolean) => void
-      // Lich SQLite readers
+      // ── Session lifecycle ─────────────────────────────────────────────────────
+      login: (creds: LoginCredentials) => Promise<LoginResult>
+      sendCommand: (sessionId: SessionId, command: string) => void
+      disconnect: (sessionId: SessionId) => void
+      destroySession: (sessionId: SessionId) => void
+
+      // ── Per-session push channels ────────────────────────────────────────────
+      onGameEvent: (cb: (batch: GameEventBatch) => void) => () => void
+      onConnectionStatus: (cb: (status: ConnectionStatusPayload) => void) => () => void
+      onError: (cb: (payload: ErrorPayload) => void) => () => void
+      onRawXml: (cb: (payload: RawXmlPayload) => void) => () => void
+      debugPanelToggle: (sessionId: SessionId, open: boolean) => void
+
+      // ── Lich SQLite readers (session-agnostic) ───────────────────────────────
       lichDbInfo:       (lichPath: string) => Promise<unknown>
       lichGetVars:      (lichPath: string, scope?: string) => Promise<{ scope: string; vars: unknown }[]>
       lichGetSettings:  (lichPath: string)                 => Promise<{ name: string; value: string }[]>
       lichGetSessions:  (lichPath: string)                 => Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]>
-      // LichBridge script control
-      lichPollScripts:     ()                                           => Promise<void>
-      lichPauseScript:     (name: string)                               => Promise<void>
-      lichResumeScript:    (name: string)                               => Promise<void>
-      lichKillScript:      (name: string)                               => Promise<void>
-      lichStartScript:     (name: string, args?: string)                => Promise<void>
-      onLichScriptsUpdate: (cb: (entries: Array<{ name: string; paused: boolean }>) => void) => () => void
+
+      // ── Per-session Lich command injection ───────────────────────────────────
+      lichPollScripts:     (sessionId: SessionId)                              => Promise<void>
+      lichPauseScript:     (sessionId: SessionId, name: string)                => Promise<void>
+      lichResumeScript:    (sessionId: SessionId, name: string)                => Promise<void>
+      lichKillScript:      (sessionId: SessionId, name: string)                => Promise<void>
+      lichStartScript:     (sessionId: SessionId, name: string, args?: string) => Promise<void>
+      onLichScriptsUpdate: (cb: (payload: LichScriptsUpdatePayload) => void) => () => void
+
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
       discoverLichPaths: (currentRuby: string, currentLich: string) => Promise<{
         rubyPath: string | null; lichPath: string | null

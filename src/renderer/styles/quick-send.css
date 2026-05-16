@@ -1,0 +1,110 @@
+.quick-send-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 18vh;
+}
+
+.quick-send-card {
+  width: min(520px, 92vw);
+  background: var(--bg-raised, #1f1f1f);
+  border: 1px solid var(--border-subtle, #3a3a3a);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 12px;
+}
+
+.quick-send-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: var(--text-dim, #aaa);
+  border-bottom: 1px solid var(--border-faint, #2a2a2a);
+  padding-bottom: 8px;
+}
+
+.quick-send-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-dim, #aaa);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.quick-send-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  color: var(--text-dim, #aaa);
+}
+
+.quick-send-target select {
+  background: var(--bg-input, #111);
+  color: var(--text, #ddd);
+  border: 1px solid var(--border-subtle, #3a3a3a);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}
+
+.quick-send-input {
+  background: var(--bg-input, #111);
+  color: var(--text, #ddd);
+  border: 1px solid var(--border-subtle, #3a3a3a);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.quick-send-input:focus {
+  border-color: var(--accent, #6aa);
+}
+
+.quick-send-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-send-hint {
+  font-size: 0.72rem;
+  color: var(--text-faint, #777);
+}
+
+.quick-send-btn {
+  appearance: none;
+  background: color-mix(in srgb, var(--accent, #6aa) 30%, transparent);
+  color: var(--accent, #cce);
+  border: 1px solid var(--accent, #6aa);
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.quick-send-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #6aa) 50%, transparent);
+}
+
+.quick-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

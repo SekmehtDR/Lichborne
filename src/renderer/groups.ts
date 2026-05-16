@@ -12,11 +12,12 @@ export interface GameMode {
 }
 
 // ── Storage keys ────────────────────────────────────────────────────────────
+import { scopedKey } from './characterScope'
 
-const KEY_GROUPS       = 'lichborne.groups'
-const KEY_MODES        = 'lichborne.modes'
-const KEY_GROUP_STATES = 'lichborne.activeGroupStates'
-const KEY_ACTIVE_MODE  = 'lichborne.activeModeId'
+const keyGroups       = (character: string) => scopedKey(character, 'groups')
+const keyModes        = (character: string) => scopedKey(character, 'modes')
+const keyGroupStates  = (character: string) => scopedKey(character, 'activeGroupStates')
+const keyActiveMode   = (character: string) => scopedKey(character, 'activeModeId')
 
 // ── Default groups and modes ─────────────────────────────────────────────────
 
@@ -36,49 +37,49 @@ export const DEFAULT_MODES: GameMode[] = [
 
 // ── Load / save ──────────────────────────────────────────────────────────────
 
-export function loadGroups(): RuleGroup[] {
+export function loadGroups(character: string): RuleGroup[] {
   try {
-    const raw = localStorage.getItem(KEY_GROUPS)
+    const raw = localStorage.getItem(keyGroups(character))
     if (raw) return JSON.parse(raw) as RuleGroup[]
   } catch {}
   return [...DEFAULT_GROUPS]
 }
 
-export function saveGroups(groups: RuleGroup[]): void {
-  localStorage.setItem(KEY_GROUPS, JSON.stringify(groups))
+export function saveGroups(character: string, groups: RuleGroup[]): void {
+  localStorage.setItem(keyGroups(character), JSON.stringify(groups))
 }
 
-export function loadModes(): GameMode[] {
+export function loadModes(character: string): GameMode[] {
   try {
-    const raw = localStorage.getItem(KEY_MODES)
+    const raw = localStorage.getItem(keyModes(character))
     if (raw) return JSON.parse(raw) as GameMode[]
   } catch {}
   return [...DEFAULT_MODES]
 }
 
-export function saveModes(modes: GameMode[]): void {
-  localStorage.setItem(KEY_MODES, JSON.stringify(modes))
+export function saveModes(character: string, modes: GameMode[]): void {
+  localStorage.setItem(keyModes(character), JSON.stringify(modes))
 }
 
-export function loadActiveGroupStates(): Record<string, boolean> {
+export function loadActiveGroupStates(character: string): Record<string, boolean> {
   try {
-    const raw = localStorage.getItem(KEY_GROUP_STATES)
+    const raw = localStorage.getItem(keyGroupStates(character))
     if (raw) return JSON.parse(raw) as Record<string, boolean>
   } catch {}
   return {}
 }
 
-export function saveActiveGroupStates(states: Record<string, boolean>): void {
-  localStorage.setItem(KEY_GROUP_STATES, JSON.stringify(states))
+export function saveActiveGroupStates(character: string, states: Record<string, boolean>): void {
+  localStorage.setItem(keyGroupStates(character), JSON.stringify(states))
 }
 
-export function loadActiveModeId(): string | null {
-  return localStorage.getItem(KEY_ACTIVE_MODE)
+export function loadActiveModeId(character: string): string | null {
+  return localStorage.getItem(keyActiveMode(character))
 }
 
-export function saveActiveModeId(id: string | null): void {
-  if (id === null) localStorage.removeItem(KEY_ACTIVE_MODE)
-  else             localStorage.setItem(KEY_ACTIVE_MODE, id)
+export function saveActiveModeId(character: string, id: string | null): void {
+  if (id === null) localStorage.removeItem(keyActiveMode(character))
+  else             localStorage.setItem(keyActiveMode(character), id)
 }
 
 // ── Factories ────────────────────────────────────────────────────────────────

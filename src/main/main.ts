@@ -1,83 +1,141 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, clipboard } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as crypto from 'crypto'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { StormFrontParser } from './parser/StormFrontParser'
-import { lichBridge } from './lichbridge'
+import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
-import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles } from './profiles'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, backupAllProfiles } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
-import type { GameEvent, LoginCredentials } from '../shared/types'
+import type {
+  GameEvent, GameEventBatch, LoginCredentials, LoginResult,
+  ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
+} from '../shared/types'
 
 const CH = {
   LOGIN:             'login',
   SEND_COMMAND:      'send-command',
   DISCONNECT:        'disconnect',
+  SESSION_DESTROY:   'session:destroy',
   GAME_EVENT:        'game-event',
   RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
-  ERROR:             'error'
+  ERROR:             'error',
 } as const
 
+// ── Session model ─────────────────────────────────────────────────────────────
+// A Session encapsulates all per-character I/O state: TCP/Lich socket, XML
+// parser, command injector, batched event queue, and lifecycle flags. The
+// renderer references a session by SessionId; main routes by lookup. Sessions
+// are minted on `login`, torn down on explicit `session:destroy`.
+
+interface Session {
+  id: SessionId
+  connection: ConnectionManager
+  parser: StormFrontParser
+  lichBridge: LichBridge
+  eventQueue: GameEvent[]
+  flushScheduled: boolean
+  cleanDisconnect: boolean
+  connected: boolean
+  debugPanelOpen: boolean
+}
+
+const sessions = new Map<SessionId, Session>()
 let mainWindow: BrowserWindow | null = null
-const connection = new ConnectionManager()
-const parser = new StormFrontParser()
-let cleanDisconnect = false
-let connected = false
-let debugPanelOpen = false
 
-// Register LichBridge once — passes connection.send so the injector
-// can dispatch ;listall / ;pause / ;kill without any extra wiring.
-lichBridge.register((cmd: string) => connection.send(cmd))
+function getSession(id: SessionId): Session | undefined {
+  return sessions.get(id)
+}
 
-// Register read-only lich.db3 IPC handlers (vars, settings, sessions).
-registerLichSqliteHandlers()
+function createSession(): Session {
+  const id = crypto.randomUUID()
+  const connection = new ConnectionManager()
+  const parser = new StormFrontParser()
+  const lichBridge = new LichBridge((cmd: string) => connection.send(cmd))
+  const s: Session = {
+    id, connection, parser, lichBridge,
+    eventQueue: [], flushScheduled: false,
+    cleanDisconnect: false, connected: false, debugPanelOpen: false,
+  }
+  wireSession(s)
+  sessions.set(id, s)
+  return s
+}
 
-// Coalesce parsed game events across all lines received in a single I/O tick.
-// setImmediate fires after the current TCP read drains, so all lines from one
-// server response arrive in one IPC call instead of one per line.
-let eventQueue: GameEvent[] = []
-let flushScheduled = false
+function wireSession(s: Session) {
+  s.connection.on('status', (msg: string) => {
+    sendStatus(s, false, msg)
+  })
 
-function scheduleFlush() {
-  if (flushScheduled) return
-  flushScheduled = true
-  setImmediate(() => {
-    if (eventQueue.length > 0) {
-      mainWindow?.webContents.send(CH.GAME_EVENT, eventQueue)
-      eventQueue = []
+  s.connection.on('line', (line: string) => {
+    if (s.debugPanelOpen) {
+      const payload: RawXmlPayload = { sessionId: s.id, line }
+      mainWindow?.webContents.send(CH.RAW_XML, payload)
     }
-    flushScheduled = false
+    if (!s.lichBridge.interceptLine(line, s.id, mainWindow)) return
+
+    const events = s.parser.parse(line)
+    for (const evt of events) {
+      if (evt.type === 'launch-url') shell.openExternal(evt.url)
+      if (evt.type === 'game-exit') s.cleanDisconnect = true
+    }
+    const filtered = events.filter(e => e.type !== 'launch-url' && e.type !== 'unknown')
+    if (filtered.length > 0) {
+      s.eventQueue.push(...filtered)
+      scheduleFlush(s)
+    }
+  })
+
+  s.connection.on('disconnect', () => {
+    const wasClean = s.cleanDisconnect
+    s.cleanDisconnect = false
+    s.connected = false
+    sendStatus(s, false, 'Disconnected', wasClean)
+  })
+
+  s.connection.on('error', (err: Error) => {
+    const payload: ErrorPayload = { sessionId: s.id, message: err.message }
+    mainWindow?.webContents.send(CH.ERROR, payload)
   })
 }
 
-connection.on('status', (msg: string) => {
-  mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: msg })
-})
-connection.on('line', (line: string) => {
-  if (debugPanelOpen) mainWindow?.webContents.send(CH.RAW_XML, line)
-  if (!lichBridge.interceptLine(line, mainWindow)) return
-  const events = parser.parse(line)
-  for (const evt of events) {
-    if (evt.type === 'launch-url') shell.openExternal(evt.url)
-    if (evt.type === 'game-exit') cleanDisconnect = true
-  }
-  const filtered = events.filter(e => e.type !== 'launch-url' && e.type !== 'unknown')
-  if (filtered.length > 0) {
-    eventQueue.push(...filtered)
-    scheduleFlush()
-  }
-})
-connection.on('disconnect', () => {
-  const wasClean = cleanDisconnect
-  cleanDisconnect = false
-  connected = false
-  mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected', clean: wasClean })
-})
-connection.on('error', (err: Error) => {
-  mainWindow?.webContents.send(CH.ERROR, err.message)
-})
+function scheduleFlush(s: Session) {
+  if (s.flushScheduled) return
+  s.flushScheduled = true
+  setImmediate(() => {
+    if (s.eventQueue.length > 0 && sessions.has(s.id)) {
+      const batch: GameEventBatch = { sessionId: s.id, events: s.eventQueue }
+      mainWindow?.webContents.send(CH.GAME_EVENT, batch)
+      s.eventQueue = []
+    }
+    s.flushScheduled = false
+  })
+}
+
+function sendStatus(s: Session, connected: boolean, message: string, clean?: boolean) {
+  const payload: ConnectionStatusPayload = { sessionId: s.id, connected, message }
+  if (clean !== undefined) payload.clean = clean
+  mainWindow?.webContents.send(CH.CONNECTION_STATUS, payload)
+}
+
+function destroySession(id: SessionId) {
+  const s = sessions.get(id)
+  if (!s) return
+  // Detach listeners before forceDisconnect so any final event from the socket
+  // teardown doesn't fire into a session that's mid-removal.
+  s.connection.removeAllListeners()
+  s.connection.forceDisconnect()
+  sessions.delete(id)
+}
+
+// Register read-only lich.db3 IPC handlers (vars, settings, sessions) — these
+// read a shared SQLite file and are session-agnostic.
+registerLichSqliteHandlers()
+
+// ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -104,44 +162,105 @@ function createWindow() {
 
   if (!app.isPackaged) mainWindow.webContents.openDevTools()
 
+  let closing = false
   mainWindow.on('close', (e) => {
-    if (connected) {
-      e.preventDefault()
-      connected = false
-      cleanDisconnect = true
-      connection.gracefulDisconnect().finally(() => {
-        mainWindow?.destroy()
-      })
-    }
+    if (closing) return  // already in shutdown sequence; let destroy() proceed
+    closing = true
+    e.preventDefault()
+
+    const active = Array.from(sessions.values()).filter(s => s.connected)
+    active.forEach(s => { s.connected = false; s.cleanDisconnect = true })
+
+    // 1) Ask the renderer to fire every pending debounced profile save so the
+    //    latest in-memory state reaches disk before we back up.
+    // 2) Back up each live YAML to {name}.yaml.bak so a corrupted live file
+    //    can be recovered from the last clean shutdown.
+    // 3) Drain active TCP sessions with QUIT (5s timeout per session).
+    // (1+2) and (3) run in parallel — backup is local file I/O and finishes
+    //    well before the network drain.
+    const flushAndBackup = mainWindow?.webContents
+      .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
+      .catch((err: unknown) => console.error('[shutdown] flush failed', err))
+      .finally(() => backupAllProfiles())
+
+    const drain = active.length > 0
+      ? Promise.all(active.map(s => s.connection.gracefulDisconnect()))
+      : Promise.resolve()
+
+    Promise.all([flushAndBackup, drain]).finally(() => mainWindow?.destroy())
   })
 
   mainWindow.on('closed', () => {
-    connection.forceDisconnect()
+    for (const id of Array.from(sessions.keys())) destroySession(id)
     mainWindow = null
   })
 }
 
-ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials) => {
+// ── IPC: session lifecycle ────────────────────────────────────────────────────
+
+ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials): Promise<LoginResult> => {
+  const s = createSession()
   try {
-    parser.reset()
     if (creds.useLich) {
-      await connection.connectViaLich(creds)
+      await s.connection.connectViaLich(creds)
     } else {
-      await connection.connectDirect(creds)
+      await s.connection.connectDirect(creds)
     }
-    connected = true
-    mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: true, message: 'Connected' })
-    return { ok: true }
+    s.connected = true
+    sendStatus(s, true, 'Connected')
+    return { ok: true, sessionId: s.id }
   } catch (err) {
+    destroySession(s.id)
     return { ok: false, error: String(err) }
   }
 })
 
-ipcMain.on(CH.SEND_COMMAND, (_event, command: string) => {
+ipcMain.on(CH.SEND_COMMAND, (_event, sessionId: SessionId, command: string) => {
+  const s = getSession(sessionId)
+  if (!s) return
   const trimmed = command.trim().toLowerCase()
-  if (trimmed === 'quit' || trimmed === 'exit') cleanDisconnect = true
-  connection.send(command)
+  if (trimmed === 'quit' || trimmed === 'exit') s.cleanDisconnect = true
+  s.connection.send(command)
 })
+
+ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  s.cleanDisconnect = true
+  sendStatus(s, false, 'Disconnecting...')
+  s.connection.gracefulDisconnect().then(() => {
+    sendStatus(s, false, 'Disconnected', true)
+  })
+})
+
+ipcMain.on(CH.SESSION_DESTROY, (_event, sessionId: SessionId) => {
+  destroySession(sessionId)
+})
+
+ipcMain.on('debug-panel-toggle', (_e, sessionId: SessionId, open: boolean) => {
+  const s = getSession(sessionId)
+  if (s) s.debugPanelOpen = open
+})
+
+// ── IPC: per-session Lich command injection ──────────────────────────────────
+
+ipcMain.handle('lich:poll-scripts', (_e, sessionId: SessionId) => {
+  getSession(sessionId)?.lichBridge.injector.pollScriptList()
+})
+ipcMain.handle('lich:pause-script', (_e, sessionId: SessionId, name: string) => {
+  getSession(sessionId)?.lichBridge.injector.pauseScript(name)
+})
+ipcMain.handle('lich:resume-script', (_e, sessionId: SessionId, name: string) => {
+  getSession(sessionId)?.lichBridge.injector.resumeScript(name)
+})
+ipcMain.handle('lich:kill-script', (_e, sessionId: SessionId, name: string) => {
+  getSession(sessionId)?.lichBridge.injector.killScript(name)
+})
+ipcMain.handle('lich:start-script', (_e, sessionId: SessionId, name: string, args?: string) => {
+  getSession(sessionId)?.lichBridge.injector.startScript(name, args)
+})
+
+// ── IPC: file system helpers (session-agnostic) ──────────────────────────────
 
 ipcMain.handle('browse-file', async (_event, filters: { name: string; extensions: string[] }[]) => {
   const result = await dialog.showOpenDialog({ properties: ['openFile'], filters })
@@ -295,7 +414,6 @@ ipcMain.handle('profile:read-character',            (_e, character: string)     
 ipcMain.handle('profile:write-character',           (_e, character: string, data: unknown) => writeCharacterProfile(character, data))
 ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
 
-ipcMain.on('debug-panel-toggle', (_e, open: boolean) => { debugPanelOpen = open })
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 
@@ -316,14 +434,6 @@ ipcMain.on('write-log', (_e, filename: string, content: string) => {
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
 ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())
-
-ipcMain.on(CH.DISCONNECT, () => {
-  cleanDisconnect = true
-  mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnecting...' })
-  connection.gracefulDisconnect().then(() => {
-    mainWindow?.webContents.send(CH.CONNECTION_STATUS, { connected: false, message: 'Disconnected', clean: true })
-  })
-})
 
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false
@@ -400,7 +510,9 @@ function setupMenu() {
 }
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+  // Electron's permission enum doesn't include 'local-fonts' in current type
+  // definitions, but it is a valid runtime value used by the system font picker.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission: string, callback) => {
     callback(permission === 'local-fonts')
   })
   session.defaultSession.setPermissionCheckHandler(() => true)

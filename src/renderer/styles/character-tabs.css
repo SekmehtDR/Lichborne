@@ -1,0 +1,180 @@
+.character-tabs {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 6px 0 6px;
+  background: var(--bg-sunken, #141414);
+  border-bottom: 1px solid var(--border-faint, #252525);
+  min-height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.character-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  color: var(--text-dim, #888);
+  font-size: 0.85rem;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 80ms;
+}
+
+.character-tab:hover {
+  background: var(--bg-base, #1a1a1a);
+  color: var(--text, #ccc);
+}
+
+.character-tab--active {
+  background: var(--bg-base, #1a1a1a);
+  border-color: var(--border-faint, #252525);
+  color: var(--text, #ddd);
+  font-weight: 600;
+}
+
+.character-tab-name {
+  letter-spacing: 0.02em;
+}
+
+.character-tab-game {
+  font-size: 0.7rem;
+  color: var(--text-faint, #585);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.character-tab-health {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.character-tab-health.health-ok   { color: var(--color-success, #4caf50); }
+.character-tab-health.health-warn { color: var(--accent, #e0c860); }
+.character-tab-health.health-bad  { color: #e08040; }
+.character-tab-health.health-crit { color: var(--color-danger, #c04040); }
+
+.character-tab-skull {
+  font-size: 0.9rem;
+  margin-left: 4px;
+  filter: grayscale(0.3);
+}
+
+.character-tab-glyph {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.character-tab-glyph--reconnect {
+  cursor: pointer;
+  color: var(--accent, #6aa);
+}
+
+/* Disconnected tabs go visually quiet — health/glyphs dim but preserve last-known
+   state so a player can still see "Sekmeht 51% 🩸 ↺" while away. */
+.character-tab--disconnected {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.character-tab--disconnected .character-tab-health,
+.character-tab--disconnected .character-tab-glyph,
+.character-tab--disconnected .character-tab-name,
+.character-tab--disconnected .character-tab-game {
+  color: var(--text-dim, #888) !important;
+}
+
+.character-tab--disconnected .character-tab-glyph--reconnect {
+  color: var(--accent, #6aa) !important;  /* keep the reconnect cue visible */
+}
+
+.character-tab--dead .character-tab-name {
+  color: var(--color-danger, #c66);
+}
+
+.character-tab-close {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-faint, #777);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 3px;
+  margin-left: 2px;
+}
+
+.character-tab-close:hover {
+  background: color-mix(in srgb, var(--color-danger, #b04040) 25%, transparent);
+  color: var(--color-danger, #c66);
+}
+
+.character-tab-add {
+  appearance: none;
+  background: transparent;
+  border: 1px dashed var(--border-faint, #2a2a2a);
+  color: var(--text-dim, #888);
+  border-radius: 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 10px;
+  cursor: pointer;
+  align-self: center;
+  margin-left: 6px;
+}
+
+.character-tab-add:hover {
+  background: color-mix(in srgb, var(--accent, #6aa) 20%, transparent);
+  color: var(--accent, #6aa);
+  border-color: var(--accent, #6aa);
+}
+
+/* Multi-mounted GameWindow: keep inactive instances in the DOM but hidden so
+   panel state, scroll position, vitals, and virtuoso buffers persist while
+   players switch between characters. */
+.session-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.session-shell--hidden {
+  display: none;
+}
+
+/* Add Character modal — backdrop + center the existing LoginScreen card */
+.add-character-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.add-character-modal-cancel {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text, #ccc);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}

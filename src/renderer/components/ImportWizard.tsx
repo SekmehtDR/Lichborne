@@ -11,6 +11,7 @@ import { loadTriggers, saveTriggers } from '../triggers'
 import { loadMyThemes, saveMyThemes, createCustomThemeFrom } from '../myThemes'
 import { THEMES } from '../themes'
 import { type Contact, loadContacts, saveContacts } from '../contacts'
+import { useCharacter } from '../CharacterContext'
 import '../styles/import-wizard.css'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -104,6 +105,7 @@ interface Props {
 }
 
 export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) {
+  const character = useCharacter()
   const [step, setStep]         = useState<Step>('source')
   const [source, setSource]     = useState<ImportSource | null>(null)
   const [fileTexts, setFileTexts] = useState<Record<string, string>>({})
@@ -190,20 +192,20 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     const mapped = mapImportResult(result, selH, selM, selA, selT)
 
     if (merge === 'append') {
-      saveHighlights([...loadHighlights(), ...mapped.highlights])
-      saveMacros([...loadMacros(), ...mapped.macros])
-      saveAliases([...loadAliases(), ...mapped.aliases])
-      saveTriggers([...loadTriggers(), ...mapped.triggers])
+      saveHighlights(character, [...loadHighlights(character), ...mapped.highlights])
+      saveMacros(character, [...loadMacros(character), ...mapped.macros])
+      saveAliases(character, [...loadAliases(character), ...mapped.aliases])
+      saveTriggers(character, [...loadTriggers(character), ...mapped.triggers])
     } else {
-      saveHighlights(mapped.highlights)
-      saveMacros(mapped.macros)
-      saveAliases(mapped.aliases)
-      saveTriggers(mapped.triggers)
+      saveHighlights(character, mapped.highlights)
+      saveMacros(character, mapped.macros)
+      saveAliases(character, mapped.aliases)
+      saveTriggers(character, mapped.triggers)
     }
 
     // Import name highlights as Contacts
     if (selC.size > 0) {
-      const existingContacts = loadContacts()
+      const existingContacts = loadContacts(character)
       const existingNames = new Set(existingContacts.map(c => c.name.toLowerCase()))
       const newContacts: Contact[] = []
       for (const i of selC) {
@@ -221,7 +223,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         })
       }
       if (newContacts.length > 0) {
-        saveContacts([...existingContacts, ...newContacts])
+        saveContacts(character, [...existingContacts, ...newContacts])
       }
     }
 

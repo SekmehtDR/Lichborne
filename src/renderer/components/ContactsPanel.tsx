@@ -8,6 +8,7 @@ import {
   DR_GUILDS,
   formatLastSeen,
 } from '../contacts'
+import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
 import '../styles/contacts.css'
 import '../styles/groups.css'
@@ -26,9 +27,10 @@ interface Props {
 }
 
 export default function ContactsPanel({ onClose, onSaved, openContactId }: Props) {
+  const character = useCharacter()
   const [tab, setTab]               = useState<Tab>('contacts')
-  const [contacts, setContacts]     = useState<Contact[]>(loadContacts)
-  const [templates, setTemplates]   = useState<ContactTemplate[]>(loadContactTemplates)
+  const [contacts, setContacts]     = useState<Contact[]>(() => loadContacts(character))
+  const [templates, setTemplates]   = useState<ContactTemplate[]>(() => loadContactTemplates(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft]           = useState<Contact | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -59,7 +61,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
     const c = newContact()
     const updated = [...contacts, c]
     setContacts(updated)
-    saveContacts(updated)
+    saveContacts(character, updated)
     selectContact(c)
     setTimeout(() => nameInputRef.current?.focus(), 0)
   }
@@ -70,7 +72,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
     if (!trimmed.name) return
     const updated = contacts.map(c => c.id === trimmed.id ? trimmed : c)
     setContacts(updated)
-    saveContacts(updated)
+    saveContacts(character, updated)
     setDraft(trimmed)
     onSaved?.()
   }
@@ -83,7 +85,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
   function deleteContactById(id: string) {
     const updated = contacts.filter(c => c.id !== id)
     setContacts(updated)
-    saveContacts(updated)
+    saveContacts(character, updated)
     if (selectedId === id) {
       setSelectedId(null)
       setDraft(null)
@@ -109,7 +111,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
     const trimmed = { ...tplDraft, name: tplDraft.name.trim() }
     const updated = templates.map(t => t.id === trimmed.id ? trimmed : t)
     setTemplates(updated)
-    saveContactTemplates(updated)
+    saveContactTemplates(character, updated)
     setExpandedTplId(null)
     setTplDraft(null)
     onSaved?.()
@@ -119,14 +121,14 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
     const t = newTemplate()
     const updated = [...templates, t]
     setTemplates(updated)
-    saveContactTemplates(updated)
+    saveContactTemplates(character, updated)
     startEditTemplate(t)
   }
 
   function deleteTemplate(id: string) {
     const updated = templates.filter(t => t.id !== id)
     setTemplates(updated)
-    saveContactTemplates(updated)
+    saveContactTemplates(character, updated)
     if (expandedTplId === id) cancelEditTemplate()
   }
 

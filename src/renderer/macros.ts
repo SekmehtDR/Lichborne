@@ -32,31 +32,33 @@ export interface MacroRule {
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
-const ALIAS_KEY = 'lichborne.aliases'
-const MACRO_KEY = 'lichborne.macros'
+import { scopedKey } from './characterScope'
 
-export function loadAliases(): AliasRule[] {
+const aliasKey = (character: string) => scopedKey(character, 'aliases')
+const macroKey = (character: string) => scopedKey(character, 'macros')
+
+export function loadAliases(character: string): AliasRule[] {
   try {
-    const raw = localStorage.getItem(ALIAS_KEY)
+    const raw = localStorage.getItem(aliasKey(character))
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { return [] }
 }
 
-export function saveAliases(rules: AliasRule[]): void {
-  localStorage.setItem(ALIAS_KEY, JSON.stringify(rules))
+export function saveAliases(character: string, rules: AliasRule[]): void {
+  localStorage.setItem(aliasKey(character), JSON.stringify(rules))
 }
 
-export function loadMacros(): MacroRule[] {
+export function loadMacros(character: string): MacroRule[] {
   try {
-    const raw = localStorage.getItem(MACRO_KEY)
+    const raw = localStorage.getItem(macroKey(character))
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { return [] }
 }
 
-export function saveMacros(rules: MacroRule[]): void {
-  localStorage.setItem(MACRO_KEY, JSON.stringify(rules))
+export function saveMacros(character: string, rules: MacroRule[]): void {
+  localStorage.setItem(macroKey(character), JSON.stringify(rules))
 }
 
 // ── Factories ─────────────────────────────────────────────────────────────────

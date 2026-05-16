@@ -42,16 +42,21 @@ export const FONT_FAMILY_LABELS: Record<string, string> = {
   serif:     'Serif (Georgia)',
 }
 
-const STORAGE_KEY = 'lichborne.settings'
+import { scopedKey } from './characterScope'
 
-export function loadSettings(): AppSettings {
+const storageKey = (character: string) => scopedKey(character, 'settings')
+
+export function loadSettings(character?: string): AppSettings {
+  // No character (boot path): return defaults. Character-scoped settings are
+  // loaded once a GameWindow mounts for that character.
+  if (!character) return { ...DEFAULT_SETTINGS }
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') }
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(storageKey(character)) ?? '{}') }
   } catch { return { ...DEFAULT_SETTINGS } }
 }
 
-export function saveSettings(s: AppSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
+export function saveSettings(character: string, s: AppSettings): void {
+  localStorage.setItem(storageKey(character), JSON.stringify(s))
 }
 
 // ── High Contrast overlay vars ────────────────────────────────────────────

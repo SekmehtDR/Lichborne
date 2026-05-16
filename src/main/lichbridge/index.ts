@@ -1,6 +1,6 @@
-import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { CommandInjector } from './commandInjector'
+import type { LichScriptsUpdatePayload, SessionId } from '../../shared/types'
 
 // Matches ONLY the `;listall` response format from Lich core (global_defs.rb:2286).
 // Accepts "no active scripts" OR a comma-separated list of script names with optional
@@ -8,28 +8,20 @@ import { CommandInjector } from './commandInjector'
 // match and are intentionally left to pass through to the main game window.
 const SCRIPT_LIST_RE = /^--- Lich: (?:no active scripts|((?:[a-zA-Z0-9_-]+(?:\s+\(paused\))?)(?:,\s*[a-zA-Z0-9_-]+(?:\s+\(paused\))?)*))\s*[\r\n]*$/
 
+// One LichBridge instance per active session. Each owns a CommandInjector
+// bound to that session's ConnectionManager.send so ;listall / ;pause / ;kill
+// reach the correct character's Lich process. The SessionStore creates these;
+// IPC handler registration is owned by the main process and routes by sessionId.
 export class LichBridge {
-  private injector: CommandInjector | null = null
-  private registered = false
+  readonly injector: CommandInjector
 
-  // Call once after the connection send function is available.
-  // Safe to call before any connection is established — CommandInjector.send()
-  // is a no-op when the socket is not yet open.
-  register(send: (cmd: string) => void) {
+  constructor(send: (cmd: string) => void) {
     this.injector = new CommandInjector(send)
-    if (this.registered) return
-    this.registered = true
-
-    ipcMain.handle('lich:poll-scripts',   ()                => { this.injector?.pollScriptList() })
-    ipcMain.handle('lich:pause-script',   (_e, name: string) => { this.injector?.pauseScript(name) })
-    ipcMain.handle('lich:resume-script',  (_e, name: string) => { this.injector?.resumeScript(name) })
-    ipcMain.handle('lich:kill-script',    (_e, name: string) => { this.injector?.killScript(name) })
-    ipcMain.handle('lich:start-script',   (_e, name: string, args?: string) => { this.injector?.startScript(name, args) })
   }
 
   // Returns false when the line was consumed and should be skipped by the parser.
   // Returns true when the line should proceed through normal parsing.
-  interceptLine(line: string, win: BrowserWindow | null): boolean {
+  interceptLine(line: string, sessionId: SessionId, win: BrowserWindow | null): boolean {
     if (!line.startsWith('--- Lich: ')) return true
 
     const m = SCRIPT_LIST_RE.exec(line)
@@ -49,9 +41,8 @@ export class LichBridge {
       }
     }
 
-    win?.webContents.send('lich:scripts-update', entries)
+    const payload: LichScriptsUpdatePayload = { sessionId, entries }
+    win?.webContents.send('lich:scripts-update', payload)
     return false
   }
 }
-
-export const lichBridge = new LichBridge()

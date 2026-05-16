@@ -21,7 +21,9 @@ export interface HighlightRule {
   soundFile?: string   // optional WAV/audio file path to play on match
 }
 
-const STORAGE_KEY = 'lichborne.highlights'
+import { scopedKey } from './characterScope'
+
+const storageKey = (character: string) => scopedKey(character, 'highlights')
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -60,16 +62,16 @@ export function isValidRegex(pattern: string): boolean {
   try { new RegExp(pattern); return true } catch { return false }
 }
 
-export function loadHighlights(): HighlightRule[] {
+export function loadHighlights(character: string): HighlightRule[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey(character))
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { return [] }
 }
 
-export function saveHighlights(rules: HighlightRule[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
+export function saveHighlights(character: string, rules: HighlightRule[]): void {
+  localStorage.setItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newHighlight(pattern = '', scope: 'match' | 'line' = 'line'): HighlightRule {

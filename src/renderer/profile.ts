@@ -1,11 +1,6 @@
-import type { SharedProfile, CharacterProfile, LayoutProfile, AutomationsProfile } from './profile-types'
-import { loadSettings, saveSettings } from './settings'
-import { loadHighlights, saveHighlights } from './highlights'
-import { loadTriggers, saveTriggers } from './triggers'
-import { loadAliases, saveAliases, loadMacros, saveMacros } from './macros'
-import { loadGroups, saveGroups, loadModes, saveModes, loadActiveGroupStates, saveActiveGroupStates, loadActiveModeId, saveActiveModeId } from './groups'
-import { loadContacts, saveContacts, loadContactTemplates, saveContactTemplates } from './contacts'
+import type { SharedProfile, CharacterProfile, LegacyCharacterProfileV1 } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
+import { scopedKey, normalizeCharacter } from './characterScope'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -16,6 +11,8 @@ const DEFAULT_GAMES = {
   DRX: { name: 'DragonRealms Platinum',    gameCode: 'DRX', lichPort: 11124, lichArguments: '--platinum --dragonrealms' },
   DRF: { name: 'DragonRealms The Fallen',  gameCode: 'DRF', lichPort: 11324, lichArguments: '--fallen' },
 }
+
+const PROFILE_VERSION = 2 as const
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -43,56 +40,37 @@ export function buildSharedProfile(): SharedProfile {
   }
 }
 
+// Build a v2 character profile by scanning ALL localStorage keys under
+// `lichborne.{character}.*` and capturing them into `state`. Adding a new
+// per-character setting just requires writing to scopedKey(character, ...);
+// the profile system picks it up automatically with no further plumbing.
 export function buildCharacterProfile(
   account: string,
   character: string,
   game: string,
   useLich: boolean,
 ): CharacterProfile {
-  const charKey = character || '_'
-  const layout: LayoutProfile = {
-    panelWidth:       parseInt(localStorage.getItem('lichborne.panelWidth')      ?? '320', 10),
-    topPanelHeight:   parseInt(localStorage.getItem('lichborne.topPanelHeight')  ?? '200', 10),
-    midPanelHeight:   parseInt(localStorage.getItem('lichborne.midPanelHeight')  ?? '200', 10),
-    topTabs:          tryParse(localStorage.getItem('lichborne.topTabs'),    []),
-    topActiveId:      localStorage.getItem('lichborne.topActiveId')    ?? 'room',
-    midTabs:          tryParse(localStorage.getItem('lichborne.midTabs'),    []),
-    midActiveId:      localStorage.getItem('lichborne.midActiveId')    ?? 'thoughts',
-    bottomTabs:       tryParse(localStorage.getItem('lichborne.bottomTabs'), []),
-    bottomActiveId:   localStorage.getItem('lichborne.bottomActiveId') ?? 'exp',
-    streamTimestamps: tryParse(localStorage.getItem('lichborne.streamTimestamps'), {}),
-    mapLabelMode:     localStorage.getItem('lichborne.mapLabelMode.v2') ?? 'none',
-    exp: {
-      focus:        localStorage.getItem(`lichborne.focus.${charKey}`)    ?? 'None',
-      pinnedSkills: tryParse(localStorage.getItem(`lichborne.expPins.${charKey}`), []),
-      sortMode:     localStorage.getItem('lichborne.expSort')             ?? 'alpha',
-      sortDesc:     localStorage.getItem('lichborne.expSortDesc')         === 'desc',
-      focusMode:    localStorage.getItem('lichborne.expFocusMode')        ?? 'none',
-    },
-  }
-
-  const automations: AutomationsProfile = {
-    highlights:        loadHighlights(),
-    triggers:          loadTriggers(),
-    macros:            loadMacros(),
-    aliases:           loadAliases(),
-    groups:            loadGroups(),
-    modes:             loadModes(),
-    activeGroupStates: loadActiveGroupStates(),
-    activeModeId:      loadActiveModeId(),
+  const state: Record<string, unknown> = {}
+  const prefix = `lichborne.${normalizeCharacter(character)}.`
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key || !key.startsWith(prefix)) continue
+    const suffix = key.slice(prefix.length)
+    const raw = localStorage.getItem(key)
+    if (raw === null) continue
+    // Round-trip the value type: try JSON, fall back to raw string. Mirrors how
+    // each subsystem stores its data (some JSON, some plain strings).
+    try { state[suffix] = JSON.parse(raw) } catch { state[suffix] = raw }
   }
 
   return {
+    profileVersion: PROFILE_VERSION,
     account,
     character,
     game,
     useLich,
-    theme:            localStorage.getItem('lichborne.theme') ?? 'classic',
-    settings:         loadSettings(),
-    layout,
-    automations,
-    contacts:         loadContacts(),
-    contactTemplates: loadContactTemplates(),
+    theme: localStorage.getItem('lichborne.theme') ?? 'classic',
+    state,
   }
 }
 
@@ -147,88 +125,94 @@ export async function importSharedProfile(): Promise<void> {
 export async function importCharacterProfile(character: string): Promise<CharacterProfile | null> {
   const raw = await window.api.readCharacterProfile(character)
   if (!raw || typeof raw !== 'object') return null
-  const data = raw as Partial<CharacterProfile>
+  const data = raw as Partial<CharacterProfile> & LegacyCharacterProfileV1
 
-  if (data.theme)    localStorage.setItem('lichborne.theme', data.theme)
-  if (data.settings) saveSettings(data.settings)
+  // Shared boot-fallback theme — always top-level in both v1 and v2.
+  if (data.theme) localStorage.setItem('lichborne.theme', data.theme)
+
+  if (data.profileVersion === 2 && data.state && typeof data.state === 'object') {
+    // v2 path: pour state map into localStorage. The renderer's per-domain
+    // loaders read these same keys on next mount and pick up the values.
+    for (const [suffix, value] of Object.entries(data.state)) {
+      if (value === undefined || value === null) continue
+      const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
+      localStorage.setItem(scopedKey(character, suffix), stringValue)
+    }
+  } else {
+    // v1 path: hand-map legacy typed shape into localStorage scope keys. After
+    // this runs once, the next exportCharacterProfile will write v2 format.
+    migrateLegacyV1(character, data)
+  }
+
+  return buildCharacterProfile(
+    data.account ?? '',
+    data.character ?? character,
+    data.game ?? 'DR',
+    data.useLich ?? true,
+  )
+}
+
+function migrateLegacyV1(character: string, data: LegacyCharacterProfileV1): void {
+  const put = (suffix: string, value: unknown) => {
+    if (value === undefined || value === null) return
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value)
+    localStorage.setItem(scopedKey(character, suffix), stringValue)
+  }
+
+  if (data.settings) put('settings', data.settings)
 
   if (data.layout) {
     const l = data.layout
-    if (l.panelWidth     != null) localStorage.setItem('lichborne.panelWidth',      String(l.panelWidth))
-    if (l.topPanelHeight != null) localStorage.setItem('lichborne.topPanelHeight',  String(l.topPanelHeight))
-    if (l.midPanelHeight != null) localStorage.setItem('lichborne.midPanelHeight',  String(l.midPanelHeight))
-    if (l.topTabs)        localStorage.setItem('lichborne.topTabs',       JSON.stringify(l.topTabs))
-    if (l.topActiveId)    localStorage.setItem('lichborne.topActiveId',   l.topActiveId)
-    if (l.midTabs)        localStorage.setItem('lichborne.midTabs',       JSON.stringify(l.midTabs))
-    if (l.midActiveId)    localStorage.setItem('lichborne.midActiveId',   l.midActiveId)
-    if (l.bottomTabs)     localStorage.setItem('lichborne.bottomTabs',    JSON.stringify(l.bottomTabs))
-    if (l.bottomActiveId) localStorage.setItem('lichborne.bottomActiveId', l.bottomActiveId)
-    if (l.streamTimestamps) localStorage.setItem('lichborne.streamTimestamps', JSON.stringify(l.streamTimestamps))
-    if (l.mapLabelMode)     localStorage.setItem('lichborne.mapLabelMode.v2', l.mapLabelMode)
+    if (l.panelWidth     != null) put('panelWidth',     l.panelWidth)
+    if (l.topPanelHeight != null) put('topPanelHeight', l.topPanelHeight)
+    if (l.midPanelHeight != null) put('midPanelHeight', l.midPanelHeight)
+    if (l.topTabs)        put('topTabs',       l.topTabs)
+    if (l.topActiveId)    put('topActiveId',   l.topActiveId)
+    if (l.midTabs)        put('midTabs',       l.midTabs)
+    if (l.midActiveId)    put('midActiveId',   l.midActiveId)
+    if (l.bottomTabs)     put('bottomTabs',    l.bottomTabs)
+    if (l.bottomActiveId) put('bottomActiveId', l.bottomActiveId)
+    if (l.streamTimestamps) put('streamTimestamps', l.streamTimestamps)
+    if (l.mapLabelMode)     put('mapLabelMode.v2',   l.mapLabelMode)
     if (l.exp) {
       const e = l.exp
-      const cKey = character || '_'
-      if (e.focus        != null) localStorage.setItem(`lichborne.focus.${cKey}`,    e.focus)
-      if (e.pinnedSkills != null) localStorage.setItem(`lichborne.expPins.${cKey}`,  JSON.stringify(e.pinnedSkills))
-      if (e.sortMode     != null) localStorage.setItem('lichborne.expSort',           e.sortMode)
-      if (e.sortDesc     != null) localStorage.setItem('lichborne.expSortDesc',       e.sortDesc ? 'desc' : 'asc')
-      if (e.focusMode    != null) localStorage.setItem('lichborne.expFocusMode',      e.focusMode)
+      if (e.focus        != null) put('focus',        e.focus)
+      if (e.pinnedSkills != null) put('expPins',      e.pinnedSkills)
+      if (e.sortMode     != null) put('expSort',      e.sortMode)
+      if (e.sortDesc     != null) put('expSortDesc',  e.sortDesc ? 'desc' : 'asc')
+      if (e.focusMode    != null) put('expFocusMode', e.focusMode)
     }
   }
 
   if (data.automations) {
     const a = data.automations
-    if (a.highlights)        saveHighlights(a.highlights)
-    if (a.triggers)          saveTriggers(a.triggers)
-    if (a.macros)            saveMacros(a.macros)
-    if (a.aliases)           saveAliases(a.aliases)
-    if (a.groups)            saveGroups(a.groups)
-    if (a.modes)             saveModes(a.modes)
-    if (a.activeGroupStates) saveActiveGroupStates(a.activeGroupStates)
-    saveActiveModeId(a.activeModeId ?? null)
+    if (a.highlights)        put('highlights',        a.highlights)
+    if (a.triggers)          put('triggers',          a.triggers)
+    if (a.macros)            put('macros',            a.macros)
+    if (a.aliases)           put('aliases',           a.aliases)
+    if (a.groups)            put('groups',            a.groups)
+    if (a.modes)             put('modes',             a.modes)
+    if (a.activeGroupStates) put('activeGroupStates', a.activeGroupStates)
+    if (a.activeModeId)      put('activeModeId',      a.activeModeId)
   }
 
-  if (data.contacts)         saveContacts(data.contacts)
-  if (data.contactTemplates) saveContactTemplates(data.contactTemplates)
-
-  return data as CharacterProfile
+  if (data.contacts)         put('contacts',          data.contacts)
+  if (data.contactTemplates) put('contact-templates', data.contactTemplates)
 }
 
 // ── Clear character localStorage ─────────────────────────────────────────────
-// Called when a character YAML is missing so stale data from a previous
-// character doesn't bleed into the new blank profile.
+// Wipes every `lichborne.{character}.*` key so a fresh character profile
+// starts blank rather than inheriting whatever was last in this localStorage.
+// Dynamic — no hand-maintained list of suffixes.
 
-const CHARACTER_LS_KEYS = [
-  'lichborne.theme',
-  'lichborne.settings',
-  'lichborne.panelWidth',
-  'lichborne.topPanelHeight',
-  'lichborne.midPanelHeight',
-  'lichborne.topTabs',
-  'lichborne.topActiveId',
-  'lichborne.midTabs',
-  'lichborne.midActiveId',
-  'lichborne.bottomTabs',
-  'lichborne.bottomActiveId',
-  'lichborne.streamTimestamps',
-  'lichborne.mapLabelMode.v2',
-  'lichborne.expSort',
-  'lichborne.expSortDesc',
-  'lichborne.expFocusMode',
-  'lichborne.highlights',
-  'lichborne.triggers',
-  'lichborne.macros',
-  'lichborne.aliases',
-  'lichborne.groups',
-  'lichborne.modes',
-  'lichborne.activeGroupStates',
-  'lichborne.activeModeId',
-  'lichborne.contacts',
-  'lichborne.contact-templates',
-]
-
-export function clearCharacterLocalStorage(): void {
-  for (const key of CHARACTER_LS_KEYS) localStorage.removeItem(key)
+export function clearCharacterLocalStorage(character: string): void {
+  const prefix = `lichborne.${normalizeCharacter(character)}.`
+  const toRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith(prefix)) toRemove.push(key)
+  }
+  for (const key of toRemove) localStorage.removeItem(key)
 }
 
 // ── Debounced auto-save ───────────────────────────────────────────────────────
@@ -243,11 +227,18 @@ export function scheduleSharedProfileSave(delayMs = 2500): void {
   }, delayMs)
 }
 
-let _saveTimer: ReturnType<typeof setTimeout> | null = null
-let _pendingAccount  = ''
-let _pendingCharacter = ''
-let _pendingGame     = ''
-let _pendingUseLich  = true
+// Per-character debounce — two concurrently-active characters each get their
+// own pending timer + context so a save scheduled for char A is never overwritten
+// by a save scheduled for char B (and vice versa).
+interface PendingSave {
+  timer:    ReturnType<typeof setTimeout>
+  account:  string
+  character: string
+  game:     string
+  useLich:  boolean
+}
+
+const _saveTimers = new Map<string, PendingSave>()
 
 export function scheduleProfileSave(
   account: string,
@@ -256,20 +247,29 @@ export function scheduleProfileSave(
   useLich: boolean,
   delayMs = 2500,
 ): void {
-  _pendingAccount   = account
-  _pendingCharacter = character
-  _pendingGame      = game
-  _pendingUseLich   = useLich
-  if (_saveTimer) clearTimeout(_saveTimer)
-  _saveTimer = setTimeout(() => {
-    _saveTimer = null
-    exportCharacterProfile(_pendingAccount, _pendingCharacter, _pendingGame, _pendingUseLich)
-      .catch(console.error)
+  const key = normalizeCharacter(character)
+  const existing = _saveTimers.get(key)
+  if (existing) clearTimeout(existing.timer)
+  const timer = setTimeout(() => {
+    _saveTimers.delete(key)
+    exportCharacterProfile(account, character, game, useLich).catch(console.error)
   }, delayMs)
+  _saveTimers.set(key, { timer, account, character, game, useLich })
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function tryParse<T>(raw: string | null, fallback: T): T {
-  try { return raw ? JSON.parse(raw) : fallback } catch { return fallback }
+// Fire every pending debounced save IMMEDIATELY and wait for all writes to
+// complete. Called from the renderer's before-close handler so the latest
+// in-memory state always reaches disk before the window destroys.
+export async function flushPendingProfileSaves(): Promise<void> {
+  const pending = Array.from(_saveTimers.values())
+  for (const p of pending) clearTimeout(p.timer)
+  _saveTimers.clear()
+  if (_sharedSaveTimer) {
+    clearTimeout(_sharedSaveTimer)
+    _sharedSaveTimer = null
+  }
+  await Promise.all([
+    exportSharedProfile().catch(console.error),
+    ...pending.map(p => exportCharacterProfile(p.account, p.character, p.game, p.useLich).catch(console.error)),
+  ])
 }

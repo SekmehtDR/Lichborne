@@ -68,7 +68,9 @@ export interface TriggerRule {
   allGroups: boolean
 }
 
-const STORAGE_KEY = 'lichborne.triggers'
+import { scopedKey } from './characterScope'
+
+const storageKey = (character: string) => scopedKey(character, 'triggers')
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -104,16 +106,16 @@ export function isValidTriggerRegex(pattern: string): boolean {
   try { new RegExp(pattern); return true } catch { return false }
 }
 
-export function loadTriggers(): TriggerRule[] {
+export function loadTriggers(character: string): TriggerRule[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey(character))
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch { return [] }
 }
 
-export function saveTriggers(rules: TriggerRule[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rules))
+export function saveTriggers(character: string, rules: TriggerRule[]): void {
+  localStorage.setItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newTriggerAction(type: ActionType = 'command'): TriggerAction {

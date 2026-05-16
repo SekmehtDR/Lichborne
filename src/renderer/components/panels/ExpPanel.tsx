@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type SkillBadge } from '../../focusTemplates'
+import { scopedKey } from '../../characterScope'
+import { useCharacter } from '../../CharacterContext'
 
 type FocusMode = 'none' | 'primary' | 'secondary' | 'tertiary'
 const FOCUS_MODES: FocusMode[] = ['none', 'primary', 'secondary', 'tertiary']
@@ -324,31 +326,32 @@ function sortEntries(
 }
 
 export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin }: Props) {
+  const character = useCharacter()
   const [sortMode, setSortMode] = useState<SortMode>(() => {
-    const stored = localStorage.getItem('lichborne.expSort')
+    const stored = localStorage.getItem(scopedKey(character, 'expSort'))
     if (stored === 'guild' || stored === 'focus') return 'alpha'
     return (SORT_MODES.includes(stored as SortMode) ? stored : 'alpha') as SortMode
   })
   const [focusMode, setFocusMode] = useState<FocusMode>(() =>
-    (localStorage.getItem('lichborne.expFocusMode') as FocusMode | null) ?? 'none'
+    (localStorage.getItem(scopedKey(character, 'expFocusMode')) as FocusMode | null) ?? 'none'
   )
   const [sortDesc, setSortDesc] = useState<boolean>(() =>
-    localStorage.getItem('lichborne.expSortDesc') === 'desc'
+    localStorage.getItem(scopedKey(character, 'expSortDesc')) === 'desc'
   )
 
   function handleModeChange(next: SortMode) {
     setSortMode(next)
-    localStorage.setItem('lichborne.expSort', next)
+    localStorage.setItem(scopedKey(character, 'expSort'), next)
   }
 
   function handleDescChange(next: boolean) {
     setSortDesc(next)
-    localStorage.setItem('lichborne.expSortDesc', next ? 'desc' : 'asc')
+    localStorage.setItem(scopedKey(character, 'expSortDesc'), next ? 'desc' : 'asc')
   }
 
   function handleFocusModeChange(next: FocusMode) {
     setFocusMode(next)
-    localStorage.setItem('lichborne.expFocusMode', next)
+    localStorage.setItem(scopedKey(character, 'expFocusMode'), next)
   }
 
 

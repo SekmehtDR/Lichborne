@@ -1,11 +1,4 @@
-import type { AppSettings } from './settings'
-import type { HighlightRule } from './highlights'
-import type { TriggerRule } from './triggers'
-import type { AliasRule, MacroRule } from './macros'
-import type { RuleGroup, GameMode } from './groups'
-import type { Contact, ContactTemplate } from './contacts'
 import type { CustomTheme } from './myThemes'
-import type { TabDef } from './components/PanelFrame'
 
 // ── Shared (_shared.yaml) ─────────────────────────────────────────────────────
 
@@ -36,51 +29,62 @@ export interface SharedProfile {
   myThemes: CustomTheme[]
 }
 
-// ── Character (CharacterName.yaml) ────────────────────────────────────────────
-
-export interface ExpProfile {
-  focus: string
-  pinnedSkills: string[]
-  sortMode: string
-  sortDesc: boolean
-  focusMode: string
-}
-
-export interface LayoutProfile {
-  panelWidth: number
-  topPanelHeight: number
-  midPanelHeight: number
-  topTabs: TabDef[]
-  topActiveId: string
-  midTabs: TabDef[]
-  midActiveId: string
-  bottomTabs: TabDef[]
-  bottomActiveId: string
-  streamTimestamps: Record<string, boolean>
-  mapLabelMode: string
-  exp: ExpProfile
-}
-
-export interface AutomationsProfile {
-  highlights: HighlightRule[]
-  triggers: TriggerRule[]
-  macros: MacroRule[]
-  aliases: AliasRule[]
-  groups: RuleGroup[]
-  modes: GameMode[]
-  activeGroupStates: Record<string, boolean>
-  activeModeId: string | null
-}
-
+// ── Character ({Character}.yaml) ──────────────────────────────────────────────
+//
+// v2 (current): everything per-character state lives under `state`, which mirrors
+// localStorage `lichborne.{character}.*` keys 1:1. Adding a new feature that
+// uses `scopedKey(character, ...)` requires no profile-system changes — the
+// round-trip is automatic. The top-level fields are kept human-readable for
+// quick identification.
 export interface CharacterProfile {
+  profileVersion: 2
   account: string
   character: string
   game: string
   useLich: boolean
-  theme: string
-  settings: AppSettings
-  layout: LayoutProfile
-  automations: AutomationsProfile
-  contacts: Contact[]
-  contactTemplates: ContactTemplate[]
+  theme: string                            // boot-fallback theme (shared)
+  state: Record<string, unknown>           // dynamic map of localStorage scope
+}
+
+// v1 legacy shape — only loaded when migrating an old YAML to v2 on first read.
+// New code paths only emit v2.
+export interface LegacyCharacterProfileV1 {
+  account?: string
+  character?: string
+  game?: string
+  useLich?: boolean
+  theme?: string
+  settings?: unknown
+  layout?: {
+    panelWidth?:       number
+    topPanelHeight?:   number
+    midPanelHeight?:   number
+    topTabs?:          unknown
+    topActiveId?:      string
+    midTabs?:          unknown
+    midActiveId?:      string
+    bottomTabs?:       unknown
+    bottomActiveId?:   string
+    streamTimestamps?: unknown
+    mapLabelMode?:     string
+    exp?: {
+      focus?:        string
+      pinnedSkills?: unknown
+      sortMode?:     string
+      sortDesc?:     boolean
+      focusMode?:    string
+    }
+  }
+  automations?: {
+    highlights?:        unknown
+    triggers?:          unknown
+    macros?:            unknown
+    aliases?:           unknown
+    groups?:            unknown
+    modes?:             unknown
+    activeGroupStates?: unknown
+    activeModeId?:      string | null
+  }
+  contacts?:         unknown
+  contactTemplates?: unknown
 }

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import type { LichRoom, GenieNode, GenieAugment } from './mapTypes'
 import { lichTitle, shortName, normalizeDesc, noteAliases, bfsPath, cmdLabel, COLOR_LEGEND } from './mapTypes'
+import { scopedKey } from '../../characterScope'
+import { useCharacter } from '../../CharacterContext'
 
 interface Props {
   lichDb:        Map<number, LichRoom>
@@ -47,6 +49,7 @@ function computeFit(points: { x: number; y: number }[], w: number, h: number, pa
 export default function MapGraphView({
   lichDb, augments, orphansByZone, currentRoom, roomTitle, roomId, onSendCommand, genieReady, genieStatus,
 }: Props) {
+  const character = useCharacter()
   // Current zone name being displayed
   const [currentZone, setCurrentZone] = useState<string>('')
   const [transform,   setTransform]   = useState<Transform>({ x: 0, y: 0, scale: 1 })
@@ -61,7 +64,7 @@ export default function MapGraphView({
   const [showAllZ,    setShowAllZ]    = useState(true)
   const [zLevels,     setZLevels]     = useState<Set<number>>(new Set([0]))
   const [labelMode,   setLabelMode]   = useState<LabelMode>(() =>
-    (localStorage.getItem('lichborne.mapLabelMode.v2') as LabelMode | null) ?? 'none'
+    (localStorage.getItem(scopedKey(character, 'mapLabelMode.v2')) as LabelMode | null) ?? 'none'
   )
   const [showLegend, setShowLegend] = useState(false)
 
@@ -654,7 +657,7 @@ export default function MapGraphView({
         </>)}
         <span style={{ flex: 1 }} />
         <select className="map-label-select map-label-select--sm" value={labelMode}
-          onChange={e => { const m = e.target.value as LabelMode; setLabelMode(m); localStorage.setItem('lichborne.mapLabelMode.v2', m) }}>
+          onChange={e => { const m = e.target.value as LabelMode; setLabelMode(m); localStorage.setItem(scopedKey(character, 'mapLabelMode.v2'), m) }}>
           <option value="none">Labels: off</option>
           <option value="short">Labels: short</option>
           <option value="full">Labels: full</option>

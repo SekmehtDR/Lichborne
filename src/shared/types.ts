@@ -1,3 +1,11 @@
+// --- Session identity ---
+
+// Opaque identifier minted by the main process on successful login. Renderer
+// threads this through every per-session IPC call so main can route to the
+// correct ConnectionManager / parser / lich child process. Single instance of
+// the app supports many concurrent sessions, one per logged-in character.
+export type SessionId = string
+
 // --- Lich script tracking ---
 
 export interface ScriptRecord {
@@ -39,11 +47,47 @@ export const IPC = {
   GAME_EVENT:        'game-event',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error',
+  RAW_XML:           'raw-xml',
   UPDATE_AVAILABLE:  'update-available',
   UPDATE_DOWNLOADED: 'update-downloaded',
   DOWNLOAD_UPDATE:   'download-update',
   INSTALL_UPDATE:    'install-update',
 } as const
+
+// --- Per-session IPC payloads ---
+// All push channels that report session state carry the originating sessionId.
+// The renderer fans these out to the correct GameWindow instance by id.
+
+export type LoginResult =
+  | { ok: true; sessionId: SessionId }
+  | { ok: false; error: string }
+
+export interface GameEventBatch {
+  sessionId: SessionId
+  events: GameEvent[]
+}
+
+export interface ConnectionStatusPayload {
+  sessionId: SessionId
+  connected: boolean
+  message: string
+  clean?: boolean
+}
+
+export interface RawXmlPayload {
+  sessionId: SessionId
+  line: string
+}
+
+export interface ErrorPayload {
+  sessionId: SessionId
+  message: string
+}
+
+export interface LichScriptsUpdatePayload {
+  sessionId: SessionId
+  entries: Array<{ name: string; paused: boolean }>
+}
 
 // --- Stream routing ---
 // Open string type — known values documented below, arbitrary IDs allowed for
