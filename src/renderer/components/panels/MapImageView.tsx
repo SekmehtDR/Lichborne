@@ -279,16 +279,19 @@ export default function MapImageView({
         </div>
       )}
 
-      {/* Location unknown */}
+      {/* Location not in Lich map — high-visibility warning style.
+          Mirrors MapGraphView's banner so the same diagnostic stands out
+          identically in both views. */}
       {roomTitle && !currentRoom && (
-        <div className="map-location-unknown">
-          <span className="map-location-unknown-icon">⚑</span>
+        <div className="map-location-unknown map-location-unknown--needs-mapping">
+          <span className="map-location-unknown-icon">⚠</span>
           <span className="map-location-unknown-text">
             {roomId !== undefined
               ? `Lich #${roomId} not in map`
               : 'Location not in Lich map'}
           </span>
           <span className="map-location-unknown-room">{roomTitle}</span>
+          <span className="map-location-unknown-tag">NEEDS MAPPING</span>
         </div>
       )}
 

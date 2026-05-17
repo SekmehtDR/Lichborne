@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { FONT_FAMILIES, DEFAULT_SETTINGS, type AppSettings } from '../settings'
+import { type AdvancedSettings, loadAdvanced, saveAdvanced } from '../lichSettings'
+import { exportSharedProfile } from '../profile'
+import LichSetupFields from './LichSetupFields'
 import '../styles/settings.css'
+import '../styles/login.css'
 
 declare global {
   interface Window {
@@ -78,6 +82,17 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
   const [fontQuery,   setFontQuery]   = useState('')
   const [fontFilter,  setFontFilter]  = useState<'all' | 'mono'>('all')
   const fontListRef = useRef<HTMLDivElement>(null)
+
+  // ── Lich Setup (mirrors LoginScreen's adv flow) ─────────────────────────
+  // Read fresh from localStorage each mount so changes made on the LoginScreen
+  // since this dialog was last opened are reflected. saveAdvanced + a debounced
+  // exportSharedProfile keep the YAML in sync for concurrent windows.
+  const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
+  useEffect(() => {
+    saveAdvanced(adv)
+    const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
+    return () => clearTimeout(t)
+  }, [adv])
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
@@ -288,6 +303,18 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
               { value: 'bar',   label: 'Bar',   description: 'Classic draining strip that shrinks with remaining time' },
             ]}
           />
+
+          <div className="sp-divider" />
+
+          {/* ── Lich Setup ──────────────────────────────────────── */}
+          <div className="sp-section-label">Lich Setup</div>
+
+          {/* login-form supplies the input/select/label styling that LichSetupFields
+              relies on (background, border, label uppercase). Same reason as in
+              LichSetupDialog — without it the dialog inputs fall back to browser defaults. */}
+          <div className="sp-lich-setup login-form advanced-panel">
+            <LichSetupFields adv={adv} setAdv={setAdv} alwaysShowFields />
+          </div>
 
         </div>
       </div>

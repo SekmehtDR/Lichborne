@@ -1,3 +1,56 @@
+## What's new in v0.6.3
+
+The login flow has been completely redesigned around a character launcher and a 3-step Add Character wizard. The old "fill in this form every time" screen is gone. The map's graph view has been rebuilt from the ground up — Lich is now the spatial source of truth and Genie maps are an optional polish layer. Plus timestamped profile backups, schema versioning so future upgrades don't require wiping `profiles/`, a couple of long-standing scroll-key bugs squashed, and small polish across the board.
+
+### Maps rewrite — Lich Graph
+
+- **Lich Graph view** *(replaces the old Genie Graph)*. Renders every room in the local neighborhood (8 hops by default, selector for 5/8/15/25) using Lich's own walk commands as the spatial source of truth. No more "this room can't render because Genie doesn't have it." Walk into a brand-new tunnel and it appears immediately.
+- **Optional Genie polish.** Point Lichborne at your Genie maps folder (📁 button in the Lich Graph toolbar) and the view lights up: rooms get district tints by zone, color-tagged rooms (shops, healers, stat trainers, transports, etc.) get a glyph icon overlay, connections Genie knows but Lich doesn't appear as dashed fallback lines, and tooltips gain Genie metadata. Without Genie everything still works — you just see the bare Lich graph.
+- **Visual hierarchy.** The current room is a large pulsing circle with a label; rooms one hop away are full-size rounded rects with names above; rooms 2–3 hops are smaller and faded; distant rooms are background dots. Selecting or hovering a far room promotes it to a readable size temporarily.
+- **Search any room, anywhere.** Type ≥2 characters in the search box and Lichborne matches across the entire Lich database, not just what's on screen. Click a result to recenter on it (if it's in scope) or just select it (if it's outside).
+- **Last-walked trail.** The last 8 rooms you walked through fade into a breadcrumb glow so you can see where you just came from at a glance.
+- **Hover an edge** to see the move command (`go gate`, `north`, etc.); Genie-only fallback edges are labeled `(Genie only)` so you can tell at a glance which connections Lich's walk database doesn't cover.
+- **NEEDS MAPPING banner** when the game tells Lichborne you're in a room ID that isn't in the Lich map database. Useful for the community mapping effort.
+- **Lich Map** (the image-tile view) is the renamed "Image" tab, since both views are Lich-first now.
+- **Per-character hop preference.** Your Lich Graph hop selection (5/8/15/25) is saved per character and follows the rest of your YAML profile.
+- **Zoom stops getting wiped.** Walking no longer fires a fit-to-view that resets your chosen zoom — pan/zoom stay where you put them.
+
+### Profile schema versioning
+
+- **YAML files now carry their own version.** Both `_shared.yaml` (v1) and `{Character}.yaml` (v2) declare a `profileVersion` field, and Lichborne consults a small migration registry on read. Future schema changes (renaming fields, restructuring) auto-upgrade your existing YAMLs on first launch instead of requiring you to wipe `profiles/`.
+- **Future-version files are preserved, not clobbered.** If you ever downgrade Lichborne, a newer YAML stays untouched on disk rather than being overwritten with a shape the older version doesn't understand. Recovery path stays open.
+
+### Login & character launcher
+
+- **Character cards instead of a login form.** When you start Lichborne, you now see a Launcher: one card per saved character showing name, account, game, and connection mode (Lich/Direct). Click `[Connect →]` and you're in. No re-typing your account name every launch.
+- **1.5-second cancel grace period.** Clicking a card shows a "Connecting to <name>… [Cancel]" overlay for a brief moment before any network call fires. Catches fat-finger clicks before they cost you anything.
+- **Right-click → Delete.** Cards have a context menu for removing characters cleanly. The confirm dialog explains what's removed (the character's YAML and its backups) and what's kept (your saved password, since other characters may share the account).
+- **3-step Add Character wizard.** New character setup is a guided flow: account + password + mode → game (DR / DRX / DRT / DRF) → pick character. For Direct connect, step 3 fetches your real character list from EAccess and shows it as a picker — no more typing the character name and hoping you got the capitalization right. For Lich connect, step 3 is a one-time text entry.
+- **First-launch auto-detect.** On first launch, Lichborne silently checks `C:\Ruby4Lich5\` and pre-fills your Ruby and Lich paths. If your install is in the default location, the wizard's Lich radio is enabled out of the box — no setup tab visit required.
+- **Lich Setup reachable any time.** A `⚙ Lich Setup` button now sits at the top of the Launcher and as a small link in the wizard footer. Verify or fix Ruby path, Lich path, delay, XML Stream Mode, and Hide Lich Window without disconnecting. The same fields also live in the in-session Settings panel.
+
+### Lich Setup polish
+
+- **"Mode" → "XML Stream Mode"** so it's clearer what the dropdown (`--stormfront`, `--genie`, `--wizard`, `--avalon`, `--frostbite`) actually controls.
+- **Games List inventory.** Lich Setup now ends with a read-only "Games List" card showing each game code, full name, and conventional Lich port (DR=11024, DRX=11124, DRT=11624, DRF=11324). Per-character game choice happens in the wizard; this card is just so you can validate which ports map to which games.
+
+### Profile backups now timestamped
+
+- **Backups no longer overwrite each other.** Each clean shutdown writes a new `{name}.yaml.{timestamp}.bak` alongside the live YAML — the 5 most recent are kept, older ones are pruned automatically. Previously a single rolling `.bak` was overwritten every shutdown, so a corrupted save could destroy your last known-good backup. Now you have a history to recover from.
+
+### Bug fixes
+
+- **PageUp / PageDown / Home / End scroll the story window from the command bar.** These keys were silently ignored as long as the command input had focus (which is almost always). Now they work the way they always should have — scroll the story window unless another text field (like a highlight rule editor) has focus. *(B75, reported by Legiro)*
+- **Scrollbar arrow buttons and thumb-drag now correctly pin and unpin.** Clicking the scrollbar's up/down arrow buttons or dragging the thumb up wasn't triggering scroll-pin behavior — only mouse wheel was. New lines would yank you back to the bottom even after you'd scrolled up to read older text. Fixed. *(B76, reported by Sekmeht)*
+
+### Theme polish
+
+- **Bold text is now yellow across every dark theme** (`<bold>` text such as monster names, bold combat lines) — matching the traditional Genie convention. Light themes (Ivory, Mist, Parchment) and Terminal are unchanged.
+
+### File menu
+
+- **"Open Installation Directory" added.** Sits below "Open Data Folder" in the File menu. Useful for tinkering with `profiles/` or reviewing the install layout. Data Folder still opens `userData` (`passwords.json`, Electron caches); Installation Directory opens the install root.
+
 ## What's new in v0.6.2
 
 A multi-character UX polish pass. Tab indicators got a redesign, several small annoyances got fixed, and the Session Log design is now locked in for the next build cycle.
@@ -240,7 +293,7 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## How to install
 
-1. Download `Lichborne-0.5.1-setup.exe` below
+1. Download `Lichborne-0.6.3-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -248,8 +301,7 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 - Windows only (x64)
 - No code signing — SmartScreen warning on first install is expected
-- Multiple characters require launching the app multiple times
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.5.0...v0.5.1
+https://github.com/SekmehtDR/Lichborne/compare/v0.6.2...v0.6.3

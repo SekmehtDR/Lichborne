@@ -4,10 +4,11 @@ import * as fs from 'fs'
 import * as crypto from 'crypto'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
+import { SGEConnection } from './connection/SGEConnection'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
-import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, backupAllProfiles } from './profiles'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
@@ -407,12 +408,32 @@ ipcMain.handle('password:save',   (_e, account: string, password: string) => sav
 ipcMain.handle('password:load',   (_e, account: string)                   => loadPassword(account))
 ipcMain.handle('password:delete', (_e, account: string)                   => deletePassword(account))
 
+// EAccess "preview" — used by the Add Character wizard to fetch the character
+// list for an account before the user commits to a login. Each call opens a
+// throwaway SGE socket, runs the K/A/G/C handshake, and disconnects. The
+// returned list is shown in step 3 of the wizard so the user can pick from
+// real characters instead of typing a name. Errors (bad credentials, server
+// down) are surfaced to the renderer for inline display.
+ipcMain.handle('eaccess:fetch-characters', async (_e, account: string, password: string, gameCode: string) => {
+  const sge = new SGEConnection()
+  try {
+    await sge.connect()
+    const chars = await sge.authenticate(account, password, gameCode)
+    return { ok: true as const, characters: chars }
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+  } finally {
+    sge.disconnect()
+  }
+})
+
 // ── Profile IPC ───────────────────────────────────────────────────────────────
 ipcMain.handle('profile:read-shared',               ()                               => readSharedProfile())
 ipcMain.handle('profile:write-shared',              (_e, data: unknown)              => writeSharedProfile(data))
 ipcMain.handle('profile:read-character',            (_e, character: string)          => readCharacterProfile(character))
 ipcMain.handle('profile:write-character',           (_e, character: string, data: unknown) => writeCharacterProfile(character, data))
 ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
+ipcMain.handle('profile:delete-character',          (_e, character: string)          => deleteCharacterProfile(character))
 
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
@@ -465,6 +486,14 @@ function setupMenu() {
         {
           label: 'Open Data Folder',
           click: () => shell.openPath(app.getPath('userData')),
+        },
+        {
+          label: 'Open Installation Directory',
+          click: () => shell.openPath(
+            app.isPackaged
+              ? path.dirname(app.getPath('exe'))
+              : app.getAppPath()
+          ),
         },
         { type: 'separator' },
         { role: 'quit' },

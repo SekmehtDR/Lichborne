@@ -41,12 +41,37 @@ A single Electron window holds **multiple character sessions**. `src/main/main.t
 
 Main text rendering uses **react-virtuoso** (only ~50 DOM rows for thousands of lines). Scroll pinning is delicate — `pinnedRef` snapshots before commit, `suppressUntilRef` gates programmatic scrolls, `onWheel` un-pins synchronously. Don't add `useEffect`-driven scroll logic without understanding the existing pattern (see GameWindow.tsx and DESIGN.md §23).
 
+### Login & character launcher (v0.6.3+)
+The empty-state and "+ Add character" surfaces are **Launcher** (`Launcher.tsx`) + **AddCharacterWizard** (`AddCharacterWizard.tsx`), not the old full-screen LoginScreen. `LoginScreen.tsx` is still in the repo but only as the type-host for `SessionInfo` (orphan otherwise — don't render it).
+
+- **Launcher** reads `profiles/*.yaml` via `listCharacterProfiles` + `readCharacterProfile`, shows cards, and on click runs `AppShell.handleCardConnect` which loads the saved password (if any) and fires `window.api.login` after a 1.5s cancellable grace window. No saved password → falls through to the wizard. Right-click → `Delete…` → `profile:delete-character` IPC (removes the YAML + every matching `*.bak`).
+- **Wizard** is 3-step: account/password/mode → game pick → character pick. For Direct mode, step 3 calls `eaccess:fetch-characters(account, password, gameCode)` which opens a throwaway TLS socket to `eaccess.play.net`, runs the K/A/G/C handshake, and returns the character list. For Lich mode, step 3 is manual text entry (Lich doesn't expose its list).
+- **Lich Setup access** pre-connect is via `LichSetupDialog.tsx` (toolbar `[⚙ Lich Setup]` in the Launcher and a footer link in the wizard). It wraps the same `LichSetupFields.tsx` used by `LoginScreen` (legacy) and `SettingsPanel`'s Lich Setup section — single component, three render sites, identical persistence path. **All three sites must wrap `LichSetupFields` in a `.login-form` ancestor class** because input/select/label styling in `login.css` is scoped to `.login-form` — without it dialog inputs fall back to browser defaults.
+- **First-launch auto-detect**: `AppShell` has a boot effect that imports `_shared.yaml` then silently runs `window.api.discoverLichPaths`; any newly-found Ruby/Lich paths are written back. Fresh installs with stock Lich (`C:\Ruby4Lich5\`) get the wizard's Lich radio enabled by default.
+- **`lichPort` is the Lich front-end port, not a per-shard SGE port**. There's a `GAMES` table in `lichSettings.ts` that maps game codes to conventional Lich ports (DR=11024 / DRX=11124 / DRT=11624 / DRF=11324) but those are Lich's own per-game defaults — they're not interchangeable with Simu's SGE server ports. Don't override `lichPort` from a per-game lookup at credential build-time; that bug shipped briefly in v0.6.3 (Sekmeht/DRT failure) and was reverted. The wizard's `lichPort` field comes from `adv.lichPort`. The character's `game` comes from `c.game` on the launcher card, not from `gameCodeFromPort(adv.lichPort)`.
+
 ### Profile system (DESIGN.md §20)
 All user state is round-tripped to YAML in `profiles/` next to the install:
 - `_shared.yaml` — account, Lich paths, port, custom themes, map dir, game definitions (cross-process store; localStorage can't be shared between Electron instances)
 - `<character>.yaml` — per-character settings, theme, layout, automations, contacts
 
-Exports are debounced (1–2.5s) on relevant state changes via `scheduleProfileSave` / `scheduleSharedProfileSave`. Imports happen on login-screen mount (shared) and post-connect before `GameWindow` mounts (character). When adding new persisted state, add it to both `profile-types.ts` and the `buildSharedProfile`/`buildCharacterProfile` builders, plus the import path.
+Exports are debounced (1–2.5s) on relevant state changes via `scheduleProfileSave` / `scheduleSharedProfileSave`. Imports happen on `AppShell` mount (shared) and post-connect before `GameWindow` mounts (character).
+
+**Profile v2 dynamic state** — per-character settings live under `lichborne.{character}.{suffix}` localStorage keys. `buildCharacterProfile` scans every such key and dumps to YAML's `state:` map; `importCharacterProfile` walks the map and writes each back. **Adding a new per-character setting requires only writing to its scoped key via `useProfileSaver()`** — no `profile-types.ts` / `buildCharacterProfile` changes needed. Pattern:
+
+```ts
+const character   = useCharacter()
+const saveProfile = useProfileSaver()
+// on change:
+localStorage.setItem(scopedKey(character, 'myThing'), value)
+saveProfile()
+```
+
+Shared settings (account, advancedSettings, mapDir, genieMapsDir, myThemes) ARE typed in `SharedProfile` and need entries in `buildSharedProfile` + `importSharedProfile`.
+
+**Schema versioning** (v0.6.3+) — both files declare `profileVersion` (shared=1, character=2). `profile-migrations.ts` holds two empty registries (`sharedMigrations`/`characterMigrations`) keyed by SOURCE version; `runMigrations()` walks them on read. When a breaking schema change ships (renaming a field, restructuring), bump the constant in `profile.ts` and register a migration keyed by the previous version — old YAMLs auto-upgrade. Adding optional fields or new `state:` entries is NOT a breaking change. Future-version YAMLs (newer than the code) log a warning and skip the import, preserving the file on disk for downgrade/recovery.
+
+Backups are **timestamped** (`{name}.yaml.{YYYY-MM-DDTHH-MM-SS}.bak`) with rolling retention of 5 per file. Pruning sorts by mtime so legacy unversioned `.bak` files are still recognized. `deleteCharacterProfile` glob-removes every backup matching the character.
 
 ### Theme system
 ~150 CSS custom properties defined in `src/renderer/themes.ts`. `darkBase` is the canonical full set; every other theme is a partial override merged over `darkBase` in `applyTheme` / `applyCustomTheme`. **All new theme-aware UI must consume CSS vars, not hardcoded colors.** Use `color-mix(in srgb, var(--x) N%, transparent)` for translucent tints rather than introducing new vars. Light themes (Ivory, Mist, Parchment) and Terminal must be checked when adding new variables — they may need explicit overrides.
@@ -63,7 +88,7 @@ Stream IDs are **preserved in original case** end-to-end (`stream-declare`, `str
 Legacy clients (Wrayth XML, Genie .cfg, Frostbite .ini) parse into a neutral `ImportCandidate` intermediate, then `mapper.ts` converts to native `HighlightRule`/`TriggerRule`/etc. with `allGroups: true` and blank names. Per-client quirks (Wrayth palette, Genie named colors, Frostbite Qt QColor decoder, key normalizers) live under `src/renderer/import/`. Substitutions are counted but not imported — Lichborne has no substitution engine yet (tracked as F12).
 
 ### Map system (DESIGN.md §19)
-Hybrid: Lich JSON maps (image tiles + room metadata) and Genie XML zone files (SVG node graph) render side-by-side. Image view shows Lich artwork with current room overlay; Graph view renders Genie nodes/arcs with Lich augmentation. Room matching uses Lich room ID extracted from the game subtitle as the primary key; title+description fallback when no ID. Cross-zone exits get ◆ diamonds. See `MapPanel.tsx` (coordinator), `MapImageView.tsx`, `MapGraphView.tsx`.
+Lich-first. Two views: **Lich Map** (Lich's image tiles with current room overlay) and **Lich Graph** (Lich-native auto-layout from each room's `wayto` commands). Every Lich room is renderable; no "orphans-because-of-fuzzy-matching." Genie XML is an OPTIONAL augmentation layer that adds district tints, landmark glyph icons, dashed fallback edges for connections Lich doesn't cover, and tooltip metadata. The old per-zone Genie Graph view (`MapGraphView.tsx`) was deleted in v0.6.3; do not reintroduce it. Room matching uses Lich room ID from the game subtitle as primary key, title+desc fallback; Genie nodes match Lich rooms via a multi-pass pipeline (exact/normalized title → alias → zone-prefix → desc-only fallback → arc-corroboration to convergence) with composite `zonedKey(zoneId, nodeId)` keys to avoid cross-zone ID collisions. Files: [MapPanel.tsx](src/renderer/components/panels/MapPanel.tsx) (coordinator), [MapImageView.tsx](src/renderer/components/panels/MapImageView.tsx), [LichGraphView.tsx](src/renderer/components/panels/LichGraphView.tsx), [lichLayout.ts](src/renderer/components/panels/lichLayout.ts).
 
 ## Documentation discipline
 

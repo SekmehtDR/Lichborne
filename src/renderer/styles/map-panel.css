@@ -343,12 +343,68 @@
 
 .map-location-unknown {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
   padding: 4px 8px;
   background: var(--map-chrome-bg);
   border-bottom: 1px solid #5a2820;
   flex-shrink: 0;
+}
+
+.map-location-unknown-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── "Needs mapping" variant — Lich has no record of this room at all ──
+   Higher-visibility styling than the regular "not matched to Genie" banner.
+   Used for rooms the mapping team should walk through with `;map` to add
+   them to Lich's database. Stronger background tint, brighter icon/text,
+   and a NEEDS MAPPING chip to spell out the call to action. */
+.map-location-unknown--needs-mapping {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--map-chrome-bg));
+  border-bottom: 1px solid var(--color-danger);
+  border-left: 3px solid var(--color-danger);
+}
+
+.map-location-unknown--needs-mapping .map-location-unknown-icon {
+  font-size: 13px;
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+.map-location-unknown--needs-mapping .map-location-unknown-text {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-danger) 70%, white);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.map-location-unknown--needs-mapping .map-location-unknown-room {
+  color: var(--text-primary);
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.map-location-unknown-tag {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 2px 7px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
+  text-transform: uppercase;
 }
 
 .map-location-unknown-icon {
@@ -372,6 +428,56 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* ── Near-miss diagnostic candidates ─────────────────────────────────── */
+
+.map-location-unknown-candidates {
+  margin-left: 22px;
+  padding: 4px 8px;
+  background: var(--bg-sunken);
+  border-left: 2px solid #5a2820;
+  border-radius: 0 3px 3px 0;
+}
+
+.map-location-unknown-candidates-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.map-location-unknown-candidate {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10px;
+  padding: 1px 0;
+  flex-wrap: wrap;
+}
+
+.map-location-unknown-candidate-id {
+  font-family: monospace;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.map-location-unknown-candidate-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.map-location-unknown-candidate-zone {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.map-location-unknown-candidate-reason {
+  color: var(--text-faint);
+  font-size: 9px;
+  font-style: italic;
+  margin-left: auto;
 }
 
 /* ── Canvas ───────────────────────────────────────────────── */
@@ -670,6 +776,149 @@
   color: var(--map-text-muted);
   font-family: monospace;
   margin-bottom: 2px;
+}
+
+/* ── Match confidence chip (shown on non-exact Lich↔Genie matches) ───── */
+.map-match-conf {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: lowercase;
+  vertical-align: baseline;
+}
+
+/* Normalized = high confidence, just case/whitespace drift — muted accent. */
+.map-match-conf--normalized {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Alias = explicitly declared in Genie's note field; well-trusted. */
+.map-match-conf--alias {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success) 40%, transparent);
+}
+
+/* Zone-prefix = composed from zone + name; more prone to false positives. */
+.map-match-conf--zone-prefix {
+  color: var(--preset-expiry);
+  background: color-mix(in srgb, var(--preset-expiry) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--preset-expiry) 40%, transparent);
+}
+
+/* Desc-disambig = title returned >1 candidate; we picked one via description.
+   Most likely to be wrong — surface as warning. */
+.map-match-conf--desc-disambig {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+}
+
+/* Arc-corroborated = Pass 2 disambiguated sibling-rooms by arc destinations
+   that align between Genie and Lich. High confidence — rooms with mutually-
+   consistent neighbor IDs are very unlikely to be wrongly paired. */
+.map-match-conf--arc-corroborated {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Desc-only = title disagreed (Lich mislabeled) but description was uniquely
+   equal. Medium confidence — depends on Lich descriptions not drifting since
+   Genie's snapshot. */
+.map-match-conf--desc-only {
+  color: var(--preset-expiry);
+  background: color-mix(in srgb, var(--preset-expiry) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--preset-expiry) 40%, transparent);
+}
+
+/* ── Reach-via fallback (orphan tooltips) ────────────────────────────── */
+
+.map-tooltip-reach {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.map-tooltip-reach-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.map-tooltip-reach-anchor {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.map-tooltip-reach-anchor-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.map-tooltip-reach-anchor-id {
+  font-size: 9px;
+  font-family: monospace;
+  color: var(--map-text-muted);
+}
+
+.map-tooltip-reach-moves {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+
+.map-tooltip-reach-moves-label {
+  color: var(--text-muted);
+}
+
+.map-tooltip-reach-moves-cmds {
+  color: var(--text-secondary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-family: monospace;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-tooltip-reach-copy {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.map-tooltip-reach-copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.map-tooltip-reach--none {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--text-faint);
 }
 
 .map-tooltip-name {

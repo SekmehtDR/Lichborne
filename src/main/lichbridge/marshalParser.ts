@@ -20,11 +20,30 @@ export type MarshalValue =
   | MarshalValue[]
   | { [key: string]: MarshalValue }
 
+// Decoded Ruby Time components. Ruby Marshal serializes Time as an 8-byte
+// user-defined payload (basic packed fields) often wrapped in an `I` ivar
+// envelope that carries the high-precision tail (`@offset`, `@zone`, `@year`,
+// `@submicro`, `@nano_num`/`@nano_den`). The 8-byte decode happens up front in
+// the `u` branch; the `I` branch then refines the rendered string with any
+// ivars it finds. We stash components on the parse state so the `I` handler
+// can recognize "the inner thing I just read was a Time" without changing the
+// MarshalValue return type.
+interface TimeComponents {
+  year: number
+  mon:  number
+  day:  number
+  hour: number
+  min:  number
+  sec:  number
+  utc:  boolean
+}
+
 interface ParseState {
   buf: Buffer
   pos: number
   symbols: string[]   // symbol table — new symbols appended in order
   objects: MarshalValue[]  // object link table — every non-immediate value appended
+  lastTime: TimeComponents | null  // set by decodeRubyTime, consumed by `I` handler
 }
 
 function readByte(s: ParseState): number {
@@ -97,23 +116,76 @@ function register(s: ParseState, v: MarshalValue): MarshalValue {
   return v
 }
 
-function decodeRubyTime(data: Buffer): string {
+function pad(n: number, d = 2): string {
+  return String(n).padStart(d, '0')
+}
+
+// Format components without ivar refinement. Used when the Time was emitted
+// without an `I` ivar wrapper (rare for modern Ruby but possible).
+function formatTimeBasic(c: TimeComponents): string {
+  return `${c.year}-${pad(c.mon)}-${pad(c.day)} ${pad(c.hour)}:${pad(c.min)}:${pad(c.sec)}${c.utc ? ' UTC' : ''}`
+}
+
+// Format components with the ivars Ruby attaches when serializing Time:
+//   @offset — Integer, UTC offset in seconds (e.g. -25200 for -0700)
+//   @zone   — String, zone abbreviation (e.g. "PDT", "UTC")
+//   @year   — Integer, overrides the 17-bit packed year for far-future/past Times
+//
+// Not handled (TODO):
+//   @submicro       — BCD-packed string, sub-microsecond precision
+//   @nano_num/@den  — Rational nanosecond fraction (Ruby 1.9.2+)
+// These contribute the digits after .NNNNNN — for typical timer values they're
+// nice-to-have but the whole-second display is what testers care about.
+function formatTimeWithIvars(c: TimeComponents, ivars: Record<string, MarshalValue>): string {
+  const year = typeof ivars['@year'] === 'number' ? (ivars['@year'] as number) : c.year
+  let suffix = ''
+  if (c.utc) {
+    suffix = ' UTC'
+  } else if (typeof ivars['@offset'] === 'number') {
+    const offset = ivars['@offset'] as number
+    const sign   = offset < 0 ? '-' : '+'
+    const abs    = Math.abs(offset)
+    const hours  = Math.floor(abs / 3600)
+    const mins   = Math.floor((abs % 3600) / 60)
+    suffix = ` ${sign}${pad(hours)}${pad(mins)}`
+    if (typeof ivars['@zone'] === 'string') suffix += ` ${ivars['@zone'] as string}`
+  } else if (typeof ivars['@zone'] === 'string') {
+    suffix = ` ${ivars['@zone'] as string}`
+  }
+  return `${year}-${pad(c.mon)}-${pad(c.day)} ${pad(c.hour)}:${pad(c.min)}:${pad(c.sec)}${suffix}`
+}
+
+function decodeRubyTime(s: ParseState, data: Buffer): string {
+  s.lastTime = null
   if (data.length !== 8) return '[Time: bad data]'
-  if (data[0] & 0x80) {
-    // New format (Ruby 1.9+): packed into two big-endian 32-bit words
+  // Ruby Marshal writes Time as two 32-bit words (p and s) in LITTLE-ENDIAN
+  // byte order (see Ruby's time.c → time_mdump). The "new packed format"
+  // marker is bit 31 of p — which in LE storage lives in the HIGH byte of
+  // the first word, i.e. data[3]. Checking data[0] (an earlier bug) tested
+  // the LOW byte's high bit, which is virtually never set for plausible
+  // year/month/day/hour values, so every modern Time fell into the legacy
+  // 1.8 branch below and got reinterpreted as nonsensical epoch seconds —
+  // turning a 2026 date into a 1987 date, etc.
+  if (data[3] & 0x80) {
+    // New format (Ruby 1.9+): packed into two little-endian 32-bit words.
+    // p layout (MSB→LSB):  marker(1) | utc(1) | year-1900(17) | mon-1(4) | day(5) | hour(5)
+    // s layout (MSB→LSB):  min(6) | sec(6) | usec(20)
     const w1 = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0
     const w2 = (data[4] | (data[5] << 8) | (data[6] << 16) | (data[7] << 24)) >>> 0
-    const utc  = !!(w1 & 0x40000000)
-    const year = ((w1 >>> 14) & 0xffff) + 1900
-    const mon  = ((w1 >>> 10) & 0xf) + 1
-    const day  = (w1 >>> 5) & 0x1f
-    const hour = w1 & 0x1f
-    const min  = (w2 >>> 26) & 0x3f
-    const sec  = (w2 >>> 20) & 0x3f
-    const pad  = (n: number, d = 2) => String(n).padStart(d, '0')
-    return `${year}-${pad(mon)}-${pad(day)} ${pad(hour)}:${pad(min)}:${pad(sec)}${utc ? ' UTC' : ''}`
+    const components: TimeComponents = {
+      year: ((w1 >>> 14) & 0x1ffff) + 1900,
+      mon:  ((w1 >>> 10) & 0xf) + 1,
+      day:  (w1 >>> 5) & 0x1f,
+      hour: w1 & 0x1f,
+      min:  (w2 >>> 26) & 0x3f,
+      sec:  (w2 >>> 20) & 0x3f,
+      utc:  !!(w1 & 0x40000000),
+    }
+    s.lastTime = components  // I handler will pick this up if ivars follow
+    return formatTimeBasic(components)
   } else {
-    // Old format (Ruby 1.8): big-endian seconds since epoch + microseconds
+    // Legacy Ruby 1.8 format: big-endian seconds since epoch + microseconds.
+    // Effectively unreachable for modern Lich/DR but kept for robustness.
     const sec = ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0
     return new Date(sec * 1000).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC')
   }
@@ -146,17 +218,36 @@ function readValue(s: ParseState): MarshalValue {
       const startIdx = s.objects.length
       s.objects.push(null)  // placeholder
 
+      // Clear the Time stash before reading the inner value. If the inner is a
+      // Time, decodeRubyTime will set s.lastTime as a side effect and we'll
+      // refine the rendered string with @offset/@zone/@year below. Clearing
+      // first prevents a stale value from a prior decode leaking through.
+      s.lastTime = null
       const obj = readValue(s)
+      const timeComponents = s.lastTime
+      s.lastTime = null
+
       const count = readLength(s)
       let encoding = 'binary'
+      const collectedIvars: Record<string, MarshalValue> = {}
       for (let i = 0; i < count; i++) {
         const k = readValue(s)
         const v = readValue(s)
-        if (k === 'E' && v === true) encoding = 'utf8'
+        const key = String(k)
+        collectedIvars[key] = v
+        if (key === 'E' && v === true) encoding = 'utf8'
       }
-      const result: MarshalValue = (typeof obj === 'string' && encoding === 'utf8')
-        ? Buffer.from(obj, 'binary').toString('utf8')
-        : obj
+
+      let result: MarshalValue
+      if (timeComponents) {
+        // Reformat the Time using ivars we just collected. obj was the basic
+        // string from decodeRubyTime; we replace it with the ivar-refined one.
+        result = formatTimeWithIvars(timeComponents, collectedIvars)
+      } else if (typeof obj === 'string' && encoding === 'utf8') {
+        result = Buffer.from(obj, 'binary').toString('utf8')
+      } else {
+        result = obj
+      }
       s.objects[startIdx] = result
       return result
     }
@@ -240,7 +331,7 @@ function readValue(s: ParseState): MarshalValue {
       const raw = s.buf.slice(s.pos, s.pos + len)
       s.pos += len
       const clsName = String(cls)
-      if (clsName === 'Time' && raw.length === 8) return register(s, decodeRubyTime(raw))
+      if (clsName === 'Time' && raw.length === 8) return register(s, decodeRubyTime(s, raw))
       const hex = Array.from(raw).map(b => b.toString(16).padStart(2, '0')).join(' ')
       return register(s, { _class: clsName, _data: hex })
     }
@@ -288,6 +379,6 @@ export function parseMarshal(blob: Buffer): MarshalValue {
   if (blob[0] !== 0x04 || blob[1] !== 0x08) {
     throw new Error(`Marshal: invalid magic 0x${blob[0].toString(16)} 0x${blob[1].toString(16)}`)
   }
-  const s: ParseState = { buf: blob, pos: 2, symbols: [], objects: [] }
+  const s: ParseState = { buf: blob, pos: 2, symbols: [], objects: [], lastTime: null }
   return readValue(s)
 }

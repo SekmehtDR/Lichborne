@@ -1,12 +1,17 @@
-import { useState, useEffect } from 'react'
-import LoginScreen, { type SessionInfo } from './components/LoginScreen'
+import { useState, useEffect, useRef } from 'react'
+import type { SessionInfo } from './components/LoginScreen'
+import Launcher, { type LauncherCharacter } from './components/Launcher'
+import AddCharacterWizard from './components/AddCharacterWizard'
+import LichSetupDialog from './components/LichSetupDialog'
 import GameWindow from './components/GameWindow'
 import CharacterTabBar from './components/CharacterTabBar'
 import QuickSend from './components/QuickSend'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
 import { CharacterProvider } from './CharacterContext'
-import { flushPendingProfileSaves, exportCharacterProfile } from './profile'
+import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile } from './profile'
+import { loadAdvanced, saveAdvanced } from './lichSettings'
+import type { LoginCredentials } from '../shared/types'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -30,12 +35,27 @@ export default function App() {
 function AppShell() {
   const { sessions, activeId, addSession, removeSession, setActive } = useSessions()
   const [showAdd, setShowAdd] = useState(false)
+  // The Add modal renders the Launcher (cards) so the user can pick a saved
+  // character. Clicking "+ Add character" inside the Launcher opens the wizard
+  // by flipping showWizard true. The wizard is also used as the fallback when
+  // a card connect needs a password that isn't saved.
+  const [showWizard, setShowWizard] = useState(false)
+  const [showLichSetup, setShowLichSetup] = useState(false)
   const [showQuickSend, setShowQuickSend] = useState(false)
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateDismissed, setUpdateDismissed] = useState(false)
   const [checking, setChecking] = useState(false)
   const [upToDate, setUpToDate] = useState(false)
+
+  // Connect-from-card state: when the user clicks [Connect →] on a Launcher
+  // card, we show a "Connecting to <name>… [Cancel]" overlay for a brief grace
+  // window (1.5s) before firing the actual login IPC. Lets accidental clicks be
+  // backed out before any network traffic.
+  const [pendingConnect, setPendingConnect] = useState<LauncherCharacter | null>(null)
+  const [connectError,    setConnectError]    = useState<string>('')
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingCancelledRef = useRef(false)
 
   // __flushProfileSaves is called by main's window-close handler. It fires every
   // pending debounced save AND unconditionally saves every active character's
@@ -118,6 +138,34 @@ function AppShell() {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [sessions, activeId, setActive])
 
+  // First-run / cold-start path:
+  //   1. Pull _shared.yaml into localStorage so loadAdvanced() returns whatever
+  //      was last saved (Lich paths, port, account, etc.). LoginScreen used to
+  //      own this import; now AppShell does it because the launcher never
+  //      mounts LoginScreen.
+  //   2. If Lich paths still don't validate, run the silent discovery against
+  //      C:\Ruby4Lich5 and write any newly-discovered paths back. This means a
+  //      fresh install where Lich is in its default location ends up with the
+  //      wizard's Lich radio enabled by default — no manual setup required.
+  useEffect(() => {
+    let cancelled = false
+    importSharedProfile().then(async () => {
+      if (cancelled) return
+      const adv = loadAdvanced()
+      const discovered = await window.api.discoverLichPaths(adv.rubyPath, adv.lichPath).catch(() => null)
+      if (cancelled || !discovered) return
+      const changes: Partial<typeof adv> = {}
+      if (discovered.rubyPath) changes.rubyPath = discovered.rubyPath
+      if (discovered.lichPath) changes.lichPath = discovered.lichPath
+      if (Object.keys(changes).length > 0) {
+        const next = { ...adv, ...changes }
+        saveAdvanced(next)
+        exportSharedProfile().catch(console.error)
+      }
+    }).catch(console.error)
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     const unsubAvailable = window.api.onUpdateAvailable((version) => {
       setUpdateVersion(version)
@@ -151,6 +199,103 @@ function AppShell() {
   function handleConnected(info: SessionInfo) {
     addSession(info)
     setShowAdd(false)
+    setShowWizard(false)
+  }
+
+  // Card click → grace window → actual connect. The grace window is cancellable
+  // via the [Cancel] button rendered inside the overlay. We don't fire any IPC
+  // until the timer expires.
+  function handleCardConnect(c: LauncherCharacter) {
+    if (pendingConnect) return  // already connecting; ignore double-clicks
+
+    // Block if same SimuCo account is already connected — DR allows only one
+    // active character per account. Same guard LoginScreen has.
+    const conflict = sessions.find(s => s.account.toLowerCase() === c.account.toLowerCase() && s.status.connected)
+    if (conflict) {
+      setConnectError(`${conflict.character} is already connected on account ${c.account}. Disconnect them first.`)
+      return
+    }
+
+    setConnectError('')
+    pendingCancelledRef.current = false
+    setPendingConnect(c)
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null
+      if (pendingCancelledRef.current) return
+      runConnect(c).catch(err => {
+        setConnectError(String(err))
+        setPendingConnect(null)
+      })
+    }, 1500)
+  }
+
+  function cancelPendingConnect() {
+    pendingCancelledRef.current = true
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current)
+      pendingTimerRef.current = null
+    }
+    setPendingConnect(null)
+  }
+
+  async function runConnect(c: LauncherCharacter) {
+    const adv = loadAdvanced()
+    const password = await window.api.loadPassword(c.account)
+    if (password === null) {
+      // No saved password → open the wizard so the user can re-enter it. The
+      // wizard reads account from localStorage on mount and auto-loads any
+      // existing password; with neither present the user types it fresh.
+      localStorage.setItem('lichborne.account', c.account)
+      setPendingConnect(null)
+      setShowAdd(false)
+      setShowWizard(true)
+      return
+    }
+
+    const creds: LoginCredentials = {
+      account:        c.account,
+      password,
+      character:      c.name,
+      useLich:        c.useLich,
+      lichPath:       adv.lichPath,
+      rubyPath:       adv.rubyPath,
+      lichPort:       adv.lichPort,
+      lichMode:       adv.lichMode,
+      lichDelay:      adv.lichDelay,
+      hideLichWindow: adv.hideLichWindow,
+    }
+
+    const result = await window.api.login(creds)
+    if (!result.ok) {
+      const raw = result.error ?? 'Connection failed'
+      const friendly = /invalid login key/i.test(raw)
+        ? `${raw} — another character on account ${c.account} may already be connected.`
+        : raw
+      setConnectError(friendly)
+      setPendingConnect(null)
+      return
+    }
+
+    // Game comes from the character's own profile — that's where the wizard
+    // recorded the user's pick at creation time. Deriving it from adv.lichPort
+    // was wrong because lichPort is global (always the Lich front-end port,
+    // not a per-shard port).
+    try {
+      const loaded = await importCharacterProfile(c.name)
+      if (!loaded) clearCharacterLocalStorage(c.name)
+    } catch (err) { console.error(err) }
+    try {
+      await exportCharacterProfile(c.account, c.name, c.game, c.useLich)
+    } catch (err) { console.error(err) }
+
+    setPendingConnect(null)
+    handleConnected({
+      sessionId: result.sessionId,
+      account:   c.account,
+      character: c.name,
+      game:      c.game,
+      useLich:   c.useLich,
+    })
   }
 
   function handleCloseTab(id: CharacterId) {
@@ -171,6 +316,19 @@ function AppShell() {
   const isEmpty       = sessions.length === 0
   const showFullLogin = isEmpty
   const showModalLogin = !isEmpty && showAdd
+
+  function openAddNew() {
+    // "+ Add character" routes to the wizard regardless of whether the empty-
+    // state launcher or the modal-state launcher invoked it. The wizard is the
+    // single place where a brand-new character.yaml is created.
+    setShowAdd(false)
+    setShowWizard(true)
+  }
+
+  // Cleanup pending timer on unmount.
+  useEffect(() => () => {
+    if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current)
+  }, [])
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -205,7 +363,14 @@ function AppShell() {
 
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {showFullLogin ? (
-          <LoginScreen onConnected={handleConnected} />
+          <Launcher
+            onConnect={handleCardConnect}
+            onAddNew={openAddNew}
+            onOpenLichSetup={() => setShowLichSetup(true)}
+            connectingName={pendingConnect?.name ?? null}
+            connectError={connectError}
+            onDismissError={() => setConnectError('')}
+          />
         ) : (
           sessions.map(s => (
             <div
@@ -253,7 +418,39 @@ function AppShell() {
             onClick={() => setShowAdd(false)}
             title="Cancel"
           >✕</button>
-          <LoginScreen onConnected={handleConnected} isModal />
+          <Launcher
+            onConnect={handleCardConnect}
+            onAddNew={openAddNew}
+            onOpenLichSetup={() => setShowLichSetup(true)}
+            compact
+            connectingName={pendingConnect?.name ?? null}
+            connectError={connectError}
+            onDismissError={() => setConnectError('')}
+          />
+        </div>
+      )}
+
+      {showWizard && (
+        <AddCharacterWizard
+          onCompleted={handleConnected}
+          onCancel={() => setShowWizard(false)}
+          onOpenLichSetup={() => setShowLichSetup(true)}
+        />
+      )}
+
+      {showLichSetup && <LichSetupDialog onClose={() => setShowLichSetup(false)} />}
+
+      {pendingConnect && (
+        <div className="launcher-connecting">
+          <div className="launcher-connecting-card">
+            <div className="launcher-spinner" />
+            <div className="launcher-connecting-text">
+              Connecting to <span className="launcher-connecting-name">{pendingConnect.name}</span>…
+            </div>
+            <button className="launcher-connecting-cancel" onClick={cancelPendingConnect}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

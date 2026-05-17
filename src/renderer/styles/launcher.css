@@ -1,0 +1,349 @@
+/* ── Launcher ───────────────────────────────────────────────────────────── */
+
+.launcher {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 24px 48px;
+  background: radial-gradient(ellipse at center, var(--bg-base) 0%, var(--bg-app) 100%);
+  color: var(--text-primary);
+}
+
+.launcher--compact {
+  padding: 16px 16px 24px;
+  background: transparent;
+}
+
+/* ── Top bar (Lich Setup access in disconnected state) ───────────────── */
+
+.launcher-topbar {
+  align-self: stretch;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 4px 16px;
+}
+
+.launcher-topbar-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.launcher-topbar-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.launcher-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.launcher-logo h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent);
+}
+
+.launcher-logo p {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  margin-top: 3px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.launcher-version {
+  color: var(--text-faint) !important;
+  font-size: 0.68rem !important;
+  letter-spacing: 1px !important;
+  text-transform: none !important;
+  margin-top: 6px !important;
+}
+
+.launcher-heading {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 18px;
+}
+
+/* ── Inline error banner ────────────────────────────────────────────── */
+
+.launcher-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: 720px;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.launcher-error-text {
+  flex: 1;
+}
+
+.launcher-error-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--color-danger);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0.7;
+}
+
+.launcher-error-dismiss:hover { opacity: 1; }
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  width: 100%;
+  max-width: 720px;
+}
+
+/* ── Character card ──────────────────────────────────────────────────── */
+
+.launcher-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.launcher-card:not(.launcher-card--add):not(.launcher-card--busy):hover {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-raised));
+}
+
+.launcher-card--busy {
+  opacity: 0.7;
+}
+
+.launcher-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.launcher-card-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.launcher-card-mode {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+
+.launcher-card-mode--lich {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+
+.launcher-card-mode--direct {
+  background: color-mix(in srgb, var(--link-color) 18%, transparent);
+  color: var(--link-color);
+  border: 1px solid color-mix(in srgb, var(--link-color) 45%, transparent);
+}
+
+.launcher-card-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.launcher-card-connect {
+  margin-top: 6px;
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.launcher-card-connect:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.launcher-card-connect:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ── Add card ────────────────────────────────────────────────────────── */
+
+.launcher-card--add {
+  background: transparent;
+  border: 1px dashed var(--border);
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.launcher-card--add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.launcher-card-add-plus {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.launcher-card-add-label {
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ── Welcome state (no characters yet) ──────────────────────────────── */
+
+.launcher--empty {
+  justify-content: center;
+}
+
+.launcher-welcome {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 32px 36px;
+  max-width: 460px;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.launcher-welcome h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.launcher-welcome p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.launcher-add-cta {
+  padding: 10px 24px;
+  font-size: 0.9rem;
+}
+
+/* ── Loading state ───────────────────────────────────────────────────── */
+
+.launcher--loading {
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.launcher-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: launcher-spin 0.8s linear infinite;
+}
+
+@keyframes launcher-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Connecting-with-cancel overlay ─────────────────────────────────── */
+
+.launcher-connecting {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  backdrop-filter: blur(2px);
+}
+
+.launcher-connecting-card {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 22px 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.launcher-connecting-text {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.launcher-connecting-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.launcher-connecting-cancel {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.launcher-connecting-cancel:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}

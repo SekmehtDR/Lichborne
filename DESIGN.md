@@ -2400,22 +2400,25 @@ A custom native menu replaces Electron's default. Built with `Menu.buildFromTemp
 
 ## 19. Map System
 
+> **Architectural pivot (v0.6.3)** — the map system was rewritten to flip the spatial source of truth from Genie XML to Lich JSON. The legacy Genie Graph view (`MapGraphView.tsx`) was deleted in favor of a Lich-native graph view (`LichGraphView.tsx`) that BFS-lays-out every Lich room from its own `wayto` data, with Genie XML treated as optional metadata polish (district tints, landmark colors, dashed-arc fallback edges, richer tooltips). Sections describing the old per-zone Genie graph (19.5, 19.6, 19.11) are retained for historical context but no longer reflect the shipping UI.
+
 ### 19.1 Overview
 
-The Map System is a spatially-aware map visualization with two complementary data sources and two display modes.
+The Map System is a spatially-aware map visualization built around two views, both Lich-first.
 
 **Data sources:**
-- **Lich JSON** (`map-*.json` in Lich's `data/DR/` folder) — the primary database. Contains all mapped rooms as a flat array with numeric IDs, titles, descriptions, image file references, and exit arcs. This is the authoritative source for room IDs used in pathfinding.
-- **Genie XML** (player's Genie maps folder, e.g. `%APPDATA%\Genie\Maps\`) — optional augmentation layer. Provides x/y/z coordinates and color codes that the Lich JSON does not carry. Each Genie XML file is one zone (one `.xml` = one region).
+- **Lich JSON** (`map-*.json` in Lich's `data/DR/` folder) — the primary database AND the spatial source of truth. Flat array of rooms with numeric IDs, titles, descriptions, image file references, and `wayto` exit-command maps. Every room is renderable because room positions are derived from cardinal-direction wayto commands; nothing gets stuck as an "orphan" because of fuzzy Genie matching.
+- **Genie XML** (player's Genie maps folder, e.g. `%APPDATA%\Genie\Maps\`) — optional augmentation layer. Provides x/y/z coordinates (used as layout *seeds* — see §19.15), node color tags (drive landmark fills + glyph icons), arc graph (fills gaps Lich's wayto doesn't cover, rendered as dashed lines), zone names (drive district tints), and `note` aliases. Each Genie XML file is one zone (one `.xml` = one region).
 
-**Display modes (tabs in the map panel):**
-- **Image tab** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required.
-- **Graph tab** — renders an SVG graph of rooms in the current zone derived from Genie XML coordinates, augmented with Lich room IDs and colors. Works without Lich (browse-only mode with coordinate data only).
+**Display modes (toolbar buttons in the map panel):**
+- **Lich Map** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required.
+- **Lich Graph** — renders a Lich-native auto-layout SVG graph of every room in the player's local neighborhood (BFS hop scope). Every room is placed regardless of match status; Genie data only enhances visuals when present. See §19.15 for the full architecture.
 
 **Component breakdown:**
-- `MapPanel` — coordinator; loads and indexes both databases; manages current-room tracking; owns the Image/Graph tab switch
-- `MapImageView` — Lich image tile display and exit navigation
-- `MapGraphView` — Genie SVG graph with BFS pathfinding, pan/zoom, z-levels, color legend
+- `MapPanel` — coordinator; loads Lich JSON and (optionally) Genie XML; owns current-room tracking and the view-mode switch
+- `MapImageView` — Lich image-tile display and exit navigation
+- `LichGraphView` — Lich-native auto-layout graph (current shipping graph view) with optional Genie augmentation
+- `lichLayout.ts` — cardinal-direction BFS auto-layout (`autoLayoutLich(rooms, {rootId, cellSize, seedPositions})`)
 
 **Auto-reload:** when `repository.lic` downloads a new Lich map database, the main stream carries `--- Map loaded <filename>.json`. `GameWindow` detects this pattern and increments `lichMapVersion`, which triggers `MapPanel` to reload the JSON database and re-index Genie augments automatically.
 
@@ -2478,27 +2481,40 @@ roomId !== undefined → lichDb.get(roomId)   // direct O(1) hit
 
 **Genie XML augmentation matching (inside `loadGenie`):**
 
-When Genie XML is loaded, each Genie node is matched to a Lich room to get its coordinates and color. Three strategies are tried in order:
+When Genie XML is loaded, each Genie node is matched to a Lich room to get its coordinates, zone name, and color tag. Matching runs as a multi-pass pipeline; the resulting `GenieAugment.matchConfidence` (`'exact' | 'normalized' | 'alias' | 'zone-prefix' | 'desc-disambig' | 'arc-corroborated' | 'desc-only'`) is surfaced as a chip in the LichGraphView tooltip so testers can spot suspect matches.
 
-1. **Title match** — `titleIndex.get(node.name)`: exact name match; description disambiguates on multiple hits
-2. **Alias match** — `noteAliases(node.note)`: pipe-delimited aliases in the Genie `note` attribute; each alias tried against `titleIndex`
-3. **Zone-prefix construction** — build `"${zone.name}, ${node.name}"` and look it up in `titleIndex`; handles the common case where Genie stores short names ("Bulk Materials") while Lich titles are fully-qualified ("Leth Deriel, Bulk Materials")
+**Pass 1** — per-node, four strategies tried in order:
 
-Unmatched Genie nodes are collected per-zone in `orphansByZone` for debugging. Matched nodes are stored in the `augments: Map<number, GenieAugment>` keyed by Lich room ID.
+1. **Title match** — `titleIndex.get(node.name)` exact-case, with `normTitleIndex` (keyed by `normalizeMatchKey()` — strip brackets, lowercase, collapse whitespace) as a forgiving fallback. Disambiguates by description overlap on multiple hits.
+2. **Alias match** — `noteAliases(node.note)`: pipe-delimited aliases in the Genie `note` attribute; each alias tried against the same lookup.
+3. **Zone-prefix construction** — build `"${zone.name}, ${node.name}"` and re-run the lookup; handles the common case where Genie stores short names ("Bulk Materials") while Lich titles are fully-qualified ("Leth Deriel, Bulk Materials").
+4. **Description-only fallback** — when Lich and Genie disagree on a title but agree on the description (Lich's "Shard Thief Passages" vs Genie's "Abandoned Building"), look up `descIndex[normalizeDesc(d)]` for each Genie description variant; commit when exactly one Lich room matches, or when multiple match but share an identical title (multi-tile case).
 
-### 19.5 Cross-Zone Index
+**Pass 2** — arc-destination corroboration, iterated to convergence (`while (pass2Changed)`, bounded by `MAX_ITERS = 8`).
 
-When a map directory is selected, all XML files are parsed in the background. The index lives in `allZonesRef` (a ref, not state — no re-renders on index updates). An `indexing` boolean state and `indexedCount` number state drive the toolbar indicator (`indexing… (45/120)`). `indexedCount` updates every 5 files during the loop so the counter is reactive without causing excessive re-renders.
+Pass-1 orphans are typically clusters of sibling rooms with identical titles AND identical descriptions (the canonical example is the Engineering Society Workrooms). Pass 2 fingerprints each orphan by its arc destinations: if Genie #X has an arc to Genie #Y, and Genie #Y was matched in Pass 1 to Lich #L, then the *correct* Lich match for #X must be a candidate whose `wayto` contains `#L` as a destination key. The score counts arc-destination overlaps; strict-better wins (ties leave the orphan unmatched — "show nothing" beats "show confidently wrong"). Cascading dependencies in tight clusters (a row of four Workrooms only the outermost of which reaches the main hall) require iteration: the outermost resolves on iteration 1, the next-in becomes resolvable on iteration 2 once its arc points at a now-matched neighbor, and so on.
 
-The auto-switch effect (`useEffect`) depends on `[roomTitle, roomDesc, zone, indexing]`:
-- Skips while `indexing` is true (avoids searching a partial index)
-- Fires when indexing completes — catches the case where the room title arrived before the index was ready
-- Checks current zone first; only searches the full index if no match is found locally
-- Calls `setSelectedPath` to load the matching zone, which triggers `loadZone` via the existing `selectedPath` effect
+**Composite zone-prefixed keys (`zonedKey(zoneId, nodeId)`)** — Genie node IDs restart from 1 in every zone, so a bare numeric key collides across zones (Aesry's #712 overwriting Shard's #712 was a real bug). `allGenieNodes` and `genieIdToLich` are both keyed by composite `"zoneId:nodeId"` strings throughout the load and lookup paths. Pass 2's arc-destination resolution uses `orphan.zoneId` as the lookup namespace; cross-zone arcs are out of scope.
 
-### 19.6 SVG Rendering
+Matched nodes are stored in `augments: Map<number, GenieAugment>` keyed by Lich room ID. The full Genie node graph (matched + unmatched) is retained in `allGenieNodes` so the LichGraphView can render Genie-only arcs as dashed fallback edges.
 
-**Room markers** — fixed-pixel 10×10px squares at all zoom levels. Game-coordinate size = `px / scale`, so markers stay constant size as you zoom. A `useMemo` over `visibleNodes` renders all nodes with state-driven colours: default parchment-brown → search hit green → path gold → selected blue → hovered tan → current room bright green.
+### 19.5 Cross-Zone Index *(historical — MapGraphView, deleted v0.6.3)*
+
+> Retained for context. The Lich-native graph view (§19.15) does not load Genie zones individually; the entire Genie data set is indexed in one pass into `allGenieNodes`/`augments` regardless of which Lich room the player is in.
+
+When a map directory was selected, all XML files were parsed in the background. The index lived in `allZonesRef` (a ref, not state — no re-renders on index updates). An `indexing` boolean state and `indexedCount` number state drove the toolbar indicator (`indexing… (45/120)`). `indexedCount` updated every 5 files during the loop so the counter was reactive without causing excessive re-renders.
+
+The auto-switch effect (`useEffect`) depended on `[roomTitle, roomDesc, zone, indexing]`:
+- Skipped while `indexing` was true (avoids searching a partial index)
+- Fired when indexing completed — caught the case where the room title arrived before the index was ready
+- Checked current zone first; only searched the full index if no match was found locally
+- Called `setSelectedPath` to load the matching zone, which triggered `loadZone` via the existing `selectedPath` effect
+
+### 19.6 SVG Rendering *(historical — MapGraphView, deleted v0.6.3)*
+
+> See §19.15 for the LichGraphView SVG rendering pipeline that replaced this section.
+
+**Room markers** — fixed-pixel 10×10px squares at all zoom levels. Game-coordinate size = `px / scale`, so markers stayed constant size as you zoomed. A `useMemo` over `visibleNodes` rendered all nodes with state-driven colours: default parchment-brown → search hit green → path gold → selected blue → hovered tan → current room bright green.
 
 **Current room indicator** — SMIL `<animate>` pulse ring (CSS `r` animation is unreliable in Chromium/Electron), inner glow border, and a crosshair dot visible at any zoom level.
 
@@ -2511,7 +2527,7 @@ The auto-switch effect (`useEffect`) depends on `[roomTitle, roomDesc, zone, ind
 | Special go/climb exits | Sage green `#6a9060` |
 | Hidden (`exit="none"`) | Amber dashed `#8a6030` |
 
-**Pan/zoom** — wheel zoom uses an imperative `addEventListener('wheel', h, { passive: false })` instead of React's `onWheel` (which is passive in modern browsers and cannot call `preventDefault`). Drag captures `{tx, ty}` before the state-setter callback fires to avoid a null-ref race when mouseup nulls `dragRef` before the setter runs.
+**Pan/zoom** — wheel zoom used an imperative `addEventListener('wheel', h, { passive: false })` instead of React's `onWheel` (which is passive in modern browsers and cannot call `preventDefault`). Drag captured `{tx, ty}` before the state-setter callback fired to avoid a null-ref race when mouseup nulled `dragRef` before the setter ran. (Both patterns survive in LichGraphView.)
 
 ### 19.7 BFS Pathfinding
 
@@ -2597,65 +2613,122 @@ Map directory and selected file are persisted to `localStorage`. On startup they
 - **File not found** — `readFile` returns `null` for missing files. `loadZone` detects this, removes `lichborne.mapFile` from localStorage, and resets `selectedPath` to empty — no error overlay, just a silent return to the no-map state.
 - Empty directories (valid path, no XML files) still return `[]` and show "No .xml files found" normally.
 
-### 19.11 Label Modes
+### 19.11 Label Modes *(historical — MapGraphView, deleted v0.6.3)*
 
-| Mode | Content |
-|---|---|
-| `none` | No labels |
-| `short` | Last comma-segment of node name (e.g. `"Champions' Square"` from `"The Crossing, Champions' Square"`) |
-| `full` | Full node name |
-| `alias` | First alias from the `note` pipe-list; falls back to short name |
-| `id` | `#nodeId` |
-
-Labels render above the node rect at a constant 10px font size (scaled by `1/scale`). Labels are always shown for hovered, selected, and current-room nodes regardless of zoom level; for all other nodes they show only when `scale ≥ LABEL_ZOOM (1.2)`.
+> The 5-mode label dropdown belonged to the deleted MapGraphView. LichGraphView uses a single zoom-gated label rule: the current room always has a bright label; rooms exactly one BFS hop away (tier 1) get a label when `scale ≥ LABEL_ZOOM (1.5)`. Distant rooms surface their name via hover tooltip only.
 
 ### 19.14 Map Panel UI Layout
 
-**MapPanel toolbar** — appears above both tabs:
+**MapPanel toolbar (outer)** — file-level controls; visible above both views:
 
 | Slot | Content | Condition |
 |---|---|---|
-| `Image` | Tab button — switch to Lich image view | db ready or error |
-| `Graph` | Tab button — switch to Genie graph view | db ready or error |
+| `Lich Map` | View button — switch to image-tile view | db ready or error |
+| `Lich Graph` | View button — switch to Lich-native graph view | db ready or error |
 | ↺ | Reload Lich JSON database | always when db ready/error |
-| 📁/📂 | Pick Genie maps folder (filled/open icon) | graph tab active |
-| ✕ | Clear Genie maps folder | graph tab + folder set + not loading |
-| `Genie N/M` | Progress hint while Genie indexes | loading |
-| `NNN matched` | Count of Lich↔Genie augmented rooms | Genie ready + Lich ready |
-| `browse only` | Genie loaded but Lich unavailable | Genie ready + Lich error |
 | location | Current room location or title | after Lich ready |
 
-**Genie progress bar** — a thin bar below the toolbar fills left-to-right as XML files are parsed. Only shown while loading.
-
-**MapGraphView bottom bar** — navigation and view controls, left to right:
+**Lich Graph subbar** — view-local controls; visible only when Lich Graph is active. Genie folder controls live here (not on the outer toolbar) because Genie data only affects this view:
 
 | Slot | Content | Condition |
 |---|---|---|
-| ◆ | Center-on-current-room button | zone loaded + current room matched |
-| badge | `#551` room ID badge (green = matched, red = ?) | in-game |
-| sep | thin vertical divider | when z-chips are present |
-| Floor chips | G / +1 / All z-level selector | zone has multiple floors |
-| spacer | `flex: 1` — pushes right-side items right | always |
-| Labels ▼ | Label mode dropdown (off/short/full/alias/#id) | always |
-| ⊡ | Fit map to view | zone loaded |
-| ▤ | Toggle color legend overlay | zone has colored rooms |
+| Search box | Substring match across the entire Lich DB (≥2 chars) | always |
+| `N rooms · H hops` | Visible-room count and current hop scope | room known |
+| 📁/📂 | Pick Genie maps folder (filled/open icon) | always |
+| ✕ | Clear Genie maps folder | folder set + not loading |
+| `Genie N/M` | Progress hint while Genie indexes | loading |
+| `NNN matched` | Count of Lich↔Genie augmented rooms | Genie ready |
+| `H hops ▼` | Neighborhood scope dropdown (5/8/15/25) | always |
+| ◆ | Recenter on current room (preserves zoom) | room known |
+| ⊡ | Fit all rooms into view (resets zoom) | always |
 | ■ | Stop auto-walk | while walking |
 
-**Mouse wheel zoom** — uses a callback ref (`svgCallbackRef`) to attach a non-passive `wheel` listener directly to the SVG element as soon as it mounts. `useEffect([], [])` cannot be used here because the SVG doesn't exist during early-return loading states. All map control buttons carry `onMouseDown={e => e.preventDefault()}` to prevent focus theft — without this, clicking a button moves browser focus away from the SVG and subsequent wheel events target the button rather than the canvas.
+**Genie progress bar** — a thin bar below the outer toolbar fills left-to-right as XML files are parsed. Only shown while loading.
 
-**Current room label z-order** — the current room's label element is deferred to the end of the `nodeLabels` array regardless of where the current node appears in `visibleNodes`. SVG paints in array order, so this guarantees the green label is always on top of any overlapping neighbors.
+**Mouse wheel zoom** — `useEffect` attaches a non-passive `wheel` listener directly to the SVG element on mount because React's `onWheel` is passive and cannot call `preventDefault()`. Drag captures `{tx, ty}` before the state-setter callback fires to avoid a null-ref race when mouseup nulls `dragRef` before the setter runs.
 
-**Legend overlay** — rendered as `position: absolute` inside `.map-canvas-wrap` (top-left, `z-index: 20`) rather than as a flex child above the canvas. Toggling it never affects canvas height, making it safe in compact panel sizes.
+### 19.15 Lich-Native Graph View (LichGraphView)
+
+> Shipped v0.6.3 as the architectural successor to MapGraphView. Files: [LichGraphView.tsx](src/renderer/components/panels/LichGraphView.tsx), [lichLayout.ts](src/renderer/components/panels/lichLayout.ts).
+
+#### 19.15.1 Auto-Layout
+
+`autoLayoutLich(rooms, {rootId, cellSize, seedPositions})` is a pure-function BFS room placer driven by Lich's own `wayto` command strings. Each room's outgoing `wayto` is mapped to a cardinal direction offset (`DIR_OFFSETS` table covers n/s/e/w/ne/nw/se/sw/up/down + abbreviations + `climb/go/walk/run/crawl` verb-prefixed variants); the algorithm BFS-walks the graph from the root and places each neighbor at the natural grid offset, falling back to a `COLLISION_WIGGLE` list (8 sub-cell offsets) when the natural cell is occupied. Non-directional moves (`go door`, `climb ladder`) land in the first available wiggle slot adjacent to their source so the connection at least renders nearby.
+
+`cellSize` (default 60, set to `GENIE_PITCH = 40` by LichGraphView so Genie's native room spacing carries through) is multiplied into the returned positions at the end so the renderer can use them directly without an extra multiplier. `seedPositions` (an optional `Map<roomId, LayoutPos>`) lets callers anchor matched rooms at hand-curated coordinates — LichGraphView feeds Genie's `x/y/z ÷ GENIE_PITCH` for every matched room here, so zones with Genie coverage look hand-laid-out while zones without coverage are BFS'd around the seeded anchors.
+
+Returns `{positions, unplaced, bbox}`. `unplaced` collects rooms the placer couldn't fit (non-directional move with every wiggle slot taken) so the renderer can choose between skipping them or clustering them — currently they're silently skipped.
+
+#### 19.15.2 Neighborhood Scope
+
+DR is densely connected — 25 BFS hops can pull in thousands of rooms and produces a hairball. The default scope is 8 hops (`DEFAULT_HOPS`) with a `HOP_CHOICES = [5, 8, 15, 25]` selector in the subbar. `neighborhood(db, rootId, hops)` returns a `Map<id, LichRoom>` containing only rooms within scope — both the layout and the rendering iterate only this subset.
+
+#### 19.15.3 Tier Rendering
+
+`bfsHopDistances()` computes hop distance from the player to every room in scope. `tierForHop(h)` converts that to a 5-step visual tier (0 = current room, 1 = immediate exits, 2 = near, 3 = mid, 4 = far context). Tier drives node size, opacity, stroke width, and whether labels render. Selection/hover/path-walk promote a far room to tier 2 so interactions stay legible.
+
+| Tier | NODE_SIZE | NODE_OPACITY | NODE_STROKE_W | Visual |
+|---|---|---|---|---|
+| 0 | 24 | 1.0 | 2.5 | Circle + pulsing halo + persistent green label |
+| 1 | 16 | 1.0 | 1.4 | Rounded rect; label visible above LABEL_ZOOM (1.5) |
+| 2 | 13 | 0.85 | 1.1 | Rounded rect, mildly faded |
+| 3 | 9 | 0.55 | 0.8 | Small rounded rect, more faded |
+| 4 | 4 | 0.30 | 0.0 | Bare dot — "another room exists here" only |
+
+#### 19.15.4 Edge Rendering
+
+Edges are drawn in two passes per render:
+
+1. **Lich wayto (solid lines)** — for every visible room with a known wayto destination also in scope, draw a center-to-center line. Color by `arcColor(cmd)`: cardinal → `var(--map-arc-cardinal)`, vertical → `var(--map-arc-vertical)`, other → `var(--map-arc-hidden)`. Stroke width and opacity fade by the dimmer endpoint's tier.
+2. **Genie arcs (dashed lines)** — only fills GAPS where Genie has an arc but Lich's `wayto` doesn't. The composite-key `genieIdToLich.get(zonedKey(zoneId, arc.destination))` resolves Genie's local arc destination back to a Lich room ID. Dashed style unambiguously signals "Genie knows this exit; Lich's database doesn't" — useful diagnostic for the mapping team.
+
+Drawn-pair dedup uses `[min, max].join('-')` so reciprocal wayto entries are drawn once. Each edge has `pointerEvents="stroke"` and `onMouseEnter`/`onMouseLeave` handlers that set `hoveredEdge` state; a label appears at the midpoint of the hovered edge showing the move command (`(Genie only)` suffix when the source is a dashed Pass-2 fallback).
+
+#### 19.15.5 Genie Augmentation Layer
+
+When Genie data is loaded, four additional visual layers light up:
+
+- **District tints** — for each visible room with a known zone, a soft 38px-radius disk filled at 10% opacity sits behind the node. Overlapping disks of the same zone blend into a cloud shape giving spatial orientation at any zoom. `zoneTintColor()` hashes the zone name to a deterministic HSL hue so each zone keeps the same tint across reloads.
+- **Landmark glyph overlay** — `LANDMARK_GLYPHS` maps recognised Genie color hex codes to icons (`$` shop, `+` healer, `★` stat training, `⇆` transport, `⌂` housing, `⚓` depart, `✶` favor altar, `⛏` mining, `T` lumberjacking, `✟` shrine, `⛺` ranger trailhead, `⚠` obstacle, `⚔` guildleader, `!` interesting). Renders centred on tier-≤2 nodes with a white halo so it stays legible over any fill color.
+- **Dashed-arc fallback** — Pass 2 edge rendering described above (§19.15.4).
+- **Rich tooltips** — `#LichID · Genie #N · matchConfidence chip · zone name · color legend · note aliases`. The confidence chip surfaces only when match was non-exact, naming the strategy that got the match (`≈ case`, `via alias`, `via zone`, `via desc`, `via arcs`, `via desc-only`).
+
+#### 19.15.6 Last-Walked Trail
+
+`trail: number[]` (cap `TRAIL_LENGTH = 8`) is updated by a `useEffect([currentRoom?.id])` that pushes the current room id onto the head, dedupes against the previous head, and slices to length. Trail glows render between zone tints and edges (so edges stay legible on top): linear fade by index, freshest brightest, painted as concentric `var(--map-current-color)` disks at ~18% opacity. The head of the trail is the current room, which already gets its own pulsing halo — the trail loop skips index 0 to avoid double-painting.
+
+#### 19.15.7 Search
+
+Search input in the subbar (≥2 chars) does a case-insensitive substring match against the FULL Lich DB (not just the rendered neighborhood) so the player can find a bank/healer/whatever from anywhere in the world. Results capped at 40. Picking a result selects + recenters on it if it's within the rendered scope; otherwise just selects it (informational — player must walk closer to bring it into the auto-layout's scope).
+
+#### 19.15.8 Zoom Lifecycle
+
+Three separate cases handled with a `hasFittedRef` sentinel to prevent the player's chosen zoom from being wiped on every walk:
+
+1. **Initial load** — fit-to-view once when layout first becomes ready.
+2. **Hops changed** — refit, because the visible set changed dramatically.
+3. **Player walked** — recenter (pan only, preserve scale).
+
+Mixing all three in a single `useEffect([layout])` was the original bug: every wayto-driven re-layout fired a refit, wiping zoom.
+
+#### 19.15.9 NEEDS MAPPING Banner
+
+When the game emits a room title but the Lich DB doesn't contain that room ID, a high-visibility amber banner renders above the canvas:
+
+> ⚠ `Lich #1234 not in map` · *Room Title* · `NEEDS MAPPING`
+
+This catches the case where the player has walked into a room the Lich repository doesn't yet know about — actionable for the community mapping effort.
 
 ### 19.12 Future Work
 
 | Item | Notes |
 |---|---|
-| World map (F13) | Continuous multi-zone SVG — BFS offset inference from cross-zone wayto edges; full spec in §25.8 Phase 2; shelved until zone-by-zone view is stable |
+| World map (F13) | Continuous multi-zone SVG — the Lich-native layout already runs over the entire reachable graph in principle; F13 reduces to raising `DEFAULT_HOPS` past the practical visual limit and adding zoom-aware culling so the hairball stays usable. Spec in §25.8 Phase 2. |
 | Exit stubs | Draw short stubs from room edge rather than center-to-center (Genie convention); cleaner at high zoom |
-| Cross-file pathfinding | Follow arcs whose destination lives in a different zone file |
 | Configurable walk delay | 600 ms/step is hardcoded; expose as a setting |
 | Room notes / bookmarks | Player-added per-room annotations persisted locally |
+| Diagonal walls (one-way arrows) | Lich `wayto` is directional; render arrowheads on edges where the reciprocal entry doesn't exist |
+| Seed-conflict reconciliation | When two Genie nodes seed the same Lich room (or vice versa), the layout currently picks the first; a deterministic tiebreaker on confidence chip would be clearer |
 
 ---
 
@@ -2825,6 +2898,29 @@ state:
 #### v1 → v2 migration
 
 > Removed in v0.6.1. Pre-v0.6.0 testers should wipe `profiles/{Character}.yaml` before first launch on v0.6.1+ so Lichborne re-creates clean v2 files from a fresh login. (Decision was viable because the tester pool is small — see `Tracker.md` for the decision log entry.)
+
+#### Migration registry (v0.6.3+)
+
+Each profile file declares its own `profileVersion` (shared = 1, character = 2 today). Read paths consult a per-file migration registry in [profile-migrations.ts](src/renderer/profile-migrations.ts) before applying:
+
+```ts
+// Each map keyed by SOURCE version. `migrations[N]` upgrades a v=N file into
+// v=N+1 shape. The registry walker steps from the file's stamped version up
+// to the current PROFILE_VERSION, applying each step in sequence.
+export const sharedMigrations:    Record<number, (data: any) => any> = { /* empty */ }
+export const characterMigrations: Record<number, (data: any) => any> = { /* empty */ }
+```
+
+**Read flow** (`importSharedProfile` / `importCharacterProfile`):
+1. Parse YAML; read `profileVersion` (legacy files without the key are treated as the lowest current version — shared=1, character=2, since both files have always been at those shapes).
+2. Call `runMigrations(data, fileVersion, currentVersion, registry)` which walks `fileVersion → currentVersion` applying each registered step.
+3. If a step is missing OR the file's version is HIGHER than the current code knows about, `runMigrations` returns `null`; the import logs a warning (`[profile] X.yaml is version N, expected M. Skipping import.`) and **the on-disk file is preserved untouched** — never overwritten by a shape the code can't understand. Recovery path: downgrade Lichborne, or hand-edit the YAML.
+
+**When to add a migration:** the moment a breaking schema change goes in. Bump the version constant in `profile.ts` (`SHARED_PROFILE_VERSION` or `CHARACTER_PROFILE_VERSION`), register a migration keyed by the PREVIOUS version, and ship — old YAMLs auto-upgrade on first read after install. Migrations must be pure functions; no localStorage writes, no network, no side effects, so a failed run leaves the on-disk file intact for the caller to handle.
+
+**What is NOT a breaking change:** adding a new optional field, adding a new key under `state:` (the dynamic map absorbs it automatically), adding a new entry to `games`. These don't need a version bump — the existing v=N parser handles them via the `Partial<Profile>` import shape.
+
+**What IS a breaking change:** renaming a top-level field, changing a field's type (string → object), restructuring `advancedSettings`, splitting one field into many. These need a bump + migration.
 
 ---
 

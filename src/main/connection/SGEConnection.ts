@@ -43,7 +43,11 @@ export class SGEConnection extends EventEmitter {
     })
   }
 
-  async authenticate(account: string, password: string): Promise<CharacterEntry[]> {
+  // gameCode selects which Simutronics game the character list is filtered for.
+  // 'DR' = DragonRealms Prime (default for back-compat), 'DRX' = Platinum,
+  // 'DRT' = Test, 'DRF' = The Fallen. Passing the wrong code returns an empty
+  // list or characters from a different shard.
+  async authenticate(account: string, password: string, gameCode: string = 'DR'): Promise<CharacterEntry[]> {
     // Step 1: Send K, read exactly 32 bytes
     this.send('K\r\n')
     const key = await this.readBytes(32)
@@ -56,7 +60,7 @@ export class SGEConnection extends EventEmitter {
       throw new Error(`Authentication failed: ${authRaw.trim()}`)
     }
 
-    this.send('G\tDR')
+    this.send(`G\t${gameCode}`)
     const gRaw = await this.readRaw(200)
     if (gRaw.toUpperCase() === 'PROBLEM') {
       throw new Error('Account has a problem — check play.net for details')

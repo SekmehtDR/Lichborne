@@ -63,12 +63,16 @@ declare global {
       savePassword:   (account: string, password: string) => Promise<void>
       loadPassword:   (account: string)                   => Promise<string | null>
       deletePassword: (account: string)                   => Promise<void>
+      // EAccess preview (Add Character wizard)
+      eaccessFetchCharacters: (account: string, password: string, gameCode: string) =>
+        Promise<{ ok: true; characters: { key: string; name: string }[] } | { ok: false; error: string }>
       // Profile I/O
       readSharedProfile: () => Promise<unknown | null>
       writeSharedProfile: (data: unknown) => Promise<void>
       readCharacterProfile: (character: string) => Promise<unknown | null>
       writeCharacterProfile: (character: string, data: unknown) => Promise<void>
       listCharacterProfiles: () => Promise<string[]>
+      deleteCharacterProfile: (character: string) => Promise<void>
     }
   }
 }

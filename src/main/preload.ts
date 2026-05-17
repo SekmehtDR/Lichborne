@@ -147,10 +147,16 @@ contextBridge.exposeInMainWorld('api', {
   loadPassword:   (account: string):                   Promise<string | null> => ipcRenderer.invoke('password:load',   account),
   deletePassword: (account: string):                   Promise<void>          => ipcRenderer.invoke('password:delete', account),
 
+  // ── EAccess preview (Add Character wizard) ──────────────────────────────────
+  eaccessFetchCharacters: (account: string, password: string, gameCode: string):
+    Promise<{ ok: true; characters: { key: string; name: string }[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('eaccess:fetch-characters', account, password, gameCode),
+
   // ── Profile I/O ─────────────────────────────────────────────────────────────
   readSharedProfile:    ():                                        Promise<unknown | null> => ipcRenderer.invoke('profile:read-shared'),
   writeSharedProfile:   (data: unknown):                          Promise<void>           => ipcRenderer.invoke('profile:write-shared', data),
   readCharacterProfile: (character: string):                      Promise<unknown | null> => ipcRenderer.invoke('profile:read-character', character),
   writeCharacterProfile:(character: string, data: unknown):       Promise<void>           => ipcRenderer.invoke('profile:write-character', character, data),
   listCharacterProfiles:():                                        Promise<string[]>       => ipcRenderer.invoke('profile:list'),
+  deleteCharacterProfile:(character: string):                      Promise<void>           => ipcRenderer.invoke('profile:delete-character', character),
 })

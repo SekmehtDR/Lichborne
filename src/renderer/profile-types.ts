@@ -21,6 +21,7 @@ export interface SharedAdvancedSettings {
 }
 
 export interface SharedProfile {
+  profileVersion: 1
   account: string
   advancedSettings: SharedAdvancedSettings
   mapDir: string

@@ -195,8 +195,59 @@
 
 .advanced-row {
   display: grid;
-  grid-template-columns: 72px 108px 1fr;
+  grid-template-columns: 72px 1fr;
   gap: 8px;
+}
+
+/* ── Games List (read-only inventory in Lich Setup) ────────────────────── */
+
+.games-list {
+  margin-top: 4px;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+}
+
+.games-list-label {
+  font-size: 0.68rem;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.games-list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.games-list-item {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.78rem;
+  padding: 2px 0;
+}
+
+.games-list-code {
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.games-list-name {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.games-list-port {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .advanced-row label {

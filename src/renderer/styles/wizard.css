@@ -1,0 +1,307 @@
+/* ── Add Character Wizard ───────────────────────────────────────────────── */
+
+.wiz-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--bg-app) 80%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  backdrop-filter: blur(2px);
+}
+
+.wiz-modal {
+  width: 460px;
+  max-height: 92vh;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+.wiz-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.wiz-title {
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+}
+
+.wiz-step {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+}
+
+.wiz-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.wiz-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Body ───────────────────────────────────────────────────────────── */
+
+.wiz-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wiz-section-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.wiz-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.wiz-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.wiz-label input[type="text"],
+.wiz-label input[type="password"],
+.wiz-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 7px 10px;
+  height: 32px;
+  outline: none;
+  transition: border-color 0.15s;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.wiz-label input:focus,
+.wiz-input:focus {
+  border-color: var(--accent-dim);
+}
+
+.wiz-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* ── Radio groups (mode, game, character) ───────────────────────────── */
+
+.wiz-radio-group,
+.wiz-game-list,
+.wiz-char-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wiz-radio,
+.wiz-game,
+.wiz-char {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.wiz-radio:hover,
+.wiz-game:hover,
+.wiz-char:hover {
+  border-color: var(--accent-dim);
+}
+
+.wiz-radio--active,
+.wiz-game--active,
+.wiz-char--active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-base));
+}
+
+.wiz-radio input[type="radio"],
+.wiz-game input[type="radio"],
+.wiz-char input[type="radio"] {
+  grid-row: 1 / span 2;
+  margin: 0;
+}
+
+.wiz-radio-main {
+  grid-column: 2;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.wiz-radio-hint {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.wiz-radio-desc {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.wiz-game-name,
+.wiz-char-name {
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.wiz-game-code {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ── Error display ───────────────────────────────────────────────────── */
+
+.wiz-error {
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* ── Footer / nav buttons ────────────────────────────────────────────── */
+
+.wiz-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+
+.wiz-btn-back,
+.wiz-btn-cancel,
+.wiz-btn-next,
+.wiz-btn-finish {
+  border-radius: 4px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.wiz-btn-back {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.wiz-btn-back:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--text-primary);
+}
+.wiz-btn-back:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wiz-btn-lich-setup {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-size: 0.78rem;
+}
+.wiz-btn-lich-setup:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.wiz-btn-lich-setup:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wiz-btn-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+.wiz-btn-cancel:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.wiz-btn-next,
+.wiz-btn-finish {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.wiz-btn-next:hover:not(:disabled),
+.wiz-btn-finish:hover:not(:disabled) {
+  background: var(--accent);
+}
+.wiz-btn-next:disabled,
+.wiz-btn-finish:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

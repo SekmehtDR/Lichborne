@@ -540,17 +540,27 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const scrollRef             = useRef<HTMLDivElement | null>(null)
   const pinnedRef          = useRef(true)
   const suppressUntilRef   = useRef(0)
-  // Stable scroll handler — re-pins when user scrolls back to bottom.
-  // Never unpins programmatically; unpinning happens only via onWheel / keyboard.
+  // Stable scroll handler — re-pins when user scrolls back to bottom, and now
+  // also unpins when the user scrolls away from the bottom outside the
+  // suppression window. The unpin branch catches scrollbar arrow-button clicks
+  // and thumb-drags that do NOT dispatch wheel events (so `onWheel` misses
+  // them). The 10/40px deadband prevents flip-flop near the threshold.
+  // suppressUntilRef is set around every programmatic scroll (followOutput,
+  // totalListHeightChanged correction, etc.) so we never mis-unpin from
+  // Virtuoso's own auto-scroll back to bottom.
   const handleVirtuosoScrollRef = useRef(() => {
     if (Date.now() < suppressUntilRef.current) return
     const el = scrollRef.current
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (dist <= 10 && !pinnedRef.current) {
-      pinnedRef.current = true
-      newLineCountRef.current = 0
-      setNewLineCount(0)
+    if (dist <= 10) {
+      if (!pinnedRef.current) {
+        pinnedRef.current = true
+        newLineCountRef.current = 0
+        setNewLineCount(0)
+      }
+    } else if (dist > 40 && pinnedRef.current) {
+      pinnedRef.current = false
     }
   })
   const newLineCountRef  = useRef(0)
@@ -956,7 +966,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       const active = document.activeElement
       const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
-      if (active !== inputRef.current && !inTextField) {
+      // Allow scroll keys (Page/Home/End) to fire when the command input is
+      // focused — that's the normal play state and the keys' DR-client meaning
+      // is "scroll the story window", not "move text cursor". Suppress only
+      // when *another* text field (e.g. a highlight rule editor) is focused.
+      const inOtherTextField = inTextField && active !== inputRef.current
+      if (!inOtherTextField) {
         const el = scrollRef.current
         if (e.key === 'End')     { e.preventDefault(); scrollToBottom() }
         if (e.key === 'Home')    { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop = 0 }

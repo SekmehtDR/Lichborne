@@ -2,52 +2,17 @@ import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
 import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile, clearCharacterLocalStorage } from '../profile'
 import { useSessions } from '../SessionsContext'
+import {
+  type AdvancedSettings,
+  loadAdvanced,
+  saveAdvanced,
+  gameCodeFromPort,
+} from '../lichSettings'
+import LichSetupFields from './LichSetupFields'
 import '../styles/login.css'
 
-const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
-const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
-const DEFAULT_LICH_PORT = 11024
-
-const ADV_KEY      = 'lichborne.advancedSettings'
 const ACCOUNT_KEY  = 'lichborne.account'
 const REMEMBER_KEY = 'lichborne.rememberPassword'
-
-interface AdvancedSettings {
-  useLich: boolean
-  lichPath: string
-  rubyPath: string
-  lichPort: number
-  portLocked: boolean
-  lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
-  modeLocked: boolean
-  lichDelay: number
-  hideLichWindow: boolean
-  showAdvanced: boolean
-}
-
-const ADV_DEFAULTS: AdvancedSettings = {
-  useLich: true,
-  lichPath: DEFAULT_LICH,
-  rubyPath: DEFAULT_RUBY,
-  lichPort: DEFAULT_LICH_PORT,
-  portLocked: true,
-  lichMode: '--stormfront',
-  modeLocked: true,
-  lichDelay: 5,
-  hideLichWindow: false,
-  showAdvanced: false,
-
-}
-
-function loadAdvanced(): AdvancedSettings {
-  try {
-    return { ...ADV_DEFAULTS, ...JSON.parse(localStorage.getItem(ADV_KEY) ?? '{}'), showAdvanced: false }
-  } catch { return { ...ADV_DEFAULTS } }
-}
-
-function saveAdvanced(s: AdvancedSettings) {
-  localStorage.setItem(ADV_KEY, JSON.stringify(s))
-}
 
 import type { SessionId } from '../../shared/types'
 
@@ -57,13 +22,6 @@ export interface SessionInfo {
   character: string
   game: string
   useLich: boolean
-}
-
-function gameCodeFromPort(port: number): string {
-  if (port === 11624) return 'DRT'
-  if (port === 11124) return 'DRX'
-  if (port === 11324) return 'DRF'
-  return 'DR'
 }
 
 interface Props {
@@ -82,7 +40,7 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
   const [rememberPassword, setRememberPassword] = useState(() => localStorage.getItem(REMEMBER_KEY) === 'true')
 
   const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
-  const { useLich, lichPath, rubyPath, lichPort, portLocked, lichMode, modeLocked, lichDelay, hideLichWindow, showAdvanced } = adv
+  const { useLich, lichPath, rubyPath, lichPort, lichMode, lichDelay, hideLichWindow, showAdvanced } = adv
   function setAdv1<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) {
     setAdv(prev => ({ ...prev, [key]: value }))
   }
@@ -96,9 +54,6 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
   useEffect(() => { accountRef.current = account }, [account])
   useEffect(() => { characterRef.current = character }, [character])
   useEffect(() => { advRef.current = adv }, [adv])
-
-  type DiscoveryResult = Awaited<ReturnType<typeof window.api.discoverLichPaths>> | null
-  const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
 
   useEffect(() => {
     saveAdvanced(adv)
@@ -124,17 +79,6 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
       setAccount(localStorage.getItem(ACCOUNT_KEY) ?? '')
     }).catch(console.error)
   }, [])
-
-  async function runDiscovery() {
-    const found = await window.api.discoverLichPaths(rubyPath, lichPath)
-    setDiscoveryResult(found)
-    if (found.rubyPath) setAdv1('rubyPath', found.rubyPath)
-    if (found.lichPath) setAdv1('lichPath', found.lichPath)
-  }
-
-  useEffect(() => {
-    if (!showAdvanced) setDiscoveryResult(null)
-  }, [showAdvanced])
 
   useEffect(() => {
     const el = statusLogRef.current
@@ -321,182 +265,7 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
 
           {showAdvanced && (
             <div className="advanced-panel">
-              {!useLich && (
-                <p className="advanced-direct-note">No advanced settings for connecting directly.</p>
-              )}
-              {useLich && (() => {
-                  const dr = discoveryResult?.isWindows ? discoveryResult : null
-                  const rubyOk = dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
-                  const lichOk  = dr ? (dr.lichAlreadyValid  || dr.lichPath  !== null) : null
-
-                  let statusEl: React.ReactNode = null
-                  if (dr) {
-                    const rubyNew = dr.rubyPath !== null
-                    const lichNew = dr.lichPath !== null
-                    let type: 'ok' | 'warn' | 'error'
-                    let msg: string
-                    if (!dr.baseFolderExists) {
-                      type = 'error'
-                      msg = 'No C:\\Ruby4Lich5 folder found — please browse to your Ruby and Lich5 file locations manually.'
-                    } else if (rubyOk && lichOk) {
-                      if (rubyNew || lichNew) {
-                        const found = [rubyNew && 'Ruby', lichNew && 'Lich5'].filter(Boolean).join(' and ')
-                        type = 'ok'
-                        msg = `${found} path${rubyNew && lichNew ? 's' : ''} auto-discovered — verify before connecting.`
-                      } else {
-                        type = 'ok'
-                        msg = 'Both paths verified successfully.'
-                      }
-                    } else if (!rubyOk && !lichOk) {
-                      type = 'warn'
-                      msg = 'Ruby and Lich5 files not found in C:\\Ruby4Lich5 — ensure Lich5 is properly installed, or browse to the correct file locations.'
-                    } else if (!rubyOk) {
-                      type = 'warn'
-                      msg = 'Ruby (ruby.exe) not found — ensure Ruby for Lich5 is installed, or browse to the correct location.'
-                    } else {
-                      type = 'warn'
-                      msg = 'Lich5 (lich.rbw) not found — ensure Lich5 is installed at C:\\Ruby4Lich5\\Lich5\\, or browse to the file manually.'
-                    }
-                    statusEl = (
-                      <div className={`lich-discovery-status lich-discovery-status--${type}`}>
-                        <span className="lich-discovery-icon">{type === 'ok' ? '✓' : type === 'warn' ? '⚠' : '✕'}</span>
-                        <span>{msg}</span>
-                      </div>
-                    )
-                  }
-
-                  return (
-                  <>
-                  <div className="lich-detect-row">
-                    <button type="button" className="btn-auto-detect" onClick={runDiscovery}>
-                      ↺ Auto Detect
-                    </button>
-                  </div>
-                  {statusEl}
-                  <label>
-                    Ruby Path (ruby.exe)
-                    <div className="path-input-row">
-                      <input
-                        type="text"
-                        value={rubyPath}
-                        onChange={e => setAdv1('rubyPath', e.target.value)}
-                        disabled={connecting}
-                      />
-                      <button
-                        type="button"
-                        className="btn-browse"
-                        disabled={connecting}
-                        onClick={async () => {
-                          const p = await window.api.browseFile([{ name: 'Ruby Executable', extensions: ['exe'] }])
-                          if (p) setAdv1('rubyPath', p)
-                        }}
-                      >Browse</button>
-                      {rubyOk === true  && <span className="path-status-icon path-status-icon--valid">✓</span>}
-                      {rubyOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
-                    </div>
-                  </label>
-                  <label>
-                    Lich Path (lich.rbw)
-                    <div className="path-input-row">
-                      <input
-                        type="text"
-                        value={lichPath}
-                        onChange={e => setAdv1('lichPath', e.target.value)}
-                        disabled={connecting}
-                      />
-                      <button
-                        type="button"
-                        className="btn-browse"
-                        disabled={connecting}
-                        onClick={async () => {
-                          const p = await window.api.browseFile([{ name: 'Lich Script', extensions: ['rbw', 'rb'] }])
-                          if (p) setAdv1('lichPath', p)
-                        }}
-                      >Browse</button>
-                      {lichOk === true  && <span className="path-status-icon path-status-icon--valid">✓</span>}
-                      {lichOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
-                    </div>
-                  </label>
-                  <div className="advanced-row">
-                    <label>
-                      Delay (s)
-                      <input
-                        type="number"
-                        value={lichDelay}
-                        min={1}
-                        max={30}
-                        onChange={e => setAdv1('lichDelay', parseInt(e.target.value, 10))}
-                        disabled={connecting}
-                      />
-                    </label>
-                    <label>
-                      Port
-                      <div className="port-input-row">
-                        <input
-                          type="number"
-                          value={lichPort}
-                          onChange={e => setAdv1('lichPort', parseInt(e.target.value, 10))}
-                          disabled={connecting || portLocked}
-                          className={portLocked ? 'port-locked' : ''}
-                        />
-                        <button
-                          type="button"
-                          className={`btn-lock ${portLocked ? 'btn-lock--locked' : 'btn-lock--unlocked'}`}
-                          title={portLocked ? 'Unlock port' : 'Lock port'}
-                          disabled={connecting}
-                          onClick={() => setAdv(prev => ({
-                            ...prev,
-                            portLocked: !prev.portLocked,
-                            ...(prev.portLocked ? {} : { lichPort: DEFAULT_LICH_PORT }),
-                          }))}
-                        >
-                          {portLocked ? '🔒' : '🔓'}
-                        </button>
-                      </div>
-                    </label>
-                    <label>
-                      Mode
-                      <div className="port-input-row">
-                        <select
-                          value={lichMode}
-                          onChange={e => setAdv1('lichMode', e.target.value as AdvancedSettings['lichMode'])}
-                          disabled={connecting || modeLocked}
-                          className={modeLocked ? 'port-locked' : ''}
-                        >
-                          <option value="--stormfront">--stormfront</option>
-                          <option value="--wizard">--wizard</option>
-                          <option value="--avalon">--avalon</option>
-                          <option value="--frostbite">--frostbite</option>
-                          <option value="--genie">--genie</option>
-                        </select>
-                        <button
-                          type="button"
-                          className={`btn-lock ${modeLocked ? 'btn-lock--locked' : 'btn-lock--unlocked'}`}
-                          title={modeLocked ? 'Unlock mode' : 'Lock mode'}
-                          disabled={connecting}
-                          onClick={() => setAdv(prev => ({
-                            ...prev,
-                            modeLocked: !prev.modeLocked,
-                            ...(!prev.modeLocked ? { lichMode: ADV_DEFAULTS.lichMode } : {}),
-                          }))}
-                        >
-                          {modeLocked ? '🔒' : '🔓'}
-                        </button>
-                      </div>
-                    </label>
-                  </div>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={hideLichWindow}
-                      onChange={e => setAdv1('hideLichWindow', e.target.checked)}
-                      disabled={connecting}
-                    />
-                    Hide Lich window (run as background process)
-                  </label>
-                  </>
-                  )
-                })()}
+              <LichSetupFields adv={adv} setAdv={setAdv} disabled={connecting} />
             </div>
           )}
 

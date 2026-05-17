@@ -1,6 +1,7 @@
 import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter } from './characterScope'
+import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -12,7 +13,12 @@ const DEFAULT_GAMES = {
   DRF: { name: 'DragonRealms The Fallen',  gameCode: 'DRF', lichPort: 11324, lichArguments: '--fallen' },
 }
 
-const PROFILE_VERSION = 2 as const
+// Schema versions for the two profile files. Bumped only when a breaking
+// change ships — register a migration in `profile-migrations.ts` keyed by the
+// PREVIOUS version (e.g. bumping CHARACTER from 2 → 3 means add
+// `characterMigrations[2]` that upgrades v2-shaped data into v3-shaped data).
+const SHARED_PROFILE_VERSION    = 1 as const
+const CHARACTER_PROFILE_VERSION = 2 as const
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +28,7 @@ export function buildSharedProfile(): SharedProfile {
   })()
 
   return {
+    profileVersion:   SHARED_PROFILE_VERSION,
     account:          localStorage.getItem('lichborne.account') ?? '',
     advancedSettings: {
       lichPath:       adv.lichPath       ?? 'C:\\Ruby4Lich5\\Lich5\\lich.rbw',
@@ -64,7 +71,7 @@ export function buildCharacterProfile(
   }
 
   return {
-    profileVersion: PROFILE_VERSION,
+    profileVersion: CHARACTER_PROFILE_VERSION,
     account,
     character,
     game,
@@ -94,7 +101,20 @@ export async function exportCharacterProfile(
 export async function importSharedProfile(): Promise<void> {
   const raw = await window.api.readSharedProfile()
   if (!raw || typeof raw !== 'object') return
-  const data = raw as Partial<SharedProfile>
+
+  // Version check + migrate. Files predating the version field (no
+  // `profileVersion` key, this was the only state from v0.6.0–v0.6.2) are
+  // treated as v1 — same shape as current. Future-version files are skipped
+  // with a warning so a downgrade or hand-edit can rescue them; we never
+  // clobber a YAML we don't understand.
+  const rawObj = raw as Record<string, unknown>
+  const fileVersion = typeof rawObj.profileVersion === 'number' ? rawObj.profileVersion : 1
+  const migrated = runMigrations(rawObj, fileVersion, SHARED_PROFILE_VERSION, sharedMigrations)
+  if (migrated === null) {
+    console.warn(`[profile] _shared.yaml is version ${fileVersion}, expected ${SHARED_PROFILE_VERSION}. Skipping import.`)
+    return
+  }
+  const data = migrated as Partial<SharedProfile>
 
   if (data.account) localStorage.setItem('lichborne.account', data.account)
 
@@ -125,7 +145,19 @@ export async function importSharedProfile(): Promise<void> {
 export async function importCharacterProfile(character: string): Promise<CharacterProfile | null> {
   const raw = await window.api.readCharacterProfile(character)
   if (!raw || typeof raw !== 'object') return null
-  const data = raw as Partial<CharacterProfile>
+
+  // Version check + migrate. Files that already stamp `profileVersion: 2`
+  // (v0.6.0+) are passed through unchanged because the registry's at the
+  // current schema. Future-version files are refused with a warning so the
+  // on-disk YAML is preserved for downgrade/recovery rather than overwritten.
+  const rawObj = raw as Record<string, unknown>
+  const fileVersion = typeof rawObj.profileVersion === 'number' ? rawObj.profileVersion : 2
+  const migrated = runMigrations(rawObj, fileVersion, CHARACTER_PROFILE_VERSION, characterMigrations)
+  if (migrated === null) {
+    console.warn(`[profile] ${character}.yaml is version ${fileVersion}, expected ${CHARACTER_PROFILE_VERSION}. Skipping import.`)
+    return null
+  }
+  const data = migrated as Partial<CharacterProfile>
 
   // Shared boot-fallback theme
   if (data.theme) localStorage.setItem('lichborne.theme', data.theme)
