@@ -1,9 +1,10 @@
 ## What's new in v0.6.4
 
-**Hotfix:** profiles are no longer destroyed by Lichborne upgrades.
+**Hotfix:** profiles are no longer destroyed by Lichborne upgrades, and the File → Open Profiles Folder menu works on fresh installs.
 
-- **Profiles moved out of the install directory.** Pre-v0.6.4 stored them inside `<install-dir>\profiles\`, which the NSIS installer wiped on every upgrade (the previous version's uninstaller runs first, removing everything in the install folder, then the new build is extracted). Profiles now live in `%APPDATA%\Lichborne\profiles\` — the standard userData location, untouched by installs and uninstalls.
-- **Two-stage migration.** When you install v0.6.4, the installer itself copies any existing `<install-dir>\profiles\*.yaml` (and `.bak` backups) into the new userData location BEFORE running the old version's uninstaller — so a normal v0.6.3 → v0.6.4 upgrade rescues whatever you had. A second runtime check on first launch catches any files left behind by non-installer paths (portable copies, manual placements). The old folder is left in place either way so you can verify before removing it manually.
+- **Profiles moved out of the install directory.** Pre-v0.6.4 stored them inside `<install-dir>\profiles\`, which the NSIS installer wiped on every upgrade (the previous version's uninstaller runs first, removing everything in the install folder, then the new build is extracted). Profiles now live in `%APPDATA%\lichborne\profiles\` — the standard userData location, untouched by installs and uninstalls.
+- **Two-stage migration on upgrade.** The installer's pre-init hook reads the previous install location from the registry and copies `<install-dir>\profiles\*.yaml` (and `.bak` backups) into the new userData location BEFORE the old uninstaller runs, so a normal v0.6.3 → v0.6.4 upgrade rescues your data. A second runtime check on first launch catches any files left behind by non-installer paths (portable copies, manual placements). The old folder is left in place either way so you can verify before removing it manually.
+- **"Open Profiles Folder" creates the folder if missing.** The File-menu entry now ensures the profiles directory exists on disk before opening it, so it works correctly on fresh installs that haven't written any profile yet (previously Windows showed a "cannot find" dialog).
 - **If you already upgraded v0.6.2 → v0.6.3** before v0.6.4 existed, the v0.6.3 install wiped your old profiles before v0.6.4's rescue hook could run. That data is unrecoverable from Lichborne itself; you'll need to re-add your characters. Sorry. This is the bug v0.6.4 prevents from ever happening again.
 
 ## What's new in v0.6.3

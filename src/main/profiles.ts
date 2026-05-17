@@ -57,16 +57,17 @@ function migrateLegacyProfilesDir(): void {
 
 // Public accessor — every read/write path goes through this, so the migration
 // check runs once at first access. After the first call, the `_migrationChecked`
-// flag makes subsequent calls trivial. Exported so the application menu's
-// "Open Profiles Folder" entry can shell.openPath() the same canonical path
-// that the read/write helpers use — no risk of pointing the user at the
-// pre-v0.6.4 install-dir location.
-export function getProfilesDir(): string {
+// flag makes subsequent calls trivial.
+function getProfilesDir(): string {
   migrateLegacyProfilesDir()
   return _profilesDirPath()
 }
 
-function ensureProfilesDir(): string {
+// Exported variant that GUARANTEES the directory exists on disk. Used by the
+// "Open Profiles Folder" menu item: clicking it must always succeed even on a
+// fresh install where no profile has been written yet (without this, Windows
+// shows a "cannot find" dialog because the path is computed but never created).
+export function ensureProfilesDir(): string {
   const dir = getProfilesDir()
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
