@@ -51,7 +51,7 @@ The empty-state and "+ Add character" surfaces are **Launcher** (`Launcher.tsx`)
 - **`lichPort` is the Lich front-end port, not a per-shard SGE port**. There's a `GAMES` table in `lichSettings.ts` that maps game codes to conventional Lich ports (DR=11024 / DRX=11124 / DRT=11624 / DRF=11324) but those are Lich's own per-game defaults — they're not interchangeable with Simu's SGE server ports. Don't override `lichPort` from a per-game lookup at credential build-time; that bug shipped briefly in v0.6.3 (Sekmeht/DRT failure) and was reverted. The wizard's `lichPort` field comes from `adv.lichPort`. The character's `game` comes from `c.game` on the launcher card, not from `gameCodeFromPort(adv.lichPort)`.
 
 ### Profile system (DESIGN.md §20)
-All user state is round-tripped to YAML in `profiles/` next to the install:
+All user state is round-tripped to YAML in `profiles/` inside Electron's userData (`%APPDATA%\Lichborne\profiles\` in production). **Do NOT** put profiles inside the install directory — pre-v0.6.4 did, and every NSIS upgrade wiped them because the previous version's uninstaller runs before the new build is extracted. `getProfilesDir()` in [profiles.ts](src/main/profiles.ts) is the single source of truth; a one-time migration copies any pre-v0.6.4 install-dir profiles into userData on first launch after upgrade.
 - `_shared.yaml` — account, Lich paths, port, custom themes, map dir, game definitions (cross-process store; localStorage can't be shared between Electron instances)
 - `<character>.yaml` — per-character settings, theme, layout, automations, contacts
 

@@ -1,3 +1,11 @@
+## What's new in v0.6.4
+
+**Hotfix:** profiles are no longer destroyed by Lichborne upgrades.
+
+- **Profiles moved out of the install directory.** Pre-v0.6.4 stored them inside `<install-dir>\profiles\`, which the NSIS installer wiped on every upgrade (the previous version's uninstaller runs first, removing everything in the install folder, then the new build is extracted). Profiles now live in `%APPDATA%\Lichborne\profiles\` — the standard userData location, untouched by installs and uninstalls.
+- **Two-stage migration.** When you install v0.6.4, the installer itself copies any existing `<install-dir>\profiles\*.yaml` (and `.bak` backups) into the new userData location BEFORE running the old version's uninstaller — so a normal v0.6.3 → v0.6.4 upgrade rescues whatever you had. A second runtime check on first launch catches any files left behind by non-installer paths (portable copies, manual placements). The old folder is left in place either way so you can verify before removing it manually.
+- **If you already upgraded v0.6.2 → v0.6.3** before v0.6.4 existed, the v0.6.3 install wiped your old profiles before v0.6.4's rescue hook could run. That data is unrecoverable from Lichborne itself; you'll need to re-add your characters. Sorry. This is the bug v0.6.4 prevents from ever happening again.
+
 ## What's new in v0.6.3
 
 The login flow has been completely redesigned around a character launcher and a 3-step Add Character wizard. The old "fill in this form every time" screen is gone. The map's graph view has been rebuilt from the ground up — Lich is now the spatial source of truth and Genie maps are an optional polish layer. Plus timestamped profile backups, schema versioning so future upgrades don't require wiping `profiles/`, a couple of long-standing scroll-key bugs squashed, and small polish across the board.

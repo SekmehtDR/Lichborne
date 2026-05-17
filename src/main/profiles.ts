@@ -3,13 +3,67 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as yaml from 'js-yaml'
 
-function getProfilesDir(): string {
-  if (app.isPackaged) {
-    // Production: profiles/ lives next to the exe in the install directory
-    return path.join(path.dirname(app.getPath('exe')), 'profiles')
-  }
-  // Development: profiles/ lives in the project root
+// v0.6.4: profiles moved from `<install-dir>/profiles/` to `<userData>/profiles/`
+// (= `%APPDATA%\Lichborne\profiles\` on Windows). The legacy install-dir location
+// got wiped by the NSIS uninstaller on every upgrade because electron-builder's
+// NSIS template runs the previous version's uninstaller before extracting the
+// new one, removing everything inside $INSTDIR. userData is owned by Electron,
+// lives outside the install footprint, and is the standard place for user data
+// in every other Electron app — it survives upgrades and uninstalls (unless the
+// user explicitly opts in to data removal via nsis.deleteAppDataOnUninstall).
+
+// Internal helper — returns the canonical path without triggering migration.
+// Used by the migration routine itself (which would otherwise recurse).
+function _profilesDirPath(): string {
+  if (app.isPackaged) return path.join(app.getPath('userData'), 'profiles')
   return path.join(app.getAppPath(), 'profiles')
+}
+
+// Pre-v0.6.4 production location. Migration only — never written to going forward.
+function _legacyProfilesDirPath(): string | null {
+  if (!app.isPackaged) return null
+  return path.join(path.dirname(app.getPath('exe')), 'profiles')
+}
+
+// One-time migration: copy YAML/backup files from the legacy install-dir
+// location to the new userData location if (a) legacy dir exists and has YAMLs,
+// AND (b) the new location is empty or missing. Idempotent — once the new dir
+// has any YAML, this is a no-op. Does NOT delete the legacy directory — leaves
+// it alone so a user with concerns can verify before manually removing.
+let _migrationChecked = false
+function migrateLegacyProfilesDir(): void {
+  if (_migrationChecked) return
+  _migrationChecked = true
+  const legacy = _legacyProfilesDirPath()
+  if (!legacy) return
+  try {
+    if (!fs.existsSync(legacy)) return
+    const target = _profilesDirPath()
+    const targetHasYaml = fs.existsSync(target)
+      && fs.readdirSync(target).some(f => f.endsWith('.yaml'))
+    if (targetHasYaml) return
+    const yamlLike = fs.readdirSync(legacy).filter(f => /\.(yaml|bak)$/.test(f))
+    if (yamlLike.length === 0) return
+    if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true })
+    for (const name of yamlLike) {
+      try { fs.copyFileSync(path.join(legacy, name), path.join(target, name)) }
+      catch (e) { console.warn(`[profiles] migrate copy failed for ${name}:`, e) }
+    }
+    console.log(`[profiles] Migrated ${yamlLike.length} legacy file(s) from ${legacy} -> ${target}`)
+  } catch (e) {
+    console.warn('[profiles] Legacy profile migration check failed:', e)
+  }
+}
+
+// Public accessor — every read/write path goes through this, so the migration
+// check runs once at first access. After the first call, the `_migrationChecked`
+// flag makes subsequent calls trivial. Exported so the application menu's
+// "Open Profiles Folder" entry can shell.openPath() the same canonical path
+// that the read/write helpers use — no risk of pointing the user at the
+// pre-v0.6.4 install-dir location.
+export function getProfilesDir(): string {
+  migrateLegacyProfilesDir()
+  return _profilesDirPath()
 }
 
 function ensureProfilesDir(): string {

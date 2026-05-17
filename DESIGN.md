@@ -2771,7 +2771,7 @@ This guarantees the change reaches the YAML within the 2.5s debounce window — 
 ### 20.2 Storage Structure
 
 ```
-<install-dir>\
+<userData>\
   profiles\
     _shared.yaml       — machine-level, shared across all characters and accounts
     Sekmeht.yaml       — per-character profile
@@ -2780,7 +2780,14 @@ This guarantees the change reaches the YAML within the 2.5s debounce window — 
 ```
 
 **Dev mode:** `profiles\` is relative to the project root (`app.getAppPath()`).
-**Production:** `profiles\` is relative to the directory containing the exe (`path.dirname(app.getPath('exe'))`). This ensures the folder is always writable and travels with the installation.
+**Production (v0.6.4+):** `profiles\` is inside Electron's `userData` directory (`app.getPath('userData')` = `%APPDATA%\Lichborne\profiles\` on Windows). userData lives outside the install footprint, so the NSIS uninstaller never touches it — profiles survive upgrades, reinstalls, and version downgrades. Uninstalling Lichborne with `deleteAppDataOnUninstall: false` (the default) preserves them.
+**Pre-v0.6.4 location:** `<install-dir>\profiles\` (next to the exe). The NSIS upgrade flow ran the previous version's uninstaller before extracting the new build, which removed everything from `$INSTDIR` including `profiles\` — every upgrade silently wiped user state. The original "travels with the installation" intent never actually held because installers don't preserve install-dir content across upgrades.
+**Two-stage migration (v0.6.4):**
+
+1. **Installer-time (NSIS `customInit` hook in [build/installer.nsh](build/installer.nsh))** — runs in `.onInit` BEFORE the previous version's uninstaller is invoked. If `$INSTDIR\profiles\` has `.yaml` files and `$APPDATA\Lichborne\profiles\` is empty, `CreateDirectory` ensures the userData destination exists (recursive — also creates the `Lichborne\` parent if missing), then `CopyFiles /SILENT` copies all `*.yaml` and `*.bak` over. The `.bak` copy is guarded with a separate `FileExists` check because `CopyFiles` errors on a no-match source pattern. This is the critical fix for upgrade-path users: the install-dir wipe happens AFTER `customInit`, so profiles get rescued before they're destroyed.
+2. **Runtime ([profiles.ts:migrateLegacyProfilesDir](src/main/profiles.ts))** — runs once on first `getProfilesDir()` call. Same conditions, same source/destination paths. Belt-and-suspenders: catches users who installed via a non-installer path (portable copies, manual file placement, backup restores) where the NSIS hook never ran. Idempotent — once the userData location has any YAML, this is a no-op.
+
+The legacy directory is left in place by both stages — manual cleanup after the user verifies. Users who already upgraded v0.6.2 → v0.6.3 BEFORE v0.6.4 shipped had their legacy directory wiped by NSIS without the rescue hook in place; their data is unrecoverable from Lichborne itself, though their last `.yaml.{timestamp}.bak` files (if any survived elsewhere) can be hand-restored.
 **Git:** `profiles/` is listed in `.gitignore` — account names, Lich paths, and personal config never end up in the repository.
 
 ---

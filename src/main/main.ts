@@ -8,7 +8,7 @@ import { SGEConnection } from './connection/SGEConnection'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
-import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles } from './profiles'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, getProfilesDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
@@ -483,6 +483,10 @@ function setupMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'Open Profiles Folder',
+          click: () => shell.openPath(getProfilesDir()),
+        },
         {
           label: 'Open Data Folder',
           click: () => shell.openPath(app.getPath('userData')),
