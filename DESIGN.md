@@ -2699,17 +2699,26 @@ When Genie data is loaded, four additional visual layers light up:
 
 #### 19.15.7 Search
 
-Search input in the subbar (≥2 chars) does a case-insensitive substring match against the FULL Lich DB (not just the rendered neighborhood) so the player can find a bank/healer/whatever from anywhere in the world. Results capped at 40. Picking a result selects + recenters on it if it's within the rendered scope; otherwise just selects it (informational — player must walk closer to bring it into the auto-layout's scope).
+Search input in the subbar (≥2 chars) does a case-insensitive substring match against the FULL Lich DB (not just the rendered neighborhood) so the player can find a bank/healer/whatever from anywhere in the world. Results capped at 40.
+
+**Search by room ID (v0.6.5)** — if the query is all digits, an exact `lichDb.get(parseInt(q))` lookup runs and the result (if any) is prepended to the result list. Title substring still runs after for mixed queries.
+
+**Outside-scope feedback (v0.6.5)** — picking a search result whose ID isn't in `layout.positions` (room is outside the current hop neighborhood) sets a transient `searchNotice` toast for 4 seconds above the bottom bar:
+
+> "<name>" is outside the current N-hop scope — selected; raise hops or walk closer to see it on the map.
+
+Selection is still applied so the detail panel populates. Pre-v0.6.5 this case silently no-op'd; users perceived the click as broken.
 
 #### 19.15.8 Zoom Lifecycle
 
-Three separate cases handled with a `hasFittedRef` sentinel to prevent the player's chosen zoom from being wiped on every walk:
+Three separate cases handled with sentinels to prevent the player's chosen zoom from being wiped on every walk:
 
-1. **Initial load** — fit-to-view once when layout first becomes ready.
+1. **Initial load** (`hasFittedRef`) — fit-to-view once when layout first becomes ready.
 2. **Hops changed** — refit, because the visible set changed dramatically.
 3. **Player walked** — recenter (pan only, preserve scale).
+4. **Genie augments arrive mid-session** (`hadSeedsRef`, v0.6.5) — fit-to-view exactly once when `seedPositions` transitions from empty → populated. Without this, opening Lich Graph before Genie XML finished loading captured the pure-BFS layout in the initial fit; when seeded positions arrived later, rooms would fly off-screen with the viewport stuck on the old frame.
 
-Mixing all three in a single `useEffect([layout])` was the original bug: every wayto-driven re-layout fired a refit, wiping zoom.
+Mixing all of these in a single `useEffect([layout])` was the original bug: every wayto-driven re-layout fired a refit, wiping zoom.
 
 #### 19.15.9 NEEDS MAPPING Banner
 
@@ -2718,6 +2727,52 @@ When the game emits a room title but the Lich DB doesn't contain that room ID, a
 > ⚠ `Lich #1234 not in map` · *Room Title* · `NEEDS MAPPING`
 
 This catches the case where the player has walked into a room the Lich repository doesn't yet know about — actionable for the community mapping effort.
+
+#### 19.15.10 Legend Overlay (v0.6.5)
+
+A floating panel anchored top-left of the canvas, toggled by the `▤` button in the subbar. Per-character persistence under `lichGraphLegend` (boolean) and `lichGraphLayers` (JSON blob). The legend doubles as both reference (sample swatches + glyphs explaining the visual language) and **control surface** (checkboxes that toggle each visual layer on the canvas).
+
+**Sections:**
+1. **Header** — title + `reset` button. Reset returns all toggles to `DEFAULT_LAYERS` (all-on); disabled when nothing differs from default.
+2. **Room size · distance** (informational) — tier 0–4 sample shapes with hop-count descriptions.
+3. **State** (informational) — current / selected / hovered / on-walk-path swatches with the actual fill colors used.
+4. **Edges** — solid Lich line, dashed Genie-only line (toggle, shown when Genie data is loaded), gold active-walk line.
+5. **Glyphs · backdrops** — `↑↓` vertical exit (toggle), `Aa` adjacent room labels (toggle), trail glow (toggle), district tint circle (toggle, shown when Genie is loaded).
+6. **Genie landmark types** (shown only when Genie is loaded) — glyph-overlay toggle followed by the 14 color/glyph pairs plus Water/Underwater (which are colored but un-glyphed).
+
+**Layer toggles (`Layers` type at module scope):**
+
+| Toggle | Default | Affects |
+|---|---|---|
+| `zoneTints` | on | District tint disks behind nodes |
+| `trail` | on | Last-walked breadcrumb glows |
+| `landmarks` | on | Genie color glyph overlays ($, +, ★, ⇆, etc.) |
+| `verticalGlyphs` | on | ↑/↓ corner indicators for vertical exits |
+| `adjacentLabels` | on | Room names above tier-1 nodes at high zoom |
+| `dashedEdges` | on | Genie-only fallback edges (Pass 2 dashed) |
+
+`DEFAULT_LAYERS` is the spread base when reading a stored value — new toggles added later don't lose their default for older saves.
+
+#### 19.15.11 Visual Scaling (v0.6.5)
+
+Two glow layers (zone tints, trail) use **world-constant** radii instead of screen-constant. Pre-v0.6.5 these used `radius / s` math, keeping them at constant screen size at every zoom level — which meant zooming out had them dominating the viewport while nodes shrank to dots. Now:
+
+- `zoneTints`: `radius = 25` (world units, was `38 / s`)
+- `trailGlows`: `baseR = 12` (world units, was `16 / s`)
+
+At zoom 1 they're slightly smaller than before; at zoom 0.3 they're ~7px on screen, receding into background context exactly when the node they surround becomes a far-tier dot.
+
+#### 19.15.12 Current-Room Rendering (v0.6.5)
+
+Pre-v0.6.5 the current room rendered as a solid green circle with a pulsing halo — which **replaced** the room's Genie color fill and landmark glyph. Standing in a shop showed a green circle with no "$" or red, losing the "what kind of room am I in" signal.
+
+v0.6.5 reuses the standard rounded-rect rendering for the current room (Genie color fill, landmark glyph centered, vertical-exit glyphs on the corner) and adds:
+
+- **Pulsing halo** outside the rect (SMIL `<animate>` on `r` and `opacity`).
+- **Bright green stroke** (1.3× normal width) so the rect's border still reads as "you."
+- **Accent dot** inside the rect (small `var(--map-current-color)` circle) — but **skipped when a landmark glyph occupies the center** to avoid stacking.
+
+The player can now read three signals simultaneously: "I'm in a shop" (red fill, $ glyph) + "this is me" (halo + green border) + "this room has an up exit" (↑ corner glyph).
 
 ### 19.12 Future Work
 

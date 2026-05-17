@@ -196,6 +196,221 @@
   padding-left: 4px;
 }
 
+/* ── Lich Graph legend (sectioned variant) ────────────────────────────────── */
+/* The Lich Graph view's legend covers multiple visual languages at once
+   (size tiers, state colors, edge styles, glyphs, district tints, landmarks),
+   so it needs section grouping that the original flat color legend didn't.
+   Single-column layout — multi-column got cramped and the descriptions wrap
+   awkwardly. */
+.map-legend--lich {
+  grid-template-columns: 1fr;
+  min-width: 230px;
+  max-width: 280px;
+  padding: 6px 10px;
+  gap: 6px;
+}
+
+.map-legend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--map-border);
+}
+.map-legend-header-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--map-select-color);
+  font-weight: bold;
+}
+.map-legend-reset {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: transparent;
+  color: var(--map-current-color);
+  border: 1px solid var(--map-btn-border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.map-legend-reset:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--map-current-color) 18%, transparent);
+}
+.map-legend-reset:disabled,
+.map-legend-reset--noop {
+  color: var(--map-text-muted);
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Bottom-of-canvas transient toast for outside-scope search results. Mirrors
+   the `map-location-unknown` strip pattern visually — same prominence as the
+   NEEDS MAPPING banner but neutral colored and auto-dismisses. */
+.map-search-notice {
+  padding: 6px 10px;
+  background: var(--map-chrome-bg);
+  border-top: 1px solid var(--map-border-subtle);
+  border-bottom: 1px solid var(--map-border-subtle);
+  color: var(--map-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.map-legend-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.map-legend-section--wide {
+  grid-column: 1 / -1;
+}
+
+.map-legend-section-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--map-select-color);
+  font-weight: bold;
+  margin-bottom: 2px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--map-border-subtle);
+}
+
+/* Section title with an inline toggle on the right — used for sections that
+   can be turned off as a whole (Edges → toggles the Genie-only dashed pass;
+   Genie landmark types → toggles the glyph overlay). */
+.map-legend-section-title--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.map-legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+  font-size: 9px;
+  color: var(--map-text-muted);
+}
+.map-legend-toggle input {
+  margin: 0;
+  width: 11px;
+  height: 11px;
+  accent-color: var(--map-current-color);
+  cursor: pointer;
+}
+
+/* Row that's a toggle in its own right (no separate section header) — used
+   in the Glyphs · backdrops section where each layer toggles independently
+   (vertical glyphs, adjacent labels, trail, zone tints). Whole row is
+   clickable via the wrapping <label>. */
+.map-legend-row--toggle {
+  cursor: pointer;
+  user-select: none;
+}
+.map-legend-row--toggle input {
+  margin: 0 2px 0 0;
+  width: 11px;
+  height: 11px;
+  accent-color: var(--map-current-color);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.map-legend-row--toggle:hover .map-legend-desc {
+  color: var(--map-text);
+}
+
+.map-legend-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+/* Size tiers — visualise the actual node shape used at each hop tier so the
+   sizing language is self-evident. Tier 0 has a pulsing halo around it; the
+   rest are progressively smaller rounded rects, ending in a bare dot. */
+.map-legend-tier {
+  flex-shrink: 0;
+  background: var(--map-node-fill);
+  border: 1px solid var(--map-node-stroke);
+  border-radius: 2px;
+  display: inline-block;
+  margin: 0 4px 0 1px;
+}
+.map-legend-tier--0 {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #0c3010;
+  border-color: var(--map-current-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--map-current-color) 35%, transparent);
+}
+.map-legend-tier--1 { width: 12px; height: 12px; }
+.map-legend-tier--2 { width: 10px; height: 10px; opacity: 0.85; }
+.map-legend-tier--3 { width: 7px; height: 7px; opacity: 0.55; }
+.map-legend-tier--4 {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  opacity: 0.4;
+  border: none;
+  margin: 0 8px 0 5px;
+}
+
+/* Edges — show the actual stroke style used (solid / dashed / gold for path). */
+.map-legend-line {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 22px;
+  height: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+  margin: 0 4px 0 1px;
+}
+.map-legend-line--solid  { border-top-color: var(--map-arc-cardinal); }
+.map-legend-line--dashed { border-top-style: dashed; border-top-color: var(--map-arc-hidden); }
+.map-legend-line--path   { border-top-color: #f0d060; border-top-width: 3px; }
+
+/* Glyph samples — the actual symbol the legend describes, at legible size. */
+.map-legend-glyph {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 22px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: bold;
+  margin: 0 2px 0 1px;
+}
+.map-legend-glyph--landmark {
+  font-size: 12px;
+  color: var(--map-text);
+  text-shadow: 0 0 2px rgba(255,255,255,0.6);
+  width: 14px;
+}
+
+/* Backdrop swatches — round to match how they actually render on the canvas. */
+.map-legend-trail,
+.map-legend-tint {
+  flex-shrink: 0;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin: 0 4px 0 1px;
+}
+.map-legend-trail { background: color-mix(in srgb, var(--map-current-color) 35%, transparent); }
+.map-legend-tint  { background: hsl(220, 55%, 45%); opacity: 0.5; }
+
+
 .map-room-title-display {
   flex-shrink: 1;
   min-width: 0;

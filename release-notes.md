@@ -1,3 +1,23 @@
+## What's new in v0.6.5
+
+Polish pass on the Lich Graph view from v0.6.3 — adds a togglable legend that doubles as a control surface, lets the current-room indicator stop hiding the room's actual identity, fixes the zoomed-out glow domination, and adds search-by-room-ID.
+
+### Lich Graph
+
+- **Legend overlay (`▤` toggle).** A floating panel anchored top-left of the canvas with five sections: room-size tiers, state colors, edges, glyphs/backdrops, and Genie landmark types. Sample swatches use the same colors the canvas uses so theme switches keep them honest. Per-character — the legend remembers if you had it open.
+- **Layer toggles inside the legend.** Six layers each get a checkbox: district tints, last-walked trail, landmark glyphs, vertical-exit ↑↓ glyphs, adjacent-room labels, and Genie-only dashed edges. Click any toggle row to flip that layer on or off. State persists per character. A `reset` button in the legend header returns everything to defaults.
+- **Current-room indicator shows the room through itself.** Previously the green pulsing circle replaced the room's color and landmark glyph entirely — so standing in a shop just showed a green circle, no "$" or red. Now the current room renders as a colored rect (Genie color preserved, glyph overlaid) with the pulsing halo OUTSIDE and an optional accent dot inside. You can tell at a glance: "I'm in a shop, this is me, this room has an up exit" — all at once.
+- **Zoomed-out glows stop dominating.** District tints and the last-walked trail were rendering at constant screen size, which meant zooming out had them swallowing the whole viewport while the actual nodes shrank to dots. They now scale with the map so they recede gracefully.
+- **Search by room ID.** Typing a number into the search box (e.g. `766`) does an exact Lich room ID lookup. Title substring still works for text queries.
+- **Outside-scope search feedback.** Picking a search result that's not in the current hop neighborhood used to silently do nothing. Now you get a brief notice above the bottom bar telling you the room was selected but is outside scope; raise hops or walk closer to see it on the map.
+- **Auto-refit when Genie data arrives mid-session.** If you opened the Lich Graph view before Genie XML finished loading, rooms could fly off-screen once the seeded layout took over. The view now refits once when that transition happens.
+- **`hops` selector remembers your choice.** The 5/8/15/25 hop scope dropdown now persists per character.
+
+### Performance
+
+- Mousemove no longer re-renders the whole graph view when you're not hovering anything.
+- Zone tints and trail glows skip recompute on pan/zoom (only on actual data changes).
+
 ## What's new in v0.6.4
 
 **Hotfix:** profiles are no longer destroyed by Lichborne upgrades, and the File → Open Profiles Folder menu works on fresh installs.

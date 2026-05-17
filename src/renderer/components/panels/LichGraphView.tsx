@@ -162,6 +162,23 @@ function zoneTintColor(zoneName: string): string {
 // every road the player has walked. Older entries fade out smoothly.
 const TRAIL_LENGTH = 8
 
+// Layer visibility flags. Each visual element of the graph can be turned off
+// individually via the legend's checkboxes. `DEFAULT_LAYERS` is the all-on
+// baseline used when a character has no saved preference, and the merge-base
+// when reading an older save that's missing a newer key.
+type Layers = {
+  zoneTints:       boolean
+  trail:           boolean
+  landmarks:       boolean
+  verticalGlyphs:  boolean
+  adjacentLabels:  boolean
+  dashedEdges:     boolean
+}
+const DEFAULT_LAYERS: Layers = {
+  zoneTints: true, trail: true, landmarks: true,
+  verticalGlyphs: true, adjacentLabels: true, dashedEdges: true,
+}
+
 // Zoom threshold past which we start drawing labels next to adjacent rooms.
 // At scale below this, label text would either overlap nodes (small zoom) or
 // just visually noise the view (medium zoom). Above this scale, immediate
@@ -230,6 +247,46 @@ export default function LichGraphView({
       return (HOP_CHOICES as readonly number[]).includes(n) ? n : DEFAULT_HOPS
     } catch { return DEFAULT_HOPS }
   })
+  // Legend overlay toggle — persists per-character so a tester who likes the
+  // legend keeps it open across sessions. Same storage pattern as `hops`.
+  const [showLegend, setShowLegend] = useState<boolean>(() => {
+    try { return localStorage.getItem(scopedKey(character, 'lichGraphLegend')) === 'true' }
+    catch { return false }
+  })
+  // Layer visibility toggles — each visual layer can be turned off
+  // individually via checkboxes in the legend panel. Persisted as a JSON
+  // blob under the character scope. New layers added later get the default
+  // value (via spread merge on read), so older saves don't lose them.
+  // `Layers` type + `DEFAULT_LAYERS` const live at module scope so each
+  // render doesn't re-create them.
+  const [layers, setLayers] = useState<Layers>(() => {
+    try {
+      const stored = localStorage.getItem(scopedKey(character, 'lichGraphLayers'))
+      if (!stored) return DEFAULT_LAYERS
+      return { ...DEFAULT_LAYERS, ...JSON.parse(stored) }
+    } catch { return DEFAULT_LAYERS }
+  })
+  const setLayer = useCallback((key: keyof Layers, value: boolean) => {
+    setLayers(prev => {
+      const next = { ...prev, [key]: value }
+      try {
+        localStorage.setItem(scopedKey(character, 'lichGraphLayers'), JSON.stringify(next))
+        saveProfile()
+      } catch {}
+      return next
+    })
+  }, [character, saveProfile])
+  const resetLayers = useCallback(() => {
+    setLayers(DEFAULT_LAYERS)
+    try {
+      localStorage.setItem(scopedKey(character, 'lichGraphLayers'), JSON.stringify(DEFAULT_LAYERS))
+      saveProfile()
+    } catch {}
+  }, [character, saveProfile])
+  // True when at least one layer is off — used to enable / dim the reset
+  // button so users can see at a glance whether anything is non-default.
+  const layersAreDefault = (Object.keys(DEFAULT_LAYERS) as (keyof Layers)[])
+    .every(k => layers[k] === DEFAULT_LAYERS[k])
   const [searchText, setSearchText] = useState('')
   // Last-walked trail — rooms the player has visited recently, freshest first.
   // Rendered as a fading breadcrumb so the player can see where they just
@@ -364,6 +421,26 @@ export default function LichGraphView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRoom?.id])
 
+  // ── Genie augments arrive mid-session → refit once ──────────────────────
+  // If the user opens Lich Graph BEFORE Genie XML finishes loading (or before
+  // they've attached a Genie folder), the initial fit-to-view captures a pure
+  // BFS layout. When `augments` arrives later, `seedPositions` repositions
+  // every matched room — rooms can fly off-screen and the user's chosen zoom
+  // becomes nonsensical. This sentinel detects the transition from no-seeds
+  // to has-seeds exactly once per mount and triggers a single refit so the
+  // viewport tracks the layout reshuffle. Subsequent Genie reloads don't
+  // re-fire because the ref stays set.
+  const hadSeedsRef = useRef(false)
+  useEffect(() => {
+    if (!hasFittedRef.current) return
+    const hasSeeds = !!seedPositions && seedPositions.size > 0
+    if (!hadSeedsRef.current && hasSeeds) {
+      hadSeedsRef.current = true
+      fitToView()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedPositions])
+
   // Push the current room onto the trail whenever it changes. Dedupes against
   // the head so re-entering the same room (or React re-renders that re-emit
   // the same id) don't pile duplicate entries.
@@ -402,8 +479,11 @@ export default function LichGraphView({
     if (dragRef.current) {
       const { tx, ty, ox, oy } = dragRef.current
       setTransform(prev => ({ ...prev, x: tx + (e.clientX - ox), y: ty + (e.clientY - oy) }))
-      setTooltipPos(null)
-    } else {
+      if (tooltipPos !== null) setTooltipPos(null)
+    } else if (hoveredId !== null) {
+      // Only update tooltipPos when actually hovering a node. Pre-fix this
+      // fired on every mousemove regardless of hover state, re-rendering the
+      // component on each move even when no tooltip was visible.
       setTooltipPos({ x: e.clientX, y: e.clientY })
     }
   }
@@ -451,8 +531,17 @@ export default function LichGraphView({
   const searchResults = useMemo(() => {
     const q = searchText.trim().toLowerCase()
     if (q.length < 2) return []
+    // Numeric query → exact Lich room ID lookup. IDs are unique, so we return
+    // at most one hit. Falling through to title-substring after is intentional
+    // for the rare case where a query like "200" should also match titles
+    // containing "200" (e.g. "Hall of the 200 Steps").
     const out: LichRoom[] = []
+    if (/^\d+$/.test(q)) {
+      const byId = lichDb.get(parseInt(q, 10))
+      if (byId) out.push(byId)
+    }
     for (const r of lichDb.values()) {
+      if (out.includes(r)) continue  // skip the id hit if we matched it above
       if (lichTitle(r).toLowerCase().includes(q)) {
         out.push(r)
         if (out.length >= 40) break
@@ -461,15 +550,21 @@ export default function LichGraphView({
     return out
   }, [searchText, lichDb])
 
+  // Transient "outside scope" notice — surfaces in the bottom bar for 4s when
+  // the user picks a search result that's not in the rendered hop neighborhood
+  // (previously the click silently did nothing, looking broken). Cleared by
+  // mount unmount and by subsequent successful picks.
+  const [searchNotice, setSearchNotice] = useState<string | null>(null)
+  const searchNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   function pickSearchResult(r: LichRoom) {
     setSearchText('')
     setSelectedId(r.id)
-    // If the result is in the rendered neighborhood, recenter on it (the user
-    // can then double-click or use the detail panel to walk). If it's outside,
-    // the selection is informational — the player still needs to walk closer
-    // to bring it into the auto-layout scope.
+    if (searchNoticeTimerRef.current) clearTimeout(searchNoticeTimerRef.current)
     const pos = layout.positions.get(r.id)
     if (pos) {
+      // Result is in the rendered neighborhood — recenter on it. The user
+      // can double-click it or use the detail panel to walk.
+      setSearchNotice(null)
       const svg = svgRef.current
       if (!svg) return
       setTransform(prev => ({
@@ -477,8 +572,18 @@ export default function LichGraphView({
         x: svg.clientWidth  / 2 - pos.x * prev.scale,
         y: svg.clientHeight / 2 - pos.y * prev.scale,
       }))
+    } else {
+      // Result is outside the rendered scope — selection is set (so the
+      // detail panel below shows the room's metadata), but we can't recenter
+      // because there's no on-canvas position. Surface a hint so the click
+      // isn't confused for a no-op; auto-dismisses after 4s.
+      setSearchNotice(`"${shortName(lichTitle(r))}" is outside the current ${hops}-hop scope — selected; raise hops or walk closer to see it on the map.`)
+      searchNoticeTimerRef.current = setTimeout(() => setSearchNotice(null), 4000)
     }
   }
+  useEffect(() => () => {
+    if (searchNoticeTimerRef.current) clearTimeout(searchNoticeTimerRef.current)
+  }, [])
 
   // ── Rendering helpers ────────────────────────────────────────────────────
   const visibleRooms = useMemo(() => {
@@ -498,8 +603,13 @@ export default function LichGraphView({
   // any zoom level: "I can see the Engineering Society region by its tint,
   // and Crystal Lane in a different tint adjacent to it."
   const zoneTints = useMemo(() => {
-    const s = transform.scale
-    const radius = 38 / s  // generous so adjacent same-zone rooms overlap into a cloud
+    if (!layers.zoneTints) return null
+    // World-constant radius (no `/ s` division) so the tint cloud SHRINKS
+    // visually when the user zooms out, instead of dominating the screen as
+    // a giant overlay. At zoom 1 each disk is ~25px; at zoom 0.3 each disk is
+    // ~7.5px on screen, receding into background context exactly when the
+    // node it surrounds becomes a far-tier dot.
+    const radius = 25
     const elements: React.ReactNode[] = []
     for (const { room, pos } of visibleRooms) {
       const aug = augments.get(room.id)
@@ -515,7 +625,7 @@ export default function LichGraphView({
       )
     }
     return elements
-  }, [visibleRooms, augments, transform.scale])
+  }, [visibleRooms, augments, layers.zoneTints])
 
   // Last-walked trail dots — soft glow on rooms the player just came from,
   // freshest brightest and fading with age. Sits between zoneTints (back) and
@@ -523,9 +633,12 @@ export default function LichGraphView({
   // The head of `trail` is the current room, which already gets its own halo,
   // so we skip index 0 here to avoid double-painting.
   const trailGlows = useMemo(() => {
+    if (!layers.trail) return null
     if (trail.length < 2) return null
-    const s = transform.scale
-    const baseR = 16 / s
+    // World-constant base so trail dots scale with the map. Matches the
+    // sizing philosophy of zoneTints — recede when zoomed out, halo a node
+    // when zoomed in.
+    const baseR = 12
     const out: React.ReactNode[] = []
     for (let i = 1; i < trail.length; i++) {
       const id = trail[i]
@@ -542,7 +655,7 @@ export default function LichGraphView({
       )
     }
     return out
-  }, [trail, layout, transform.scale])
+  }, [trail, layout, layers.trail])
 
   // Edges drawn once per unique pair, fading by the dimmer endpoint's tier
   // so far-away background context doesn't visually compete with the
@@ -593,7 +706,9 @@ export default function LichGraphView({
     }
 
     // Pass 2: Genie-arc fallback (dashed) — only where Lich didn't already cover.
-    if (augments.size > 0 && allGenieNodes.size > 0) {
+    // Gated by the `dashedEdges` layer toggle so users who find the dashed lines
+    // visually noisy can hide them without losing the rest of the Genie data.
+    if (layers.dashedEdges && augments.size > 0 && allGenieNodes.size > 0) {
       for (const { room, pos } of visibleRooms) {
         const aug = augments.get(room.id)
         if (!aug) continue
@@ -632,7 +747,7 @@ export default function LichGraphView({
     }
 
     return lines
-  }, [visibleRooms, layout, pathRooms, hopDistance, augments, allGenieNodes, genieIdToLich, transform.scale])
+  }, [visibleRooms, layout, pathRooms, hopDistance, augments, allGenieNodes, genieIdToLich, transform.scale, layers.dashedEdges])
 
   // Tier-keyed visual params. Indexed by Tier (0..4). Sizes are in layout-unit
   // pixels BEFORE the SVG transform scale — they're divided by `s` at render
@@ -670,16 +785,21 @@ export default function LichGraphView({
       // Fill/stroke colors. Genie's color attribute (when the room is matched
       // and has a colored landmark tag like Red=Shop / Yellow=Stat Training)
       // drives the default fill so landmark types are spottable at a glance.
-      // Tier 0 (current room) and explicit interaction states still override
-      // — the player's location and active selection must read clearly even
-      // on top of a colorful background.
+      // For the current room we KEEP the Genie color so "what kind of room
+      // am I in" stays visible through the "you are here" indicator — only
+      // the stroke switches to bright green, plus a halo + accent dot.
       const aug = augments.get(room.id)
       let fill   = aug?.color ?? 'var(--map-node-fill)'
       let stroke = aug?.color ? '#0d0b07' : 'var(--map-node-stroke)'
       if (isOnPath)                 { fill = '#302408'; stroke = '#d4a820' }
       if (isSelected)               { fill = '#102030'; stroke = '#50a0d8' }
       if (isHovered && !isSelected) { fill = '#503820'; stroke = '#c09040' }
-      if (isCurrent)                { fill = '#0c3010'; stroke = 'var(--map-current-color)' }
+      if (isCurrent) {
+        // Keep aug.color as fill if set; default to dark green only when no
+        // Genie color exists. Always use the bright "current" stroke.
+        fill   = aug?.color ?? '#0c3010'
+        stroke = 'var(--map-current-color)'
+      }
 
       const handlers = {
         onClick:       (e: React.MouseEvent) => { e.stopPropagation(); setSelectedId(p => p === room.id ? null : room.id); setPathRooms(new Set()) },
@@ -688,25 +808,10 @@ export default function LichGraphView({
         onMouseLeave:  () => setHoveredId(null),
       }
 
-      if (isCurrent) {
-        // Current room: large circle + pulsing halo. The visual anchor of
-        // the whole view — should jump out from any zoom level.
-        return (
-          <g key={room.id} {...handlers} style={{ cursor: 'pointer' }} opacity={opacity}>
-            <circle cx={pos.x} cy={pos.y} r={half * 1.2}
-              fill="none" stroke="var(--map-current-color)" strokeWidth={1.0 / s} opacity={0.6}>
-              <animate attributeName="r"        values={`${half * 1.2};${half * 1.7};${half * 1.2}`} dur="2s" repeatCount="indefinite" />
-              <animate attributeName="opacity"  values="0.6;0.15;0.6" dur="2s" repeatCount="indefinite" />
-            </circle>
-            <circle cx={pos.x} cy={pos.y} r={half}
-              fill={fill} stroke={stroke} strokeWidth={strokeW} />
-          </g>
-        )
-      }
-
       if (tier >= 4) {
         // Far context: just a dot — no stroke, no rounded rect, just a soft
-        // mark indicating "another room exists here" at a glance.
+        // mark indicating "another room exists here" at a glance. Current
+        // room never falls into this branch (tier forced to 0 above).
         return (
           <circle key={room.id} cx={pos.x} cy={pos.y} r={half}
             fill={fill} opacity={opacity}
@@ -728,29 +833,40 @@ export default function LichGraphView({
       // healer, etc.), overlay the matching icon centred on the node. Only at
       // tier ≤ 2 (close enough to be legible) so far-away dots don't get noisy.
       const landmarkGlyph = aug?.color ? LANDMARK_GLYPHS[aug.color.toUpperCase()] : undefined
-      const showLandmark  = !!landmarkGlyph && tier <= 2
+      const showLandmark  = !!landmarkGlyph && tier <= 2 && layers.landmarks
 
       // Adjacent-room labels — only for tier 1 (immediate exits) above the
       // zoom threshold, so the player can read names of where they can walk
       // without hovering each room. Tier 0 (current) has its own bigger
       // label drawn separately by currentLabel; tier 2+ is too distant to
       // be worth labelling automatically (causes density issues).
-      const showLabel = tier === 1 && s >= LABEL_ZOOM
+      const showLabel = tier === 1 && s >= LABEL_ZOOM && layers.adjacentLabels
       const labelOffset = (NODE_SIZE[tier] / 2 + 6) / s
       const labelSize   = 9.5 / s
 
       return (
         <g key={room.id} {...handlers} style={{ cursor: 'pointer' }} opacity={opacity}>
+          {/* Current-room pulsing halo — drawn FIRST so it sits behind the
+              rect. Slightly larger than the rect itself so it reads as a ring
+              around the room, not a fill behind it. */}
+          {isCurrent && (
+            <circle cx={pos.x} cy={pos.y} r={half * 1.55}
+              fill="none" stroke="var(--map-current-color)"
+              strokeWidth={1.5 / s} opacity={0.6}>
+              <animate attributeName="r"        values={`${half * 1.55};${half * 2.0};${half * 1.55}`} dur="2s" repeatCount="indefinite" />
+              <animate attributeName="opacity"  values="0.6;0.15;0.6" dur="2s" repeatCount="indefinite" />
+            </circle>
+          )}
           <rect x={pos.x - half} y={pos.y - half} width={half * 2} height={half * 2}
-            fill={fill} stroke={stroke} strokeWidth={strokeW} rx={rx} />
-          {vert.up && (
+            fill={fill} stroke={stroke} strokeWidth={isCurrent ? strokeW * 1.3 : strokeW} rx={rx} />
+          {vert.up && layers.verticalGlyphs && (
             <text x={pos.x + half * 0.55} y={pos.y - half * 0.10}
               fontSize={glyphSize} fill={glyphFill}
               textAnchor="middle" pointerEvents="none"
               style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.7)', strokeWidth: 1.5 / s }}
             >↑</text>
           )}
-          {vert.down && (
+          {vert.down && layers.verticalGlyphs && (
             <text x={pos.x + half * 0.55} y={pos.y + half * 1.05}
               fontSize={glyphSize} fill={glyphFill}
               textAnchor="middle" pointerEvents="none"
@@ -764,6 +880,17 @@ export default function LichGraphView({
               style={{ paintOrder: 'stroke', stroke: 'rgba(255,255,255,0.9)', strokeWidth: 1.5 / s, strokeLinejoin: 'round' }}
             >{landmarkGlyph}</text>
           )}
+          {/* Center accent dot for current room — small green pip inside the
+              rect so the "you" signal still reads when the rect fill is a
+              bright Genie color (yellow stat-training, red shop, etc.) that
+              would otherwise compete with the halo. Skipped when a landmark
+              glyph occupies the center to avoid stacking.  */}
+          {isCurrent && !showLandmark && (
+            <circle cx={pos.x} cy={pos.y} r={1.8 / s}
+              fill="var(--map-current-color)"
+              stroke="rgba(0,0,0,0.55)" strokeWidth={0.5 / s}
+              opacity={0.9} pointerEvents="none" />
+          )}
           {showLabel && (
             <text x={pos.x} y={pos.y - labelOffset}
               fontSize={labelSize} fill="var(--text-secondary)"
@@ -774,7 +901,7 @@ export default function LichGraphView({
         </g>
       )
     })
-  }, [visibleRooms, currentRoom, selectedId, hoveredId, pathRooms, hopDistance, augments, transform.scale])
+  }, [visibleRooms, currentRoom, selectedId, hoveredId, pathRooms, hopDistance, augments, transform.scale, layers])
 
   // Label for the current room — always visible, anchored just above the
   // pulsing halo. Reads naturally even at full zoom-out since it scales
@@ -864,6 +991,18 @@ export default function LichGraphView({
           <button className="map-btn map-btn--sm" onClick={recenterOnCurrent} title="Center on current room">◆</button>
         )}
         <button className="map-btn map-btn--sm" onClick={fitToView} title="Fit all rooms into view">⊡</button>
+        <button
+          className={`map-btn map-btn--sm${showLegend ? ' map-btn--active' : ''}`}
+          onClick={() => {
+            const next = !showLegend
+            setShowLegend(next)
+            try {
+              localStorage.setItem(scopedKey(character, 'lichGraphLegend'), String(next))
+              saveProfile()
+            } catch {}
+          }}
+          title="Toggle visual legend"
+        >▤</button>
         {walking && (
           <button className="map-btn map-btn--sm map-btn--stop" onClick={cancelWalk} title="Stop walking">■</button>
         )}
@@ -909,6 +1048,186 @@ export default function LichGraphView({
             <div className="map-empty-sub">Map appears once you enter the game</div>
           </div>
         )}
+
+        {/* Visual legend overlay — appears in the top-left of the canvas when
+            toggled on via the ▤ button. Grouped by category so the player can
+            quickly figure out what any given visual element means. Landmark
+            and Genie-only sections are hidden when Genie data isn't loaded,
+            keeping the legend short for users who just want Lich. */}
+        {showLegend && (
+          <div className="map-legend map-legend--lich">
+            {/* Header row — gives the panel a name and exposes a one-click
+                reset for the toggles. Reset is dimmed when nothing's been
+                changed from defaults so it doesn't shout for attention. */}
+            <div className="map-legend-header">
+              <span className="map-legend-header-title">Legend</span>
+              <button
+                type="button"
+                className={`map-legend-reset${layersAreDefault ? ' map-legend-reset--noop' : ''}`}
+                onClick={resetLayers}
+                disabled={layersAreDefault}
+                title="Reset all visibility toggles to their defaults (all on)"
+              >reset</button>
+            </div>
+            {/* Room-size section is informational only — there's no useful
+                way to "turn off tiers" since they encode distance from the
+                player. No checkbox here. */}
+            <div className="map-legend-section">
+              <div className="map-legend-section-title">Room size · distance</div>
+              <div className="map-legend-row">
+                <span className="map-legend-tier map-legend-tier--0" />
+                <span className="map-legend-desc">You are here · pulsing halo</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-tier map-legend-tier--1" />
+                <span className="map-legend-desc">1 hop away</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-tier map-legend-tier--2" />
+                <span className="map-legend-desc">2–3 hops</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-tier map-legend-tier--3" />
+                <span className="map-legend-desc">4–7 hops</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-tier map-legend-tier--4" />
+                <span className="map-legend-desc">8+ hops (far context)</span>
+              </div>
+            </div>
+
+            {/* State colors are always on (would be confusing to hide selection
+                feedback / hover / walk path). No toggle. */}
+            <div className="map-legend-section">
+              <div className="map-legend-section-title">State</div>
+              <div className="map-legend-row">
+                <span className="map-legend-swatch" style={{ background: '#0c3010', borderColor: 'var(--map-current-color)' }} />
+                <span className="map-legend-desc">Current room</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-swatch" style={{ background: '#102030', borderColor: '#50a0d8' }} />
+                <span className="map-legend-desc">Selected (clicked)</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-swatch" style={{ background: '#503820', borderColor: '#c09040' }} />
+                <span className="map-legend-desc">Hovered</span>
+              </div>
+              <div className="map-legend-row">
+                <span className="map-legend-swatch" style={{ background: '#302408', borderColor: '#d4a820' }} />
+                <span className="map-legend-desc">On walk path</span>
+              </div>
+            </div>
+
+            {/* Sections below have full-row checkbox toggles — click any row
+                with a checkbox to flip that layer on/off. Persisted per
+                character via useProfileSaver. Rows without checkboxes are
+                informational only (the entry itself can't be hidden). */}
+            <div className="map-legend-section">
+              <div className="map-legend-section-title">Edges</div>
+              <div className="map-legend-row">
+                <span className="map-legend-line map-legend-line--solid" />
+                <span className="map-legend-desc">Lich-known exit (walkable)</span>
+              </div>
+              {augments.size > 0 && (
+                <label className="map-legend-row map-legend-row--toggle" title="Show / hide Genie-only dashed edges">
+                  <input
+                    type="checkbox"
+                    checked={layers.dashedEdges}
+                    onChange={e => setLayer('dashedEdges', e.target.checked)}
+                  />
+                  <span className="map-legend-line map-legend-line--dashed" />
+                  <span className="map-legend-desc">Genie-only (Lich gap)</span>
+                </label>
+              )}
+              <div className="map-legend-row">
+                <span className="map-legend-line map-legend-line--path" />
+                <span className="map-legend-desc">Active walk path</span>
+              </div>
+            </div>
+
+            <div className="map-legend-section">
+              <div className="map-legend-section-title">Glyphs · backdrops</div>
+              <label className="map-legend-row map-legend-row--toggle" title="Show / hide ↑↓ on rooms with vertical exits">
+                <input
+                  type="checkbox"
+                  checked={layers.verticalGlyphs}
+                  onChange={e => setLayer('verticalGlyphs', e.target.checked)}
+                />
+                <span className="map-legend-glyph" style={{ color: 'var(--map-arc-vertical)' }}>↑↓</span>
+                <span className="map-legend-desc">Up / Down exit on this node</span>
+              </label>
+              <label className="map-legend-row map-legend-row--toggle" title="Show / hide adjacent-room name labels at high zoom">
+                <input
+                  type="checkbox"
+                  checked={layers.adjacentLabels}
+                  onChange={e => setLayer('adjacentLabels', e.target.checked)}
+                />
+                <span className="map-legend-glyph">Aa</span>
+                <span className="map-legend-desc">Adjacent room names (high zoom)</span>
+              </label>
+              <label className="map-legend-row map-legend-row--toggle" title="Show / hide the last-walked breadcrumb trail">
+                <input
+                  type="checkbox"
+                  checked={layers.trail}
+                  onChange={e => setLayer('trail', e.target.checked)}
+                />
+                <span className="map-legend-trail" />
+                <span className="map-legend-desc">Last-walked trail (fades by age)</span>
+              </label>
+              {augments.size > 0 && (
+                <label className="map-legend-row map-legend-row--toggle" title="Show / hide district background tints (one color per zone)">
+                  <input
+                    type="checkbox"
+                    checked={layers.zoneTints}
+                    onChange={e => setLayer('zoneTints', e.target.checked)}
+                  />
+                  <span className="map-legend-tint" />
+                  <span className="map-legend-desc">District tint (one color per zone)</span>
+                </label>
+              )}
+            </div>
+
+            {augments.size > 0 && (
+              <div className="map-legend-section map-legend-section--wide">
+                <div className="map-legend-section-title">Genie landmark types</div>
+                <label className="map-legend-row map-legend-row--toggle" title="Show / hide landmark glyph overlays on the canvas">
+                  <input
+                    type="checkbox"
+                    checked={layers.landmarks}
+                    onChange={e => setLayer('landmarks', e.target.checked)}
+                  />
+                  <span className="map-legend-glyph map-legend-glyph--landmark">$+★</span>
+                  <span className="map-legend-desc">Overlay glyphs on color-tagged rooms</span>
+                </label>
+                <div className="map-legend-grid">
+                  {Object.entries(LANDMARK_GLYPHS).map(([color, glyph]) => {
+                    const meta = COLOR_LEGEND[color.toUpperCase()]
+                    if (!meta) return null
+                    return (
+                      <div className="map-legend-row" key={color}>
+                        <span className="map-legend-swatch" style={{ background: color }} />
+                        <span className="map-legend-glyph map-legend-glyph--landmark">{glyph}</span>
+                        <span className="map-legend-desc">{meta.desc}</span>
+                      </div>
+                    )
+                  })}
+                  {/* Water and Underwater are colored but un-glyphed — color alone
+                      conveys the meaning. List them so the user understands why
+                      they're seeing blue/navy nodes without an icon. */}
+                  <div className="map-legend-row">
+                    <span className="map-legend-swatch" style={{ background: '#0000FF' }} />
+                    <span className="map-legend-desc">Water (swimming)</span>
+                  </div>
+                  <div className="map-legend-row">
+                    <span className="map-legend-swatch" style={{ background: '#000080' }} />
+                    <span className="map-legend-desc">Underwater (drowning)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <svg ref={svgRef} className="map-svg"
           onMouseDown={onMouseDown} onMouseMove={onMouseMove}
           onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}
@@ -944,6 +1263,10 @@ export default function LichGraphView({
           </g>
         </svg>
       </div>
+
+      {searchNotice && (
+        <div className="map-search-notice" role="status">{searchNotice}</div>
+      )}
 
       <div className="map-bottom-bar">
         {currentRoom && (
