@@ -53,11 +53,21 @@ YAML files in `app.getPath('userData')/profiles/` — `%APPDATA%\lichborne\profi
 - **Backups** — timestamped `{name}.yaml.{ISO-ish}.bak`, rolling retention of 5.
 
 ### Map system (DESIGN.md §19)
-Lich-first. Two views: **Lich Map** (image tiles) and **Lich Graph** (auto-layout from each room's `wayto`). Every Lich room is renderable. Genie XML is OPTIONAL augmentation (district tints, landmark glyphs, dashed fallback edges, tooltips). The old per-zone Genie Graph view (`MapGraphView.tsx`) was deleted in v0.6.3 — **do not reintroduce**.
+Two views: **Lich Map** (Lich image tiles) and **Genie Maps** (Genie XML-driven graph). Genie XML is the spatial source of truth for the graph view — coordinates come directly from the hand-curated XML files; no auto-layout, no BFS placement, no zone stitching. One zone visible at a time, picked by the dropdown or auto-switched when the player's room title matches a room in another loaded zone.
 
-Lich Graph (v0.6.5) has a togglable legend overlay (▤ button) with 6 layer toggles persisted under `lichGraphLayers`. `DEFAULT_LAYERS` lives at module scope. Current-room indicator uses a rounded rect with halo OUTSIDE so the room's Genie color + landmark glyph stay visible through the "you are here" signal.
+**Two prior approaches have been deleted; do not reintroduce.** The per-zone Genie Graph (`MapGraphView.tsx`, deleted v0.6.3) tried to render zones individually with the old augmentation matcher. The Lich-native BFS view (`LichGraphView.tsx` + `lichLayout.ts`, deleted v0.6.6) tried to make every Lich room renderable by inferring layout from `wayto` cardinals — but Genie's hand-curated coords and Lich's directional walks disagree in dense clusters, producing "type west, marker goes north" misrenders.
 
-Files: [MapPanel.tsx](src/renderer/components/panels/MapPanel.tsx), [MapImageView.tsx](src/renderer/components/panels/MapImageView.tsx), [LichGraphView.tsx](src/renderer/components/panels/LichGraphView.tsx), [lichLayout.ts](src/renderer/components/panels/lichLayout.ts), [mapTypes.ts](src/renderer/components/panels/mapTypes.ts).
+**Rendering matches Genie's `MapForm.cs` exactly.** 8×8 node rects are CENTERED on the XML position because Genie's `ConvertPoint(pos, 4)` SUBTRACTS the offset (MapForm.cs:187–193). Arc endpoints go through the XML position directly. Labels at `(pos + 1, pos + 1)` matching `DrawString(r.X + 1, r.Y + 1)`. Getting any of this wrong visibly misaligns label clusters; verify against the reference source instead of guessing.
+
+**Arcs render in two passes** for dense-cluster legibility: under-pass at full opacity (drawn before nodes; lines disappear into rect fills inside clusters) + over-pass at 0.35 opacity drawn on top (faint trace across rects so you can follow a line all the way to its endpoint). Each pass collapses N arcs into 3 `<path>` elements (one per cardinal/climb/go category) via concatenated `M x,y L x,y` segments; same data, render twice, ~6 SVG elements total.
+
+**Cross-zone stubs** are 1-room boundary markers with `note="MapXX_Name.xml"`. `isStubNode(n)` detects `.xml` in note aliases. Title lookup MUST prefer non-stub matches (otherwise the marker in zone A wins over the real room in zone B). Stub click walks the player to the boundary via in-zone BFS; the map only auto-switches zones when the player's `roomTitle` actually lands in the new zone — never on click completion (the game can block any walk command, and racing the map ahead leaves the user stranded).
+
+**Camera follow-the-player** uses `useLayoutEffect`, not `useEffect`, so the transform update lands in the same paint frame as the indicator's new world position. Default ON; manual pan/zoom turns it off (so the map doesn't fight the user); the ◆ button re-enables. Always-center model (not margin-snap) — margin-snap vibrates at high walk rates because each step pushes the indicator outside the margin and the camera snaps back.
+
+**Current/selected/hover/hover-path indicators are hoisted OUT of `nodeRects`** as single overlay elements. Pre-hoist, walking re-built the entire `nodeRects` JSX every step (currentNodeId was in its dep array). Now walking only re-renders 2-3 elements; the node array is per-zone-static.
+
+Files: [MapPanel.tsx](src/renderer/components/panels/MapPanel.tsx), [MapImageView.tsx](src/renderer/components/panels/MapImageView.tsx), [GenieMapView.tsx](src/renderer/components/panels/GenieMapView.tsx), [mapTypes.ts](src/renderer/components/panels/mapTypes.ts).
 
 ### Theme system (DESIGN.md §6)
 ~150 CSS custom properties in `themes.ts`. `darkBase` is the canonical full set; every other theme is a partial override merged over `darkBase` in `applyTheme` / `applyCustomTheme`. Theme Editor (`ThemeEditor.tsx`) uses a `TABS` declarative schema — new variables surface there.
@@ -82,8 +92,11 @@ Wrayth XML / Genie .cfg / Frostbite .ini parse into a neutral `ImportCandidate` 
 5. **Scroll pinning fights you if you add naive useEffect logic.** Read GameWindow.tsx + DESIGN.md §23 before adding any programmatic scroll.
 6. **Stream IDs are case-sensitive everywhere except `NEVER_DISCOVER`.** Lowercasing them anywhere will break Lich scripts. See B34.
 7. **`lichPort` is the Lich front-end port, not an SGE shard port.** Don't look it up from a per-game table at credential build-time (v0.6.3 bug).
-8. **Cross-zone Genie node IDs collide.** Aesry's #712 ≠ Shard's #712. Always key by `zonedKey(zoneId, nodeId)`.
-9. **`setState` in a mousemove handler must be gated on a hover sentinel** or you re-render on every pixel. See `LichGraphView.tsx` `onMouseMove`.
+8. **`setState` in a mousemove handler must be gated on a hover sentinel** or you re-render on every pixel. See `GenieMapView.tsx` `onMouseMove` (gates on `dragRef.current`).
+9. **Genie node rects are CENTERED on the XML position, not top-left anchored.** `ConvertPoint(pos, 4 * scale)` SUBTRACTS the offset (MapForm.cs:187–193). Anchoring top-left shifts every node 4px down-right and misaligns label clusters. Verify against Genie source for any map-rendering math change.
+10. **`pointer-events: none` on the SVG pan group breaks click-to-walk.** `isDragging` flips true on mousedown BEFORE click fires — toggling `pointer-events` on the parent at that point makes the click target the SVG root, not the inner node `<g>`. Gate hover at the React layer (check `dragRef.current` in the hover handler) instead.
+11. **Use `useLayoutEffect` for camera-follow.** The map's follow-the-player effect must update the transform in the same paint frame as the indicator's new world position. Plain `useEffect` produces a 1-frame "indicator at new spot, camera still old" flash at high walk rates.
+12. **`useRef(initialValue)` initialized to a meaningful prop is a footgun.** The "did this change since last render" pattern requires `useRef(null)` (or whatever sentinel ≠ the first real value) so the first non-null render is treated as a change. See `lastLocationRef` in GenieMapView for the cautionary tale.
 
 ---
 

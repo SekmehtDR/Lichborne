@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import type { LichRoom, GenieAugment } from './mapTypes'
+import type { LichRoom } from './mapTypes'
 import { lichTitle, normalizeDesc, bfsPath } from './mapTypes'
 
 interface Props {

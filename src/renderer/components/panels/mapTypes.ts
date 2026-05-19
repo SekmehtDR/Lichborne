@@ -19,6 +19,13 @@ export interface GenieArc {
   exit:        string
   move:        string
   destination: number  // Genie node ID (not used for navigation)
+  // Genie XML marks some arcs as `hidden="True"` to indicate "this is a
+  // real walkable path but don't draw a line for it on the map." Typical
+  // for `go temple`, `go portal`, etc. — destinations that physically sit
+  // far from the source room and would stretch ugly cross-map lines.
+  // We respect this for rendering but keep the arc available for BFS
+  // path-finding (it's still walkable; just not pretty).
+  hidden:      boolean
 }
 
 export interface GenieNode {
@@ -35,57 +42,30 @@ export interface GenieNode {
   arcs:         GenieArc[]
 }
 
-export interface GenieZone {
-  name:  string
-  id:    string
-  nodes: GenieNode[]
+// Free-floating text label on the map. Genie XML scatters these across
+// zones to name landmarks that aren't tied to a specific node — "Temple of
+// Light", "Stormwill Tower", "Warrior Mage", etc. Each has its own
+// position. Frostbite renders them as text items in the SVG scene; we do
+// the same.
+export interface GenieLabel {
+  text: string
+  x:    number
+  y:    number
+  z:    number
 }
 
-// How confident we are that this Lich room ↔ Genie node pair is correct.
-//   'exact'           — Lich title and Genie node name matched as written (case-preserved).
-//   'normalized'      — Matched only after lowercasing / bracket stripping / whitespace collapse.
-//                       Reliable but suggests the Genie file's casing has drifted from Lich.
-//   'alias'           — Resolved via Genie's `note` pipe-aliases.
-//   'zone-prefix'     — Resolved by composing "${zoneName}, ${name}" against Lich's qualified
-//                       titles. Useful for districts but more prone to false positives.
-//   'desc-disambig'   — Title returned multiple candidates; description match picked one.
-//   'arc-corroborated'— Pass 2: title returned multiple Lich candidates whose descriptions were
-//                       too similar (or identical) to disambiguate — clusters of sub-rooms
-//                       like the Engineering Society Workrooms. Pass 2 picked the candidate
-//                       whose `wayto` destinations align best with the Genie node's arcs
-//                       via the augment chain. Higher confidence than 'desc-disambig'.
-//   'desc-only'       — Title/alias/zone-prefix all missed (Lich's title disagrees with Genie's
-//                       name), but exactly one Lich room's description matches the Genie node's
-//                       description. Useful when Lich has mislabeled a room (e.g. Lich title
-//                       "Shard Thief Passages" for a room whose description is clearly an
-//                       Abandoned Building, which Genie has named correctly).
-// Surfaced in the detail tooltip so testers can spot suspect matches and flag them.
-export type MatchConfidence = 'exact' | 'normalized' | 'alias' | 'zone-prefix' | 'desc-disambig' | 'arc-corroborated' | 'desc-only'
-
-// Per matched Lich room — spatial + display data from Genie
-export interface GenieAugment {
-  genieId:         number
-  zoneName:        string
-  zoneId:          string
-  x:               number
-  y:               number
-  z:               number
-  color?:          string
-  note?:           string
-  matchConfidence?: MatchConfidence
+export interface GenieZone {
+  name:       string
+  id:         string
+  // Original XML filename (e.g. "Map66_STR3.xml"). Used to resolve cross-zone
+  // stub nodes whose `note` field points to another zone's filename, so
+  // clicking a boundary stub can switch to the target zone.
+  sourceFile: string
+  nodes:      GenieNode[]
+  labels:     GenieLabel[]
 }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
-
-// Compose a Genie node identifier that is unique ACROSS zones. Genie XML node
-// IDs are zone-local — every zone restarts numbering near 1, so a bare numeric
-// ID like 712 isn't enough to distinguish Shard's room from Aesry's room with
-// the same ID. Indexes keyed by bare nodeId end up clobbering each other when
-// later zones overwrite earlier ones. Use this helper for every cross-zone
-// index (allGenieNodes, genieIdToLich).
-export function zonedKey(zoneId: string, nodeId: number): string {
-  return `${zoneId}:${nodeId}`
-}
 
 export function lichTitle(room: LichRoom): string {
   const t = (room.title ?? [])[0] ?? ''
@@ -113,13 +93,6 @@ export function noteAliases(note: string | undefined): string[] {
   return note.split('|').map(s => s.trim()).filter(Boolean)
 }
 
-// Extract the human-readable movement label from a wayto command.
-// Lich scripts like ";e UserVars.x='y';move 'go meeting portal'" → "go meeting portal"
-export function cmdLabel(cmd: string): string {
-  const m = cmd.match(/move\s+['"]([^'"]+)['"]/)
-  return m ? m[1] : cmd
-}
-
 export function findRoom(
   titleIndex: Map<string, LichRoom[]>,
   gameTitle: string,
@@ -143,263 +116,6 @@ export function findRoom(
     if (exact) return exact
   }
   return candidates.length === 1 ? candidates[0] : undefined
-}
-
-// ── Match diagnostics ────────────────────────────────────────────────────────
-//
-// When a Lich room is in the database but no Genie augment matched it, the
-// mapping team needs to know *why* — and ideally see candidate Genie nodes
-// that came close. Otherwise debugging is guesswork: "did Lich's title change?
-// is the zone name different? is the description out of sync?"
-//
-// findNearMisses scans every parsed Genie node and ranks them by name/title
-// similarity to the unmatched Lich room. We expose enough signal (score,
-// matched tokens, the constructed zone-prefix string our matcher would have
-// tried) for a human to spot the mismatch instantly.
-
-export interface NearMissCandidate {
-  genieId:    number
-  name:       string
-  zoneName:   string
-  zoneId:     string
-  score:      number
-  // Human-readable note pinpointing why the matcher's strict pass didn't catch it.
-  // Examples: "name differs by 1 char", "zone-prefix mismatch ('Shard' vs Lich's 'Shard, …')",
-  // "description token overlap". Surfaced in the banner so testers can act.
-  reason:     string
-}
-
-// Split a title/name into comparable word tokens. Lowercased, punctuation
-// stripped, 3+ letters only (drops 'the', 'a', 'of', etc. that match too
-// loosely). Used by name-similarity scoring.
-function titleTokens(s: string): Set<string> {
-  return new Set(
-    s.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(t => t.length >= 3)
-  )
-}
-
-// preferredZoneId — if supplied, candidates whose `zoneId` matches get a
-//   strong score boost. Reflects the intuition "I'm currently in Shard, so a
-//   Shard candidate is overwhelmingly more likely to be the right match than
-//   a substring-match from Mer'Kresh." Inferred at the call site from the
-//   current Lich room's augmented neighbors.
-export function findNearMisses(
-  lichTitle:     string,
-  lichDescription: string,
-  allGenieNodes: Map<string, GenieNode>,  // composite zoneId:nodeId keys
-  limit = 5,
-  preferredZoneId?: string,
-): NearMissCandidate[] {
-  if (!lichTitle) return []
-  const targetTokens = titleTokens(lichTitle)
-  if (targetTokens.size === 0) return []
-  const lichNorm = normalizeMatchKey(lichTitle)
-  const lichDescNorm = normalizeDesc(lichDescription)
-
-  const candidates: NearMissCandidate[] = []
-  for (const node of allGenieNodes.values()) {
-    let score = 0
-    const reasons: string[] = []
-
-    // Direct normalized-name comparison — if these match, our matcher's
-    // normalize fallback SHOULD have caught it; surfacing here exposes a
-    // real bug.
-    const nodeNorm = normalizeMatchKey(node.name)
-    if (nodeNorm === lichNorm) {
-      score += 100
-      reasons.push('name normalizes equal to Lich title — matcher BUG candidate')
-    } else if (nodeNorm.includes(lichNorm) || lichNorm.includes(nodeNorm)) {
-      score += 30
-      reasons.push('name is a substring of (or contains) the Lich title')
-    }
-
-    // Zone-prefix construction — what Step 3 of the matcher would have built.
-    const zonePrefix = normalizeMatchKey(`${node.zoneName}, ${node.name}`)
-    if (zonePrefix === lichNorm) {
-      score += 80
-      reasons.push(`zone-prefix '${node.zoneName}, ${node.name}' matches — matcher BUG candidate`)
-    }
-
-    // Token overlap — fuzzy comparison for cases where punctuation or wording
-    // drifted between the two systems.
-    const nodeTokens = titleTokens(node.name)
-    let overlap = 0
-    for (const t of targetTokens) if (nodeTokens.has(t)) overlap++
-    if (overlap > 0) {
-      const ratio = overlap / Math.max(targetTokens.size, nodeTokens.size)
-      score += Math.floor(20 * ratio)
-      if (overlap >= 2) reasons.push(`${overlap} shared title words`)
-    }
-
-    // Description token overlap — strongest signal that this is the same room
-    // even if the name format differs.
-    if (lichDescNorm && node.descriptions.length > 0) {
-      const lichDescTokens = titleTokens(lichDescription)
-      for (const d of node.descriptions) {
-        const descTokens = titleTokens(d)
-        let descOverlap = 0
-        for (const t of lichDescTokens) if (descTokens.has(t)) descOverlap++
-        const descRatio = descOverlap / Math.max(lichDescTokens.size, descTokens.size, 1)
-        if (descRatio >= 0.7) {
-          score += 50
-          reasons.push(`description ~${Math.round(descRatio * 100)}% token-equal`)
-          break
-        } else if (descRatio >= 0.4) {
-          score += 20
-          reasons.push(`description ~${Math.round(descRatio * 100)}% token-overlap`)
-          break
-        }
-      }
-    }
-
-    // Note-alias check — Genie's note field can contain pipe-separated aliases.
-    for (const alias of noteAliases(node.note)) {
-      if (normalizeMatchKey(alias) === lichNorm) {
-        score += 60
-        reasons.push(`alias '${alias}' normalizes to Lich title — matcher BUG candidate`)
-        break
-      }
-    }
-
-    // Same-zone bias: a candidate in the user's current zone is overwhelmingly
-    // more likely to be the right match than a same-name candidate in some
-    // distant zone. Apply a large additive bonus AFTER all other signals so
-    // intra-zone hits naturally sort to the top while keeping the reasoning
-    // text honest about the underlying signal types.
-    if (preferredZoneId && node.zoneId === preferredZoneId) {
-      score += 50
-    }
-
-    if (score > 0) {
-      candidates.push({
-        genieId:  node.id,
-        name:     node.name,
-        zoneName: node.zoneName,
-        zoneId:   node.zoneId,
-        score,
-        reason:   reasons.join(' · ') || 'partial match',
-      })
-    }
-  }
-
-  candidates.sort((a, b) => b.score - a.score)
-  return candidates.slice(0, limit)
-}
-
-// ── Genie reach-fallback path-finding ────────────────────────────────────────
-//
-// For Genie nodes that have no Lich augment (orphans), we still want a
-// "Walk here" path. Strategy: BFS backwards from the orphan through Genie's
-// arc graph until we find a node that *does* have a Lich augment — call that
-// the "anchor". Lich's go2 can navigate to the anchor; from there, the
-// recorded sequence of `move` commands bridges the rest of the way.
-//
-// Why reverse BFS: arcs are directional. An orphan with no outgoing arc to a
-// matched node may still be reachable *from* a matched node (the matched node
-// has an arc INTO the orphan). Walking from the orphan toward arrows pointing
-// at it would be wrong; we walk in arrow direction starting at the anchor.
-//
-// Returns null if no matched node can reach the target via the local arc
-// graph (rare — usually means the orphan is in an isolated Genie cluster, or
-// the entire connected component is unmatched).
-
-// genieIdToLich: composite zone-prefixed key → Lich room ID for every matched
-//   (augmented) node. Built once during Genie load: invert MapPanel's
-//   `augments` (keyed by Lich ID) so we can ask "does this Genie node have a
-//   Lich anchor?" in O(1). Composite key is required — Genie IDs are
-//   zone-local and would otherwise collide across zones.
-// allNodes: composite zone-prefixed key → GenieNode for every parsed node
-//   across all zones. We need the full graph to walk arcs; orphans-only
-//   isn't enough because matched nodes are also part of the path.
-export interface ReachPath {
-  anchorGenieId: number
-  anchorLichId:  number
-  anchorName:    string
-  bridgeMoves:   string[]  // Sequential `move` commands to execute after reaching anchor
-}
-
-export function findReachPath(
-  targetZoneId:   string,
-  targetGenieId:  number,
-  allNodes:       Map<string, GenieNode>,
-  genieIdToLich:  Map<string, number>,
-  lichRoomTitle:  (lichId: number) => string,
-): ReachPath | null {
-  const targetKey = zonedKey(targetZoneId, targetGenieId)
-  const target = allNodes.get(targetKey)
-  if (!target) return null
-  // Target itself shouldn't be matched (otherwise this function shouldn't have
-  // been called) but guard against the caller passing a matched node anyway.
-  if (genieIdToLich.has(targetKey)) return null
-
-  // Build a reverse adjacency on-demand: for each visited node, find which
-  // other nodes have an arc INTO it. Cheaper than maintaining a persistent
-  // reverse index since orphans are rare and BFS usually terminates quickly.
-  // We cache results across the BFS run via `predecessors` below.
-
-  // BFS state keyed by composite zoneId:nodeId. Arc destinations are
-  // zone-local, so when scanning incoming arcs we only consider nodes in the
-  // same zone as the current frontier node.
-  const predecessor = new Map<string, { fromKey: string; move: string }>()
-  const visited    = new Set<string>([targetKey])
-  const queue: string[] = [targetKey]
-
-  let anchorKey: string | null = null
-
-  while (queue.length > 0) {
-    const currentKey = queue.shift()!
-    const currentNode = allNodes.get(currentKey)
-    if (!currentNode) continue
-    // Scan every node in the SAME zone for arcs pointing AT currentNode.id.
-    // Cross-zone arcs use a different mechanism and aren't reliable for BFS.
-    for (const [otherKey, otherNode] of allNodes) {
-      if (visited.has(otherKey)) continue
-      if (otherNode.zoneId !== currentNode.zoneId) continue
-      for (const arc of otherNode.arcs) {
-        if (arc.destination !== currentNode.id) continue
-        // Found an arc otherKey → currentKey via `arc.move`. Mark predecessor
-        // (we came TO currentKey FROM otherKey, which means to get TO
-        // currentKey we execute the move starting at otherKey).
-        predecessor.set(otherKey, { fromKey: currentKey, move: arc.move })
-        visited.add(otherKey)
-        if (genieIdToLich.has(otherKey)) {
-          // Found an anchor — stop BFS.
-          anchorKey = otherKey
-          break
-        }
-        queue.push(otherKey)
-        break  // one predecessor per node is enough for shortest path
-      }
-      if (anchorKey !== null) break
-    }
-    if (anchorKey !== null) break
-  }
-
-  if (anchorKey === null) return null
-
-  // Reconstruct the path from anchor → target by walking forward via
-  // predecessor records. Each predecessor entry says "from this node, send
-  // this move to reach the next node toward the target."
-  const moves: string[] = []
-  let cursorKey: string = anchorKey
-  while (cursorKey !== targetKey) {
-    const step = predecessor.get(cursorKey)
-    if (!step) break  // shouldn't happen if BFS terminated; defensive
-    moves.push(step.move)
-    cursorKey = step.fromKey
-  }
-
-  const anchorNode = allNodes.get(anchorKey)
-  const anchorLich = genieIdToLich.get(anchorKey)!
-  return {
-    anchorGenieId: anchorNode?.id ?? 0,
-    anchorLichId:  anchorLich,
-    anchorName:    lichRoomTitle(anchorLich),
-    bridgeMoves:   moves,
-  }
 }
 
 // BFS path-finding via Lich wayto — returns sequence of move commands
@@ -430,14 +146,41 @@ export function bfsPath(
 
 // ── Genie XML parser (runs in renderer via DOMParser) ─────────────────────────
 
-export function parseGenieZone(xml: string, fallbackName: string): GenieZone {
+export function parseGenieZone(xml: string, sourceFile: string): GenieZone {
   const doc  = new DOMParser().parseFromString(xml, 'application/xml')
+  // DOMParser doesn't throw on malformed XML — it returns a document
+  // containing a `<parsererror>` element. Without this check a broken
+  // file silently becomes a zone with 0 nodes and 0 labels, which then
+  // pollutes the loaded set. Throw so the caller's try/catch can skip it.
+  const parseErr = doc.querySelector('parsererror')
+  if (parseErr) throw new Error(`Malformed XML in ${sourceFile}: ${parseErr.textContent?.slice(0, 200) ?? 'parse error'}`)
   const zoneEl = doc.querySelector('zone')
+  // Strip .xml extension for the fallback display name; keep the full filename
+  // as sourceFile for cross-zone stub resolution.
+  const fallbackName = sourceFile.replace(/\.xml$/i, '')
   const zone: GenieZone = {
-    name:  zoneEl?.getAttribute('name') ?? fallbackName,
-    id:    zoneEl?.getAttribute('id')   ?? '',
-    nodes: [],
+    name:       zoneEl?.getAttribute('name') ?? fallbackName,
+    id:         zoneEl?.getAttribute('id')   ?? '',
+    sourceFile,
+    nodes:      [],
+    labels:     [],
   }
+  // Parse free-floating labels. Genie XML uses `<label text="..."><position
+  // x=".." y=".." z=".."/></label>` for landmarks that aren't tied to a
+  // node (Temple of Light, Stormwill Tower, Dira Buyer, etc.). Parse
+  // directly off the document so we don't get confused by `<label>` elements
+  // that might appear inside other parents.
+  for (const labelEl of Array.from(doc.querySelectorAll('zone > label'))) {
+    const pos = labelEl.querySelector('position')
+    if (!pos) continue
+    zone.labels.push({
+      text: labelEl.getAttribute('text') ?? '',
+      x:    parseInt(pos.getAttribute('x') ?? '0', 10),
+      y:    parseInt(pos.getAttribute('y') ?? '0', 10),
+      z:    parseInt(pos.getAttribute('z') ?? '0', 10),
+    })
+  }
+
   for (const nodeEl of Array.from(doc.querySelectorAll('node'))) {
     const pos   = nodeEl.querySelector('position')
     const descs = Array.from(nodeEl.querySelectorAll('description')).map(d => d.textContent ?? '')
@@ -445,6 +188,8 @@ export function parseGenieZone(xml: string, fallbackName: string): GenieZone {
       exit:        a.getAttribute('exit')        ?? '',
       move:        a.getAttribute('move')        ?? '',
       destination: parseInt(a.getAttribute('destination') ?? '0', 10),
+      // Genie XML uses `hidden="True"` (capitalized) but accept any case.
+      hidden:      (a.getAttribute('hidden') ?? '').toLowerCase() === 'true',
     }))
     const colorRaw = nodeEl.getAttribute('color')
     zone.nodes.push({
@@ -464,7 +209,12 @@ export function parseGenieZone(xml: string, fallbackName: string): GenieZone {
   return zone
 }
 
-// ── Genie color legend (shared between graph view and legend overlay) ──────────
+// ── Genie color legend ─────────────────────────────────────────────────────
+//
+// Community-canonical color meanings used by the Genie maps team. Each hex
+// value here corresponds to a `<node ... color="...">` attribute in Genie
+// XML; the description is what that color signals about the room. Surfaced
+// in GenieMapView's legend overlay (▤ button) when a zone uses these colors.
 
 export const COLOR_LEGEND: Record<string, { name: string; desc: string }> = {
   '#FF00FF': { name: 'Fuchsia',    desc: 'Transport (Portal, etc.)' },

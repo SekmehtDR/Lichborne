@@ -2400,27 +2400,27 @@ A custom native menu replaces Electron's default. Built with `Menu.buildFromTemp
 
 ## 19. Map System
 
-> **Architectural pivot (v0.6.3)** — the map system was rewritten to flip the spatial source of truth from Genie XML to Lich JSON. The legacy Genie Graph view (`MapGraphView.tsx`) was deleted in favor of a Lich-native graph view (`LichGraphView.tsx`) that BFS-lays-out every Lich room from its own `wayto` data, with Genie XML treated as optional metadata polish (district tints, landmark colors, dashed-arc fallback edges, richer tooltips). Sections describing the old per-zone Genie graph (19.5, 19.6, 19.11) are retained for historical context but no longer reflect the shipping UI.
+> **Architectural pivots — two of them.** v0.6.3 deleted the per-zone Genie Graph (`MapGraphView.tsx`) in favor of a Lich-native auto-layout view (`LichGraphView.tsx`) that BFS-placed every Lich room from its `wayto` data, with Genie XML as optional polish. v0.6.6 deleted that view in turn — the BFS layout produced hairballs in dense districts and Lich's directional walks routinely disagreed with Genie's hand-curated coords ("type west, marker goes north"). The current shipping view (`GenieMapView`) renders Genie XML directly: one zone visible at a time, no auto-layout, no zone stitching. Coordinates come from the XML; the maps team has hand-laid these for 20 years and we trust them. See §19.16 for the current shipping architecture; §§19.5–6, 19.11, 19.15 are retained for historical context.
 
 ### 19.1 Overview
 
-The Map System is a spatially-aware map visualization built around two views, both Lich-first.
+The Map System is a spatially-aware map visualization built around two views.
 
 **Data sources:**
-- **Lich JSON** (`map-*.json` in Lich's `data/DR/` folder) — the primary database AND the spatial source of truth. Flat array of rooms with numeric IDs, titles, descriptions, image file references, and `wayto` exit-command maps. Every room is renderable because room positions are derived from cardinal-direction wayto commands; nothing gets stuck as an "orphan" because of fuzzy Genie matching.
-- **Genie XML** (player's Genie maps folder, e.g. `%APPDATA%\Genie\Maps\`) — optional augmentation layer. Provides x/y/z coordinates (used as layout *seeds* — see §19.15), node color tags (drive landmark fills + glyph icons), arc graph (fills gaps Lich's wayto doesn't cover, rendered as dashed lines), zone names (drive district tints), and `note` aliases. Each Genie XML file is one zone (one `.xml` = one region).
+- **Lich JSON** (`map-*.json` in Lich's `data/DR/` folder) — the primary room database. Flat array of rooms with numeric IDs, titles, descriptions, image file references, and `wayto` exit-command maps. Drives the Lich Map view and the player-position tracking (game emits Lich room IDs in subtitles).
+- **Genie XML** (player's Genie maps folder, e.g. `C:\Genie-Remix\Maps\`) — the spatial source of truth for the Genie Maps view. Provides node positions, arc graph, color tags, free-floating landmark labels, and cross-zone stub markers. Each Genie XML file is one zone.
 
 **Display modes (toolbar buttons in the map panel):**
 - **Lich Map** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required.
-- **Lich Graph** — renders a Lich-native auto-layout SVG graph of every room in the player's local neighborhood (BFS hop scope). Every room is placed regardless of match status; Genie data only enhances visuals when present. See §19.15 for the full architecture.
+- **Genie Maps** — renders Genie XML directly, one zone at a time. Coordinates come from the XML (no auto-layout). Auto-switches zones when the player's `roomTitle` matches a room in another loaded zone. See §19.16 for the full architecture. Genie maps folder required.
 
 **Component breakdown:**
-- `MapPanel` — coordinator; loads Lich JSON and (optionally) Genie XML; owns current-room tracking and the view-mode switch
+- `MapPanel` — coordinator; loads Lich JSON and (optionally) parses every Genie XML in the user-pointed folder into a `Map<zoneId, GenieZone>`; owns current-room tracking and the view-mode switch
 - `MapImageView` — Lich image-tile display and exit navigation
-- `LichGraphView` — Lich-native auto-layout graph (current shipping graph view) with optional Genie augmentation
-- `lichLayout.ts` — cardinal-direction BFS auto-layout (`autoLayoutLich(rooms, {rootId, cellSize, seedPositions})`)
+- `GenieMapView` — Genie XML rendering with click-to-walk, follow-the-player camera, hover path preview
+- `mapTypes.ts` — shared types (`LichRoom`, `GenieZone`, `GenieNode`, `GenieArc`, `GenieLabel`), `parseGenieZone` parser, `findRoom` / `bfsPath` helpers, `COLOR_LEGEND` constant
 
-**Auto-reload:** when `repository.lic` downloads a new Lich map database, the main stream carries `--- Map loaded <filename>.json`. `GameWindow` detects this pattern and increments `lichMapVersion`, which triggers `MapPanel` to reload the JSON database and re-index Genie augments automatically.
+**Auto-reload:** when `repository.lic` downloads a new Lich map database, the main stream carries `--- Map loaded <filename>.json`. `GameWindow` detects this pattern and increments `lichMapVersion`, which triggers `MapPanel` to reload the JSON database. (Genie XML files are not auto-reloaded — the user re-picks the folder if they update their map set.)
 
 ### 19.2 Map File Format
 
@@ -2647,9 +2647,9 @@ Map directory and selected file are persisted to `localStorage`. On startup they
 
 **Mouse wheel zoom** — `useEffect` attaches a non-passive `wheel` listener directly to the SVG element on mount because React's `onWheel` is passive and cannot call `preventDefault()`. Drag captures `{tx, ty}` before the state-setter callback fires to avoid a null-ref race when mouseup nulls `dragRef` before the setter runs.
 
-### 19.15 Lich-Native Graph View (LichGraphView)
+### 19.15 Lich-Native Graph View (LichGraphView) *(historical — deleted v0.6.6)*
 
-> Shipped v0.6.3 as the architectural successor to MapGraphView. Files: [LichGraphView.tsx](src/renderer/components/panels/LichGraphView.tsx), [lichLayout.ts](src/renderer/components/panels/lichLayout.ts).
+> Shipped v0.6.3 as the architectural successor to MapGraphView; deleted v0.6.6 in favor of GenieMapView (§19.16). The BFS auto-layout produced hairballs in dense districts (Crossing, Shard), and the "trust Lich's wayto cardinals" assumption disagreed with Genie's hand-curated coordinates in clustered zones — producing "type west, marker goes north" misrenders. `LichGraphView.tsx` (1351 lines) and `lichLayout.ts` (215 lines) deleted. The section below is retained for historical context.
 
 #### 19.15.1 Auto-Layout
 
@@ -2773,6 +2773,161 @@ v0.6.5 reuses the standard rounded-rect rendering for the current room (Genie co
 - **Accent dot** inside the rect (small `var(--map-current-color)` circle) — but **skipped when a landmark glyph occupies the center** to avoid stacking.
 
 The player can now read three signals simultaneously: "I'm in a shop" (red fill, $ glyph) + "this is me" (halo + green border) + "this room has an up exit" (↑ corner glyph).
+
+### 19.16 Genie Maps View (GenieMapView)
+
+> Shipped v0.6.6 as the architectural successor to LichGraphView (§19.15). File: [GenieMapView.tsx](src/renderer/components/panels/GenieMapView.tsx). Renders Genie XML directly — coordinates come from the XML, no auto-layout, one zone at a time. Mirrors Genie's own `MapForm.cs` rendering pipeline; the maps team has hand-curated zone layouts for 20 years and we use their work as authoritative.
+
+#### 19.16.1 Data Loading
+
+`MapPanel.loadGenie(dir)` reads every `*.xml` from the user's Genie maps folder, calls `parseGenieZone(xml, filename)` on each, and stores the result in a `Map<zoneId, GenieZone>` keyed by the zone's id attribute. Duplicate ids (rare; some festival maps reuse parent zone ids) get a letter suffix (`66a`, `66b`, …). Empty or malformed XML triggers a `<parsererror>` throw inside `parseGenieZone` so the per-file try/catch can skip cleanly — without that check, a broken file silently became a zone with 0 nodes and 0 labels, polluting the loaded set.
+
+`parseGenieZone` extracts:
+- Every `<node>`: id, name, descriptions[], x/y/z position, color, note (pipe-delimited aliases), arcs[].
+- Every top-level `<zone> <label>`: free-floating landmark text ("Temple of Light", "Stormwill Tower", etc.) with its own position.
+- Every `<arc>`: exit, move command, destination id, hidden flag (`hidden="True"` means walkable but not drawn — typically `go portal` arcs whose destinations sit far away and would stretch ugly cross-map lines).
+
+`GenieZone.sourceFile` stores the original filename so cross-zone stub resolution can map from `note="Map66_STR3.xml"` back to the loaded `Map<zoneId>` entry.
+
+#### 19.16.2 Coordinate Conventions
+
+**Critical:** Genie's 8×8 node rect is CENTERED on the XML position, not top-left anchored. Verified against `MapForm.cs:187–193`:
+
+```csharp
+public Point ConvertPoint(Point3D oPoint, int iOffset = 0)
+{
+    var oResult = new Point(oPoint.X * m_Scale, oPoint.Y * m_Scale);
+    var m_Offset = GetOffset();
+    oResult.X += m_Offset.X - iOffset;   // SUBTRACTS the offset
+    oResult.Y += m_Offset.Y - iOffset;
+    return oResult;
+}
+```
+
+`MapForm.cs:1767` then draws `DrawRectangle(borderPen, oWhere.X, oWhere.Y, 8, 8)` where `oWhere = ConvertPoint(n.Position, 4)`. Net effect: rect top-left at `(pos − 4, pos − 4)`, rect center at `(pos.x, pos.y)`. In our SVG, that's `<rect x={node.x - 4} y={node.y - 4} width={8} height={8} />`.
+
+Arcs in Genie are `DrawLine(pen, ConvertPoint(a.Position), ConvertPoint(b.Position))` — no offset, so endpoints land at the XML positions directly (i.e., at the rect centers).
+
+Labels in Genie use `r.X = position.X * scale + offset; r.Y = position.Y * scale + offset` (no subtraction) and `DrawString(text, font, brush, r.X + 1, r.Y + 1)`. Our SVG mirrors: `<text x={l.x + 1} y={l.y + 1} dominantBaseline="text-before-edge" textAnchor="start">`.
+
+Anchoring nodes top-left instead of centered shifts every cluster down-right by 4px and visibly misaligns labels against their rooms (Binu's catch: "the B of Bundles is too far behind the room"). Anchoring labels at the XML position without the +1 puts them 1px off. These offsets matter at the 11–12px font sizes the maps team designed against.
+
+#### 19.16.3 Arc Rendering — Two-Pass Overlay
+
+Arcs render in two passes so dense clusters stay legible:
+
+1. **Under-pass** (opacity 0.7, drawn before nodes) — looks identical to single-pass rendering outside clusters; lines get hidden by rect fills inside them.
+2. **Over-pass** (opacity 0.35, drawn after nodes and arcs-overlay, before indicators) — same line data drawn on top of rect fills. Inside a cluster the line shows as a dim trace across rect surfaces all the way to its endpoint. Outside clusters the over-pass is barely perceptible.
+
+Each pass collapses N arcs into 3 SVG `<path>` elements (one per category — see below) via concatenated `M x,y L x,y M x,y L x,y …` segments. A 1500-room zone has ~3000 arcs → 6 `<path>` elements total. Pre-collapse, each arc was a separate `<line>` and Chromium's Layerize cost reached 53% of frame time during pan/zoom; post-collapse it's negligible.
+
+**Arc category coloring** mirrors Genie's `linecardinal`/`lineclimb`/`linego` pen distinction:
+
+| Category | Exit values | Color var |
+|---|---|---|
+| `cardinal` | n/s/e/w/ne/nw/se/sw and the rest by default | `--map-arc-cardinal` |
+| `climb` | `climb` | `--map-arc-vertical` |
+| `go` | `go`, `up`, `down`, `out` | `--map-arc-special` |
+
+**Hidden arcs** (`hidden="True"` in XML) are walkable but NOT drawn. BFS pathfinding still uses them; we just skip the render. Typical case: `go meeting portal → 85` from a city gate to a far-away portal room — the line would stretch across the entire map and look like garbage. Genie's maps team marked these `hidden` for that reason; we respect it.
+
+#### 19.16.4 Title Matching
+
+`titleLookup` is a per-zones-load memoized map from string → list of `{ zone, node, isStub }`. Built with two parallel indexes:
+
+- `byTitle`: exact-case keys (`node.name` + non-xml `note` aliases)
+- `byNormalized`: keys passed through `normalizeMatchKey()` (bracket-strip, lowercase, whitespace-collapse)
+
+Lookup tries exact-case first, falls back to normalized. Without the normalized fallback, common drift like Lich's `"[Bank]"` vs Genie's `"Bank"` would leave whole clusters invisible to the "you are here" marker.
+
+**Stub preference:** when a title has both stub and non-stub candidates, non-stubs win. A stub is a 1-room cross-zone marker — same title as the real room in the other zone, but with `note` pointing to the other zone's `.xml` filename. Without preference, the marker in zone A could outvote the real room in zone B.
+
+**Description tiebreaker:** Shard has 7 rooms titled "Shard, Moonstone Street" (#78–#85). Title-only matching made the "here" marker stick on whichever was indexed first while the player walked east through #79–#85. `currentLocation` now disambiguates by `normalizeDesc` equality against `node.descriptions[]` when title has multiple non-stub candidates.
+
+`roomDesc` is plumbed through `MapPanel` → `GenieMapView`. Without it, a same-title cluster collapses to the first candidate.
+
+#### 19.16.5 Cross-Zone Stubs
+
+Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `note="MapXX_Name.xml"` pointing to the other zone's XML file.
+
+`isStubNode(n)` returns true when any `note` alias ends in `.xml`. Stubs render with a dashed amber border + an `↗` glyph centered on the rect. Hover tooltip shows the resolved target zone name (`↗ Cross-zone exit → Shard`) when that zone is loaded.
+
+**Stub click behavior:** runs BFS from the player's current room to the stub via in-zone arcs, sends the move commands. Does NOT switch the displayed zone on completion. The reason: walk commands fire blindly on a timer; if the game blocks any of them (roundtime, locked door, missing key), the timer still ticks and the zone switch would race ahead, leaving the player stranded in the old zone with the UI showing the new one. The auto-zone-switch effect (driven by `roomTitle` matching a room in a different loaded zone) is the authoritative signal for "actually arrived in the new zone."
+
+#### 19.16.6 Camera Follow
+
+`followPlayer: boolean` state, default ON. The follow-the-player effect (`useLayoutEffect`) re-centers the viewport on `currentLocation.node.(x,y)` every time the location changes. Manual pan/zoom turns follow OFF automatically (so the map doesn't fight the user); the `◆` button turns it back ON and recenters.
+
+**Why `useLayoutEffect` not `useEffect`:** the transform update must land in the same paint frame as the indicator's new world position. With plain `useEffect`, the indicator paints one frame at its new world coord with the OLD camera (visible as a flash at high walk rates), then re-renders next frame with the new camera. `useLayoutEffect` runs after the render commit but before paint, so the second render lands synchronously and the user only sees the final state.
+
+**Why always-center (not margin-snap):** earlier implementation only panned when the indicator approached a 15% safe-margin edge. At slow walk rates each snap settled before the next; at fast rates each step pushed the indicator just outside the margin and the camera snapped back to the edge, producing a visible vibration at the boundary. Always-centering means each camera delta exactly matches the player's world delta — smooth at any speed.
+
+#### 19.16.7 Indicator Layers
+
+Four indicator types, all hoisted OUT of `nodeRects` as single overlay elements so they re-render independently of the per-zone-static node array:
+
+| Indicator | Element | Trigger |
+|---|---|---|
+| Current room | `<g>` with two concentric circles (dark backdrop ring + bright `--map-current-color` ring) | `currentNodeId` change (walking) |
+| Selected | `<rect>` gold outline | click on any room |
+| Hover | `<rect>` soft white outline | mouse enter on a room |
+| Hover path preview | `<path>` bright `--map-current-color` line tracing the BFS route from player to hovered room | hovered room changes; player position changes |
+
+Pre-hoist, all four were inline children of each per-node `<g>` element, so changing the current room rebuilt the entire `nodeRects` JSX array (currentNodeId was in its dep). On a 1500-room zone that was the rapid-walk stutter/tearing source. Post-hoist, walking only re-renders the 2-3 indicator elements.
+
+**Backdrop ring on the current halo** — single-circle halo dissolved into similarly-colored adjacent rooms (a green halo next to a red shop next to a lime economic-room marker disappears into the noise). Translucent dark ring + bright stroke gives unconditional contrast.
+
+**Hover indicator color (soft white)** is deliberately distinct from gold (selected) and green (current) so the three states coexist visually without ambiguity.
+
+**Hover path preview** runs `bfsZoneRoomPath` from `currentLocation.node.id` to `hoveredId`, builds line segments between consecutive rooms, renders as a single `<path>` with rounded line joins. Instant answer to "how would I get there if I clicked." Cost: one BFS per hover-enter (~1500 ops on a Crossing-sized zone).
+
+#### 19.16.8 Tooltip
+
+Block-built conditional tooltip:
+
+- Bold room name
+- `Map {zoneId}: {zoneName} · Room #{nodeId}`
+- Cross-zone callout for stubs: `↗ Cross-zone exit → {targetZoneName}` (resolves stub's `.xml` note via `sourceFileToZoneId` map)
+- Color category if room has a recognized `COLOR_LEGEND` color: swatch + name + description (e.g. `■ Red — Shop`)
+- Aliases: pipe-delimited `note` entries minus `.xml` markers
+- Exits: deduped list of arc exit/move strings
+- Action hint at bottom: "Click to walk here" (regular room) or "Click to go to {zoneName}" (stub). Shown only when click is meaningful — player in this zone, hovering a different room.
+
+Each section is conditional so unset fields don't render an empty line.
+
+#### 19.16.9 Click-to-Walk
+
+`onNodeClick`:
+- Sets `selectedId`.
+- For a stub: BFS to it within the current zone, dispatch walk commands. Map auto-switches zones via the title-match effect once the player has actually crossed the boundary.
+- For a regular room: BFS to it within the current zone, dispatch walk commands.
+- Cross-zone click-to-walk (BFS across multiple zones) is NOT supported — Genie arc destinations are zone-local IDs.
+
+`sendWalkPath(commands, onComplete?)` clears any in-flight timers, then schedules each command at `WALK_STEP_MS` (600ms) intervals via `setTimeout`. The `onComplete` callback fires when the LAST command's timer fires — not used in current callers (stub click stopped using it after the "map races ahead" feedback) but kept for future use.
+
+Walk timers are cleared on zone change AND on unmount. Level change does NOT clear walk timers — click-to-walk paths can legitimately include up/down arcs.
+
+Walk commands are echoed to the game window as `>cmd` lines via `sendCommand` in `GameWindow.tsx`. Same code path as typed commands, quick-send, room-exit clicks, and in-text command links — they all share the `command-echo` preset.
+
+#### 19.16.10 Rendering Layer Order
+
+Inside the SVG `<g transform>` pan/zoom group:
+
+1. `arcPathsUnder` — arc paths at opacity 0.7
+2. `labelTexts` — free-floating landmark labels (gets covered by nodes when they overlap)
+3. `nodeRects` — 8×8 room rects with stub glyphs
+4. `arcPathsOver` — arc paths at opacity 0.35 (faint trace through rects)
+5. `hoverPathIndicator` — BFS preview line
+6. `hoverIndicator` — soft white rect outline
+7. `selectedIndicator` — gold rect outline
+8. `currentIndicator` — dark backdrop + bright halo ring (LAST so it paints over everything)
+
+#### 19.16.11 Layout Quirks Worth Knowing
+
+- **First-render auto-zone-switch** requires `lastLocationRef` initialized to `null`, not `useRef(currentLocation)`. The latter makes the ref equal to `currentLocation` on first render, and the effect's `===` equality check bails before applying the initial location. Symptom: open the map after the game's already connected, and the displayed zone stays empty until the user clicks ◆.
+- **Hover state must clear on level change**, not just zone change. Hover/select IDs persist through level switches; if the new floor has a room with the same numeric id, the highlight silently jumps to that unrelated room. The cleanup is split: zone change clears walk timers + UI state, level change clears UI state only (walk paths can legitimately cross levels).
+- **`pointer-events: none` on the pan group breaks click-to-walk.** `isDragging` flips true on mousedown BEFORE click fires, so toggling pointer-events at that point makes the click target the SVG root, not the inner node `<g>`. Hover is gated at the React layer (`dragRef.current` check in `onNodeHoverEnter`) instead.
+- **`will-change: transform`** on the pan group promotes the subtree to its own composited layer so pan/zoom is GPU-translated rather than triggering paint of siblings.
 
 ### 19.12 Future Work
 

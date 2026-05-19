@@ -1,3 +1,34 @@
+## What's new in v0.6.6
+
+The map's graph view has been rebuilt again — this time around Genie XML as the spatial source of truth. The previous Lich-native auto-layout (v0.6.3) tried to derive room positions from each room's walk commands; it worked in open areas but produced visual hairballs in dense districts and routinely disagreed with the Genie maps team's hand-curated layouts ("type west, marker goes north"). The new view renders Genie XML directly at the coordinates the community has been refining for 20 years.
+
+### Genie Maps — new graph view
+
+- **Renamed from "Lich Graph" to "Genie Maps."** Point it at your Genie maps folder (button in the toolbar) and every zone loads. The dropdown lists every zone you have — Map 1: The Crossing, Map 67: Shard, Map 150: Fang Cove, and so on.
+- **One zone at a time, no auto-layout.** Rooms render exactly where the Genie XML places them. No more "this cluster looks like a knot" — if it looks clean in Genie or Frostbite, it looks the same in Lichborne.
+- **Room colors mean something.** Red = shop, lime = economic interest, fuchsia = transport, orange = guildleader, mint = auto-healer, yellow = stat training, blue = water, navy = underwater, sand = ranger trailhead, periwinkle = shrine, aqua = housing, eggplant = depart, purple = favor altar, and so on. The legend (▤ button) shows every color that appears in the current zone with its meaning.
+- **Arc colors mean something too.** Gray = cardinal direction, amber = climb, orange = `go`-target rooms (doors, portals, up/down/out). Same legend.
+- **Floating landmark labels.** Temple of Light, Stormwill Tower, Dira Buyer, Barber, Tables, Gift Shop — every label the Genie maps team has placed renders alongside the rooms.
+- **Cross-zone exits marked with ↗.** Hover one and the tooltip tells you which zone it leads to (`↗ Cross-zone exit → Shard`). Click it and Lichborne walks you to the boundary room. The map switches to the new zone once you actually arrive — never before. If a door is locked or you run out of roundtime, the map stays put. No more "I clicked a path, the map jumped, and now I have no idea where I really am."
+- **Click any room to walk there.** Path is computed from the Genie arc graph; commands fire one at a time at a 600ms cadence. Each move echoes in your game window so you can see exactly what was sent.
+- **Hover preview.** Hover any room and a bright green line traces the path you'd walk if you clicked. Instantly answers "how far is that and how would I get there." Hover also shows a tooltip with the room's map ID, exits, color category, aliases, and the action you'd be taking.
+- **Camera follows you while you walk.** As you move, the viewport re-centers smoothly so you're always in the middle of the canvas. Pan or zoom manually and the camera lets you stay where you put it — click ◆ to snap back to your position and re-enable follow.
+
+### Performance & polish
+
+- **Arc rendering rewritten for dense clusters.** Lines are drawn twice — once at full opacity beneath rooms (current behavior), once at faint opacity on top of rooms. The faint over-pass makes line paths visible through dense room clusters so you can trace exactly which room any arc connects to. In the old rendering, lines disappeared into rect fills inside a cluster and you'd have to guess.
+- **Rapid walking no longer stutters.** The current-location indicator and selection outlines are now rendered as separate overlay elements; walking only updates those few elements instead of rebuilding the entire scene. On dense zones (Crossing, Shard) this drops Chromium's compositor cost dramatically — fast-paced movement is buttery.
+- **Map labels follow your font size.** Set your font size in Settings and the map's room labels and floating landmark text scale with it.
+- **Themed dropdown and floor selector.** The zone-picker dropdown and Z-level chips now match the rest of the panel's theme instead of falling back to OS defaults (which looked broken on dark themes).
+- **Smarter "you are here" tracking.** When multiple rooms in a zone share the same title (Shard has 7 rooms titled "Shard, Moonstone Street"), Lichborne now uses your room description to disambiguate which one you're actually in. The marker tracks each step correctly instead of getting stuck on whichever was first in the file.
+- **Better cross-zone matching.** Rooms whose Lich title differs from the Genie name only in case or brackets (Lich `[Bank]` vs Genie `Bank`) now match correctly via a normalized fallback lookup.
+- **Map opens with your zone already loaded** if you open it while you're already connected. Previously it would sit empty until you clicked ◆ or picked a zone manually.
+
+### Other improvements
+
+- **All panel-sourced commands echo in the game window.** Walks from the map, exits clicked in the Room panel, Quick-Send entries, command links in game text — all of these now show up as `>command` lines in your text window the same way commands you type do.
+- **Malformed XML files are now skipped silently.** If a Genie map file fails to parse, Lichborne logs it and moves on instead of treating it as an empty zone.
+
 ## What's new in v0.6.5
 
 Polish pass on the Lich Graph view from v0.6.3 — adds a togglable legend that doubles as a control surface, lets the current-room indicator stop hiding the room's actual identity, fixes the zoomed-out glow domination, and adds search-by-room-ID.

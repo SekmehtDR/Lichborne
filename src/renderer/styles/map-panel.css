@@ -123,6 +123,80 @@
   display: inline-block;
 }
 
+/* ── Zone dropdown ───────────────────────────────────────────────────────── */
+
+.map-select {
+  background: var(--map-select-bg);
+  border: 1px solid var(--map-btn-border);
+  color: var(--map-text);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  /* Native arrow on Windows looks broken against dark themes — let the
+     browser draw it but tighten padding so it doesn't crowd the text. */
+  padding-right: 18px;
+}
+
+.map-select:hover {
+  border-color: var(--accent-dim);
+  background: var(--bg-hover);
+}
+
+.map-select:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.map-select option {
+  background: var(--map-select-bg);
+  color: var(--map-text);
+}
+
+/* ── Z-level chips ───────────────────────────────────────────────────────── */
+
+.map-level-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--map-text-muted);
+  margin-left: 4px;
+}
+
+.map-chip {
+  background: var(--map-btn-bg);
+  border: 1px solid var(--map-btn-border);
+  color: var(--map-text-muted);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+  min-width: 18px;
+  text-align: center;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.map-chip:hover {
+  border-color: var(--accent-dim);
+  color: var(--map-text);
+  background: var(--bg-hover);
+}
+
+.map-chip--active {
+  border-color: var(--map-select-color);
+  color: var(--map-select-color);
+  background: var(--map-btn-bg);
+}
+
+.map-chip--active:hover {
+  color: var(--map-select-color);
+}
+
 /* ── Color legend ─────────────────────────────────────────────────────────── */
 
 .map-legend {

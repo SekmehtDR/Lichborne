@@ -1210,7 +1210,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Shared PanelFrame props ───────────────────────────────────────────────
 
-  const sendCommand = useCallback((cmd: string) => window.api.sendCommand(session.sessionId,cmd), [])
+  // Shared "send + echo" callback used by every panel-sourced command:
+  // map walks, room-exit clicks, quick-send entries, in-text command
+  // links, etc. Echoes a `>cmd` line into the game window the same way
+  // typed commands do (see handleCommand / sendCommandSequence) so the
+  // user always sees what was sent — important for map walks where a
+  // sequence of moves fires without any other UI feedback.
+  const sendCommand = useCallback((cmd: string) => {
+    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
+    window.api.sendCommand(session.sessionId, cmd)
+  }, [])
 
   const sharedFrameProps = {
     streamLines, roomState, expSkills, rankUpSkills,
@@ -1447,7 +1456,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={cmd => window.api.sendCommand(session.sessionId,cmd)} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} large />
             </div>
           </div>
         </div>
