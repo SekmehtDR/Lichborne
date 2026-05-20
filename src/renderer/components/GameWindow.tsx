@@ -505,6 +505,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       setDebugEvents([...debugEventsBufRef.current])
       setRawXmlLines([...rawXmlBufRef.current])
       setFireLog([...fireLogBufRef.current])
+    } else {
+      // Wipe all debug buffers on close so a future open starts fresh.
+      // Without this, the per-tab `Events (N)` counter is misleading on
+      // reopen — it would show whatever the buffer had cached from the
+      // previous open, not anything collected since. Same reasoning for
+      // raw XML and the fire log: only show telemetry from the current
+      // open-window forward.
+      debugEventsBufRef.current = []
+      rawXmlBufRef.current = []
+      fireLogBufRef.current = []
+      setDebugEvents([])
+      setRawXmlLines([])
+      setFireLog([])
     }
   }, [showDebug])
 
@@ -908,9 +921,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (newStance !== null) setStance(newStance)
       if (newSpell !== null)  setSpell(newSpell)
 
-      debugEventsBufRef.current.push(...events)
-      if (debugEventsBufRef.current.length > MAX_DEBUG_EVENTS) debugEventsBufRef.current.splice(0, debugEventsBufRef.current.length - MAX_DEBUG_EVENTS)
-      if (showDebugRef.current) setDebugEvents([...debugEventsBufRef.current])
+      // Debug events buffer is gated on `showDebugRef` so events don't
+      // accumulate in memory while the panel is closed. Mirrors the raw
+      // XML and fire log paths (raw XML is gated on the MAIN side via
+      // `s.debugPanelOpen`; fire log is gated inside the rule engines).
+      // Pre-fix, this `push` ran unconditionally and the Events tab
+      // always showed `(500)` even on a fresh open — events had been
+      // collecting all along, just not painted. Opening the panel now
+      // starts a fresh collection from that point forward.
+      if (showDebugRef.current) {
+        debugEventsBufRef.current.push(...events)
+        if (debugEventsBufRef.current.length > MAX_DEBUG_EVENTS) debugEventsBufRef.current.splice(0, debugEventsBufRef.current.length - MAX_DEBUG_EVENTS)
+        setDebugEvents([...debugEventsBufRef.current])
+      }
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
@@ -922,7 +945,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (!s.connected && s.message === 'Disconnected') {
         setDropped(true)
         setStatus(s.clean ? 'Disconnected' : 'Connection lost')
-        if (!s.clean) setShowDebug(true)
+        // We deliberately do NOT auto-open the debug panel on dirty
+        // disconnect. The previous behaviour opened it on any non-clean
+        // drop, which intruded on the common cases: Lich scripts that
+        // issue `exit` themselves (the user's `combat-trainer>exit`
+        // flow) don't always set `cleanDisconnect` on the main side, so
+        // their drops looked dirty even though nothing went wrong. The
+        // status banner ("Connection lost") already communicates the
+        // event; users who want to inspect can click Debug.
         // document.title is owned by AppShell — it watches session.status.connected
         // and re-applies on tab switch, so we don't write it here.
         exportCharacterProfile(session.account, session.character, session.game, session.useLich)

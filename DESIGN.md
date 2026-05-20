@@ -2929,6 +2929,137 @@ Inside the SVG `<g transform>` pan/zoom group:
 - **`pointer-events: none` on the pan group breaks click-to-walk.** `isDragging` flips true on mousedown BEFORE click fires, so toggling pointer-events at that point makes the click target the SVG root, not the inner node `<g>`. Hover is gated at the React layer (`dragRef.current` check in `onNodeHoverEnter`) instead.
 - **`will-change: transform`** on the pan group promotes the subtree to its own composited layer so pan/zoom is GPU-translated rather than triggering paint of siblings.
 
+### 19.17 Per-Color Effect System (v0.6.7)
+
+> Shipped in v0.6.7 as the visual-identity layer on top of the bare GenieMapView rendering. Every COLOR_LEGEND category gets its own animated effect signature so a player can recognize "what kind of room is this?" without consulting the legend. Implementation pattern is uniform across categories; adding a new effect is a 4-step recipe.
+
+#### 19.17.1 Effect Families
+
+Each category falls into one of these structural families:
+
+| Family | Implementation | Categories |
+|---|---|---|
+| **Magical motes** (small drifting circles) | 3-4 `<circle>` per node with motif-specific keyframes | Transport (vortex), Shrine (drift), Favor Altar (rise-slow), Stat Training (rise-fast) |
+| **Stroke pulse** (animated stroke around the rect) | One `<rect>` overlay with animated opacity | Healer (heartbeat ECG), Obstacle (caution blink) |
+| **Perimeter glint** (dash sliding around the rect border) | `<rect>` with `stroke-dasharray` + animated `stroke-dashoffset` | Shop (coin glint) |
+| **Concentric rings** (expanding or contracting circles) | 2-3 `<circle>` with `transform: scale` animation | Water (outward ripples), Depart (inward implode) |
+| **Falling particles** (downward stream from below the rect) | 3 `<circle>` per node animating `translateY` positive | Lumberjacking (leaves with wobble), Mining + Trailhead (dirt straight-down) |
+| **Rising particles** (upward stream from below the rect) | 2 `<circle>` per node animating `translateY` negative | Guildleader (XP rise) |
+| **Underwater bubbles** | 2 `<circle>` rising with a scale "pop" at the top | Underwater |
+| **Aura modifier** (modifies the aura rect's animation or size) | CSS class applied to the aura rect | Interesting Room (fire flicker + 1.3× size), Housing/Guildleader (intensified static aura) |
+| **Static glyph** (centered text on the rect) | `<text>` element with the icon character | Mining (⛏), Lumberjacking (🪓) |
+
+#### 19.17.2 Pattern for Adding a New Effect
+
+1. **Declare a color set** at the top of `GenieMapView.tsx`:
+   ```typescript
+   const NEW_EFFECT_COLORS = new Set<string>(['#XXXXXX'])
+   ```
+2. **Add a memo** in the component body, in the layer-order section. Filter `visibleNodes` by the set, return an array of SVG elements (one or more per matching node). Memoize on `[visibleNodes]` only — the animation lives in CSS.
+3. **Add a CSS keyframe** in `map-panel.css`:
+   ```css
+   @keyframes genie-new-effect {
+     0%   { ... }
+     100% { ... }
+   }
+   .genie-new-effect {
+     animation: genie-new-effect Xs <easing> infinite [backwards];
+     transform-box: fill-box;
+     transform-origin: center;
+   }
+   ```
+4. **Render at the correct layer** in the SVG tree — aura layer for backgrounds, between `nodeRects` and indicators for room-level effects, between `arcPathsOver` and indicators for over-rect effects.
+
+#### 19.17.3 Layer Order
+
+Inside the SVG `<g transform>` pan/zoom group, the current order is:
+
+1. `auras` — translucent color halos behind colored rooms (always-on layer for any COLOR_LEGEND room)
+2. `arcPathsUnder` — full-opacity arc passes (cardinal / climb / go)
+3. `labelTexts` — floating landmark labels (Temple of Light, etc.)
+4. `nodeRects` — 8×8 room rects (with stub `↗` glyph and tool ⛏/🪓 glyphs as children)
+5. `arcPathsOver` — faint over-pass arc traces through rect fills
+6. `sparkles` — magical motes (Transport / Shrine / Favor Altar / Stat Training)
+7. `heartbeats` — Healer ECG pulse
+8. `coinGlints` — Shop perimeter dash
+9. `ripples` — Water outward rings
+10. `bubbles` — Underwater bubbles
+11. `cautionRings` — Obstacle blink
+12. `implodes` — Depart inward rings
+13. `leafFalls` — Lumberjacking
+14. `dirtFalls` — Mining + Trailhead
+15. `xpRises` — Guildleader
+16. `hoverPathIndicator` — BFS preview line
+17. `hoverIndicator` — soft white rect outline
+18. `selectedIndicator` — gold rect outline
+19. `currentIndicator` — green halo (always last so it paints on top)
+
+#### 19.17.4 Contrast-Aware Mote Color
+
+`getMoteContrastColor(hex)` measures relative luminance (ITU-R BT.601: `0.299r + 0.587g + 0.114b`) of the room's color and returns a CSS `color-mix()` expression that pulls toward white for dark backgrounds (Transport `#FF00FF`, Favor Altar `#800080`) or toward dark for light backgrounds (Shrine `#A6A3D9`, Stat Training `#FFFF00`). The original "always pull toward white" formulation made magical motes invisible on the light-tinted categories — pale pink motes on pale lavender room background is invisible. Threshold at luminance 0.5; mix ratio 25%-color for dark→light, 35%-color for light→dark.
+
+#### 19.17.5 Named-Color Normalization
+
+Some Genie XML files use CSS color names instead of hex codes:
+
+```xml
+<node id="737" name="House of the Silk Strings, Lotus Pond" color="Blue">
+```
+
+The five names that appear in real maps: `Aqua`, `Blue`, `Lime`, `Red`, `White`. `parseGenieZone` runs `normalizeNodeColor()` over every node's color attribute, converting recognized names to canonical uppercase hex. Pre-normalization the rect's SVG `fill` still worked (CSS accepts named colors) but every effect lookup keyed by hex silently missed these rooms — room 737 was rendering as a plain blue rect with no ripple effect despite being a Water room.
+
+#### 19.17.6 Particle Color Per Room
+
+For effect families shared across multiple room categories (currently only `dirtFalls`, shared by Mining and Trailhead), the particle color is picked per-room via a small helper rather than being baked into the memo:
+
+```typescript
+function dirtParticleColor(roomColor: string): string {
+  return roomColor === '#C2B280' ? '#a08858' : '#b06030'
+}
+```
+
+Mining gets warm rusty-brown; Trailhead gets sandy tan. The original Mining color `#4a2810` was too dark to read against the dark map background — testers couldn't see falling particles at all on mining rooms. Brighter rust-brown solved it.
+
+#### 19.17.7 Tool Glyphs
+
+`TOOL_GLYPHS: Record<string, string>` maps category hex → emoji/text glyph:
+
+- `#993300` → `⛏︎` (Mining pickaxe, U+26CF)
+- `#008000` → `🪓︎` (Lumberjacking axe, U+1FA93)
+
+Trailing **U+FE0E** (text variation selector) forces text-style rendering in browsers that might otherwise render these as colored emoji. The glyph renders as a child of the per-node `<g>` in `nodeRects`, but only when the room is NOT a stub — stubs preempt the slot with `↗` because cross-zone identity is more important than resource category. Font size 5px (half the stub glyph's 10px) so the tool reads as a category marker, not a category banner.
+
+#### 19.17.8 Performance — Animation Pause + Parse Cache
+
+The per-color effect system introduced enough sustained animation work to dominate frame budget on dense zones. Two targeted optimizations:
+
+**Pause during interaction.** The pan group `<g>` gets the `genie-pan-dragging` class when `isDragging || inMotion` is true. CSS rule `.genie-pan-dragging * { animation-play-state: paused !important }` cascades through every descendant.
+
+- `isDragging` flips true on mousedown, false on mouseup. Pauses animations during manual pan/zoom.
+- `inMotion` flips true on any `currentLocation` change and a `MOTION_QUIET_MS = 800` timer resets. When 800ms elapse with no further walk, `inMotion` flips back to false. Pauses animations during sustained player walking.
+
+Why: Chrome DevTools profiling showed Layerize ~33% + Recalculate Style ~22% + Paint ~14% during drag, and Layerize ~17% + Recalculate Style ~16% + Layout ~11% during cross-map walking — all attributable to continuously-running animations the user wasn't stationary long enough to appreciate during those scenarios. Pausing frees frame budget for transform updates and React reconciliation.
+
+**Why class-based, not pointer-events.** Earlier attempts toggled `pointer-events: none` on the pan group during drag for hit-test savings, but that shifts the click-target off the inner node `<g>` (mousedown sets `isDragging` true *before* `click` fires), silently breaking click-to-walk. The animation-pause class doesn't have this hazard because it only affects animation execution, not event routing.
+
+**Parse cache.** Initial Genie parse takes several seconds for a 122-XML folder. `genie-cache:load` / `genie-cache:save` IPC handlers (defined in `main.ts`) serialize the parsed `Map<zoneId, GenieZone>` to `userData/genie-cache.json` and verify a fingerprint (sorted `filename:mtimeMs:size` segments joined with `|`) on subsequent loads. If the fingerprint matches: skip the file-read loop entirely, `JSON.parse` the cache, hand the renderer a ready zones map in ~50ms.
+
+Invalidation triggers:
+- Any XML in the folder added/removed/modified/replaced (fingerprint diff)
+- Selected folder path differs from the cached `dir` field
+- `GENIE_CACHE_VERSION` constant bumps (used when the `GenieZone` shape changes; old caches invalidate automatically without manual cleanup)
+
+The cache file is single-blob JSON (~2-5 MB depending on folder size); loaded as one file read and one `JSON.parse` call. Cache write is fire-and-forget after parse — failure logs to console but doesn't block the user from seeing the freshly-parsed map.
+
+#### 19.17.9 Aura Variants
+
+Aura is a 1.125× translucent rect behind every COLOR_LEGEND room. Two variants:
+
+- **`AURA_INTENSIFIED_COLORS`** (Guildleader, Housing) — opacity 0.28 instead of 0.15 (`auraScale` stays at 1.125×)
+- **`AURA_FIRE_COLORS`** (Interesting Room) — opacity is owned by `@keyframes genie-aura-fire` (irregular flicker between 0.15 and 0.55), AND `auraScale` jumps to 1.3× so the larger diffuse area lets the flicker read as firelight rather than a tight color band
+
+When an animated aura class is applied, the `opacity` SVG attribute is omitted (`undefined`) so CSS owns opacity unambiguously — having both an attribute and a CSS animation on the same property creates browser-inconsistency.
+
 ### 19.12 Future Work
 
 | Item | Notes |

@@ -146,6 +146,33 @@ export function bfsPath(
 
 // ── Genie XML parser (runs in renderer via DOMParser) ─────────────────────────
 
+// Named-color → hex normalization. Some Genie map XMLs use CSS color
+// names (`color="Blue"`) instead of hex codes (`color="#0000FF"`). The
+// rect's fill works either way because both are valid CSS colors, but
+// downstream effect lookups (`COLOR_LEGEND`, sparkle/heartbeat/ripple
+// sets) are keyed by hex — so a `color="Blue"` room would render plain
+// blue without any aura or effect. Convert at parse time so the rest
+// of the system sees a single canonical hex form.
+//
+// Only the names actually present in the community maps folder are
+// listed here. Unknown named colors fall through to the existing hex
+// normalization (which uppercases them); they'll render as the
+// browser-recognised CSS color but get no effect — same as before.
+const NAMED_COLOR_HEX: Record<string, string> = {
+  aqua:  '#00FFFF',
+  blue:  '#0000FF',
+  lime:  '#00FF00',
+  red:   '#FF0000',
+  white: '#FFFFFF',
+}
+
+function normalizeNodeColor(raw: string | null): string | undefined {
+  if (!raw) return undefined
+  const named = NAMED_COLOR_HEX[raw.toLowerCase()]
+  if (named) return named
+  return raw.replace(/^#+/, '#').toUpperCase()
+}
+
 export function parseGenieZone(xml: string, sourceFile: string): GenieZone {
   const doc  = new DOMParser().parseFromString(xml, 'application/xml')
   // DOMParser doesn't throw on malformed XML — it returns a document
@@ -191,7 +218,6 @@ export function parseGenieZone(xml: string, sourceFile: string): GenieZone {
       // Genie XML uses `hidden="True"` (capitalized) but accept any case.
       hidden:      (a.getAttribute('hidden') ?? '').toLowerCase() === 'true',
     }))
-    const colorRaw = nodeEl.getAttribute('color')
     zone.nodes.push({
       id:           parseInt(nodeEl.getAttribute('id')   ?? '0', 10),
       name:         nodeEl.getAttribute('name')          ?? '',
@@ -199,7 +225,7 @@ export function parseGenieZone(xml: string, sourceFile: string): GenieZone {
       x:            parseInt(pos?.getAttribute('x') ?? '0', 10),
       y:            parseInt(pos?.getAttribute('y') ?? '0', 10),
       z:            parseInt(pos?.getAttribute('z') ?? '0', 10),
-      color:        colorRaw ? colorRaw.replace(/^#+/, '#').toUpperCase() : undefined,
+      color:        normalizeNodeColor(nodeEl.getAttribute('color')),
       note:         nodeEl.getAttribute('note')          ?? undefined,
       zoneName:     zone.name,
       zoneId:       zone.id,

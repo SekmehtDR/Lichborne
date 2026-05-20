@@ -53,6 +53,9 @@ declare global {
       browseFolder: () => Promise<string | null>
       listMapDir: (dir: string) => Promise<{ name: string; path: string }[] | null>
       readFile: (filePath: string) => Promise<string | null>
+      // Genie parse cache
+      genieCacheLoad: (dir: string) => Promise<unknown[] | null>
+      genieCacheSave: (dir: string, zones: unknown[]) => Promise<boolean>
       // Lich file-system
       findLichMapFile: (lichPath: string) => Promise<{ jsonPath: string; mapsDir: string } | null>
       readMapImage: (mapsDir: string, imageName: string) => Promise<string | null>

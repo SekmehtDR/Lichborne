@@ -127,6 +127,17 @@ contextBridge.exposeInMainWorld('api', {
   readFile: (filePath: string): Promise<string | null> =>
     ipcRenderer.invoke('read-file', filePath),
 
+  // Genie parse cache — see main.ts handlers for details.
+  // `load` returns the array of parsed zones if the cache fingerprint
+  // matches the current folder state, or `null` if cache is stale /
+  // missing / for a different folder.
+  // `save` writes the parsed zones with a current fingerprint; called
+  // by the renderer after a successful full parse.
+  genieCacheLoad: (dir: string): Promise<unknown[] | null> =>
+    ipcRenderer.invoke('genie-cache:load', dir),
+  genieCacheSave: (dir: string, zones: unknown[]): Promise<boolean> =>
+    ipcRenderer.invoke('genie-cache:save', dir, zones),
+
   findLichMapFile: (lichPath: string): Promise<{ jsonPath: string; mapsDir: string } | null> =>
     ipcRenderer.invoke('find-lich-map-file', lichPath),
 

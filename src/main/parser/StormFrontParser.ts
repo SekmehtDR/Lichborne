@@ -138,6 +138,8 @@ export class StormFrontParser {
   private isBleeding  = false
   private isJoined    = false
   private isDead      = false
+  private isPoisoned  = false
+  private isDiseased  = false
 
   // Suppress consecutive identical prompts — DR fires <prompt> after every
   // server transaction (room updates, component clears, etc.)
@@ -171,6 +173,8 @@ export class StormFrontParser {
     this.isBleeding    = false
     this.isJoined      = false
     this.isDead        = false
+    this.isPoisoned    = false
+    this.isDiseased    = false
   }
 
   parse(line: string): GameEvent[] {
@@ -386,6 +390,14 @@ export class StormFrontParser {
           if (normalized === 'bleeding')  this.isBleeding  = visible
           if (normalized === 'joined')    this.isJoined    = visible
           if (normalized === 'dead')      this.isDead      = visible
+          // Poisoned / Diseased — confirmed against Genie's Core/Game.cs:2073–2091
+          // case list. Both clients (Frostbite doesn't track these at all)
+          // already exposed them as `$poisoned` / `$diseased` reserved
+          // variables. Surface via the standard indicator-event path; the
+          // renderer's `indicators.poisoned` / `indicators.diseased` map
+          // is populated automatically.
+          if (normalized === 'poisoned')  this.isPoisoned  = visible
+          if (normalized === 'diseased')  this.isDiseased  = visible
           if (!['standing','sitting','kneeling','prone'].includes(normalized)) {
             this.events.push({ type: 'indicator', id: normalized, visible })
           }

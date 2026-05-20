@@ -307,7 +307,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 600;
+  /* Must sit above .add-character-modal (z-index 1000) which wraps the
+     compact Launcher when the user clicks the `+` tab. Pre-fix, both
+     this overlay and the wizard were z-index 600 — so when a user
+     clicked Connect inside the modal-launcher, the "Connecting to…"
+     overlay rendered BEHIND the modal backdrop. 1500 keeps it below
+     QuickSend (z-index 2000) but above every login/launcher surface. */
+  z-index: 1500;
   backdrop-filter: blur(2px);
 }
 

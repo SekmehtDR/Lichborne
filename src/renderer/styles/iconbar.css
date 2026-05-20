@@ -103,3 +103,5 @@
 .status-bar.ind-bleeding  { color: var(--ind-bleeding-color);  background: var(--ind-bleeding-bg);  border-color: var(--ind-bleeding-border);  box-shadow: 0 0 8px var(--ind-bleeding-glow); }
 .status-bar.ind-stunned   { color: var(--ind-stunned-color);   background: var(--ind-stunned-bg);   border-color: var(--ind-stunned-border);   box-shadow: 0 0 8px var(--ind-stunned-glow); }
 .status-bar.ind-dead      { color: var(--ind-dead-color);      background: var(--ind-dead-bg);      border-color: var(--ind-dead-border);      box-shadow: 0 0 8px var(--ind-dead-glow); }
+.status-bar.ind-poisoned  { color: var(--ind-poisoned-color);  background: var(--ind-poisoned-bg);  border-color: var(--ind-poisoned-border);  box-shadow: 0 0 8px var(--ind-poisoned-glow); }
+.status-bar.ind-diseased  { color: var(--ind-diseased-color);  background: var(--ind-diseased-bg);  border-color: var(--ind-diseased-border);  box-shadow: 0 0 8px var(--ind-diseased-glow); }

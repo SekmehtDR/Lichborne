@@ -143,6 +143,21 @@ export const darkBase: ThemeVars = {
   '--ind-joined-border': '#103058',
   '--ind-joined-glow':   'rgba(80, 160, 255, 0.3)',
 
+  // Poisoned — toxic green. Sickly-bright so it reads as "wrong" against
+  // the neutral indicator palette but not so red it competes with bleed.
+  '--ind-poisoned-color':  '#5fc758',
+  '--ind-poisoned-bg':     '#0a1e08',
+  '--ind-poisoned-border': '#1c4a18',
+  '--ind-poisoned-glow':   'rgba(95, 200, 90, 0.3)',
+
+  // Diseased — mustard / sickly yellow-green. Adjacent to poisoned on the
+  // hue wheel but desaturated and shifted yellow so the two states are
+  // visually distinguishable when one supersedes the other in the slot.
+  '--ind-diseased-color':  '#c0b048',
+  '--ind-diseased-bg':     '#1a1808',
+  '--ind-diseased-border': '#4a4218',
+  '--ind-diseased-glow':   'rgba(200, 180, 70, 0.28)',
+
   '--compass-active-text':     '#70e870',
   '--compass-active-bg':       '#0e2a0e',
   '--compass-active-border':   '#1e5a1e',
@@ -447,6 +462,16 @@ const ivory: ThemeVars = {
   '--ind-joined-border': '#7088d8',
   '--ind-joined-glow':   'rgba(40, 100, 200, 0.15)',
 
+  '--ind-poisoned-color':  '#2a6a18',
+  '--ind-poisoned-bg':     '#e8f6dc',
+  '--ind-poisoned-border': '#78b860',
+  '--ind-poisoned-glow':   'rgba(50, 150, 40, 0.15)',
+
+  '--ind-diseased-color':  '#806818',
+  '--ind-diseased-bg':     '#f8efd0',
+  '--ind-diseased-border': '#c0a850',
+  '--ind-diseased-glow':   'rgba(170, 140, 40, 0.15)',
+
   '--compass-active-text':     '#1a6a1a',
   '--compass-active-bg':       '#e8f8e8',
   '--compass-active-border':   '#70b870',
@@ -624,6 +649,16 @@ const mist: ThemeVars = {
   '--ind-joined-border': '#6888c8',
   '--ind-joined-glow':   'rgba(38, 98, 190, 0.12)',
 
+  '--ind-poisoned-color':  '#286618',
+  '--ind-poisoned-bg':     '#dceadc',
+  '--ind-poisoned-border': '#70b058',
+  '--ind-poisoned-glow':   'rgba(46, 142, 36, 0.12)',
+
+  '--ind-diseased-color':  '#7a6418',
+  '--ind-diseased-bg':     '#f0ebc8',
+  '--ind-diseased-border': '#b8a048',
+  '--ind-diseased-glow':   'rgba(160, 130, 36, 0.12)',
+
   '--compass-active-text':     '#226822',
   '--compass-active-bg':       '#e0f0e0',
   '--compass-active-border':   '#68b068',
@@ -783,6 +818,14 @@ const parchment: ThemeVars = {
   '--ind-joined-bg':       '#d8e8f8',
   '--ind-joined-border':   '#70a0e0',
   '--ind-joined-glow':     'rgba(40, 100, 220, 0.25)',
+  '--ind-poisoned-color':  '#2a6818',
+  '--ind-poisoned-bg':     '#dceedc',
+  '--ind-poisoned-border': '#78b860',
+  '--ind-poisoned-glow':   'rgba(50, 150, 40, 0.22)',
+  '--ind-diseased-color':  '#806818',
+  '--ind-diseased-bg':     '#f0eac8',
+  '--ind-diseased-border': '#c0a850',
+  '--ind-diseased-glow':   'rgba(170, 140, 40, 0.22)',
   '--compass-active-text':     '#1a6a1a',
   '--compass-active-bg':       '#d8f0d8',
   '--compass-active-border':   '#70c070',
@@ -1691,6 +1734,16 @@ const classic: ThemeVars = {
   '--ind-joined-bg':     '#060e1e',
   '--ind-joined-border': '#142050',
   '--ind-joined-glow':   'rgba(117, 162, 255, 0.3)',
+
+  '--ind-poisoned-color':  '#68d030',
+  '--ind-poisoned-bg':     '#0a1a04',
+  '--ind-poisoned-border': '#1c4810',
+  '--ind-poisoned-glow':   'rgba(104, 208, 48, 0.35)',
+
+  '--ind-diseased-color':  '#d8c850',
+  '--ind-diseased-bg':     '#1c1a08',
+  '--ind-diseased-border': '#544c18',
+  '--ind-diseased-glow':   'rgba(216, 200, 80, 0.3)',
 
   '--compass-active-text':     '#00e686',
   '--compass-active-bg':       '#001a0c',

@@ -166,6 +166,25 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMa
     setGenieZones(new Map())
 
     try {
+      // Cache fast path. Main process checks fingerprint (XML filenames +
+      // mtimes + sizes) against the on-disk cache; returns the parsed
+      // zones if they match, null otherwise. On a typical re-launch this
+      // skips the multi-second DOMParser pass and gets the user to a
+      // ready map in ~50ms (the cost of JSON.parse on a few MB).
+      const cached = await window.api.genieCacheLoad(dir)
+      if (gen !== genieGenRef.current) return
+      if (cached && Array.isArray(cached) && cached.length > 0) {
+        const cachedMap = new Map<string, GenieZone>()
+        for (const z of cached as GenieZone[]) {
+          if (z?.id) cachedMap.set(z.id, z)
+        }
+        if (cachedMap.size > 0) {
+          setGenieZones(cachedMap)
+          setGenieStatus('ready')
+          return
+        }
+      }
+
       const files = await window.api.listMapDir(dir)
       if (gen !== genieGenRef.current) return
       if (!files) throw new Error('Cannot list Genie maps directory')
@@ -210,6 +229,13 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMa
       if (gen !== genieGenRef.current) return
       setGenieZones(newZones)
       setGenieStatus('ready')
+
+      // Write the cache so subsequent loads hit the fast path. Fire-and-
+      // forget — cache write failure shouldn't block the user from seeing
+      // the freshly-parsed map.
+      window.api.genieCacheSave(dir, [...newZones.values()]).catch(err => {
+        console.error('Failed to save Genie parse cache:', err)
+      })
     } catch {
       if (gen === genieGenRef.current) setGenieStatus('error')
     }

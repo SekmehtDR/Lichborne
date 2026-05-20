@@ -2,6 +2,310 @@
    Map Panel — themed via CSS custom properties (--map-*)
    ============================================================ */
 
+/* Pause all category animations while the user is panning the map.
+   Applied as a class on the pan group `<g>` when `isDragging` is true.
+   Without this, frame budget during drag is dominated by animation
+   work (Recalculate Style ~22% + Layerize ~33% in profiling traces)
+   that has nothing to do with the pan transform itself. Pausing means
+   `animation-play-state: paused` cascades to all descendants — each
+   animation freezes at its current frame, no further style recalc or
+   composition layer rebuilds happen until drag ends.
+
+   `!important` ensures this overrides any inline animation control on
+   descendant elements (none currently set inline, but defensive). The
+   wildcard `*` selector is acceptable here because it only applies
+   while the dragging class is present (briefly during pan); it's not
+   a global cost. */
+.genie-pan-dragging * {
+  animation-play-state: paused !important;
+}
+
+/* ── Genie Maps node-effect animations ────────────────────────
+   Each colored room category gets a visual effect that reinforces
+   its function. Effects group into structural families:
+     - Mote families (magical 4): small circles with directional motion
+     - Stroke pulse: opacity rhythm on a ring around the rect
+     - Perimeter glint: dash sliding around the rect border
+     - Ripple / bubble: expanding rings / rising dots
+     - Flash: brief overlay flicker
+     - Aura modifiers: pulse or sway applied to the aura rect
+   All animations use `transform` properties for GPU compositing;
+   `backwards` fill-mode hides delayed elements during their delay
+   window so they don't pop into existence mid-cycle.
+
+   Trailhead (sand) is the only legend color with no special effect —
+   stays aura-only as a deliberate quiet marker. */
+
+/* === Mote families — magical 4 (Tier 3A differentiation) ====== */
+
+/* Rise (slow) — Favor Altar (purple). Offerings rising upward,
+   slower than stat training to feel more reverent. */
+@keyframes genie-mote-rise-slow {
+  0%   { transform: translateY(0);   opacity: 0; }
+  20%  { opacity: 0.85; }
+  100% { transform: translateY(-7px); opacity: 0; }
+}
+.genie-mote-rise-slow {
+  animation: genie-mote-rise-slow 3.2s ease-out infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Rise (fast) — Stat Training (yellow). Effort climbing quickly. */
+@keyframes genie-mote-rise-fast {
+  0%   { transform: translateY(0);   opacity: 0; }
+  18%  { opacity: 0.85; }
+  100% { transform: translateY(-8px); opacity: 0; }
+}
+.genie-mote-rise-fast {
+  animation: genie-mote-rise-fast 1.6s ease-out infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Drift (outward) — Shrine (periwinkle). Four motes drift NSEW from
+   the room's center, fading as they go. Each cardinal direction has
+   its own keyframe so motion stays GPU-composited (single transform
+   property changing). */
+@keyframes genie-mote-drift-n {
+  0%   { transform: translateY(0);   opacity: 0; }
+  25%  { opacity: 0.75; }
+  100% { transform: translateY(-6px); opacity: 0; }
+}
+@keyframes genie-mote-drift-s {
+  0%   { transform: translateY(0);   opacity: 0; }
+  25%  { opacity: 0.75; }
+  100% { transform: translateY(6px);  opacity: 0; }
+}
+@keyframes genie-mote-drift-e {
+  0%   { transform: translateX(0);   opacity: 0; }
+  25%  { opacity: 0.75; }
+  100% { transform: translateX(6px);  opacity: 0; }
+}
+@keyframes genie-mote-drift-w {
+  0%   { transform: translateX(0);   opacity: 0; }
+  25%  { opacity: 0.75; }
+  100% { transform: translateX(-6px); opacity: 0; }
+}
+.genie-mote-drift-n,
+.genie-mote-drift-s,
+.genie-mote-drift-e,
+.genie-mote-drift-w {
+  animation-duration: 2.8s;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+  animation-fill-mode: backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-mote-drift-n { animation-name: genie-mote-drift-n; }
+.genie-mote-drift-s { animation-name: genie-mote-drift-s; animation-delay: 0.7s; }
+.genie-mote-drift-e { animation-name: genie-mote-drift-e; animation-delay: 1.4s; }
+.genie-mote-drift-w { animation-name: genie-mote-drift-w; animation-delay: 2.1s; }
+
+/* Vortex (rotating) — Transport (fuchsia). Each mote rotates
+   individually around the node center (set per-element as inline
+   `transform-origin`). Three motes at 120° intervals rotate in
+   lockstep so they orbit together as a triangle.
+   We deliberately do NOT set `transform-box` or `transform-origin`
+   in this class — the inline per-mote `transformOrigin` provides
+   absolute SVG-coord pivots, which is what makes the orbit center
+   match the node's real position exactly. */
+@keyframes genie-mote-vortex {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(-360deg); }
+}
+.genie-mote-vortex {
+  animation: genie-mote-vortex 4s linear infinite;
+}
+
+/* Heartbeat — Auto-Healer rooms (mint). ECG-style double-beat: two
+   close opacity peaks, then a longer rest, ~1.2s loop. The "rest"
+   stays at low-but-visible opacity so the ring doesn't fully
+   disappear between beats — keeps the healer marker continuously
+   identifiable while still pulsing rhythmically. */
+@keyframes genie-heartbeat {
+  0%   { opacity: 0.18; }
+  8%   { opacity: 0.90; }   /* beat 1 (lub) */
+  18%  { opacity: 0.30; }
+  26%  { opacity: 0.75; }   /* beat 2 (dub) */
+  38%  { opacity: 0.18; }
+  100% { opacity: 0.18; }
+}
+.genie-heartbeat {
+  animation: genie-heartbeat 1.2s ease-in-out infinite;
+}
+
+/* Coin glint — Shop rooms (red). A single gold dash circles the rect's
+   perimeter via stroke-dashoffset. With dasharray "4 28" on a perimeter
+   of 32 (4 sides × NODE_SIZE 8), exactly one short bright dash is
+   visible at any moment. The keyframe slides it through a full
+   revolution. Linear timing so the dash moves at constant speed. */
+@keyframes genie-coin-glint {
+  0%   { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -32; }
+}
+.genie-coin-glint {
+  animation: genie-coin-glint 2.8s linear infinite;
+  opacity: 0.85;
+}
+
+/* Water ripple — Water rooms (blue). Concentric circles scale outward
+   from the node's center via `transform: scale()` while fading. Base
+   r=5; scale 0.3 → 2.5 gives an effective radius range of ~1.5 to
+   12.5. Switched from animating `r` directly because Chromium support
+   for CSS `r` animation is uneven; transform-based scale is rock solid.
+   `non-scaling-stroke` on the circle keeps the line itself constant
+   width regardless of the transform scale, so the ring expands but the
+   stroke doesn't thicken.
+   `backwards` fill-mode applies the 0% keyframe state during the
+   animation-delay window — without it, delayed circles show their
+   static initial geometry (full size, full opacity) before their
+   animation actually starts. */
+@keyframes genie-ripple {
+  0%   { transform: scale(0.3); opacity: 0.45; }
+  100% { transform: scale(2.0); opacity: 0;    }
+}
+.genie-ripple {
+  animation: genie-ripple 2.1s ease-out infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-ripple--d1 { animation-delay: 0.7s; }
+.genie-ripple--d2 { animation-delay: 1.4s; }
+
+/* Bubble — Underwater rooms (navy). Upward drift starting BELOW the
+   rect center, traveling 12px (well past the rect's top edge) with a
+   brief scale "pop" before disappearing. White fill at near-full
+   opacity so the bubble pops against the dark navy room — earlier
+   tweaks with light-cyan + lower opacity were too subtle to read.
+   `backwards` fill-mode hides the d1 bubble during its delay so it
+   doesn't show as a static visible dot before its first cycle. */
+@keyframes genie-bubble {
+  0%   { transform: translateY(0)    scale(1);   opacity: 0; }
+  10%  { opacity: 0.95; }
+  80%  { transform: translateY(-12px) scale(1);   opacity: 0.9; }
+  92%  { transform: translateY(-12px) scale(1.6); opacity: 0.55; }
+  100% { transform: translateY(-12px) scale(0);   opacity: 0;     }
+}
+.genie-bubble {
+  animation: genie-bubble 2.6s ease-out infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-bubble--d1 { animation-delay: 1.3s; }
+
+/* === Tier 3B — Hazard / utility effects ====================== */
+
+/* Caution blink — Obstacle (amber). Slow on/off pulse on a stroke
+   ring around the rect. Square-ish rhythm (mostly off / occasional
+   on) so it reads as a warning beacon rather than a continuous
+   pulse. 2s cycle. */
+@keyframes genie-caution {
+  0%, 45%   { opacity: 0.10; }
+  55%, 95%  { opacity: 0.65; }
+  100%      { opacity: 0.10; }
+}
+.genie-caution {
+  animation: genie-caution 2s ease-in-out infinite;
+}
+
+/* Implode — Depart (eggplant). A ring starts large around the rect
+   and shrinks inward while fading, opposite direction from the water
+   ripple. Reads as somber finality — energy collapsing into the
+   room rather than emanating outward. */
+@keyframes genie-implode {
+  0%   { transform: scale(2.0); opacity: 0.50; }
+  100% { transform: scale(0.3); opacity: 0;    }
+}
+.genie-implode {
+  animation: genie-implode 2.4s ease-in infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-implode--d1 { animation-delay: 1.2s; }
+
+/* Leaf fall — Lumberjacking (green). Particles drift downward from
+   the bottom of the rect with a slight horizontal wobble so each
+   leaf reads as wafting in still air rather than dropping straight.
+   Ease-in to suggest accelerating due to gravity. 4s cycle (leaves
+   are light, fall slowly), three particles staggered evenly. */
+@keyframes genie-leaf-fall {
+  0%   { transform: translate(0, 0);       opacity: 0; }
+  10%  { opacity: 0.85; }
+  50%  { transform: translate(-1px, 4px);   opacity: 0.8; }
+  100% { transform: translate(0.8px, 8px); opacity: 0; }
+}
+.genie-leaf-fall {
+  animation: genie-leaf-fall 4s ease-in infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-leaf-fall--d1 { animation-delay: 1.3s; }
+.genie-leaf-fall--d2 { animation-delay: 2.6s; }
+
+/* Dirt fall — Mining (sienna) + Trailhead (sand). Straight down,
+   faster than leaves (dirt has weight). 2.4s cycle, three particles
+   evenly staggered. */
+@keyframes genie-dirt-fall {
+  0%   { transform: translateY(0);   opacity: 0; }
+  15%  { opacity: 0.85; }
+  100% { transform: translateY(8px); opacity: 0; }
+}
+.genie-dirt-fall {
+  animation: genie-dirt-fall 2.4s ease-in infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-dirt-fall--d1 { animation-delay: 0.8s; }
+.genie-dirt-fall--d2 { animation-delay: 1.6s; }
+
+/* XP rise — Guildleader (orange). Single column of gold particles
+   rises from the bottom of the rect, drifts past the top, fades out.
+   Visual metaphor for "you level up here." Travel distance (-9px)
+   is enough to clear the 8×8 rect with margin so the particle is
+   visibly leaving the room, not just popping in place. Two staggered
+   delays at 1.25s offset keep one particle always rising. */
+@keyframes genie-xp-rise {
+  0%   { transform: translateY(0);   opacity: 0; }
+  15%  { opacity: 0.85; }
+  85%  { transform: translateY(-9px); opacity: 0.85; }
+  100% { transform: translateY(-9px); opacity: 0; }
+}
+.genie-xp-rise {
+  animation: genie-xp-rise 2.5s ease-out infinite backwards;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-xp-rise--d1 { animation-delay: 1.25s; }
+
+
+/* === Aura modifiers (Tier 3B utility + Tier 3C ambient) ====== */
+
+/* Fire aura — Interesting Room (lime). Irregular opacity flicker on
+   the lime aura, like firelight glowing from within the room. Uses
+   asymmetric percentage stops (8, 16, 24, 35, 48, 60, 72, 85) so the
+   eye reads "flame" rather than a clean sine pulse. Lime rooms are
+   typically lit chambers — towers, halls, lore rooms — so the fire
+   metaphor fits the actual usage. The 100% stop intentionally ends
+   close to the 0% value so the cycle restart doesn't pop with a
+   visible opacity jump. */
+@keyframes genie-aura-fire {
+  0%   { opacity: 0.15; }
+  8%   { opacity: 0.42; }
+  16%  { opacity: 0.20; }
+  24%  { opacity: 0.50; }
+  35%  { opacity: 0.28; }
+  48%  { opacity: 0.55; }
+  60%  { opacity: 0.25; }
+  72%  { opacity: 0.45; }
+  85%  { opacity: 0.22; }
+  100% { opacity: 0.15; }
+}
+.genie-aura-fire {
+  animation: genie-aura-fire 2.5s linear infinite;
+}
+
 .map-panel {
   display: flex;
   flex-direction: column;

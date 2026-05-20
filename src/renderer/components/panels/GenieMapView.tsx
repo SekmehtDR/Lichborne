@@ -68,12 +68,9 @@ const NODE_RADIUS = NODE_SIZE / 2
 // Label glyph offset. Genie's label drawing (MapForm.cs:1901–1924) sets
 // the rect top-left at `(position.X, position.Y)` and then calls
 // `DrawString(text, font, brush, r.X + 1, r.Y + 1)` — a 1px inset that
-// pushes the visible glyph slightly inside its bounding rect. Mirror
-// that here so labels sit where Genie draws them (and so the "B" of
-// "Bundles" tucks just behind the 8×8 node, rather than 4–5px inside
-// it). The SVG `dominantBaseline="text-before-edge"` baseline matches
-// .NET's DrawString top-of-bbox semantic; we add the +1 to align with
-// Genie's explicit padding.
+// pushes the visible glyph slightly inside its bounding rect. We mirror
+// the +1 here so labels sit where Genie draws them at its reference
+// font scale.
 const LABEL_X_NUDGE = 1
 const LABEL_Y_NUDGE = 1
 const WALK_STEP_MS = 600        // delay between sequenced walk commands
@@ -97,6 +94,120 @@ const ARC_COLOR_VAR: Record<ArcCategory, string> = {
   climb:    'var(--map-arc-vertical, #d4a574)',
   go:       'var(--map-arc-special, #ffb74d)',
 }
+
+// Visual-effect categorization for COLOR_LEGEND nodes. All recognized
+// colors get a translucent aura behind their rect; subsets get additional
+// animated effects that reinforce the room's category. Each effect family
+// is implemented as a CSS keyframe (see map-panel.css) so the animation
+// itself is GPU-composited and the only React work is rendering 1-4 extra
+// SVG elements per affected node.
+//
+// Mote effect — the magical 4 share a "small drifting circles" structure
+// but each gets its own motion motif: vortex (Transport), outward drift
+// (Shrine), slow rise (Favor Altar), fast rise (Stat Training).
+type MoteEffect = 'vortex' | 'drift' | 'rise-slow' | 'rise-fast'
+const MOTE_EFFECTS: Record<string, MoteEffect> = {
+  '#FF00FF': 'vortex',     // Transport — magical portal (rotating)
+  '#A6A3D9': 'drift',      // Shrine — sacred (outward NSEW)
+  '#800080': 'rise-slow',  // Favor Altar — divine (offerings rising)
+  '#FFFF00': 'rise-fast',  // Stat Training — effort climbing (faster)
+}
+
+const HEARTBEAT_COLORS = new Set<string>([
+  '#00BF80', // Auto-Healer — lub-dub medical pulse
+])
+const COIN_GLINT_COLORS = new Set<string>([
+  '#FF0000', // Shop — gold catching the light along the border
+])
+const RIPPLE_COLORS = new Set<string>([
+  '#0000FF', // Water — concentric rings expanding outward
+])
+const BUBBLE_COLORS = new Set<string>([
+  '#000080', // Underwater — small bubbles drift upward and pop
+])
+
+// Tier 3B — hazard / utility effects.
+const CAUTION_COLORS = new Set<string>([
+  '#FFBF00', // Obstacle — slow blink, warning beacon
+])
+const IMPLODE_COLORS = new Set<string>([
+  '#400040', // Depart — inward-shrinking ring, somber finality
+])
+const XP_RISE_COLORS = new Set<string>([
+  '#FF8000', // Guildleader — rising gold particles, "level up here"
+])
+const LEAF_FALL_COLORS = new Set<string>([
+  '#008000', // Lumberjacking — green leaves drift down from below the node
+])
+const DIRT_FALL_COLORS = new Set<string>([
+  '#993300', // Mining — brown dirt/rubble falls straight down from below the node
+  '#C2B280', // Ranger Trailhead — same falling motion, sandy tan particle color
+])
+// Per-room particle color for dirt-fall. Mining uses a warm rusty
+// brown (visible against the dark map background); Trailhead uses
+// lighter sandy tan (trail dust). Same keyframe, different colors so
+// each category keeps a distinct visual identity. The original
+// Mining color (#4a2810) was so dark it disappeared against the
+// dark map background — testers couldn't see the falling particles
+// on mining rooms at all. Lifted to a brighter rusty-brown so the
+// dirt actually reads as falling debris.
+function dirtParticleColor(roomColor: string): string {
+  return roomColor === '#C2B280' ? '#a08858' : '#b06030'
+}
+
+// Mote contrast color — picks a mote fill that contrasts with the
+// room's own color regardless of whether that color is light or dark.
+// Earlier we always pulled toward white, which worked for Transport
+// (fuchsia) and Favor Altar (purple) but made the motes nearly
+// invisible on light backgrounds like Shrine (periwinkle) and Stat
+// Training (yellow). Now we measure relative luminance — light
+// backgrounds mix toward dark, dark backgrounds mix toward white —
+// so every magical category has high mote-to-background contrast.
+// Falls back gracefully for unrecognized hex strings (returns the
+// input as-is so SVG fill still works).
+function getMoteContrastColor(hex: string): string {
+  if (!/^#[0-9A-F]{6}$/i.test(hex)) return hex
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  // Standard ITU-R BT.601 luminance — good enough for "light vs dark"
+  // decisions on saturated UI colors; we don't need sRGB linear math.
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b
+  return luminance > 0.5
+    ? `color-mix(in srgb, ${hex} 35%, #1a1a1a)`  // light bg → dark motes
+    : `color-mix(in srgb, ${hex} 25%, #ffffff)`  // dark bg → light motes
+}
+
+// Tool glyphs — small centered icon rendered on the rect for gathering
+// rooms. The trailing U+FE0E ("text variation selector") forces text
+// presentation in browsers that might otherwise render these as colored
+// emoji. Stubs always win — a stub-AND-mining room shows ↗, not the
+// pickaxe, because the cross-zone identity is more important than the
+// resource category.
+const TOOL_GLYPHS: Record<string, string> = {
+  '#993300': '⛏︎', // Mining — pickaxe (U+26CF)
+  '#008000': '🪓︎', // Lumberjacking — axe (U+1FA93)
+}
+
+// Aura modifiers — applied as a class on the aura rect itself,
+// modulating its opacity / position rather than spawning new elements.
+const AURA_FIRE_COLORS = new Set<string>([
+  '#00FF00', // Interesting Room — irregular flicker on the aura, like
+            //                     the room glows with firelight.
+            //                     Rooms in this set also get a slightly
+            //                     larger aura (auraScale = 1.3× vs the
+            //                     default 1.125×) so the flicker has
+            //                     more diffuse area to glow through.
+])
+// Categories that get a stronger static aura without animation. The
+// extra weight just reads as "this room matters" without competing
+// with the animated categories.
+const AURA_INTENSIFIED_COLORS = new Set<string>([
+  '#FF8000', // Guildleader — formal, strong steady glow
+  '#00FFFF', // Player Housing — warm steady glow ("home")
+])
+// Sand (#C2B280, Ranger Trailhead) is intentionally absent from every
+// modifier set — stays plain aura as the deliberate quiet marker.
 
 // ── BFS over Genie arcs within a zone ──────────────────────────────────────
 // Returns a list of `move` commands from `fromId` to `toId`, or [] if no
@@ -181,6 +292,16 @@ export default function GenieMapView({
   // creating a vibration at the boundary; always-centering removes that
   // because the camera delta exactly matches the player's world delta.
   const [followPlayer, setFollowPlayer] = useState(true)
+  // Active-motion flag — true while the player is actively walking
+  // (any currentLocation change within the last MOTION_QUIET_MS). The
+  // pan group applies the `genie-pan-dragging` class while this is
+  // true, pausing all category animations on descendants. Performance
+  // profiling showed walking across a populated zone burned ~16% of
+  // frame budget on Recalculate Style for the continuously-running
+  // animations even though the user wasn't dragging — pausing during
+  // motion frees that budget for React reconciliation + camera follow.
+  const [inMotion, setInMotion] = useState(false)
+  const motionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const svgRef    = useRef<SVGSVGElement | null>(null)
   const dragRef   = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -332,6 +453,41 @@ export default function GenieMapView({
     setCurrentZoneId(currentLocation.zone.id)
     setCurrentLevel(currentLocation.node.z)
   }, [currentLocation])
+
+  // Motion-detect: pause animations while the player is actively
+  // walking. Resets a quiet-window timer on every walk; if no new walk
+  // arrives within MOTION_QUIET_MS, animations resume. Eliminates the
+  // per-frame Recalculate Style / Layerize cost of dozens of
+  // concurrently-animating elements during sustained travel — the user
+  // isn't stationary long enough to appreciate the animations during a
+  // cross-map run anyway.
+  //
+  // `prevLocationForMotionRef` skips the FIRST currentLocation transition
+  // (null → non-null on game connect or first valid match). Without this
+  // sentinel, the user's animations would pause for 800ms the instant
+  // they connect, even though no walking has occurred. Real walks all
+  // have a non-null prev value; the only time prev is null is the very
+  // first arrival (or post-disconnect re-arrival, which is functionally
+  // the same as a fresh connect).
+  const MOTION_QUIET_MS = 800
+  const prevLocationForMotionRef = useRef<typeof currentLocation>(null)
+  useEffect(() => {
+    const prev = prevLocationForMotionRef.current
+    prevLocationForMotionRef.current = currentLocation
+    if (!currentLocation) return
+    if (!prev) return                       // first non-null = connect, not a walk
+    if (prev === currentLocation) return    // no actual change
+    setInMotion(true)
+    if (motionTimerRef.current) clearTimeout(motionTimerRef.current)
+    motionTimerRef.current = setTimeout(() => {
+      setInMotion(false)
+      motionTimerRef.current = null
+    }, MOTION_QUIET_MS)
+  }, [currentLocation])
+  // Clean up the motion timer on unmount.
+  useEffect(() => () => {
+    if (motionTimerRef.current) clearTimeout(motionTimerRef.current)
+  }, [])
 
   // ── Active zone + its node bookkeeping ─────────────────────────────────
   //
@@ -702,10 +858,15 @@ export default function GenieMapView({
         dominantBaseline="text-before-edge"
         // Pull font-size from the same CSS var the game text uses
         // (`--game-font-size`, set by settings.ts when the user changes
-        // their font size). The `fontSize` SVG attribute wins over CSS
-        // inheritance, so set it via `style` instead. Falls back to 12px
-        // when the var is unset (matches `defaultSettings.fontSize`).
-        style={{ userSelect: 'none', fontSize: 'var(--game-font-size, 12px)' }}
+        // their font size), then scale to 80%. Genie's XML positions
+        // labels assuming a specific text width — at scales much below
+        // 80% the visibly narrower labels appear left-shifted relative
+        // to their target clusters (because the same top-left anchor
+        // gives the smaller text less rightward extent). 0.8 stays
+        // close to Genie's calibrated width while still being a touch
+        // smaller than game text. Falls back to 12px when the var is
+        // unset (× 0.8 = ~9.6px).
+        style={{ userSelect: 'none', fontSize: 'calc(var(--game-font-size, 12px) * 0.8)' }}
         pointerEvents="none"
       >
         {l.text}
@@ -804,6 +965,410 @@ export default function GenieMapView({
     [visibleNodes, isStubNode]
   )
 
+  // Aura layer — soft translucent square behind every COLOR_LEGEND-tagged
+  // room. One element per colored node, rendered BEFORE arcs so arc lines
+  // paint over auras (auras shouldn't compete visually with structural
+  // map information).
+  //
+  // Sizing: 1.125× the rect (1px overhang per side). Tight enough that
+  // adjacent rooms touching at 0-gap don't produce wide overlap blooms.
+  //
+  // Per-color modifiers (applied as className):
+  //   - AURA_FIRE_COLORS: irregular flicker (Interesting Room) +
+  //     larger aura size (see auraScale below) for diffuse firelight
+  //   - AURA_INTENSIFIED_COLORS: stronger static opacity, no animation
+  //     (Guildleader, Housing)
+  // Default opacity is 0.15; intensified gets 0.28.
+  const auras = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && COLOR_LEGEND[n.color])
+      .map(n => {
+        const intensified = AURA_INTENSIFIED_COLORS.has(n.color!)
+        const fire        = AURA_FIRE_COLORS.has(n.color!)
+        const cls = fire ? 'genie-aura-fire' : undefined
+        // Skip the `opacity` SVG attribute when an animated class is
+        // applied — the keyframe owns opacity, and setting both creates
+        // attribute-vs-CSS ambiguity. CSS wins per SVG2 spec, but the
+        // cleaner contract is "if animated, opacity is owned by CSS."
+        // Non-animated rooms still use the inline attribute as before.
+        const opacityAttr = fire ? undefined : (intensified ? 0.28 : 0.15)
+        // Fire auras (Lime) get a slightly larger halo so the flicker
+        // has more area to "glow" through — without bumping size the
+        // irregular opacity changes read as a tiny pulse instead of a
+        // diffuse firelight. Every other category stays at 1.125× to
+        // avoid blooming into adjacent rooms.
+        const auraScale = fire ? 1.3 : 1.125
+        const auraSize = NODE_SIZE * auraScale
+        const auraOffset = auraSize / 2
+        return (
+          <rect
+            key={`aura-${n.id}`}
+            className={cls}
+            x={n.x - auraOffset}
+            y={n.y - auraOffset}
+            width={auraSize}
+            height={auraSize}
+            fill={n.color}
+            opacity={opacityAttr}
+            rx={2}
+            ry={2}
+            pointerEvents="none"
+          />
+        )
+      })
+  ), [visibleNodes])
+
+  // Sparkle motes for the "magical 4" — Transport, Shrine, Favor Altar,
+  // Stat Training. Each color picks a motion motif from MOTE_EFFECTS:
+  //
+  //   vortex     — 3 motes orbiting the rect (Transport)
+  //   drift      — 4 motes drifting outward NSEW (Shrine)
+  //   rise-slow  — 3 motes rising slowly (Favor Altar)
+  //   rise-fast  — 3 motes rising quickly (Stat Training)
+  //
+  // All effects share the same per-mote size (r=0.7) and the room's
+  // own color as the fill, so the four motifs feel like a family — they
+  // differ in motion, not in look.
+  const sparkles = useMemo(() => {
+    const out: React.ReactNode[] = []
+    for (const n of visibleNodes) {
+      if (!n.color) continue
+      const effect = MOTE_EFFECTS[n.color]
+      if (!effect) continue
+      // Contrast-aware mote color — see getMoteContrastColor() above.
+      // Light backgrounds (periwinkle, yellow) get dark-tinted motes;
+      // dark backgrounds (fuchsia, purple) get pale-tinted motes.
+      // Always pulling toward white left motes invisible on the light-
+      // background categories.
+      const litColor = getMoteContrastColor(n.color)
+      if (effect === 'rise-slow' || effect === 'rise-fast') {
+        const cls = effect === 'rise-slow' ? 'genie-mote-rise-slow' : 'genie-mote-rise-fast'
+        const duration = effect === 'rise-slow' ? 3.2 : 1.6
+        // Three motes with staggered delays so one is always visible.
+        out.push(
+          <circle key={`spk-${n.id}-0`} className={cls}
+            cx={n.x - 2.5} cy={n.y + 1} r={0.7}
+            style={{ fill: litColor }} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-1`} className={cls}
+            cx={n.x} cy={n.y + 2} r={0.7}
+            style={{ fill: litColor, animationDelay: `${duration / 3}s` }}
+            pointerEvents="none" />,
+          <circle key={`spk-${n.id}-2`} className={cls}
+            cx={n.x + 2.5} cy={n.y + 1} r={0.7}
+            style={{ fill: litColor, animationDelay: `${(duration * 2) / 3}s` }}
+            pointerEvents="none" />,
+        )
+      } else if (effect === 'drift') {
+        // Four motes drift outward NSEW; per-direction keyframes handle
+        // the actual translate, and animation-delay (set in CSS class)
+        // spaces them out so the four-way drift reads as a continuous
+        // outward emanation.
+        out.push(
+          <circle key={`spk-${n.id}-N`} className="genie-mote-drift-n"
+            cx={n.x} cy={n.y - 0.5} r={0.7}
+            style={{ fill: litColor }} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-S`} className="genie-mote-drift-s"
+            cx={n.x} cy={n.y + 0.5} r={0.7}
+            style={{ fill: litColor }} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-E`} className="genie-mote-drift-e"
+            cx={n.x + 0.5} cy={n.y} r={0.7}
+            style={{ fill: litColor }} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-W`} className="genie-mote-drift-w"
+            cx={n.x - 0.5} cy={n.y} r={0.7}
+            style={{ fill: litColor }} pointerEvents="none" />,
+        )
+      } else if (effect === 'vortex') {
+        // Three motes orbiting the node center, positioned at 120°
+        // intervals. Each circle gets its own absolute `transformOrigin`
+        // pointing at the node center; the CSS rotation animation
+        // pivots each mote around that exact point. The earlier `<g>`
+        // wrapper used `transform-box: fill-box; transform-origin:
+        // center`, which pivots the bounding-box center — for 3 points
+        // at 120° spacing the bbox is asymmetric (x range -2.2 to +3.7)
+        // so the orbit center landed ~0.75px right of the actual node.
+        // Per-mote inline origin fixes that cleanly.
+        const origin = `${n.x}px ${n.y}px`
+        out.push(
+          <circle key={`spk-${n.id}-v0`} className="genie-mote-vortex"
+            cx={n.x + 3}    cy={n.y}       r={0.7}
+            style={{ fill: litColor, transformOrigin: origin }}
+            opacity={0.85} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-v1`} className="genie-mote-vortex"
+            cx={n.x - 1.5}  cy={n.y + 2.6} r={0.7}
+            style={{ fill: litColor, transformOrigin: origin }}
+            opacity={0.85} pointerEvents="none" />,
+          <circle key={`spk-${n.id}-v2`} className="genie-mote-vortex"
+            cx={n.x - 1.5}  cy={n.y - 2.6} r={0.7}
+            style={{ fill: litColor, transformOrigin: origin }}
+            opacity={0.85} pointerEvents="none" />,
+        )
+      }
+    }
+    return out
+  }, [visibleNodes])
+
+  // Caution ring — Obstacle (amber). Stroke around the rect with slow
+  // on/off opacity blink, like a warning beacon. Same structure as the
+  // healer heartbeat ring, different rhythm (square wave instead of
+  // ECG double-beat).
+  const cautionRings = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && CAUTION_COLORS.has(n.color))
+      .map(n => (
+        <rect
+          key={`caution-${n.id}`}
+          className="genie-caution"
+          x={n.x - NODE_RADIUS - 1}
+          y={n.y - NODE_RADIUS - 1}
+          width={NODE_SIZE + 2}
+          height={NODE_SIZE + 2}
+          fill="none"
+          stroke={n.color}
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))
+  ), [visibleNodes])
+
+  // Implode — Depart (eggplant). Two staggered rings start large and
+  // shrink inward while fading. Opposite direction from water ripples,
+  // so the room's energy reads as "collapsing inward" — somber finality
+  // appropriate for a Depart Room.
+  const implodes = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && IMPLODE_COLORS.has(n.color))
+      .flatMap(n => [
+        <circle
+          key={`imp-${n.id}-0`}
+          className="genie-implode"
+          cx={n.x} cy={n.y} r={5}
+          fill="none"
+          stroke="#a878a8"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />,
+        <circle
+          key={`imp-${n.id}-1`}
+          className="genie-implode genie-implode--d1"
+          cx={n.x} cy={n.y} r={5}
+          fill="none"
+          stroke="#a878a8"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />,
+      ])
+  ), [visibleNodes])
+
+  // XP rise — Guildleader (orange). Two small gold particles rise
+  // from the bottom edge of the rect upward past the top, fading at
+  // both ends. Visual metaphor for "leveling up here" — universal
+  // video-game shorthand for XP gain. Two particles with staggered
+  // delays so the column always has something rising. Center column
+  // (cx = n.x) rather than offset, so it reads as a single intentional
+  // stream. Start cy = n.y + 4 (rect bottom edge) matches the leaf/
+  // dirt fall starting position — particles emerge from a rect edge
+  // rather than from inside the rect, consistent visual language for
+  // every "particles per room" effect.
+  const xpRises = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && XP_RISE_COLORS.has(n.color))
+      .flatMap(n => [
+        <circle
+          key={`xp-${n.id}-0`}
+          className="genie-xp-rise"
+          cx={n.x} cy={n.y + 4} r={0.7}
+          fill="#ffd060"
+          pointerEvents="none"
+        />,
+        <circle
+          key={`xp-${n.id}-1`}
+          className="genie-xp-rise genie-xp-rise--d1"
+          cx={n.x} cy={n.y + 4} r={0.7}
+          fill="#ffd060"
+          pointerEvents="none"
+        />,
+      ])
+  ), [visibleNodes])
+
+  // Leaf fall — Lumberjacking (green). Three small green dots start
+  // at the bottom edge of the rect and drift downward past it,
+  // fading out as they fall. Slight horizontal wobble in the CSS
+  // keyframe so each leaf reads as wafting rather than dropping
+  // straight down. Staggered delays keep the column populated.
+  // Particle colors vary slightly across the three to suggest
+  // mixed foliage.
+  const leafFalls = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && LEAF_FALL_COLORS.has(n.color))
+      .flatMap(n => [
+        <circle key={`leaf-${n.id}-0`} className="genie-leaf-fall"
+          cx={n.x - 1.5} cy={n.y + 4} r={0.6}
+          fill="#5a9028" pointerEvents="none" />,
+        <circle key={`leaf-${n.id}-1`} className="genie-leaf-fall genie-leaf-fall--d1"
+          cx={n.x + 0.5} cy={n.y + 4} r={0.6}
+          fill="#3a7018" pointerEvents="none" />,
+        <circle key={`leaf-${n.id}-2`} className="genie-leaf-fall genie-leaf-fall--d2"
+          cx={n.x + 2} cy={n.y + 4} r={0.55}
+          fill="#4a8020" pointerEvents="none" />,
+      ])
+  ), [visibleNodes])
+
+  // Dirt fall — Mining (sienna) + Ranger Trailhead (sand). Brown
+  // particles fall straight down (no wobble — dirt has weight) at a
+  // faster rate than leaves. Particle color varies by room: dark
+  // brown for Mining (broken stone / ore), lighter tan for Trailhead
+  // (trail dust). Three staggered particles per node.
+  const dirtFalls = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && DIRT_FALL_COLORS.has(n.color))
+      .flatMap(n => {
+        const c = dirtParticleColor(n.color!)
+        return [
+          <circle key={`dirt-${n.id}-0`} className="genie-dirt-fall"
+            cx={n.x - 1.5} cy={n.y + 4} r={0.45}
+            fill={c} pointerEvents="none" />,
+          <circle key={`dirt-${n.id}-1`} className="genie-dirt-fall genie-dirt-fall--d1"
+            cx={n.x + 0.5} cy={n.y + 4} r={0.5}
+            fill={c} pointerEvents="none" />,
+          <circle key={`dirt-${n.id}-2`} className="genie-dirt-fall genie-dirt-fall--d2"
+            cx={n.x + 1.8} cy={n.y + 4} r={0.4}
+            fill={c} pointerEvents="none" />,
+        ]
+      })
+  ), [visibleNodes])
+
+  // Heartbeat ring for Auto-Healer (mint). A single rect wrapping the
+  // node, fill=none with an animated-opacity stroke in the room's mint
+  // color. The CSS keyframe (genie-heartbeat) follows an ECG-style
+  // double-beat rhythm — two close peaks then a longer rest. Sits just
+  // outside the node's own 1px border so the heartbeat reads as a
+  // pulse-ring rather than a fill change.
+  const heartbeats = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && HEARTBEAT_COLORS.has(n.color))
+      .map(n => (
+        <rect
+          key={`heartbeat-${n.id}`}
+          className="genie-heartbeat"
+          x={n.x - NODE_RADIUS - 1}
+          y={n.y - NODE_RADIUS - 1}
+          width={NODE_SIZE + 2}
+          height={NODE_SIZE + 2}
+          fill="none"
+          stroke={n.color}
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))
+  ), [visibleNodes])
+
+  // Coin glint for Shop (red). A gold dash slides around the rect's
+  // perimeter via stroke-dasharray + dashoffset animation. With
+  // dasharray=[4, 28] (perimeter = 4×NODE_SIZE = 32), exactly one
+  // short bright segment is visible at any time; the keyframe shifts
+  // it through the full perimeter on a slow loop. Reads as light
+  // catching gold — commerce signal that contrasts with the rect's
+  // red fill instead of competing with it.
+  const coinGlints = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && COIN_GLINT_COLORS.has(n.color))
+      .map(n => (
+        <rect
+          key={`glint-${n.id}`}
+          className="genie-coin-glint"
+          x={n.x - NODE_RADIUS}
+          y={n.y - NODE_RADIUS}
+          width={NODE_SIZE}
+          height={NODE_SIZE}
+          fill="none"
+          stroke="#FFD060"
+          strokeWidth={1.5}
+          strokeDasharray="4 28"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))
+  ), [visibleNodes])
+
+  // Water ripples — Water (blue) rooms. Three concentric circles
+  // centered on the node, each scaled outward by CSS `transform: scale`
+  // while fading. Staggered delays (0 / 0.7s / 1.4s over a 2.1s cycle)
+  // produce a continuous wave of expanding rings.
+  //
+  // The stroke uses a LIGHT cyan (#a0d8ff), NOT the room's own #0000FF —
+  // the rect's fill is full blue, so a same-color stroke would be
+  // invisible inside the rect (where the ripple starts). Light cyan
+  // reads against both the blue rect and the dark map background as
+  // the ring grows past the rect edge.
+  const ripples = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && RIPPLE_COLORS.has(n.color))
+      .flatMap(n => [
+        <circle
+          key={`rip-${n.id}-0`}
+          className="genie-ripple"
+          cx={n.x} cy={n.y} r={5}
+          fill="none"
+          stroke="#a0d8ff"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />,
+        <circle
+          key={`rip-${n.id}-1`}
+          className="genie-ripple genie-ripple--d1"
+          cx={n.x} cy={n.y} r={5}
+          fill="none"
+          stroke="#a0d8ff"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />,
+        <circle
+          key={`rip-${n.id}-2`}
+          className="genie-ripple genie-ripple--d2"
+          cx={n.x} cy={n.y} r={5}
+          fill="none"
+          stroke="#a0d8ff"
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />,
+      ])
+  ), [visibleNodes])
+
+  // Bubbles — Underwater (navy) rooms. Two small circles per node start
+  // near the bottom of the rect, rise upward past the top edge, and pop
+  // out of existence with a brief scale-up at the end. Cyan-white fill
+  // (#a0d8ff) at low opacity so the bubble reads against the dark navy
+  // fill of the room. Distinct from sparkles (slower, smaller, different
+  // motion endpoint with the "pop") so underwater feels like a different
+  // category from the magical 4.
+  const bubbles = useMemo(() => (
+    visibleNodes
+      .filter(n => n.color && BUBBLE_COLORS.has(n.color))
+      .flatMap(n => [
+        <circle
+          key={`bub-${n.id}-0`}
+          className="genie-bubble"
+          cx={n.x - 1.8} cy={n.y + 3} r={1.8}
+          fill="#ffffff"
+          pointerEvents="none"
+        />,
+        <circle
+          key={`bub-${n.id}-1`}
+          className="genie-bubble genie-bubble--d1"
+          cx={n.x + 1.8} cy={n.y + 3} r={1.8}
+          fill="#ffffff"
+          pointerEvents="none"
+        />,
+      ])
+  ), [visibleNodes])
+
   // Static-per-zone node rectangles. Critically: this memo's dep array
   // does NOT include `currentNodeId` or `selectedId`. Those used to
   // change the rect's stroke / draw a halo circle inline, which forced
@@ -860,6 +1425,25 @@ export default function GenieMapView({
               pointerEvents="none"
               style={{ userSelect: 'none' }}
             >↗</text>
+          )}
+          {!stub && node.color && TOOL_GLYPHS[node.color] && (
+            // Tool glyph — pickaxe for Mining, axe for Lumberjacking.
+            // Sized roughly half the stub glyph (5px vs 10px) so the
+            // tool reads as a small inset marker, not a dominant
+            // category banner like the cross-zone arrow. White fill
+            // so it reads on both the sienna and green room colors.
+            // Stubs preempt this slot so a cross-zone exit in a
+            // mining cluster shows ↗, not the pickaxe.
+            <text
+              x={node.x}
+              y={node.y}
+              fontSize={5}
+              fill="#ffffff"
+              textAnchor="middle"
+              dominantBaseline="central"
+              pointerEvents="none"
+              style={{ userSelect: 'none' }}
+            >{TOOL_GLYPHS[node.color]}</text>
           )}
         </g>
       )
@@ -1134,7 +1718,23 @@ export default function GenieMapView({
           <g
             transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}
             style={{ willChange: 'transform' }}
+            // Pause category animations under three conditions:
+            //   1. `isDragging` — user is panning the map manually
+            //   2. `inMotion` — player is actively walking (currentLocation
+            //      changed within the last MOTION_QUIET_MS)
+            // CSS rule applies `animation-play-state: paused` to all
+            // descendants of `.genie-pan-dragging`. Profiling traces
+            // showed both scenarios spending half-plus of frame budget
+            // on Layerize + Recalculate Style for ongoing animations
+            // even when the user wasn't actively viewing them; pausing
+            // frees that budget for transform updates and React work.
+            className={isDragging || inMotion ? 'genie-pan-dragging' : undefined}
           >
+            {/* Aura layer — soft translucent halos behind COLOR_LEGEND
+                rooms (shops, healers, stat trainers, etc.). Drawn first
+                so every other layer paints over them; auras are
+                background "this room is special" signaling, not foreground. */}
+            {auras}
             {/* Arc UNDER-pass — full opacity. Drawn first so node rects
                 paint on top; outside clusters this is the only arc layer
                 you ever see. Inside clusters the rects hide this layer —
@@ -1151,6 +1751,44 @@ export default function GenieMapView({
                 perceptible; inside clusters it answers "which room does
                 this arc actually connect to?" */}
             {arcPathsOver}
+            {/* Sparkle motes — animated upward-drifting dots for the
+                "magical" tier (transport, shrine, favor altar, stat
+                training). Drawn after arcs-over so the motes paint on
+                top of the map content, but before the indicators so the
+                "you are here" halo and selection outline still win. */}
+            {sparkles}
+            {/* Heartbeat ring — mint-colored stroke pulses on each Auto-
+                Healer room in a lub-dub rhythm. Same layer as sparkles. */}
+            {heartbeats}
+            {/* Coin glint — gold dash slides around each Shop room's
+                perimeter. Reinforces "commerce" without changing the
+                rect's primary red fill. */}
+            {coinGlints}
+            {/* Water ripples — concentric blue rings expand outward
+                from Water rooms. Staggered delays produce a continuous
+                wave. */}
+            {ripples}
+            {/* Bubbles — cyan dots rise upward and pop on Underwater
+                rooms. Distinct from sparkles so navy reads as "danger:
+                drowning" rather than "magical." */}
+            {bubbles}
+            {/* Caution rings — slow-blink warning beacon on Obstacle
+                rooms (amber). Reads as "this room costs you roundtime." */}
+            {cautionRings}
+            {/* Implode rings — shrink-inward halo on Depart rooms
+                (eggplant). Opposite direction from ripples; somber
+                "finality" motif. */}
+            {implodes}
+            {/* Leaf falls — green leaves wafting downward from below
+                Lumberjacking rooms. */}
+            {leafFalls}
+            {/* Dirt falls — brown particles falling straight down
+                from below Mining (dark brown) and Ranger Trailhead
+                (sandy tan) rooms. */}
+            {dirtFalls}
+            {/* XP rises — gold particles rise upward from Guildleader
+                (orange) rooms. "Level up here" — XP-gain metaphor. */}
+            {xpRises}
             {/* Hover path preview — bright line tracing the BFS route from
                 the player to the hovered room. Sits above the arc layers
                 so it visually wins over them, but below the indicators so
@@ -1186,13 +1824,46 @@ export default function GenieMapView({
             .map(a => a.exit || a.move)
             .filter((v, i, arr) => arr.indexOf(v) === i)
             .join(', ')
+          // Tooltip is anchored at the cursor + (12, 12), but on a small
+          // panel (or near a canvas edge) that ideal position can push
+          // it outside the canvas bounds. Strategy:
+          //   1. Cap the tooltip's max width to the available canvas
+          //      space (minus padding) — on narrow panels the tooltip
+          //      shrinks so its content wraps tighter rather than
+          //      overflowing.
+          //   2. Flip to the opposite side of the cursor when the ideal
+          //      position would still overflow.
+          //   3. Clamp the final position so even when canvas < ideal
+          //      tooltip width, the tooltip is pinned inside the canvas.
+          // Heights are harder — content is variable and we don't
+          // measure it — so we use a conservative estimate for the flip
+          // decision and don't clamp the bottom edge (lets tall tooltips
+          // run past on extreme cases rather than truncating content).
+          const TT_MAX_W = 320
+          const TT_MIN_W = 80
+          const TT_EST_H = 180
+          const EDGE_PAD = 6
+          const canvas   = svgRef.current
+          const canvasW  = canvas?.clientWidth  ?? Number.POSITIVE_INFINITY
+          const canvasH  = canvas?.clientHeight ?? Number.POSITIVE_INFINITY
+          const ttW = Math.max(TT_MIN_W, Math.min(TT_MAX_W, canvasW - 2 * EDGE_PAD))
+          const flipX = tooltipPos.x + 12 + ttW > canvasW
+          const flipY = tooltipPos.y + 12 + TT_EST_H > canvasH
+          const idealLeft = flipX ? tooltipPos.x - 12 - ttW : tooltipPos.x + 12
+          const idealTop  = flipY ? tooltipPos.y - 12 - TT_EST_H : tooltipPos.y + 12
+          // Clamp left so the tooltip stays inside the canvas regardless
+          // of cursor position. Top is only floored at EDGE_PAD — tooltips
+          // can run past the bottom on extremely tall content rather than
+          // clipping it.
+          const left = Math.max(EDGE_PAD, Math.min(idealLeft, canvasW - ttW - EDGE_PAD))
+          const top  = Math.max(EDGE_PAD, idealTop)
           return (
             <div
               style={{
                 position: 'absolute',
-                left: tooltipPos.x + 12,
-                top:  tooltipPos.y + 12,
-                maxWidth: 320,
+                left,
+                top,
+                maxWidth: ttW,
                 padding: '6px 9px',
                 background: 'var(--map-chrome-bg, rgba(20, 20, 22, 0.95))',
                 border: '1px solid var(--map-border, #555)',
@@ -1372,11 +2043,56 @@ export default function GenieMapView({
                     <text x={7} y={11} fontSize={9} fill="var(--map-arc-special, #ffb74d)" textAnchor="middle">↗</text>
                   </svg>
                   <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35, color: 'var(--map-text-muted, #888)' }}>
-                    Click to switch to the target zone
+                    Click to walk to the boundary
                   </span>
                 </div>
               </>
             )}
+
+            {/* Room glyphs — small icons rendered ON the rect for
+                specific gathering categories. Listed only when those
+                rooms actually appear on the current floor (same
+                contextual gating as the color/arc sections). */}
+            {(() => {
+              const showPickaxe = visibleNodes.some(n => n.color === '#993300')
+              const showAxe     = visibleNodes.some(n => n.color === '#008000')
+              if (!showPickaxe && !showAxe) return null
+              const headerTop = (zoneColors.length > 0 || arcCategories.length > 0 || hasStubs) ? 8 : 0
+              return (
+                <>
+                  <div style={{
+                    fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5,
+                    marginTop: headerTop, marginBottom: 4,
+                  }}>
+                    Room glyphs
+                  </div>
+                  {showPickaxe && (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 3 }}>
+                      <span style={{
+                        flexShrink: 0, width: 12, textAlign: 'center',
+                        fontWeight: 'bold', alignSelf: 'center',
+                      }}>{TOOL_GLYPHS['#993300']}</span>
+                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+                        <span style={{ fontWeight: 'bold' }}>Pickaxe</span>
+                        <span style={{ color: 'var(--map-text-muted, #888)' }}> — Mining room</span>
+                      </span>
+                    </div>
+                  )}
+                  {showAxe && (
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 3 }}>
+                      <span style={{
+                        flexShrink: 0, width: 12, textAlign: 'center',
+                        fontWeight: 'bold', alignSelf: 'center',
+                      }}>{TOOL_GLYPHS['#008000']}</span>
+                      <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35 }}>
+                        <span style={{ fontWeight: 'bold' }}>Axe</span>
+                        <span style={{ color: 'var(--map-text-muted, #888)' }}> — Lumberjacking room</span>
+                      </span>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
       </div>

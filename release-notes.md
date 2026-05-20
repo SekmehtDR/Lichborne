@@ -1,3 +1,64 @@
+## What's new in v0.6.7
+
+Follow-up release to v0.6.6's Genie Maps rewrite. The big addition: every room category on the Genie Maps view now has its own visual signature. Shops glint with gold, healers pulse with a heartbeat, water rooms ripple, transports swirl, lumber rooms drop leaves, and so on. Plus two new status indicators we were missing (poisoned, diseased), command echo for everything you click on a panel, and several debug-panel quality-of-life fixes.
+
+### Genie Maps — every room category now has its own animation
+
+Every recognized room color on the Genie Maps view now has a unique visual signature, so you can recognize what kind of room you're looking at without checking the legend:
+
+- **Shops (red)** — a gold dash slides around the room border, like light catching coins
+- **Healers (mint)** — the room pulses in a lub-dub heartbeat rhythm
+- **Water (blue)** — concentric ripples expand outward
+- **Underwater (navy)** — white bubbles rise from the room and pop
+- **Transport / Portal (fuchsia)** — three sparkles orbit the room in a vortex
+- **Shrine (periwinkle)** — sparkles drift outward in all directions
+- **Favor altar (purple)** — sparkles rise upward, like offerings
+- **Stat training (yellow)** — sparkles rise faster, like effort
+- **Guildleader (orange)** — gold particles rise from the room ("level up here")
+- **Lumberjacking (green)** — green leaves drift down from the room with a slight wobble
+- **Mining (sienna)** — rusty-brown dirt particles fall straight down
+- **Ranger trailhead (sand)** — sandy tan dust falls — same animation as mining, different color
+- **Obstacle (amber)** — slow on/off caution blink
+- **Depart room (eggplant)** — rings shrink inward, somber finality
+- **Interesting room (lime)** — the room's aura flickers like firelight
+- **Player housing (aqua)** — stronger static aura ("this is special")
+
+The mining rooms also get a small **pickaxe ⛏** glyph centered on the rect; lumber rooms get an **axe 🪓**. Both serve as the primary identifier; the falling particles are the embellishment.
+
+### Map fixes
+
+- **Hover tooltips no longer get clipped** when the map is in a narrow panel. The tooltip now shrinks its width to fit available space and flips to the other side of the cursor when it would overflow.
+- **Room colors that use CSS color names now work correctly.** Some Genie XMLs use `color="Blue"` instead of `color="#0000FF"` — previously those rooms rendered as plain blue with no aura or ripple animation because the lookup keys were hex-only. Now normalized at parse time so any color name (`Blue`, `Red`, `Aqua`, `Lime`, `White`) gets the same treatment as its hex equivalent.
+- **Map labels scaled down to 80% of your game font size** — they were dominating the visual hierarchy against the small 8×8 room rects. Still scale with your font setting if you change it.
+- **Legend cleaned up** — "click to switch to the target zone" copy on cross-zone exits was stale; updated to reflect that clicking walks you to the boundary. New "Room glyphs" section shows the pickaxe and axe with their categories.
+
+### Affliction indicator — poisoned and diseased
+
+DragonRealms has sent `IconPOISONED` and `IconDISEASED` indicators for years, but Lichborne wasn't tracking them. Now it does:
+
+- **New "Affliction" slot in the icon bar** — appears after the existing Bleeding/Stunned/Dead slot. Multiplexes **Poisoned** (priority) and **Diseased**.
+- The slots are separate so a poisoned-AND-bleeding character sees both states simultaneously. Bleeding and poisoned need different cures and have different timers; one shouldn't hide the other.
+- Theme-aware — poisoned reads as toxic green, diseased reads as sickly mustard yellow-green. Distinct hues so when one supersedes the other you can tell which is showing.
+
+### All panel clicks now echo as `>cmd` in the game window
+
+Clicking a room on the map, clicking an exit in the room panel, sending a quick-send command, clicking a command link in the text stream — all of these now echo as `>command` lines in your main game window, the same way commands you type do. Previously they were silent.
+
+### Debug panel polish
+
+- **No more auto-opening on disconnect.** The debug panel used to open itself whenever a connection drop wasn't perfectly clean — which happened on any Lich script that issued `exit` for you. The status banner ("Connection lost") already tells you what happened; you can click Debug yourself if you want to investigate.
+- **Events tab now starts fresh.** Previously the Events count would show (500) the moment you opened the panel because events had been silently collecting in memory all along. Now the buffer only collects while the panel is open, and clears on close.
+
+### Performance — smoother map interaction
+
+- **Map animations pause while you drag the map** — dragging a dense zone (Crossing, Shard) used to feel sluggish because all the category animations kept running while the camera was being repositioned. They now pause the moment you start dragging and resume the instant you let go.
+- **Map animations also pause during fast cross-zone walks** — running across half the map used to drop frames because every walk step triggered React reconciliation AND all category animations kept running on every visible room. Animations now pause whenever you've taken a walk step in the last 800ms, and resume the moment you stop. Cross-map runs are significantly smoother.
+- **Genie map folder loads near-instantly after the first time** — initial Genie maps folder parse is multi-second (122 XML files, thousands of rooms). Lichborne now caches the parsed result to disk. On every subsequent launch — assuming you haven't edited or added/removed XML files in the folder — the map is ready in ~50ms instead of re-parsing from scratch. Cache invalidates automatically if any file in the folder changes.
+
+### Smaller fixes
+
+- The "Connecting to…" overlay was rendering behind the Add Character modal when you connected from inside that modal — fixed.
+
 ## What's new in v0.6.6
 
 The map's graph view has been rebuilt again — this time around Genie XML as the spatial source of truth. The previous Lich-native auto-layout (v0.6.3) tried to derive room positions from each room's walk commands; it worked in open areas but produced visual hairballs in dense districts and routinely disagreed with the Genie maps team's hand-curated layouts ("type west, marker goes north"). The new view renders Genie XML directly at the coordinates the community has been refining for 20 years.

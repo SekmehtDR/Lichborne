@@ -333,6 +333,75 @@ ipcMain.handle('read-file', (_event, filePath: string) => {
   try { return fs.readFileSync(filePath, 'utf-8') } catch { return null }
 })
 
+// ── Genie maps parse cache ────────────────────────────────────────────────────
+//
+// Initial parse of a Genie maps folder (122 XML files, ~thousands of rooms
+// total) takes several seconds — DOMParser is synchronous and chunky.
+// Cache the parsed result keyed by a fingerprint of the source folder's
+// filename + mtime + size set. On subsequent launches, if the fingerprint
+// matches we skip parsing entirely and load the precomputed zones in
+// ~50 ms (just JSON.parse).
+//
+// Cache invalidates automatically when:
+//   - Any XML in the folder is added/removed
+//   - Any XML's mtime or size changes
+//   - The selected folder path itself changes
+//   - Schema bump (see CACHE_VERSION)
+//
+// Stored in userData/genie-cache.json. Single file rather than per-zone
+// chunks — the whole set is loaded as one read, decoded as one JSON.parse,
+// and handed to the renderer as one array.
+
+const GENIE_CACHE_VERSION = 1
+const GENIE_CACHE_FILE = path.join(app.getPath('userData'), 'genie-cache.json')
+
+function computeGenieFingerprint(dir: string): string {
+  // Sorted `name:mtimeMs:size` segments joined with `|`. Sorting makes the
+  // result stable regardless of directory iteration order. Including size
+  // alongside mtime catches the edge case where the OS rounds mtime to
+  // 1-second resolution and a same-second edit goes unnoticed.
+  if (!fs.existsSync(dir)) return ''
+  const entries = fs.readdirSync(dir)
+    .filter(f => f.toLowerCase().endsWith('.xml'))
+    .sort()
+    .map(f => {
+      const stat = fs.statSync(path.join(dir, f))
+      return `${f}:${Math.round(stat.mtimeMs)}:${stat.size}`
+    })
+  return entries.join('|')
+}
+
+ipcMain.handle('genie-cache:load', (_e, dir: string): unknown[] | null => {
+  try {
+    if (!dir || !fs.existsSync(GENIE_CACHE_FILE)) return null
+    const raw = fs.readFileSync(GENIE_CACHE_FILE, 'utf-8')
+    const cache = JSON.parse(raw)
+    if (cache?.version !== GENIE_CACHE_VERSION) return null
+    if (cache?.dir !== dir) return null
+    if (cache?.fingerprint !== computeGenieFingerprint(dir)) return null
+    if (!Array.isArray(cache.zones)) return null
+    return cache.zones
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('genie-cache:save', (_e, dir: string, zones: unknown[]): boolean => {
+  try {
+    const payload = {
+      version: GENIE_CACHE_VERSION,
+      dir,
+      fingerprint: computeGenieFingerprint(dir),
+      zones,
+    }
+    fs.writeFileSync(GENIE_CACHE_FILE, JSON.stringify(payload), 'utf-8')
+    return true
+  } catch (e) {
+    console.error('genie-cache:save failed:', e)
+    return false
+  }
+})
+
 // ── Lich file-system helpers ──────────────────────────────────────────────────
 
 function lichDirFrom(lichPath: string): string {
