@@ -40,13 +40,9 @@ interface Props {
   genieProgress:       { loaded: number; total: number } | null
   onPickGenieFolder:   () => void
   onClearGenieFolder:  () => void
-  // Smooth-motion toggle (Settings → Smooth Scrolling). When false the
-  // camera snaps instead of gliding — cheaper, and the opt-out for
-  // testers who see performance degradation from the transitions.
-  smoothScroll?:       boolean
-  // Per-room category animations toggle (Settings → Genie Map
-  // Animations). When false the map permanently wears the same
-  // animation-pause it uses during drag/walk.
+  // Genie Map Animations toggle (Settings). When false the map
+  // permanently wears the drag/walk animation-pause AND the camera
+  // glide is disabled (snaps instead). One switch for all map motion.
   mapAnimations?:      boolean
 }
 
@@ -280,7 +276,7 @@ function bfsZoneRoomPath(zone: GenieZone, fromId: number, toId: number): number[
 export default function GenieMapView({
   zones, roomTitle, roomDesc = '', onSendCommand,
   genieMapsDir, genieLoading, genieReady, genieProgress,
-  onPickGenieFolder, onClearGenieFolder, smoothScroll = false, mapAnimations = true,
+  onPickGenieFolder, onClearGenieFolder, mapAnimations = true,
 }: Props) {
   const [currentZoneId, setCurrentZoneId] = useState<string>('')
   const [currentLevel,  setCurrentLevel]  = useState<number>(0)
@@ -1746,7 +1742,7 @@ export default function GenieMapView({
   const currentIndicator = currentNode && (
     <g
       pointerEvents="none"
-      className={!isDragging && smoothScroll ? 'genie-pan-smooth' : undefined}
+      className={!isDragging && mapAnimations ? 'genie-pan-smooth' : undefined}
       style={{
         // Transitions in lockstep with the pan group (same class) so
         // the halo stays centred instead of bouncing. Snaps when the
@@ -1982,14 +1978,14 @@ export default function GenieMapView({
             //      EXEMPTS the ping (you still want to see yourself
             //      mid-walk). Only used when animations are on.
             //   3. `genie-pan-smooth` — CSS transition on `transform`
-            //      for the camera glide. Gated on `smoothScroll`,
-            //      suppressed while `isDragging`. Independent of the
-            //      freeze classes.
+            //      for the camera glide. Gated on `mapAnimations` (the
+            //      same Settings toggle), suppressed while `isDragging`.
+            //      Independent of the freeze classes.
             className={[
               !mapAnimations
                 ? 'genie-anim-off'
                 : (isDragging || inMotion) ? 'genie-pan-dragging' : '',
-              !isDragging && smoothScroll ? 'genie-pan-smooth' : '',
+              !isDragging && mapAnimations ? 'genie-pan-smooth' : '',
             ].filter(Boolean).join(' ') || undefined}
           >
             {/* Aura layer — soft translucent halos behind COLOR_LEGEND

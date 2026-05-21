@@ -256,35 +256,8 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
           />
 
           <Toggle
-            label="Smooth Scrolling"
-            description="Animate the story window and the Genie map camera instead of snapping instantly. Off by default — opt in if you like the effect."
-            checked={settings.smoothScroll}
-            onChange={v => set('smoothScroll', v)}
-          />
-
-          {settings.smoothScroll && (
-            <div className="sp-field-row">
-              <label className="sp-field-label" htmlFor="sp-burst-limit">
-                Burst limit <span className="sp-field-hint">(lines — lower snaps sooner)</span>
-              </label>
-              <div className="sp-number-row">
-                <button className="sp-num-btn" onClick={() => set('smoothScrollBurstLimit', Math.max(5, settings.smoothScrollBurstLimit - 5))}>−</button>
-                <input
-                  id="sp-burst-limit"
-                  type="number" min={5} max={200} step={5}
-                  value={settings.smoothScrollBurstLimit}
-                  onChange={e => set('smoothScrollBurstLimit', Math.max(5, Math.min(200, parseInt(e.target.value) || 25)))}
-                  className="sp-number-input"
-                />
-                <span className="sp-number-unit">lines</span>
-                <button className="sp-num-btn" onClick={() => set('smoothScrollBurstLimit', Math.min(200, settings.smoothScrollBurstLimit + 5))}>+</button>
-              </div>
-            </div>
-          )}
-
-          <Toggle
             label="Genie Map Animations"
-            description="Per-room animations on the Genie Maps view (shop glints, water ripples, sparkles, etc.). Turn off if the map feels sluggish — same freeze the map uses while you walk or drag."
+            description="Genie Maps motion — per-room effects (shop glints, water ripples, sparkles) and the camera glide as it follows you. Turn off if the map feels sluggish; the map then snaps instantly with no effects."
             checked={settings.mapAnimations}
             onChange={v => set('mapAnimations', v)}
           />

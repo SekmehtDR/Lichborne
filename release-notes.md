@@ -1,3 +1,17 @@
+## What's new in v0.6.12
+
+A fix and a cleanup.
+
+### Scroll pinning fixed
+
+Scrolling up to re-read something while the game kept sending text would drag what you were looking at off the top of the screen. That's fixed — scroll up and your position holds steady while new text appends below, the way it should.
+
+### Smooth scrolling removed (story window)
+
+The optional **Smooth Scrolling** setting for the game text window has been removed. It was off by default, didn't add much, and its lagging-catch-up behavior was easy to mistake for a bug. The story window now always scrolls instantly — simple and predictable. (If you'd turned it on, there's nothing to do — the setting is just gone.)
+
+The Genie **map** still glides smoothly as it follows you around — that motion is now controlled by the existing **Genie Map Animations** setting, a single toggle for all map motion.
+
 ## What's new in v0.6.11
 
 A small follow-up to v0.6.10. That release made smooth scrolling automatically snap to instant during huge bursts of text (like the login flood). v0.6.11 lets you tune *how big* a burst has to be before that kicks in.

@@ -83,6 +83,22 @@
 
 **B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
+**v0.6.12 — Scroll-pin fix + story-window smooth scroll removed ✅**
+
+Two related changes. A regression hunt found that scrolling up to read history while game text arrived dragged the view off-screen; and the story-window smooth-scroll feature — opt-in, off by default, marginal — was generating more confusion and false bug reports than value. Fixed the regression and removed the feature.
+
+_Scroll pinning fix (B84)_
+
+- **`contain` removed from the text rows ✅** — v0.6.8 added `contain: layout style` to `.text-line` / `.text-line-wrap` as a per-row reflow-isolation perf hint. `.text-line-wrap` is the react-virtuoso row; layout containment isolates each row from Virtuoso's own item-measurement and scroll-offset bookkeeping, so when the list updated while the user was scrolled up, Virtuoso couldn't hold the position — the content being read got dragged. Removed both declarations, DO-NOT-RE-ADD comments left in the CSS (and CLAUDE.md pitfall #23). Diagnosis was by elimination: the bug reproduced with smooth scroll off, and with smooth off every GameWindow scroll-machine path reduces to its exact v0.6.7 value — the CSS was the only always-active change.
+
+_Story-window smooth scroll removed_
+
+- **Smooth scroll deleted ✅** — The v0.6.8–v0.6.11 story-window smooth-scroll feature (opt-in, off by default) is gone: the `smoothScroll` / `smoothScrollBurstLimit` settings, the flood detector (`floodRef` / `floodCountRef` / `floodTimerRef`, `smoothActive()`, the per-batch accounting), the `smoothScrollRef` mirror, the `FLOOD_*` constants, and the Settings "Smooth Scrolling" toggle + "Burst limit" field. `followOutput` is back to `'auto'`, `totalListHeightChanged` to a direct `scrollTop` write, `scrollToBottom` to `behavior:'auto'`, suppress windows to the flat pre-v0.6.8 200/300ms. The story window is plain instant-follow again. The `index:'LAST'` fix in `scrollToBottom` (the real B77 stale-closure fix) was kept; the room-state pump and the `will-change` scroller hint were kept.
+- **Map camera glide kept, re-gated ✅** — The Genie map's `genie-pan-smooth` camera glide stays, now gated on the existing **Genie Map Animations** setting instead of `smoothScroll`. That one toggle is now the single switch for all Genie map motion — per-room category effects AND the camera glide. Default on.
+- Old profiles that stored `smoothScroll` / `smoothScrollBurstLimit` keep them as harmless dead keys in the `settings` blob — `loadSettings` ignores unknown keys, no migration needed.
+
+- Build + tsc clean. ✅
+
 **v0.6.11 — Tunable smooth-scroll burst limit ✅**
 
 A follow-up to v0.6.10. The flood-adaptive smooth scroll cured huge bursts (the login dump) but its trip threshold was hardcoded at 40 lines — moderate commands like `exp` slipped under it and kept smooth-scrolling, which still janked on Binu's 4K rig (he ended up turning smooth scroll off entirely). v0.6.11 makes the threshold a player-tunable setting.

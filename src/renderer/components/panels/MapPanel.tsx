@@ -16,8 +16,7 @@ interface Props {
   lichMapVersion?: number
   onSendCommand: (cmd: string) => void
   large?: boolean
-  smoothScroll?: boolean    // Settings → Smooth Scrolling; gates the Genie Maps camera glide
-  mapAnimations?: boolean   // Settings → Genie Map Animations; gates per-room category effects
+  mapAnimations?: boolean   // Settings → Genie Map Animations; gates per-room effects AND the camera glide
 }
 
 const GENIE_DIR_KEY  = 'lichborne.genieMapsDir'
@@ -29,7 +28,7 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMapVersion = 0, onSendCommand, large = false, smoothScroll = false, mapAnimations = true }: Props) {
+export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMapVersion = 0, onSendCommand, large = false, mapAnimations = true }: Props) {
   const character = useCharacter()
   const saveProfile = useProfileSaver()
 
@@ -377,7 +376,6 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMa
           genieProgress={genieProgress}
           onPickGenieFolder={pickGenieFolder}
           onClearGenieFolder={clearGenieFolder}
-          smoothScroll={smoothScroll}
           mapAnimations={mapAnimations}
         />
       )}

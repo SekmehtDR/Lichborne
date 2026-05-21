@@ -2864,7 +2864,7 @@ Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `n
 
 **Why always-center (not margin-snap):** earlier implementation only panned when the indicator approached a 15% safe-margin edge. At fast walk rates each step pushed the indicator just outside the margin and the camera snapped back, producing a visible vibration. Always-centering means each camera delta exactly matches the player's world delta.
 
-**Smooth camera motion (v0.6.8, opt-in as of v0.6.9).** The pan group is positioned with the CSS `transform` *property* (not the SVG `transform` attribute) so it can be CSS-transitioned. `.genie-pan-smooth` applies `transition: transform 150ms linear`; follow walks and wheel zoom slide between positions instead of snapping. `linear` is deliberate — a follow camera re-targets every walk step, and an ease-out curve resets its velocity profile on each restart, producing a visible accelerate/decelerate pulse. The class is suppressed while `isDragging` so manual drag stays 1:1 with the cursor. As of v0.6.9 it is also gated on the `smoothScroll` prop (Settings → Smooth Scrolling, **default off** — the same toggle as the story-window smooth scroll, §23): both the pan group and the indicator only get `.genie-pan-smooth` when `!isDragging && smoothScroll`. They are gated together so they stay in lockstep — when off, both snap.
+**Smooth camera motion.** The pan group is positioned with the CSS `transform` *property* (not the SVG `transform` attribute) so it can be CSS-transitioned. `.genie-pan-smooth` applies `transition: transform 150ms linear`; follow walks and wheel zoom slide between positions instead of snapping. `linear` is deliberate — a follow camera re-targets every walk step, and an ease-out curve resets its velocity profile on each restart, producing a visible accelerate/decelerate pulse. The class is suppressed while `isDragging` so manual drag stays 1:1 with the cursor. It is gated on the **`mapAnimations`** setting (Settings → Genie Map Animations, default on): both the pan group and the indicator only get `.genie-pan-smooth` when `!isDragging && mapAnimations`, gated together so they stay in lockstep — when off, both snap. (v0.6.8–v0.6.11 gated this on a separate `smoothScroll` setting shared with the now-removed story-window smooth scroll; v0.6.12 removed that setting and folded the map glide under `mapAnimations` — one switch for all Genie map motion.)
 
 **Snap-on-large-delta.** A 150ms transition visibly "races across" the screen on a big jump. `snapTransform` is a render-time delta check (Euclidean > 600px OR scale change > 20% vs `prevTransformRef`, the last *painted* transform, updated in a post-commit `useEffect`). When true, an inline `transition: none` drops the transition for that one update — zone switches, ◆-from-afar, and fit-to-view cut instantly; walk steps and wheel zoom stay smooth.
 
@@ -3482,26 +3482,20 @@ Padding belongs on each item, not on the `.text-window` container. Applying `pad
 Auto-follow is owned entirely by Virtuoso's `followOutput` prop. `followOutput` uses Virtuoso's internal height map for ALL items (rendered and unrendered), not `el.scrollHeight` which only reflects rendered items + spacer estimates. This is the correct tool for following a virtual list where new items appear below the current viewport and have no DOM presence yet.
 
 ```tsx
-followOutput={() => pinnedRef.current ? 'smooth' : false}
+followOutput={() => pinnedRef.current ? 'auto' : false}
 ```
 
-**Smooth scroll (v0.6.8; opt-in v0.6.9; flood-adaptive v0.6.10; tunable burst limit v0.6.11).** When smooth scroll is *active*, `followOutput` returns `'smooth'` so incoming text *slides* the viewport over ~300ms instead of snapping; `totalListHeightChanged` and `scrollToBottom` likewise use smooth `scrollTo`/`scrollToIndex`, and the suppress window is 500ms. When inactive, `followOutput` returns `'auto'`, the scroll writes are instant, and the suppress window is 200ms (the B76 value — keeps scrollbar-drag unpinning responsive between batches).
+Scroll-to-bottom is **instant** (`'auto'`). A smooth-scroll variant existed v0.6.8–v0.6.11 (an opt-in `smoothScroll` setting, later with a flood-adaptive fallback and a tunable burst limit) but was **removed in v0.6.12** — it was off by default, marginal in value, and a recurring source of false bug reports (its lagging viewport position, combined with CSS `contain` on the rows, looked like broken scroll pinning). The story window is now plain instant-follow, the proven pre-v0.6.8 behavior. The Genie *map* camera glide was kept — see §19.16.6 — gated on the `mapAnimations` setting.
 
-"Active" is **not** simply `settings.smoothScroll` — it is `smoothActive()` = `settings.smoothScroll && !floodRef.current`. The `floodRef` half is the **flood-adaptive** layer (B82): smooth scroll is the right feel for a trickle of new lines but pathological during a burst. During the login dump (or heavy combat) the lagging smooth-scroll position makes react-virtuoso continuously mount/unmount rows as the animation sweeps — Binu's 4K startup profile was ~74% render pipeline (Recalculate Style 21%, Layerize 19%, Paint 15%). So a flood detector in the game-event handler accumulates `floodCountRef += newMain.length`; once it crosses the **burst limit** `floodRef` trips true, and a `FLOOD_WINDOW_MS` (500ms) timer — restarted every batch — only clears it after a genuine lull. While `floodRef` is true, `smoothActive()` is false → instant scroll → the rendered window parks at the bottom, no sweep. Once the burst subsides smooth resumes automatically. The flag trips once at a burst's start and clears once at its end (no flicker).
-
-The burst limit is the player-tunable `settings.smoothScrollBurstLimit` (B83) — default 25, range 5–200, surfaced as the **Burst limit** field under Settings → Smooth Scrolling. v0.6.10 hardcoded it at 40, which let moderate commands (`exp`-sized output) slip under the threshold and keep smooth-scrolling on slow rigs. Lower = smooth scroll gives up sooner during a burst. The game-event handler reads it via a `floodThresholdRef` mirror (the once-at-mount listener can't see fresh `settings`). The login dump is hundreds-to-thousands of lines, so it trips flood mode at *any* burst-limit value — the setting only governs whether *moderate* bursts also fall back to instant.
-
-All five decision points route through `smoothActive()`: `followOutput`, `totalListHeightChanged` (behavior + suppress), `scrollToBottom`, and the two suppress-arm sites in the event handler. The JSX-level callbacks could read `settings` directly, but `smoothActive()` also reads live refs — needed by the once-at-mount event listener and the keydown-captured `scrollToBottom`, whose closures can't see fresh state. The `settings.smoothScroll` setting (NOT the flood gate) also gates the Genie map camera glide — see §19.16.6; the map glide is one cheap CSS transition, not a re-virtualization storm, so it needs no flood adaptation.
-
-A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it smooth-scrolls to the true DOM bottom and arms `suppressUnpinRef` for 500ms:
+A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it instantly snaps `scrollTop` to the true DOM bottom and arms `suppressUnpinRef` for 200ms:
 
 ```tsx
 totalListHeightChanged={() => {
   if (!pinnedRef.current) return
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
   if (dist > 2) {
-    suppressUnpin(500)
-    el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' })
+    suppressUntilRef.current = Date.now() + 200
+    el.scrollTop = el.scrollHeight - el.clientHeight
   }
 }}
 ```
@@ -3531,17 +3525,17 @@ function handleVirtuosoScroll() {
 This separation is critical: `followOutput` and `totalListHeightChanged` both generate scroll events. If the scroll handler also un-pinned on `dist > threshold`, those programmatic events would immediately clear the pin state — breaking auto-follow entirely.
 
 **Suppress-unpin guard:**
-`suppressUnpinRef.current` is armed for **500ms** (was 200ms) whenever a programmatic scroll occurs (from `totalListHeightChanged`, `scrollToBottom`, or `scrollToIndex`). The scroll handler returns early while suppressed. The window widened to 500ms when `followOutput` became `'smooth'` — a smooth scroll animation runs ~300ms, and the intermediate scroll events it emits would otherwise trip the `dist > 40` unpin branch mid-animation.
+`suppressUntilRef.current` is armed for **200ms** whenever a programmatic scroll occurs (from the event handler before `setLines`, `totalListHeightChanged`, or `scrollToIndex`); `scrollToBottom` uses 300ms. The scroll handler returns early while suppressed. 200ms covers the instant auto-scroll plus Virtuoso's ResizeObserver/rAF settle, and is short enough that scrollbar-drag unpinning stays responsive between batches (B76).
 
 **Re-pinning:**
 - Scroll handler re-pins automatically when the user scrolls all the way to the bottom (`dist <= 10`)
-- `scrollToBottom()` — called by badge click, the `End` key (focus-elsewhere), or `Ctrl+End` — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' })`. `index: 'LAST'` (not `lines.length - 1`) is deliberate: the once-at-mount `keydown` listener captures `scrollToBottom` when `lines` is still empty — a `lines.length` reference would be permanently stale and the scroll would silently no-op.
+- `scrollToBottom()` — called by badge click, the `End` key (focus-elsewhere), or `Ctrl+End` — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })`. `index: 'LAST'` (not `lines.length - 1`) is deliberate: the once-at-mount `keydown` listener captures `scrollToBottom` when `lines` is still empty — a `lines.length` reference would be permanently stale and the scroll would silently no-op.
 - `clearLines()` sets `pinnedRef.current = true` so the user is not stranded at the top of an empty buffer after a screen clear
 
 **Word wrap:**
 Virtuoso's scroller div has `overflow: auto` internally, enabling horizontal scrolling and breaking word wrap. Fixed by `el.style.overflowX = 'hidden'` in the `scrollerRef` callback. The same callback also sets `el.style.willChange = 'scroll-position'` to promote the scroll subtree to its own GPU layer (compositor-only scroll, no text re-rasterization).
 
-**Render-cost mitigations (v0.6.8):** `.text-line` / `.text-line-wrap` carry `contain: layout style` so a per-row update can't trigger reflow of siblings or ancestors; `.text-window` carries `overscroll-behavior: contain` to kill the rubber-band bounce. Together these address "jerks and tears during heavy scrolling."
+**Render-cost mitigations:** the Virtuoso scroller carries `will-change: scroll-position` (set in the `scrollerRef` callback) to keep the scroll subtree on its own GPU layer. `.text-line` / `.text-line-wrap` briefly carried `contain: layout style` (v0.6.8) as a per-row reflow-isolation hint, but it was **removed in v0.6.12** — layout containment on a react-virtuoso row breaks Virtuoso's item-measurement / scroll-offset bookkeeping, which broke scroll-pin position retention when the list updated while scrolled up (B84). **Do not re-add `contain` to the text rows.**
 
 **Keyboard scrolling — focus-aware (B77):**
 `scrollRef.current` points to the Virtuoso scroller div; directly setting `el.scrollTop` works. Key behavior depends on whether the command input is focused:

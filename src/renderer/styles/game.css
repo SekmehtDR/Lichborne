@@ -187,9 +187,13 @@
 
 .text-line-wrap {
   padding: 0 12px 0.15em;
-  /* See `.text-line` — same isolation, applied at the wrapper so the
-     padding box is also out of the parent's layout pass. */
-  contain: layout style;
+  /* DO NOT add `contain` here. `.text-line-wrap` is the react-virtuoso
+     row; layout containment isolates each row from Virtuoso's own item
+     measurement / scroll-offset bookkeeping, which breaks scroll-pin
+     position retention when the list updates while scrolled up (the
+     content you're reading gets dragged off-screen). It was added in
+     v0.6.8 as a perf hint and removed in v0.6.12 when it turned out to
+     fight virtualization. */
 }
 
 .scroll-anchor-badge {
@@ -281,14 +285,10 @@
   min-height: 1.4em;
   font-size: var(--game-font-size);
   line-height: var(--game-line-height);
-  /* Layout/style isolation per row. Tells the browser each row's
-     layout cannot affect siblings or ancestors, so a re-render of one
-     line (highlight match, new segment) skips the parent reflow pass.
-     Significant during heavy text bursts where dozens of rows mount
-     per frame inside Virtuoso. `contain: content` (= layout style
-     paint) is too aggressive — paint containment forces a separate
-     stacking context per row which fights Virtuoso's own composite. */
-  contain: layout style;
+  /* DO NOT add `contain` here (or on `.text-line-wrap`). It was a v0.6.8
+     perf hint but layout containment on a react-virtuoso row breaks
+     scroll-pin position retention — see the note on `.text-line-wrap`.
+     Removed v0.6.12. */
 }
 
 .command-bar {

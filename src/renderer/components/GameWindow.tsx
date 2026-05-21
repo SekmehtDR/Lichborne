@@ -63,18 +63,6 @@ function isExpReadout(segments: TextSegment[]): boolean {
 const MAX_LINES       = 2000
 const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
-
-// Flood detection for adaptive smooth scroll. Smooth scroll is the
-// right feel for a trickle of new lines but pathological during a
-// burst (login dump, heavy combat): the lagging scroll position makes
-// react-virtuoso continuously mount/unmount rows as the animation
-// sweeps, saturating the render pipeline (Recalculate Style + Layerize
-// + Paint dominated Binu's 4K startup profile at ~74%). When more main
-// lines than the burst limit arrive without a FLOOD_WINDOW_MS quiet
-// gap, scroll falls back to instant until the burst subsides. The
-// burst limit is the player-tunable `smoothScrollBurstLimit` setting
-// (a moderate command like `exp` should still trip it on a slow rig).
-const FLOOD_WINDOW_MS  = 500
 const MAX_RAW_XML_LINES = 500
 
 const ROOM_STREAMS = new Set([
@@ -525,27 +513,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Pending timer handles for alias/macro command sequences — cancelled on disconnect
   const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
-  // Mirror of `settings.smoothScroll` for the once-at-mount event-stream
-  // listener and the keydown-captured `scrollToBottom` — both run with a
-  // closure that can't see fresh `settings` state.
-  const smoothScrollRef = useRef(settings.smoothScroll)
-  useEffect(() => { smoothScrollRef.current = settings.smoothScroll }, [settings.smoothScroll])
-  // Same mirror for the player-tunable flood burst limit — read by the
-  // once-at-mount game-event handler.
-  const floodThresholdRef = useRef(settings.smoothScrollBurstLimit)
-  useEffect(() => { floodThresholdRef.current = settings.smoothScrollBurstLimit }, [settings.smoothScrollBurstLimit])
-
-  // Adaptive smooth-scroll flood state. `floodRef` is read by the three
-  // smooth/auto decision points; `floodCountRef` accumulates main lines
-  // and `floodTimerRef` clears the flag after a quiet gap. See the
-  // FLOOD_* constants. `smoothActive()` is the single source of truth
-  // for "should this scroll animate" — smooth only when the setting is
-  // on AND we are not mid-flood.
-  const floodRef      = useRef(false)
-  const floodCountRef = useRef(0)
-  const floodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const smoothActive  = useCallback(() => smoothScrollRef.current && !floodRef.current, [])
-
   useEffect(() => {
     showDebugRef.current = showDebug
     window.api.debugPanelToggle(session.sessionId, showDebug)
@@ -906,32 +873,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       }
 
       if (newMain.length > 0) {
-        // Flood accounting — accumulate the main-line count; trip the
-        // flood flag once it crosses the tunable burst limit; the timer
-        // restarts every batch so the count only resets after a genuine
-        // FLOOD_WINDOW_MS lull. Done BEFORE the suppress arming below so
-        // `smoothActive()` already reflects the current flood state.
-        floodCountRef.current += newMain.length
-        if (floodCountRef.current >= floodThresholdRef.current) floodRef.current = true
-        if (floodTimerRef.current) clearTimeout(floodTimerRef.current)
-        floodTimerRef.current = setTimeout(() => {
-          floodCountRef.current = 0
-          floodRef.current = false
-          floodTimerRef.current = null
-        }, FLOOD_WINDOW_MS)
-
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
           // before ours, so the scroll event from followOutput would un-pin us unless
-          // the flag is already set when the handler runs.
-          //
-          // 500ms covers a full smooth-scroll animation (~300ms) plus
-          // margin — without it the intermediate scroll events from the
-          // smooth slide would trigger an unpin (dist > 40) midway. When
-          // the scroll is instant (smooth off OR mid-flood) the shorter
-          // 200ms window keeps scrollbar-drag unpinning responsive
-          // between batches (the B76 reasoning).
-          suppressUntilRef.current = Date.now() + (smoothActive() ? 500 : 200)
+          // the flag is already set when the handler runs. 200ms covers the
+          // instant auto-scroll + Virtuoso's ResizeObserver/rAF settle, and
+          // is short enough that scrollbar-drag unpinning stays responsive
+          // between batches (B76).
+          suppressUntilRef.current = Date.now() + 200
           // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
           setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         } else {
@@ -940,7 +889,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           if (newLineCountRef.current >= MAX_LINES * 3) {
             // Hard cap: buffer is very large; resume auto-scroll and trim.
             pinnedRef.current = true
-            suppressUntilRef.current = Date.now() + (smoothActive() ? 500 : 200)
+            suppressUntilRef.current = Date.now() + 200
             newLineCountRef.current = 0
             setNewLineCount(0)
             setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
@@ -1065,10 +1014,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         roomPumpRafRef.current = null
       }
       roomQueueRef.current = []
-      if (floodTimerRef.current != null) {
-        clearTimeout(floodTimerRef.current)
-        floodTimerRef.current = null
-      }
     }
   }, [])
 
@@ -1082,13 +1027,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
-    // Smooth scrollToIndex animates over ~300ms — suppress 500ms so
-    // mid-animation scroll events don't unpin us. When the scroll is
-    // instant (smooth off OR mid-flood) a 200ms window suffices.
-    // `smoothActive()` reads live refs, so it is correct even though
-    // the keydown listener captured this function at mount.
-    const smooth = smoothActive()
-    suppressUnpin(smooth ? 500 : 200)
+    suppressUnpin(300)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
     // `index: 'LAST'` instead of `lines.length - 1`: the keydown listener
     // captures this function once at mount (deps []), when `lines` is
@@ -1096,7 +1035,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // and the scroll silently no-ops. 'LAST' lets Virtuoso resolve the
     // final index itself at call time. This is why the End key appeared
     // to "do nothing."
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: smooth ? 'smooth' : 'auto' })
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
     inputRef.current?.focus()
   }
 
@@ -1383,7 +1322,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     expFocus, pinnedSkills, onFocusChange: handleFocusChange, onTogglePin: handleTogglePin,
     onSendCommand: sendCommand,
     autoLinkUrls: settings.autoLinkUrls,
-    smoothScroll: settings.smoothScroll,
     mapAnimations: settings.mapAnimations,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
@@ -1521,25 +1459,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 }}
                 style={{ height: '100%' }}
                 data={lines}
-                followOutput={() => pinnedRef.current ? (smoothActive() ? 'smooth' : 'auto') : false}
+                followOutput={() => pinnedRef.current ? 'auto' : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return
                   const el = scrollRef.current
                   if (!el) return
                   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
                   if (dist > 2) {
-                    // Match the followOutput mode. Smooth scrollTo lets the
-                    // eye see in-between frames as new content lands;
-                    // 'auto' snaps instantly when smooth scroll is off OR
-                    // we are mid-flood (`smoothActive()` — adaptive: a
-                    // burst would otherwise saturate the render pipeline
-                    // with a re-virtualization sweep).
-                    const smooth = smoothActive()
-                    suppressUntilRef.current = Date.now() + (smooth ? 500 : 200)
-                    el.scrollTo({
-                      top: el.scrollHeight - el.clientHeight,
-                      behavior: smooth ? 'smooth' : 'auto',
-                    })
+                    // Fine-correction pass: followOutput landed slightly
+                    // short. Instant snap to the true DOM bottom; arm
+                    // suppress so this programmatic scroll doesn't unpin.
+                    suppressUntilRef.current = Date.now() + 200
+                    el.scrollTop = el.scrollHeight - el.clientHeight
                   }
                 }}
                 computeItemKey={(_index, line) => line.id}
@@ -1635,7 +1566,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} smoothScroll={settings.smoothScroll} mapAnimations={settings.mapAnimations} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} mapAnimations={settings.mapAnimations} large />
             </div>
           </div>
         </div>
