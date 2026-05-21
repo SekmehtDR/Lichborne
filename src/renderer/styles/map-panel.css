@@ -63,9 +63,20 @@
    animation during drag / walk. It's a single cheap element and it's
    the one thing the user most wants to keep tracking. Higher
    specificity than `.genie-pan-dragging *` so it wins the !important
-   duel. */
+   duel. NOTE: this exemption is for the TRANSIENT drag/walk freeze
+   only — the persistent `genie-anim-off` setting (below) deliberately
+   has no such exemption, so turning off Genie Map Animations stops the
+   ping too. The two freeze classes are mutually exclusive on the pan
+   group, so there is no specificity conflict between them. */
 .genie-pan-dragging .genie-here-ping {
   animation-play-state: running !important;
+}
+
+/* Persistent animations-off (Settings → Genie Map Animations). Same
+   cascade as the drag/walk freeze, but applied permanently and with
+   NO ping exemption — "off" means off, locator ping included. */
+.genie-anim-off * {
+  animation-play-state: paused !important;
 }
 
 /* ── Genie Maps node-effect animations ────────────────────────

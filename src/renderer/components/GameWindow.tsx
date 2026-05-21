@@ -513,6 +513,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Pending timer handles for alias/macro command sequences — cancelled on disconnect
   const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
+  // Mirror of `settings.smoothScroll` for the once-at-mount event-stream
+  // listener and the keydown-captured `scrollToBottom` — both run with a
+  // closure that can't see fresh `settings` state.
+  const smoothScrollRef = useRef(settings.smoothScroll)
+  useEffect(() => { smoothScrollRef.current = settings.smoothScroll }, [settings.smoothScroll])
+
   useEffect(() => {
     showDebugRef.current = showDebug
     window.api.debugPanelToggle(session.sessionId, showDebug)
@@ -880,8 +886,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           //
           // 500ms covers a full smooth-scroll animation (~300ms) plus
           // margin — without it the intermediate scroll events from the
-          // smooth slide would trigger an unpin (dist > 40) midway.
-          suppressUntilRef.current = Date.now() + 500
+          // smooth slide would trigger an unpin (dist > 40) midway. When
+          // smooth scroll is off the scroll is instant, so the shorter
+          // 200ms window keeps scrollbar-drag unpinning responsive
+          // between batches (the B76 reasoning).
+          suppressUntilRef.current = Date.now() + (smoothScrollRef.current ? 500 : 200)
           // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
           setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         } else {
@@ -890,7 +899,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           if (newLineCountRef.current >= MAX_LINES * 3) {
             // Hard cap: buffer is very large; resume auto-scroll and trim.
             pinnedRef.current = true
-            suppressUntilRef.current = Date.now() + 500
+            suppressUntilRef.current = Date.now() + (smoothScrollRef.current ? 500 : 200)
             newLineCountRef.current = 0
             setNewLineCount(0)
             setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
@@ -1028,11 +1037,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
-    // Smooth scrollToIndex animates over ~300ms — bump suppress to 500
-    // so mid-animation scroll events don't unpin us, and so the user's
-    // click on the "▼ N new lines" badge produces a satisfying slide
-    // down rather than a snap.
-    suppressUnpin(500)
+    // Smooth scrollToIndex animates over ~300ms — suppress 500ms so
+    // mid-animation scroll events don't unpin us. With smooth scroll
+    // off the scroll is instant, so a 200ms window suffices.
+    // `smoothScrollRef`, not `settings`, because the keydown listener
+    // captures this function once at mount with a stale closure.
+    const smooth = smoothScrollRef.current
+    suppressUnpin(smooth ? 500 : 200)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
     // `index: 'LAST'` instead of `lines.length - 1`: the keydown listener
     // captures this function once at mount (deps []), when `lines` is
@@ -1040,7 +1051,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // and the scroll silently no-ops. 'LAST' lets Virtuoso resolve the
     // final index itself at call time. This is why the End key appeared
     // to "do nothing."
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' })
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: smooth ? 'smooth' : 'auto' })
     inputRef.current?.focus()
   }
 
@@ -1327,6 +1338,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     expFocus, pinnedSkills, onFocusChange: handleFocusChange, onTogglePin: handleTogglePin,
     onSendCommand: sendCommand,
     autoLinkUrls: settings.autoLinkUrls,
+    smoothScroll: settings.smoothScroll,
+    mapAnimations: settings.mapAnimations,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
     fireLog, onClearFireLog: clearFireLog,
@@ -1463,21 +1476,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 }}
                 style={{ height: '100%' }}
                 data={lines}
-                followOutput={() => pinnedRef.current ? 'smooth' : false}
+                followOutput={() => pinnedRef.current ? (settings.smoothScroll ? 'smooth' : 'auto') : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return
                   const el = scrollRef.current
                   if (!el) return
                   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
                   if (dist > 2) {
-                    // Match the followOutput mode — smooth scrollTo lets
-                    // the eye see in-between frames as new content lands,
-                    // instead of the discrete "snap" of a direct scrollTop
-                    // write. Browser will collapse overlapping smooth
-                    // animations from rapid arrivals into one continuous
-                    // slide, which is exactly the streamed feel we want.
-                    suppressUntilRef.current = Date.now() + 500
-                    el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' })
+                    // Match the followOutput mode. Smooth scrollTo lets the
+                    // eye see in-between frames as new content lands;
+                    // 'auto' snaps instantly when the user has disabled
+                    // smooth scrolling (Binu found the animation
+                    // misbehaving — Settings → Smooth Scrolling).
+                    suppressUntilRef.current = Date.now() + (settings.smoothScroll ? 500 : 200)
+                    el.scrollTo({
+                      top: el.scrollHeight - el.clientHeight,
+                      behavior: settings.smoothScroll ? 'smooth' : 'auto',
+                    })
                   }
                 }}
                 computeItemKey={(_index, line) => line.id}
@@ -1573,7 +1588,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} smoothScroll={settings.smoothScroll} mapAnimations={settings.mapAnimations} large />
             </div>
           </div>
         </div>

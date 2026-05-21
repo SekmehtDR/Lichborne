@@ -256,6 +256,20 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
           />
 
           <Toggle
+            label="Smooth Scrolling"
+            description="Animate the story window and the Genie map camera instead of snapping instantly. Off by default — opt in if you like the effect."
+            checked={settings.smoothScroll}
+            onChange={v => set('smoothScroll', v)}
+          />
+
+          <Toggle
+            label="Genie Map Animations"
+            description="Per-room animations on the Genie Maps view (shop glints, water ripples, sparkles, etc.). Turn off if the map feels sluggish — same freeze the map uses while you walk or drag."
+            checked={settings.mapAnimations}
+            onChange={v => set('mapAnimations', v)}
+          />
+
+          <Toggle
             label="Epilepsy Safe Mode"
             description="Disables all pulsing animations (RT bar, status indicators)"
             checked={settings.epilepsySafe}

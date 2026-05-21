@@ -85,6 +85,8 @@ interface Props {
   streamTimestamps?: Record<string, boolean>
   onToggleTimestamp?: (streamId: string) => void
   lichMapVersion?: number
+  smoothScroll?: boolean
+  mapAnimations?: boolean
   // LichBridge script panel props
   lichScripts?:      ScriptRecord[]
   lichLastUpdated?:  number
@@ -104,6 +106,7 @@ export default function PanelFrame({
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], streamTitles = {}, unreadIds,
   streamTimestamps = {}, onToggleTimestamp, lichMapVersion,
+  smoothScroll = false, mapAnimations = true,
   lichScripts = [], lichLastUpdated = 0, lichPending = false,
   onLichPause, onLichResume, onLichKill, onLichRefresh,
 }: Props) {
@@ -189,6 +192,7 @@ export default function PanelFrame({
           lichScripts, lichLastUpdated, lichPending,
           onLichPause ?? (() => {}), onLichResume ?? (() => {}),
           onLichKill ?? (() => {}), onLichRefresh ?? (() => {}),
+          smoothScroll, mapAnimations,
         )}
       </div>
 
@@ -333,6 +337,8 @@ function renderPanel(
   onLichResume: (name: string) => void = () => {},
   onLichKill: (name: string) => void = () => {},
   onLichRefresh: () => void = () => {},
+  smoothScroll = false,
+  mapAnimations = true,
 ) {
   const clr = (id: string) => () => onClearStream(id)
   const sp = (id: string, lines: TextLine[]) => (
@@ -354,7 +360,7 @@ function renderPanel(
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} />
     case 'log':           return sp('log',           streamLines.log           ?? [])
     case 'lichScripts':   return <ScriptListPanel scripts={lichScripts} lastUpdated={lichLastUpdated} pending={lichPending} onPause={onLichPause} onResume={onLichResume} onKill={onLichKill} onRefresh={onLichRefresh} />
-    case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={onSendCommand} />
+    case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={onSendCommand} smoothScroll={smoothScroll} mapAnimations={mapAnimations} />
     case 'custom':        return (
       <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls}

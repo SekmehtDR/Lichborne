@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { LichRoom } from './mapTypes'
 import { lichTitle, normalizeDesc, bfsPath } from './mapTypes'
+import { scopedKey } from '../../characterScope'
+import { useCharacter } from '../../CharacterContext'
+import { useProfileSaver } from '../../hooks/useProfileSaver'
 
 interface Props {
   lichDb:     Map<number, LichRoom>
@@ -17,6 +20,23 @@ interface Transform { x: number; y: number; scale: number }
 const MIN_SCALE = 0.1
 const MAX_SCALE = 8
 
+// Default Lich Map zoom for a character who has never set one. Was an
+// effective scale 3 (hardcoded in the image-onload centering handler),
+// which testers found far too close. 1.5 shows ~4× the surrounding
+// area; the chosen zoom is then persisted per-character so it only
+// matters on the very first view.
+const DEFAULT_LICH_SCALE = 1.5
+
+function loadLichScale(character: string): number {
+  try {
+    const raw = localStorage.getItem(scopedKey(character, 'lichMapScale'))
+    if (raw == null) return DEFAULT_LICH_SCALE
+    const n = parseFloat(raw)
+    if (!Number.isFinite(n)) return DEFAULT_LICH_SCALE
+    return Math.max(MIN_SCALE, Math.min(MAX_SCALE, n))
+  } catch { return DEFAULT_LICH_SCALE }
+}
+
 function mimeFor(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
   if (ext === 'png') return 'image/png'
@@ -27,13 +47,18 @@ function mimeFor(name: string): string {
 export default function MapImageView({
   lichDb, imageIndex, mapsDir, currentRoom, roomTitle, roomId, onSendCommand,
 }: Props) {
+  const character    = useCharacter()
+  const saveProfile  = useProfileSaver()
   const [imageDataUrl,  setImageDataUrl]  = useState<string | null>(null)
   const [imageSize,     setImageSize]     = useState<{ w: number; h: number } | null>(null)
   const [imageLoading,  setImageLoading]  = useState(false)
   const imageCache   = useRef<Map<string, string>>(new Map())
   const loadingImage = useRef<string>('')
 
-  const [transform,  setTransform]  = useState<Transform>({ x: 0, y: 0, scale: 2 })
+  // Zoom restored from the character's profile (falls back to
+  // DEFAULT_LICH_SCALE). x/y start at 0 — the image-onload / room-change
+  // effects re-centre on the current room using the restored scale.
+  const [transform,  setTransform]  = useState<Transform>(() => ({ x: 0, y: 0, scale: loadLichScale(character) }))
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [hoveredId,  setHoveredId]  = useState<number | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null)
@@ -43,6 +68,26 @@ export default function MapImageView({
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([])
   const svgRef  = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
+  // Mirrors transform.scale so the image-onload centering handler
+  // (closure over an empty dep array) reads the live zoom rather than
+  // a hardcoded constant.
+  const scaleRef = useRef(transform.scale)
+  useEffect(() => { scaleRef.current = transform.scale }, [transform.scale])
+
+  // Persist the zoom per-character, debounced 400ms so a wheel gesture
+  // writes once. Skips the mount-time run so simply opening the panel
+  // doesn't schedule a spurious profile save.
+  const scaleSaveInit = useRef(true)
+  useEffect(() => {
+    if (scaleSaveInit.current) { scaleSaveInit.current = false; return }
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(scopedKey(character, 'lichMapScale'), String(transform.scale))
+        saveProfile()
+      } catch { /* localStorage unavailable — non-fatal */ }
+    }, 400)
+    return () => clearTimeout(t)
+  }, [transform.scale, character, saveProfile])
 
   const currentImageName = currentRoom?.image ?? null
 
@@ -79,7 +124,9 @@ export default function MapImageView({
       if (currentRoom?.image_coords) {
         const [x1, y1, x2, y2] = currentRoom.image_coords
         const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2
-        setTransform({ scale: 3, x: svg.clientWidth / 2 - cx * 3, y: svg.clientHeight / 2 - cy * 3 })
+        // Centre at the player's persisted zoom, not a hardcoded scale.
+        const s = scaleRef.current
+        setTransform({ scale: s, x: svg.clientWidth / 2 - cx * s, y: svg.clientHeight / 2 - cy * s })
       }
     }
     img.src = imageDataUrl

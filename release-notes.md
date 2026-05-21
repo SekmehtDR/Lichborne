@@ -1,3 +1,24 @@
+## What's new in v0.6.9
+
+A small follow-up to v0.6.8. The smooth-motion work shipped on for everyone last release; a tester found it cost performance on their machine, so v0.6.9 makes it optional. Also fixes a long-standing annoyance with the `;list` command.
+
+### Smooth motion is now optional
+
+Two new toggles in **Settings**, both saved per-character to your profile:
+
+- **Smooth Scrolling** *(off by default)* — when on, the story window and the Genie map camera glide smoothly as new text and movement arrive. When off, they snap instantly. If v0.6.8's scrolling felt off to you, it's now off unless you opt in.
+- **Genie Map Animations** *(on by default)* — the per-room animations on the Genie Maps view (shop glints, water ripples, sparkles, etc.). Turn it off if the map feels sluggish — it freezes every animation, the same way the map already pauses them while you walk or drag.
+
+Both settings remember your choice and travel with your character profile, so you set them once.
+
+### `;list` is visible again
+
+The Lich Scripts panel quietly polls `;listall` every few seconds to stay current, and that automatic poll is hidden from your game window so it doesn't spam you. But the filter was hiding **every** script list — including when *you* typed `;list` or `;listall` yourself. Now only the automatic poll is hidden; a list command you type shows its output normally.
+
+### Lich Map zoom — better default, and it sticks
+
+The Lich Map view used to snap back to a very close zoom every time a new map image loaded, and it never remembered if you zoomed out. Now it opens at a more sensible zoom and **remembers whatever zoom you set** — per character, across room changes and across relaunches — the same way the Genie Maps camera holds its zoom.
+
 ## What's new in v0.6.8
 
 A polish release focused on how things *feel* — smoother map motion, a more eye-catching "you are here" marker, a new click model for the map, and smoother text scrolling — plus a batch of bug fixes from tester feedback.

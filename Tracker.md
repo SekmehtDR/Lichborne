@@ -83,6 +83,27 @@
 
 **B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
+**v0.6.9 — Opt-out toggles for smooth motion + `;list` visibility fix ✅**
+
+A small follow-up to v0.6.8. Binu reported that the smooth-scroll animation and the Genie map effects degraded performance on his hardware. Rather than walk back v0.6.8's work — it's fine on most machines — v0.6.9 adds two per-character opt-out toggles. Also fixes a long-standing annoyance where a manually-typed `;list` produced no visible output.
+
+_Settings — smooth motion is now opt-out_
+
+- **Smooth Scrolling toggle ✅** — New `smoothScroll` field on `AppSettings`, **off by default**. Gates BOTH the story-window smooth scroll (`followOutput`, `totalListHeightChanged`, `scrollToBottom` fall back to `'auto'`; suppress window 500ms→200ms) AND the Genie map camera glide (the `genie-pan-smooth` transition class on the pan group + indicator). Off restores the exact pre-v0.6.8 instant-snap behavior. Opt-in because v0.6.8 shipped it on and a tester found it costly — defaulting off means nobody pays for it unless they want it.
+- **Genie Map Animations toggle ✅** — New `mapAnimations` field, **on by default**. When off, the pan group permanently wears a new `genie-anim-off` class — the same `animation-play-state: paused` cascade the map already uses during drag/walk, applied always. Freezes every per-room category animation (motes, ripples, glints, heartbeats, etc.). Unlike the transient drag/walk freeze (`genie-pan-dragging`, which exempts the locator ping so you can still see yourself mid-walk), `genie-anim-off` has NO exemption — "off" stops the sonar ping too. The two freeze classes are mutually exclusive on the pan group, so there is no specificity conflict.
+- **Both persist to the character profile ✅** — `smoothScroll` / `mapAnimations` ride in the `AppSettings` blob under `scopedKey(character, 'settings')`, captured by `buildCharacterProfile`'s dynamic `state:` scan and round-tripped by `importCharacterProfile` — same path as `autoLinkUrls`. Per-character; `loadSettings` merges over `DEFAULT_SETTINGS` so existing profiles need no migration.
+- **Prop threading ✅** — `smoothScroll` / `mapAnimations` flow `GameWindow → PanelFrame → renderPanel → MapPanel → GenieMapView` (and the direct full-screen `MapPanel`), mirroring the `autoLinkUrls` path. `GameWindow` holds a `smoothScrollRef` for the once-at-mount event-stream listener and the keydown-captured `scrollToBottom`, which run with closures that can't see fresh `settings`.
+
+_Lich Scripts — manual `;list` is visible again_
+
+- **Auto-poll suppression is now poll-aware ✅ (B79)** — `LichBridge.interceptLine` consumed any line matching the `;listall` response format, so a player-typed `;list` / `;listall` was hidden along with the auto-poll's. New `LichBridge.pollScriptList()` (the auto-poll entry point, called by the `lich:poll-scripts` IPC handler) arms a 4-second window; `interceptLine` consumes a matching line only while the window is live. A response arriving disarmed is a manual command and passes through to the game window. The panel refreshes from both. 4s expires on its own so a lost auto-poll response can't silently eat a later manual list.
+
+_Lich Map — zoom default + retention_
+
+- **Lich Map zoom is no longer hardcoded ✅ (B81)** — `MapImageView`'s image-onload centering handler forced `scale: 3` every time a map image loaded, so the effective default was 3× (testers found it far too close) and any zoom-out was lost on the next image change or relaunch. The zoom is now persisted per-character (`scopedKey(character, 'lichMapScale')`, debounced 400ms + profile-saved) and the centering handler reads the live scale via a `scaleRef`. New first-time default `DEFAULT_LICH_SCALE = 1.5`. Net effect: the Lich Map holds your zoom across room changes, image changes, and relaunches — matching how the Genie Maps camera retains its zoom.
+
+- Build + tsc clean. ✅
+
 **v0.6.8 — Map motion polish + click model + scroll smoothness ✅**
 
 A polish-and-feel release across two subsystems. The Genie Maps view got a smooth-motion camera, a new left/right-click model, a pulsing sonar locator, and a batch of follow/zone-resolution bug fixes. The main game-text window got smoother scrolling, room-state streaming, and a focus-aware Home/End fix from tester feedback.

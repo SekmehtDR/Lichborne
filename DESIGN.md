@@ -2864,7 +2864,7 @@ Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `n
 
 **Why always-center (not margin-snap):** earlier implementation only panned when the indicator approached a 15% safe-margin edge. At fast walk rates each step pushed the indicator just outside the margin and the camera snapped back, producing a visible vibration. Always-centering means each camera delta exactly matches the player's world delta.
 
-**Smooth camera motion (v0.6.8).** The pan group is positioned with the CSS `transform` *property* (not the SVG `transform` attribute) so it can be CSS-transitioned. `.genie-pan-smooth` applies `transition: transform 150ms linear`; follow walks and wheel zoom slide between positions instead of snapping. `linear` is deliberate — a follow camera re-targets every walk step, and an ease-out curve resets its velocity profile on each restart, producing a visible accelerate/decelerate pulse. The class is suppressed while `isDragging` so manual drag stays 1:1 with the cursor.
+**Smooth camera motion (v0.6.8, opt-in as of v0.6.9).** The pan group is positioned with the CSS `transform` *property* (not the SVG `transform` attribute) so it can be CSS-transitioned. `.genie-pan-smooth` applies `transition: transform 150ms linear`; follow walks and wheel zoom slide between positions instead of snapping. `linear` is deliberate — a follow camera re-targets every walk step, and an ease-out curve resets its velocity profile on each restart, producing a visible accelerate/decelerate pulse. The class is suppressed while `isDragging` so manual drag stays 1:1 with the cursor. As of v0.6.9 it is also gated on the `smoothScroll` prop (Settings → Smooth Scrolling, **default off** — the same toggle as the story-window smooth scroll, §23): both the pan group and the indicator only get `.genie-pan-smooth` when `!isDragging && smoothScroll`. They are gated together so they stay in lockstep — when off, both snap.
 
 **Snap-on-large-delta.** A 150ms transition visibly "races across" the screen on a big jump. `snapTransform` is a render-time delta check (Euclidean > 600px OR scale change > 20% vs `prevTransformRef`, the last *painted* transform, updated in a post-commit `useEffect`). When true, an inline `transition: none` drops the transition for that one update — zone switches, ◆-from-afar, and fit-to-view cut instantly; walk steps and wheel zoom stay smooth.
 
@@ -3051,12 +3051,16 @@ Trailing **U+FE0E** (text variation selector) forces text-style rendering in bro
 
 The per-color effect system introduced enough sustained animation work to dominate frame budget on dense zones. Two targeted optimizations:
 
-**Pause during interaction.** The pan group `<g>` gets the `genie-pan-dragging` class when `isDragging || inMotion` is true. CSS rule `.genie-pan-dragging * { animation-play-state: paused !important }` cascades through every descendant.
+**Pause during interaction (transient).** The pan group `<g>` gets the `genie-pan-dragging` class when `isDragging || inMotion` is true. CSS rule `.genie-pan-dragging * { animation-play-state: paused !important }` cascades through every descendant.
 
 - `isDragging` flips true on mousedown, false on mouseup. Pauses animations during manual pan/zoom.
 - `inMotion` flips true on any `currentLocation` change and a `MOTION_QUIET_MS = 800` timer resets. When 800ms elapse with no further walk, `inMotion` flips back to false. Pauses animations during sustained player walking.
 
+The locator sonar ping is **exempt** from this transient freeze (`.genie-pan-dragging .genie-here-ping { animation-play-state: running !important }`, higher specificity) — you still want to see yourself mid-walk.
+
 Why: Chrome DevTools profiling showed Layerize ~33% + Recalculate Style ~22% + Paint ~14% during drag, and Layerize ~17% + Recalculate Style ~16% + Layout ~11% during cross-map walking — all attributable to continuously-running animations the user wasn't stationary long enough to appreciate during those scenarios. Pausing frees frame budget for transform updates and React reconciliation.
+
+**Pause permanently (opt-out setting, v0.6.9).** `settings.mapAnimations` (Settings → Genie Map Animations, **default on**) threads to `GenieMapView` as the `mapAnimations` prop. When off, the pan group instead gets a distinct `genie-anim-off` class — `.genie-anim-off * { animation-play-state: paused !important }`, the same cascade applied permanently. Unlike the transient class it has **no ping exemption**: "off" stops the sonar ping too. The two freeze classes are mutually exclusive on the pan group (`!mapAnimations ? 'genie-anim-off' : (isDragging || inMotion) ? 'genie-pan-dragging' : ''`), so there is no specificity duel between the ping-pause and the ping-exemption rules. Effect *elements* stay in the DOM — only paused, not removed — so a cold mount with the setting off freezes them at their 0% keyframe (fade-in effects like motes therefore read as absent rather than static).
 
 **Why class-based, not pointer-events.** Earlier attempts toggled `pointer-events: none` on the pan group during drag for hit-test savings, but that shifts the click-target off the inner node `<g>` (mousedown sets `isDragging` true *before* `click` fires), silently breaking click-to-walk. The animation-pause class doesn't have this hazard because it only affects animation execution, not event routing.
 
@@ -3481,7 +3485,7 @@ Auto-follow is owned entirely by Virtuoso's `followOutput` prop. `followOutput` 
 followOutput={() => pinnedRef.current ? 'smooth' : false}
 ```
 
-**Smooth scroll (v0.6.8).** `followOutput` uses `'smooth'` (was `'auto'`) so incoming text *slides* the viewport over ~300ms instead of snapping. Overlapping animations from rapid arrivals collapse into one continuous slide — the "streamed" feel testers asked for. `totalListHeightChanged` and `scrollToBottom` likewise use smooth `scrollTo`/`scrollToIndex`.
+**Smooth scroll (v0.6.8, opt-in as of v0.6.9).** When `settings.smoothScroll` is on, `followOutput` returns `'smooth'` so incoming text *slides* the viewport over ~300ms instead of snapping; `totalListHeightChanged` and `scrollToBottom` likewise use smooth `scrollTo`/`scrollToIndex`, and the suppress window is 500ms. When it's off (the **default** — a tester saw it cost frames), `followOutput` returns `'auto'`, the scroll writes are instant, and the suppress window is 200ms (the B76 value — keeps scrollbar-drag unpinning responsive between batches). The JSX-level `followOutput`/`totalListHeightChanged` read `settings` directly; the once-at-mount event listener and the keydown-captured `scrollToBottom` read a `smoothScrollRef` mirror instead, since their closures can't see fresh state. The same `smoothScroll` setting also gates the Genie map camera glide — see §19.16.6.
 
 A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it smooth-scrolls to the true DOM bottom and arms `suppressUnpinRef` for 500ms:
 
@@ -4283,8 +4287,11 @@ A new panel type (`panel-id: 'lichScripts'`) available in the Panel Manager. Not
 ```
 useLichBridge() hook
   → sends ;listall every 5s via lich:poll-scripts IPC
+  → main.ts handler: LichBridge.pollScriptList() — arms a 4s
+    silent-consume window, then issues ;listall
   → main.ts line handler: LichBridge.interceptLine() matches response
   → win.webContents.send('lich:scripts-update', entries)
+  → consumes (hides) the line ONLY while the window is armed
   → renderer: onLichScriptsUpdate callback fires in useLichBridge
   → merges with linger window, sorts newest-first by firstSeen
   → ScriptListPanel re-renders
@@ -4299,6 +4306,10 @@ User clicks ✕ on "buff" → confirms kill
   → sends ";kill buff" via lich:kill-script IPC
   → next poll: buff absent → immediately evicted (skips 8s linger)
 ```
+
+#### Auto-poll vs. manual `;list` (B79, v0.6.9)
+
+`interceptLine` consumes (hides from the game window) any line matching the `;listall` response format — but matching on output format alone also swallowed a player who *typed* `;list` / `;listall` themselves. Fix: `LichBridge.pollScriptList()` (the auto-poll entry point) arms `expectAutoListUntil = now + 4000ms`; `interceptLine` consumes a matching line only while that timestamp is in the future, then disarms (one poll → one consumed response). A matching line arriving disarmed is a player-typed command and is returned through to the parser so the player sees normal output. The panel refreshes from *both* — a manual list is a valid source of truth. The 4s window expires on its own so a lost auto-poll response can't silently eat a later manual list. Per-session (`LichBridge` is per-session).
 
 #### Panel registration
 

@@ -246,7 +246,10 @@ ipcMain.on('debug-panel-toggle', (_e, sessionId: SessionId, open: boolean) => {
 // ── IPC: per-session Lich command injection ──────────────────────────────────
 
 ipcMain.handle('lich:poll-scripts', (_e, sessionId: SessionId) => {
-  getSession(sessionId)?.lichBridge.injector.pollScriptList()
+  // LichBridge.pollScriptList (not injector.pollScriptList) so the
+  // silent-consume window is armed — the auto-poll response is hidden,
+  // a player-typed `;list` is not.
+  getSession(sessionId)?.lichBridge.pollScriptList()
 })
 ipcMain.handle('lich:pause-script', (_e, sessionId: SessionId, name: string) => {
   getSession(sessionId)?.lichBridge.injector.pauseScript(name)
