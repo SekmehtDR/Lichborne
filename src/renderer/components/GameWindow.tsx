@@ -63,6 +63,17 @@ function isExpReadout(segments: TextSegment[]): boolean {
 const MAX_LINES       = 2000
 const MAX_STREAM_LINES = 500
 const MAX_DEBUG_EVENTS = 500
+
+// Flood detection for adaptive smooth scroll. Smooth scroll is the
+// right feel for a trickle of new lines but pathological during a
+// burst (login dump, heavy combat): the lagging scroll position makes
+// react-virtuoso continuously mount/unmount rows as the animation
+// sweeps, saturating the render pipeline (Recalculate Style + Layerize
+// + Paint dominated Binu's 4K startup profile at ~74%). When more than
+// FLOOD_THRESHOLD main lines arrive without a FLOOD_WINDOW_MS quiet
+// gap, scroll falls back to instant until the burst subsides.
+const FLOOD_THRESHOLD  = 40
+const FLOOD_WINDOW_MS  = 500
 const MAX_RAW_XML_LINES = 500
 
 const ROOM_STREAMS = new Set([
@@ -519,6 +530,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const smoothScrollRef = useRef(settings.smoothScroll)
   useEffect(() => { smoothScrollRef.current = settings.smoothScroll }, [settings.smoothScroll])
 
+  // Adaptive smooth-scroll flood state. `floodRef` is read by the three
+  // smooth/auto decision points; `floodCountRef` accumulates main lines
+  // and `floodTimerRef` clears the flag after a quiet gap. See the
+  // FLOOD_* constants. `smoothActive()` is the single source of truth
+  // for "should this scroll animate" — smooth only when the setting is
+  // on AND we are not mid-flood.
+  const floodRef      = useRef(false)
+  const floodCountRef = useRef(0)
+  const floodTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const smoothActive  = useCallback(() => smoothScrollRef.current && !floodRef.current, [])
+
   useEffect(() => {
     showDebugRef.current = showDebug
     window.api.debugPanelToggle(session.sessionId, showDebug)
@@ -879,6 +901,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       }
 
       if (newMain.length > 0) {
+        // Flood accounting — accumulate the main-line count; trip the
+        // flood flag once it crosses FLOOD_THRESHOLD; the timer restarts
+        // every batch so the count only resets after a genuine
+        // FLOOD_WINDOW_MS lull. Done BEFORE the suppress arming below so
+        // `smoothActive()` already reflects the current flood state.
+        floodCountRef.current += newMain.length
+        if (floodCountRef.current >= FLOOD_THRESHOLD) floodRef.current = true
+        if (floodTimerRef.current) clearTimeout(floodTimerRef.current)
+        floodTimerRef.current = setTimeout(() => {
+          floodCountRef.current = 0
+          floodRef.current = false
+          floodTimerRef.current = null
+        }, FLOOD_WINDOW_MS)
+
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
           // before ours, so the scroll event from followOutput would un-pin us unless
@@ -887,10 +923,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           // 500ms covers a full smooth-scroll animation (~300ms) plus
           // margin — without it the intermediate scroll events from the
           // smooth slide would trigger an unpin (dist > 40) midway. When
-          // smooth scroll is off the scroll is instant, so the shorter
+          // the scroll is instant (smooth off OR mid-flood) the shorter
           // 200ms window keeps scrollbar-drag unpinning responsive
           // between batches (the B76 reasoning).
-          suppressUntilRef.current = Date.now() + (smoothScrollRef.current ? 500 : 200)
+          suppressUntilRef.current = Date.now() + (smoothActive() ? 500 : 200)
           // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
           setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         } else {
@@ -899,7 +935,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           if (newLineCountRef.current >= MAX_LINES * 3) {
             // Hard cap: buffer is very large; resume auto-scroll and trim.
             pinnedRef.current = true
-            suppressUntilRef.current = Date.now() + (smoothScrollRef.current ? 500 : 200)
+            suppressUntilRef.current = Date.now() + (smoothActive() ? 500 : 200)
             newLineCountRef.current = 0
             setNewLineCount(0)
             setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
@@ -1024,6 +1060,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         roomPumpRafRef.current = null
       }
       roomQueueRef.current = []
+      if (floodTimerRef.current != null) {
+        clearTimeout(floodTimerRef.current)
+        floodTimerRef.current = null
+      }
     }
   }, [])
 
@@ -1038,11 +1078,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     newLineCountRef.current = 0
     setNewLineCount(0)
     // Smooth scrollToIndex animates over ~300ms — suppress 500ms so
-    // mid-animation scroll events don't unpin us. With smooth scroll
-    // off the scroll is instant, so a 200ms window suffices.
-    // `smoothScrollRef`, not `settings`, because the keydown listener
-    // captures this function once at mount with a stale closure.
-    const smooth = smoothScrollRef.current
+    // mid-animation scroll events don't unpin us. When the scroll is
+    // instant (smooth off OR mid-flood) a 200ms window suffices.
+    // `smoothActive()` reads live refs, so it is correct even though
+    // the keydown listener captured this function at mount.
+    const smooth = smoothActive()
     suppressUnpin(smooth ? 500 : 200)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
     // `index: 'LAST'` instead of `lines.length - 1`: the keydown listener
@@ -1476,7 +1516,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 }}
                 style={{ height: '100%' }}
                 data={lines}
-                followOutput={() => pinnedRef.current ? (settings.smoothScroll ? 'smooth' : 'auto') : false}
+                followOutput={() => pinnedRef.current ? (smoothActive() ? 'smooth' : 'auto') : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return
                   const el = scrollRef.current
@@ -1485,13 +1525,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                   if (dist > 2) {
                     // Match the followOutput mode. Smooth scrollTo lets the
                     // eye see in-between frames as new content lands;
-                    // 'auto' snaps instantly when the user has disabled
-                    // smooth scrolling (Binu found the animation
-                    // misbehaving — Settings → Smooth Scrolling).
-                    suppressUntilRef.current = Date.now() + (settings.smoothScroll ? 500 : 200)
+                    // 'auto' snaps instantly when smooth scroll is off OR
+                    // we are mid-flood (`smoothActive()` — adaptive: a
+                    // burst would otherwise saturate the render pipeline
+                    // with a re-virtualization sweep).
+                    const smooth = smoothActive()
+                    suppressUntilRef.current = Date.now() + (smooth ? 500 : 200)
                     el.scrollTo({
                       top: el.scrollHeight - el.clientHeight,
-                      behavior: settings.smoothScroll ? 'smooth' : 'auto',
+                      behavior: smooth ? 'smooth' : 'auto',
                     })
                   }
                 }}

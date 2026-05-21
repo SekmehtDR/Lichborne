@@ -83,6 +83,17 @@
 
 **B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
+**v0.6.10 — Flood-adaptive smooth scroll ✅**
+
+A targeted follow-up to v0.6.9. Binu (4K display) found that *enabling* smooth scrolling reintroduced heavy lag at startup — XML and graphical updates crawled for a minute or two before settling. v0.6.10 makes smooth scroll usable when opted in, by making it adaptive instead of unconditional.
+
+_Smooth scroll — flood-adaptive_
+
+- **Flood detection ✅ (B82)** — Smooth scroll is the right feel for a trickle of new lines but pathological during a burst: the lagging scroll position makes react-virtuoso continuously mount/unmount rows as the animation *sweeps* between the old and new bottom — a DOM-mutation storm. Binu's DevTools bottom-up profile of the 4K startup was ~74% render pipeline (Recalculate Style 21%, Layerize 19%, Paint 15%); on a 4K panel each re-raster is ~4× cost, so the renderer couldn't drain `game-event` IPC batches and a multi-minute backlog formed. Fix: a flood detector in the game-event handler accumulates `floodCountRef += newMain.length`; past `FLOOD_THRESHOLD = 40` lines with no `FLOOD_WINDOW_MS = 500ms` quiet gap, `floodRef` trips. `smoothActive()` = `settings.smoothScroll && !floodRef.current` is now the single source of truth for all five smooth/instant decision points (`followOutput`, `totalListHeightChanged` ×2, `scrollToBottom`, the two suppress-arm sites). While flooding → instant scroll → the rendered window parks at the bottom, no sweep. Smooth resumes automatically after the burst. The flag trips once at a burst's start, clears once at its end (no flicker); the timer is cleared on unmount; per-session refs. Fixes the startup flood AND heavy combat, with no new setting — the existing Smooth Scrolling toggle just got smarter.
+- The Genie map camera glide deliberately stays on the raw `settings.smoothScroll` (not flood-gated) — it's one cheap CSS transition, not a re-virtualization storm.
+
+- Build + tsc clean. ✅
+
 **v0.6.9 — Opt-out toggles for smooth motion + `;list` visibility fix ✅**
 
 A small follow-up to v0.6.8. Binu reported that the smooth-scroll animation and the Genie map effects degraded performance on his hardware. Rather than walk back v0.6.8's work — it's fine on most machines — v0.6.9 adds two per-character opt-out toggles. Also fixes a long-standing annoyance where a manually-typed `;list` produced no visible output.

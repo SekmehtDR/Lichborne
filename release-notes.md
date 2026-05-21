@@ -1,3 +1,13 @@
+## What's new in v0.6.10
+
+A focused fix for smooth scrolling. In v0.6.9 it became opt-in because it could cost performance; v0.6.10 makes it genuinely usable when you *do* turn it on.
+
+### Smooth scrolling no longer lags at startup
+
+If you enabled Smooth Scrolling, logging in could feel sluggish for a minute or two — game text and panels updating slowly — before settling down. That's because connecting to DragonRealms dumps a huge burst of text all at once, and animating the scroll through a burst that large makes the client do far more rendering work than it can keep up with (especially on a high-resolution display).
+
+Smooth scrolling is now **adaptive**: it animates when text is arriving at a normal pace, and automatically switches to instant scrolling during a burst — the login flood, or heavy combat — then goes back to smooth once things calm down. You get the smooth feel during normal play with none of the startup lag. It's automatic; there's nothing to configure.
+
 ## What's new in v0.6.9
 
 A small follow-up to v0.6.8. The smooth-motion work shipped on for everyone last release; a tester found it cost performance on their machine, so v0.6.9 makes it optional. Also fixes a long-standing annoyance with the `;list` command.
