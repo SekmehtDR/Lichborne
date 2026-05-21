@@ -198,13 +198,13 @@ const AURA_FIRE_COLORS = new Set<string>([
             //                     larger aura (auraScale = 1.3× vs the
             //                     default 1.125×) so the flicker has
             //                     more diffuse area to glow through.
+  '#00FFFF', // Player Housing — hearth-glow flicker ("home fires").
 ])
 // Categories that get a stronger static aura without animation. The
 // extra weight just reads as "this room matters" without competing
 // with the animated categories.
 const AURA_INTENSIFIED_COLORS = new Set<string>([
   '#FF8000', // Guildleader — formal, strong steady glow
-  '#00FFFF', // Player Housing — warm steady glow ("home")
 ])
 // Sand (#C2B280, Ranger Trailhead) is intentionally absent from every
 // modifier set — stays plain aura as the deliberate quiet marker.
@@ -277,6 +277,20 @@ export default function GenieMapView({
   const [currentZoneId, setCurrentZoneId] = useState<string>('')
   const [currentLevel,  setCurrentLevel]  = useState<number>(0)
   const [transform,     setTransform]     = useState<Transform>({ x: 0, y: 0, scale: 1 })
+  // Tracks the transform we last painted with, so we can detect a
+  // large jump (zone switch via stub, ◆ from far away, fit-to-view)
+  // and SNAP rather than letting the 150ms transition "race across"
+  // the screen. Per-walk-step deltas are tiny (one room ≈ 8px world
+  // units × scale) so they stay under the threshold and keep smooth.
+  const prevTransformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 })
+  useEffect(() => { prevTransformRef.current = transform }, [transform])
+  // Tracks the indicator's previous WORLD position. `snapTransform`
+  // above only sees the pan delta — when follow is OFF (the user is
+  // browsing) the pan doesn't move, so a teleport / cross-cluster
+  // jump would leave the indicator transitioning ("racing") across
+  // the static map. This ref lets the indicator snap on its own
+  // large jumps regardless of follow state.
+  const prevIndicatorPosRef = useRef<{ x: number; y: number } | null>(null)
   const [selectedId,    setSelectedId]    = useState<number | null>(null)
   const [hoveredId,     setHoveredId]     = useState<number | null>(null)
   const [tooltipPos,    setTooltipPos]    = useState<{ x: number; y: number } | null>(null)
@@ -409,13 +423,23 @@ export default function GenieMapView({
   const currentLocation = useMemo(() => {
     if (!roomTitle) return null
     const target = roomTitle.trim()
-    // Exact-case first; fall back to normalized lookup (case-insensitive,
-    // bracket-stripped, whitespace-collapsed) so common drift like
-    // "[Bank]" vs "Bank" still matches.
-    let candidates = titleLookup.byTitle.get(target) ?? []
-    if (candidates.length === 0) {
-      candidates = titleLookup.byNormalized.get(normalizeMatchKey(target)) ?? []
-    }
+    // MERGE both lookups before non-stub filtering, otherwise the
+    // exact-case lookup can return ONLY stubs (e.g., a stub in the
+    // previous zone pointing to the real room's zone), the "is empty?"
+    // check fails so the normalized lookup never runs, and we pick
+    // the stub — which lives in the WRONG zone. This caused the
+    // "marker stuck at Segoltha while player is in the Crossing" bug:
+    // the title matched a Segoltha stub exactly but the real Crossing
+    // room was only reachable through the normalized form.
+    //
+    // De-dupe by Entry identity (same object can appear under both
+    // exact-case and normalized keys when the title has no drift).
+    const byTitleHits = titleLookup.byTitle.get(target) ?? []
+    const byNormHits  = titleLookup.byNormalized.get(normalizeMatchKey(target)) ?? []
+    const seen = new Set<typeof byTitleHits[number]>()
+    const candidates: typeof byTitleHits = []
+    for (const c of byTitleHits) { if (!seen.has(c)) { seen.add(c); candidates.push(c) } }
+    for (const c of byNormHits)  { if (!seen.has(c)) { seen.add(c); candidates.push(c) } }
     if (candidates.length === 0) return null
     const nonStubs = candidates.filter(c => !c.isStub)
     const pool = nonStubs.length > 0 ? nonStubs : candidates
@@ -484,6 +508,18 @@ export default function GenieMapView({
       motionTimerRef.current = null
     }, MOTION_QUIET_MS)
   }, [currentLocation])
+
+  // Clear the pinned path once the player arrives at the pinned room.
+  // Otherwise the gold pin outline lingers on the room you're now on and
+  // the BFS path is a 0-length stub. `selectedId` doubles as the pin id
+  // (left-click sets it; same-room left-click clears it).
+  useEffect(() => {
+    if (selectedId == null) return
+    if (!currentLocation) return
+    if (currentLocation.zone.id !== currentZoneId) return
+    if (currentLocation.node.id === selectedId) setSelectedId(null)
+  }, [currentLocation, currentZoneId, selectedId])
+
   // Clean up the motion timer on unmount.
   useEffect(() => () => {
     if (motionTimerRef.current) clearTimeout(motionTimerRef.current)
@@ -618,23 +654,41 @@ export default function GenieMapView({
   // camera state update lands in the SAME paint frame as the indicator
   // position change — otherwise the indicator paints one frame at its
   // new world position before the camera catches up, showing as a flash.
+  //
+  // Gating intentionally uses `visibleById.get(currentLocation.node.id)`
+  // — the SAME lookup the indicator uses (see `currentNode` below) — so
+  // "marker visible" and "camera following" are guaranteed to stay in
+  // lock-step. Earlier this effect gated on its own zone/level equality
+  // checks against `currentLocation`, which could diverge from the
+  // indicator's gate by one render: marker rendered, camera bailed,
+  // leaving the player off-center until the next walk re-fired the deps.
+  //
+  // rAF retry guards the rare case where the SVG's clientWidth reads 0
+  // (mid-resize, mid-mount); without it a transient 0-dimension read
+  // silently skips the centering and the marker drifts to the edge.
+  const followNode = followPlayer && currentLocation && currentLocation.zone.id === currentZoneId
+    ? visibleById.get(currentLocation.node.id)
+    : undefined
   useLayoutEffect(() => {
-    if (!followPlayer) return
-    if (!currentLocation) return
-    if (currentLocation.zone.id !== currentZoneId) return
-    if (currentLocation.node.z !== currentLevel) return
-    const svg = svgRef.current
-    if (!svg) return
-    const w = svg.clientWidth, h = svg.clientHeight
-    if (!w || !h) return
-    const cx = currentLocation.node.x, cy = currentLocation.node.y
-    setTransform(prev => {
-      const nx = w / 2 - cx * prev.scale
-      const ny = h / 2 - cy * prev.scale
-      if (nx === prev.x && ny === prev.y) return prev
-      return { ...prev, x: nx, y: ny }
-    })
-  }, [followPlayer, currentLocation, currentZoneId, currentLevel])
+    if (!followNode) return
+    let raf = 0
+    const center = (): boolean => {
+      const svg = svgRef.current
+      if (!svg) return false
+      const w = svg.clientWidth, h = svg.clientHeight
+      if (!w || !h) return false
+      const cx = followNode.x, cy = followNode.y
+      setTransform(prev => {
+        const nx = w / 2 - cx * prev.scale
+        const ny = h / 2 - cy * prev.scale
+        if (nx === prev.x && ny === prev.y) return prev
+        return { ...prev, x: nx, y: ny }
+      })
+      return true
+    }
+    if (!center()) raf = requestAnimationFrame(() => center())
+    return () => { if (raf) cancelAnimationFrame(raf) }
+  }, [followNode])
 
   // ── Pan / zoom ─────────────────────────────────────────────────────────
   //
@@ -721,37 +775,95 @@ export default function GenieMapView({
     setWalking(false)
   }, [])
 
+  // Left-click — pins the path to the clicked node (no walking). For stubs
+  // (cross-zone markers), left-click instead switches the displayed zone
+  // to the stub's target XML, since "pin a path" doesn't make sense across
+  // zone boundaries. Clicking the same node toggles the pin off.
+  //
+  // Walking moved to right-click (see `onNodeContextMenu`) so users can
+  // study a route before committing to it.
   const onNodeClick = useCallback((node: GenieNode) => {
-    setSelectedId(node.id)
-
-    // Stub click → walk to the boundary room (the stub IS a real room
-    // in the current zone — it just doubles as a cross-zone marker).
-    // We deliberately do NOT switch the displayed map afterwards. The
-    // walk commands fire on a fixed timer, but the game may block any
-    // of them (roundtime, locked door, missing key, etc.) — if we
-    // auto-switched on walk completion the map would race ahead of
-    // the player, leaving them stranded in the old zone while the UI
-    // showed the new one. The auto-zone-switch effect (driven by
-    // `roomTitle` / `roomDesc` changes) is the authoritative signal:
-    // the map only switches once the player's title is actually a
-    // room in the new zone. For browse-mode (player not in this zone),
-    // a stub click is a no-op — use the dropdown to switch zones.
     if (isStubNode(node)) {
-      if (!currentLocation || currentLocation.zone.id !== currentZoneId) return
-      if (currentLocation.node.id === node.id) return
-      const path = bfsZonePath(activeZone!, currentLocation.node.id, node.id)
-      if (path.length === 0) return
-      sendWalkPath(path)
+      // Resolve the stub's `.xml` note to a loaded zone and switch.
+      const stubXml = noteAliases(node.note).find(a => a.toLowerCase().endsWith('.xml'))
+      const target  = stubXml ? sourceFileToZoneId.get(stubXml.toLowerCase()) : undefined
+      if (!target) return
+      const targetZone = zones.get(target)
+      if (!targetZone) return
+
+      // Find the reciprocal entry room — the target zone's stub
+      // pointing back to OUR zone — so we can position the new view
+      // sensibly without zooming out. Most map stubs are reciprocal
+      // pairs: zone A's stub for B references B.xml, and zone B's
+      // stub for A references A.xml. Match on filename.
+      const sourceFile = activeZone?.sourceFile?.toLowerCase()
+      const entryNode = sourceFile
+        ? targetZone.nodes.find(n =>
+            noteAliases(n.note).some(a => a.toLowerCase() === sourceFile)
+          )
+        : undefined
+
+      const targetLevels = new Set(targetZone.nodes.map(n => n.z))
+      const newLevel = entryNode?.z ?? (targetLevels.size > 0 ? Math.min(...targetLevels) : 0)
+
+      // Suppress the fit/center effect's auto-fit-to-zone behavior —
+      // we want to preserve the user's zoom across stub navigation,
+      // not zoom out to encompass the whole new map. Pre-setting
+      // `lastFitRef` to the new key makes the effect's key check bail
+      // on the next render. Without this, the fit/center effect's
+      // `playerHere = false` branch would fire `fitToView()` and
+      // dramatically change scale on every cross-zone stub click.
+      lastFitRef.current = `${target}:${newLevel}`
+
+      // Center on the entry room at the CURRENT scale (preserves
+      // user's zoom level). Fall back to leaving the camera where it
+      // is if no reciprocal entry was found — the user can fit-to-view
+      // manually with ⊡ if they need orientation.
+      if (entryNode) {
+        const svg = svgRef.current
+        if (svg) {
+          const w = svg.clientWidth, h = svg.clientHeight
+          if (w && h) {
+            setTransform(prev => ({
+              ...prev,
+              x: w / 2 - entryNode.x * prev.scale,
+              y: h / 2 - entryNode.y * prev.scale,
+            }))
+          }
+        }
+      }
+
+      setCurrentZoneId(target)
+      setCurrentLevel(newLevel)
+      setSelectedId(null)
+      // Browsing a different zone implicitly leaves follow-mode —
+      // the player isn't on the displayed map anymore. The ◆ button
+      // re-enables follow AND yanks the displayed zone back to the
+      // player's actual location.
+      setFollowPlayer(false)
       return
     }
+    // Regular node: toggle the pinned path. Same-node click clears.
+    setSelectedId(prev => prev === node.id ? null : node.id)
+  }, [isStubNode, sourceFileToZoneId, zones, activeZone])
 
-    // Regular click-to-walk path (only when player is in this zone).
+  // Right-click — walk to the clicked node. Mirrors the old left-click
+  // walking behavior. Suppresses the browser context menu via preventDefault.
+  // For stubs we walk TO the boundary room (the stub IS a real room in the
+  // current zone). The displayed map does NOT auto-switch on walk
+  // completion — see `currentLocation` auto-switch comment; the game can
+  // block any walk step, so we let the room-title signal drive zone changes
+  // and never race ahead of the player.
+  const onNodeContextMenu = useCallback((node: GenieNode, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     if (!currentLocation) return
     if (currentLocation.zone.id !== currentZoneId) return
+    if (currentLocation.node.id === node.id) return
     const path = bfsZonePath(activeZone!, currentLocation.node.id, node.id)
     if (path.length === 0) return
     sendWalkPath(path)
-  }, [activeZone, currentLocation, currentZoneId, sendWalkPath, isStubNode])
+  }, [activeZone, currentLocation, currentZoneId, sendWalkPath])
 
   // Hover handlers — pointer position relative to the canvas for the tooltip.
   // Skip work entirely while the user is panning. We can't rely on a
@@ -1392,6 +1504,7 @@ export default function GenieMapView({
         <g
           key={`node-${node.id}`}
           onClick={() => onNodeClick(node)}
+          onContextMenu={e => onNodeContextMenu(node, e)}
           onMouseEnter={e => onNodeHoverEnter(node, e)}
           onMouseLeave={onNodeHoverLeave}
           style={{ cursor: 'pointer' }}
@@ -1448,7 +1561,7 @@ export default function GenieMapView({
         </g>
       )
     })
-  ), [visibleNodes, isStubNode, onNodeClick, onNodeHoverEnter, onNodeHoverLeave])
+  ), [visibleNodes, isStubNode, onNodeClick, onNodeContextMenu, onNodeHoverEnter, onNodeHoverLeave])
 
   // Selected-room outline — a single overlay <rect> drawn on top of
   // nodeRects. Re-renders only when `selectedId` or the underlying node
@@ -1528,6 +1641,42 @@ export default function GenieMapView({
     />
   )
 
+  // Pinned path — drawn from the player to the LEFT-CLICKED node. Same
+  // BFS routing as hover-path, but persists across mouse moves so users
+  // can study a route before committing. Right-click the destination to
+  // actually walk it. Gold to match the selected-node outline and stand
+  // apart from the green hover-path.
+  const pinnedPathSegs = useMemo(() => {
+    if (selectedId == null) return ''
+    if (!currentLocation || currentLocation.zone.id !== currentZoneId) return ''
+    if (currentLocation.node.id === selectedId) return ''
+    if (!activeZone) return ''
+    const ids = bfsZoneRoomPath(activeZone, currentLocation.node.id, selectedId)
+    if (ids.length < 2) return ''
+    const segs: string[] = []
+    for (let i = 0; i < ids.length - 1; i++) {
+      const a = visibleById.get(ids[i])
+      const b = visibleById.get(ids[i + 1])
+      if (!a || !b) continue
+      segs.push(`M${a.x},${a.y}L${b.x},${b.y}`)
+    }
+    return segs.join('')
+  }, [selectedId, currentLocation, currentZoneId, activeZone, visibleById])
+
+  const pinnedPathIndicator = pinnedPathSegs && (
+    <path
+      d={pinnedPathSegs}
+      stroke="var(--accent, gold)"
+      strokeWidth={2.5}
+      fill="none"
+      opacity={0.85}
+      vectorEffect="non-scaling-stroke"
+      pointerEvents="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  )
+
   // Current-room halo — a single overlay rendered as the LAST child of
   // the SVG transform group, so it paints on top of every other element
   // (rooms, labels, arcs, selection). Re-renders only when
@@ -1540,21 +1689,102 @@ export default function GenieMapView({
   // halo itself. Without the backdrop, the halo dissolved into
   // similarly-colored adjacent rooms and "looked behind" them.
   const currentNode = currentNodeId != null ? visibleById.get(currentNodeId) : undefined
+
+  // Large-jump detection — shared by the pan group AND the "you are
+  // here" indicator so the two transition (or snap) in LOCKSTEP. This
+  // is the fix for indicator "bounce" during walks: the indicator
+  // lives inside the pan group, so its on-screen position is
+  // panTransform ∘ indicatorTransform. If only the pan transitions and
+  // the indicator's world position jumps instantly, the indicator sits
+  // off-centre for 150ms then slides back — every step. Giving the
+  // indicator a MATCHED transition makes the two interpolations
+  // cancel: lerp(panA,panB,f) + lerp(roomA,roomB,f) = centre for all
+  // f, so the indicator stays pinned at screen centre while the map
+  // slides beneath it. They must also SNAP together, hence one shared
+  // flag. Walk steps stay well under 600px; zone switches / ◆ / fit
+  // exceed it. Scale jumps > 20% snap too (wheel zoom's 1.15×/tick is
+  // below the threshold and keeps its smooth transition).
+  const snapTransform = (() => {
+    const prev = prevTransformRef.current
+    const dx = transform.x - prev.x, dy = transform.y - prev.y
+    const ds = Math.abs(transform.scale - prev.scale) / Math.max(prev.scale, 0.001)
+    return (dx * dx + dy * dy) > 600 * 600 || ds > 0.2
+  })()
+
+  // Indicator-specific snap — true on first appearance (nothing to
+  // transition from) or when the player's room jumped a large WORLD
+  // distance (teleport, room-pump cap discard, zone switch while
+  // follow is off). 120 world units ≈ many rooms — a normal walk
+  // step between adjacent rooms is well under it, so single steps
+  // still transition smoothly. ORed with `snapTransform` so the
+  // indicator snaps whenever EITHER the camera or its own room
+  // jumped far.
+  const indicatorSnap = (() => {
+    if (!currentNode) return false
+    const prev = prevIndicatorPosRef.current
+    if (!prev) return true
+    const dx = currentNode.x - prev.x, dy = currentNode.y - prev.y
+    return (dx * dx + dy * dy) > 120 * 120
+  })()
+  useEffect(() => {
+    prevIndicatorPosRef.current = currentNode ? { x: currentNode.x, y: currentNode.y } : null
+  }, [currentNode])
+
+  // Locator ring radius — 1.3125× NODE_SIZE (was 1.75×; trimmed 25%
+  // per tester feedback that the ring read too large around the room).
+  // Shared by the solid ring AND the sonar-ping base so the pings
+  // emanate flush from the solid ring's edge.
+  const INDICATOR_R = NODE_SIZE * 1.3125
   const currentIndicator = currentNode && (
-    <g pointerEvents="none">
+    <g
+      pointerEvents="none"
+      className={!isDragging ? 'genie-pan-smooth' : undefined}
+      style={{
+        // Transitions in lockstep with the pan group (same class) so
+        // the halo stays centred instead of bouncing. Snaps when the
+        // camera jumped far (`snapTransform`) OR the indicator's own
+        // room jumped far (`indicatorSnap` — covers follow-off jumps).
+        transform: `translate(${currentNode.x}px, ${currentNode.y}px)`,
+        ...((snapTransform || indicatorSnap) ? { transition: 'none' as const } : {}),
+      }}
+    >
+      {/* Sonar pings — two expanding rings staggered half a cycle apart
+          so a fresh ring emanates every ~1s. Drawn FIRST so the crisp
+          solid ring always paints on top and the exact room stays
+          unambiguous. `non-scaling-stroke` keeps the expanding ring a
+          thin constant-width line as it grows. The CSS-scale animates
+          around the circle's own centre (cx/cy = 0). */}
       <circle
-        cx={currentNode.x}
-        cy={currentNode.y}
-        r={NODE_SIZE * 1.75}
+        className="genie-here-ping"
+        cx={0} cy={0} r={INDICATOR_R}
+        fill="none"
+        stroke="var(--map-current-color, #4caf50)"
+        strokeWidth={2.5}
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle
+        className="genie-here-ping genie-here-ping--delayed"
+        cx={0} cy={0} r={INDICATOR_R}
+        fill="none"
+        stroke="var(--map-current-color, #4caf50)"
+        strokeWidth={2.5}
+        vectorEffect="non-scaling-stroke"
+      />
+      {/* Solid ring — dark backdrop stroke for contrast against bright
+          rooms, bright green stroke on top. Always crisp, never moves. */}
+      <circle
+        cx={0}
+        cy={0}
+        r={INDICATOR_R}
         fill="none"
         stroke="rgba(0,0,0,0.55)"
         strokeWidth={5}
         vectorEffect="non-scaling-stroke"
       />
       <circle
-        cx={currentNode.x}
-        cy={currentNode.y}
-        r={NODE_SIZE * 1.75}
+        cx={0}
+        cy={0}
+        r={INDICATOR_R}
         fill="none"
         stroke="var(--map-current-color, #4caf50)"
         strokeWidth={3}
@@ -1616,7 +1846,14 @@ export default function GenieMapView({
   }
 
   return (
-    <div className="map-canvas-wrap" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    // `flex: 1; min-height: 0` is inherited from `.map-canvas-wrap` —
+    // we add `display: flex; flex-direction: column` to lay out the
+    // internal toolbar/subbar/canvas/footer. NO inline `height: 100%`:
+    // it would override the CSS flex sizing and at narrow panel
+    // heights pushes the MapPanel's outer toolbar (Lich/Genie tabs)
+    // off-screen because the wrap tries to be 100% of the *parent*
+    // before the parent has subtracted its own children's heights.
+    <div className="map-canvas-wrap" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Toolbar */}
       <div className="map-toolbar" style={{ flexShrink: 0 }}>
         <button className="map-btn" onClick={onPickGenieFolder} title={genieMapsDir}>📁</button>
@@ -1702,6 +1939,7 @@ export default function GenieMapView({
           onMouseMove={onMouseMove}
           onMouseUp={endDrag}
           onMouseLeave={endDrag}
+          onContextMenu={e => e.preventDefault()}
         >
           {/*
             Pan/zoom group.
@@ -1716,19 +1954,30 @@ export default function GenieMapView({
               inside `onNodeHoverEnter` instead (see dragRef check there).
           */}
           <g
-            transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}
-            style={{ willChange: 'transform' }}
-            // Pause category animations under three conditions:
-            //   1. `isDragging` — user is panning the map manually
-            //   2. `inMotion` — player is actively walking (currentLocation
-            //      changed within the last MOTION_QUIET_MS)
-            // CSS rule applies `animation-play-state: paused` to all
-            // descendants of `.genie-pan-dragging`. Profiling traces
-            // showed both scenarios spending half-plus of frame budget
-            // on Layerize + Recalculate Style for ongoing animations
-            // even when the user wasn't actively viewing them; pausing
-            // frees that budget for transform updates and React work.
-            className={isDragging || inMotion ? 'genie-pan-dragging' : undefined}
+            style={{
+              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+              willChange: 'transform',
+              // `snapTransform` (shared with the indicator) skips the
+              // transition for big jumps — zone switch, ◆ from afar,
+              // fit-to-view — which at 150ms would visibly "race across"
+              // the screen. Walk steps stay smooth.
+              ...(snapTransform ? { transition: 'none' as const } : {}),
+            }}
+            // Three independent class hooks:
+            //   1. `genie-pan-dragging` — descendants get
+            //      `animation-play-state: paused` to free frame budget
+            //      while panning or walking. Applied when `isDragging`
+            //      OR `inMotion`.
+            //   2. `genie-pan-smooth` — CSS transition on `transform`
+            //      so follow-the-player walks and wheel zoom slide
+            //      between positions instead of snapping. Suppressed
+            //      while `isDragging` so manual drag stays 1:1 with
+            //      the cursor (transition would lag the camera behind
+            //      mousemove).
+            className={[
+              isDragging || inMotion ? 'genie-pan-dragging' : '',
+              !isDragging ? 'genie-pan-smooth' : '',
+            ].filter(Boolean).join(' ') || undefined}
           >
             {/* Aura layer — soft translucent halos behind COLOR_LEGEND
                 rooms (shops, healers, stat trainers, etc.). Drawn first
@@ -1794,6 +2043,7 @@ export default function GenieMapView({
                 so it visually wins over them, but below the indicators so
                 the gold "selected" and green "you are here" markers still
                 read clearly. */}
+            {pinnedPathIndicator}
             {hoverPathIndicator}
             {/* Hover indicator — subtle white outline on the hovered
                 room itself. Distinct from selected (gold) and current
@@ -1931,18 +2181,16 @@ export default function GenieMapView({
                 </div>
               )}
 
-              {/* Action hint — what a click does. Only shown when click is
-                  meaningful (player in this zone, not already standing on
-                  the hovered room). For stubs, the verb is "Go to <zone>"
-                  to emphasize that the click walks the player toward that
-                  next map — it does NOT teleport the displayed view; the
-                  map only switches once the player has actually crossed
-                  the boundary (auto-zone-switch on title change). */}
+              {/* Action hint — what each click button does. Left-click is
+                  zone-switch for stubs and pin-a-path for regular rooms;
+                  right-click walks. Pinning doesn't teleport the displayed
+                  view across zone boundaries either — the auto-zone-switch
+                  on title change is the authoritative trigger. */}
               {currentLocation && currentLocation.zone.id === currentZoneId && currentLocation.node.id !== hoveredNode.id && (
                 <div style={{ color: 'var(--map-text-muted, #888)', fontSize: 10, marginTop: 2, fontStyle: 'italic' }}>
                   {stub
-                    ? `Click to go to ${stubZone?.name ?? stubXml ?? 'next zone'}`
-                    : 'Click to walk here'}
+                    ? <>Left-click: go to {stubZone?.name ?? stubXml ?? 'next zone'}<br/>Right-click: walk to boundary</>
+                    : <>Left-click: pin path<br/>Right-click: walk here</>}
                 </div>
               )}
             </div>
@@ -2043,7 +2291,7 @@ export default function GenieMapView({
                     <text x={7} y={11} fontSize={9} fill="var(--map-arc-special, #ffb74d)" textAnchor="middle">↗</text>
                   </svg>
                   <span style={{ flex: 1, minWidth: 0, lineHeight: 1.35, color: 'var(--map-text-muted, #888)' }}>
-                    Click to walk to the boundary
+                    Left-click: switch to that zone · Right-click: walk to boundary
                   </span>
                 </div>
               </>

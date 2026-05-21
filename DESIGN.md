@@ -2856,30 +2856,41 @@ Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `n
 
 #### 19.16.6 Camera Follow
 
-`followPlayer: boolean` state, default ON. The follow-the-player effect (`useLayoutEffect`) re-centers the viewport on `currentLocation.node.(x,y)` every time the location changes. Manual pan/zoom turns follow OFF automatically (so the map doesn't fight the user); the `◆` button turns it back ON and recenters.
+`followPlayer: boolean` state, default ON. The follow-the-player effect (`useLayoutEffect`) re-centers the viewport on the current room every time the location changes. Manual pan/zoom turns follow OFF automatically (so the map doesn't fight the user); the `◆` button turns it back ON and recenters.
 
-**Why `useLayoutEffect` not `useEffect`:** the transform update must land in the same paint frame as the indicator's new world position. With plain `useEffect`, the indicator paints one frame at its new world coord with the OLD camera (visible as a flash at high walk rates), then re-renders next frame with the new camera. `useLayoutEffect` runs after the render commit but before paint, so the second render lands synchronously and the user only sees the final state.
+**Gating on `followNode`, not raw equality checks.** The follow effect derives `followNode = followPlayer && currentLocation.zone.id === currentZoneId ? visibleById.get(currentLocation.node.id) : undefined` — the *same* `visibleById` lookup the current-room indicator uses. Earlier the effect ran its own zone/level equality checks, which could diverge from the indicator's gate by one render (marker visible, camera bailed). Sharing the lookup guarantees "marker visible" ⇔ "camera following." The effect also schedules a one-frame `requestAnimationFrame` retry if `svg.clientWidth` reads 0 mid-layout.
 
-**Why always-center (not margin-snap):** earlier implementation only panned when the indicator approached a 15% safe-margin edge. At slow walk rates each snap settled before the next; at fast rates each step pushed the indicator just outside the margin and the camera snapped back to the edge, producing a visible vibration at the boundary. Always-centering means each camera delta exactly matches the player's world delta — smooth at any speed.
+**Why `useLayoutEffect` not `useEffect`:** the transform update must land in the same paint frame as the indicator's new world position. With plain `useEffect`, the indicator paints one frame at its new world coord with the OLD camera, then re-renders next frame with the new camera. `useLayoutEffect` runs after the render commit but before paint, so the second render lands synchronously.
+
+**Why always-center (not margin-snap):** earlier implementation only panned when the indicator approached a 15% safe-margin edge. At fast walk rates each step pushed the indicator just outside the margin and the camera snapped back, producing a visible vibration. Always-centering means each camera delta exactly matches the player's world delta.
+
+**Smooth camera motion (v0.6.8).** The pan group is positioned with the CSS `transform` *property* (not the SVG `transform` attribute) so it can be CSS-transitioned. `.genie-pan-smooth` applies `transition: transform 150ms linear`; follow walks and wheel zoom slide between positions instead of snapping. `linear` is deliberate — a follow camera re-targets every walk step, and an ease-out curve resets its velocity profile on each restart, producing a visible accelerate/decelerate pulse. The class is suppressed while `isDragging` so manual drag stays 1:1 with the cursor.
+
+**Snap-on-large-delta.** A 150ms transition visibly "races across" the screen on a big jump. `snapTransform` is a render-time delta check (Euclidean > 600px OR scale change > 20% vs `prevTransformRef`, the last *painted* transform, updated in a post-commit `useEffect`). When true, an inline `transition: none` drops the transition for that one update — zone switches, ◆-from-afar, and fit-to-view cut instantly; walk steps and wheel zoom stay smooth.
 
 #### 19.16.7 Indicator Layers
 
-Four indicator types, all hoisted OUT of `nodeRects` as single overlay elements so they re-render independently of the per-zone-static node array:
+Five indicator types, all hoisted OUT of `nodeRects` as single overlay elements so they re-render independently of the per-zone-static node array:
 
 | Indicator | Element | Trigger |
 |---|---|---|
-| Current room | `<g>` with two concentric circles (dark backdrop ring + bright `--map-current-color` ring) | `currentNodeId` change (walking) |
-| Selected | `<rect>` gold outline | click on any room |
+| Current room | `<g>` — sonar pings + dark backdrop ring + bright `--map-current-color` ring | `currentNodeId` change (walking) |
+| Selected / pinned | `<rect>` gold outline | left-click on any room |
 | Hover | `<rect>` soft white outline | mouse enter on a room |
-| Hover path preview | `<path>` bright `--map-current-color` line tracing the BFS route from player to hovered room | hovered room changes; player position changes |
+| Hover path preview | `<path>` bright green line tracing the BFS route from player to hovered room | hovered room changes; player moves |
+| Pinned path | `<path>` gold line tracing the BFS route from player to the left-clicked room | `selectedId` set; player moves |
 
-Pre-hoist, all four were inline children of each per-node `<g>` element, so changing the current room rebuilt the entire `nodeRects` JSX array (currentNodeId was in its dep). On a 1500-room zone that was the rapid-walk stutter/tearing source. Post-hoist, walking only re-renders the 2-3 indicator elements.
+Pre-hoist, all were inline children of each per-node `<g>`, so changing the current room rebuilt the entire `nodeRects` array. On a 1500-room zone that was the rapid-walk stutter source. Post-hoist, walking only re-renders the indicator elements.
 
-**Backdrop ring on the current halo** — single-circle halo dissolved into similarly-colored adjacent rooms (a green halo next to a red shop next to a lime economic-room marker disappears into the noise). Translucent dark ring + bright stroke gives unconditional contrast.
+**Current-room indicator (v0.6.8).** Solid ring radius `INDICATOR_R = NODE_SIZE * 1.3125`. The `<g>` is structured: two **sonar-ping** circles (`genie-here-ping`, a CSS keyframe scaling 0.7→2.7× while fading; the two are staggered half a cycle via `--delayed` so a fresh ring emanates ~every 1s), then a dark backdrop ring, then the bright green ring on top. `non-scaling-stroke` keeps the expanding pings thin as they grow. The pings are exempt from the drag/motion animation-pause via a higher-specificity rule (`.genie-pan-dragging .genie-here-ping` beats `.genie-pan-dragging *`) — the locator is the one thing the user most wants to keep tracking.
 
-**Hover indicator color (soft white)** is deliberately distinct from gold (selected) and green (current) so the three states coexist visually without ambiguity.
+**Indicator transition lockstep.** The indicator `<g>` lives inside the pan group and carries its OWN `genie-pan-smooth` transition on a `translate(node.x, node.y)` transform. With only the pan transitioning, the halo sat off-centre for 150ms after each walk step then slid back ("bounce"). Giving both the same matched transition makes the interpolations cancel — `lerp(panA,panB,f) + lerp(roomA,roomB,f) = centre` for all `f` — so the halo stays pinned at screen centre while the map slides beneath it. `indicatorSnap` (a world-distance large-jump check, > 120 units) is ORed with `snapTransform` for the indicator so it also snaps on follow-off teleports where the pan delta is zero.
 
-**Hover path preview** runs `bfsZoneRoomPath` from `currentLocation.node.id` to `hoveredId`, builds line segments between consecutive rooms, renders as a single `<path>` with rounded line joins. Instant answer to "how would I get there if I clicked." Cost: one BFS per hover-enter (~1500 ops on a Crossing-sized zone).
+**Backdrop ring** — single-colour halo dissolved into similarly-coloured adjacent rooms. Translucent dark ring + bright stroke gives unconditional contrast.
+
+**Hover indicator (soft white)** is distinct from gold (selected) and green (current).
+
+**Hover path preview** runs `bfsZoneRoomPath` from `currentLocation.node.id` to `hoveredId`. **Pinned path** does the same from the player to `selectedId` and persists across mouse moves (gold, vs the green hover preview). Both recompute as the player walks so the route shrinks on approach.
 
 #### 19.16.8 Tooltip
 
@@ -2891,19 +2902,23 @@ Block-built conditional tooltip:
 - Color category if room has a recognized `COLOR_LEGEND` color: swatch + name + description (e.g. `■ Red — Shop`)
 - Aliases: pipe-delimited `note` entries minus `.xml` markers
 - Exits: deduped list of arc exit/move strings
-- Action hint at bottom: "Click to walk here" (regular room) or "Click to go to {zoneName}" (stub). Shown only when click is meaningful — player in this zone, hovering a different room.
+- Action hint at bottom — two lines spelling out the left/right-click bindings (regular room: "Left-click: pin path / Right-click: walk here"; stub: "Left-click: go to {zone} / Right-click: walk to boundary"). Shown only when click is meaningful — player in this zone, hovering a different room.
 
 Each section is conditional so unset fields don't render an empty line.
 
-#### 19.16.9 Click-to-Walk
+#### 19.16.9 Click Model — Left-click pins, right-click walks (v0.6.8)
 
-`onNodeClick`:
-- Sets `selectedId`.
-- For a stub: BFS to it within the current zone, dispatch walk commands. Map auto-switches zones via the title-match effect once the player has actually crossed the boundary.
-- For a regular room: BFS to it within the current zone, dispatch walk commands.
-- Cross-zone click-to-walk (BFS across multiple zones) is NOT supported — Genie arc destinations are zone-local IDs.
+Two handlers on each node `<g>`. The SVG root has `onContextMenu={preventDefault}` so right-click never shows the OS menu.
 
-`sendWalkPath(commands, onComplete?)` clears any in-flight timers, then schedules each command at `WALK_STEP_MS` (600ms) intervals via `setTimeout`. The `onComplete` callback fires when the LAST command's timer fires — not used in current callers (stub click stopped using it after the "map races ahead" feedback) but kept for future use.
+`onNodeClick` (**left-click**):
+- **Regular room:** toggles `selectedId` — sets it (pins a path) or clears it if it was already this room. Does NOT walk. The pinned BFS path renders as a gold overlay (`pinnedPathSegs`), auto-clearing on arrival / zone change / level change.
+- **Stub:** switches the displayed zone to the stub's target XML. Resolves the *reciprocal entry room* (the target zone's stub pointing back to the source zone) and centres on it at the current scale; pre-sets `lastFitRef` so the fit/center effect doesn't zoom-to-fit; sets `followPlayer = false` (the user is browsing now — `◆` re-enables follow and yanks the view back to the player).
+
+`onNodeContextMenu` (**right-click**): walks to the clicked node. `preventDefault` + `stopPropagation`, then BFS within the current zone and `sendWalkPath`. For a stub this walks to the boundary room (the stub IS a real room in the current zone). Cross-zone click-to-walk is NOT supported — Genie arc destinations are zone-local IDs; the map auto-switches zones via the title-match effect once the player actually crosses.
+
+`sendWalkPath(commands, onComplete?)` clears any in-flight timers, then schedules each command at `WALK_STEP_MS` (600ms) intervals via `setTimeout`.
+
+Walk timers are cleared on zone change AND on unmount. Level change does NOT clear walk timers — paths can legitimately include up/down arcs. Walk commands echo to the game window as `>cmd` lines via `sendCommand`.
 
 Walk timers are cleared on zone change AND on unmount. Level change does NOT clear walk timers — click-to-walk paths can legitimately include up/down arcs.
 
@@ -2917,10 +2932,11 @@ Inside the SVG `<g transform>` pan/zoom group:
 2. `labelTexts` — free-floating landmark labels (gets covered by nodes when they overlap)
 3. `nodeRects` — 8×8 room rects with stub glyphs
 4. `arcPathsOver` — arc paths at opacity 0.35 (faint trace through rects)
-5. `hoverPathIndicator` — BFS preview line
-6. `hoverIndicator` — soft white rect outline
-7. `selectedIndicator` — gold rect outline
-8. `currentIndicator` — dark backdrop + bright halo ring (LAST so it paints over everything)
+5. `pinnedPathIndicator` — gold BFS line to the left-clicked room
+6. `hoverPathIndicator` — green BFS preview line
+7. `hoverIndicator` — soft white rect outline
+8. `selectedIndicator` — gold rect outline
+9. `currentIndicator` — sonar pings + dark backdrop + bright halo ring (LAST so it paints over everything)
 
 #### 19.16.11 Layout Quirks Worth Knowing
 
@@ -2928,6 +2944,8 @@ Inside the SVG `<g transform>` pan/zoom group:
 - **Hover state must clear on level change**, not just zone change. Hover/select IDs persist through level switches; if the new floor has a room with the same numeric id, the highlight silently jumps to that unrelated room. The cleanup is split: zone change clears walk timers + UI state, level change clears UI state only (walk paths can legitimately cross levels).
 - **`pointer-events: none` on the pan group breaks click-to-walk.** `isDragging` flips true on mousedown BEFORE click fires, so toggling pointer-events at that point makes the click target the SVG root, not the inner node `<g>`. Hover is gated at the React layer (`dragRef.current` check in `onNodeHoverEnter`) instead.
 - **`will-change: transform`** on the pan group promotes the subtree to its own composited layer so pan/zoom is GPU-translated rather than triggering paint of siblings.
+- **No inline `height: 100%` on the `GenieMapView` outer wrap.** It carries `.map-canvas-wrap` (`flex: 1; min-height: 0`) plus inline `display: flex; flex-direction: column`. An inline `height: 100%` overrides the flex sizing and — evaluated against the parent's *full* height before the parent subtracts its own toolbar — pushes the MapPanel's view-selector toolbar off-screen at narrow window heights. Let CSS flex own the height.
+- **Pan group + indicator must transition in lockstep.** Both carry `.genie-pan-smooth` and share the `snapTransform` flag. If they used different easings or one snapped while the other transitioned, the "you are here" halo would bounce off-centre or slide while the map cut. See §19.16.7.
 
 ### 19.17 Per-Color Effect System (v0.6.7)
 
@@ -3460,18 +3478,20 @@ Padding belongs on each item, not on the `.text-window` container. Applying `pad
 Auto-follow is owned entirely by Virtuoso's `followOutput` prop. `followOutput` uses Virtuoso's internal height map for ALL items (rendered and unrendered), not `el.scrollHeight` which only reflects rendered items + spacer estimates. This is the correct tool for following a virtual list where new items appear below the current viewport and have no DOM presence yet.
 
 ```tsx
-followOutput={() => pinnedRef.current ? 'auto' : false}
+followOutput={() => pinnedRef.current ? 'smooth' : false}
 ```
 
-A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it forces `el.scrollTop` to the true DOM bottom and arms `suppressUnpinRef` for 200ms:
+**Smooth scroll (v0.6.8).** `followOutput` uses `'smooth'` (was `'auto'`) so incoming text *slides* the viewport over ~300ms instead of snapping. Overlapping animations from rapid arrivals collapse into one continuous slide — the "streamed" feel testers asked for. `totalListHeightChanged` and `scrollToBottom` likewise use smooth `scrollTo`/`scrollToIndex`.
+
+A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it smooth-scrolls to the true DOM bottom and arms `suppressUnpinRef` for 500ms:
 
 ```tsx
 totalListHeightChanged={() => {
   if (!pinnedRef.current) return
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
   if (dist > 2) {
-    suppressUnpin(200)
-    el.scrollTop = el.scrollHeight - el.clientHeight
+    suppressUnpin(500)
+    el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' })
   }
 }}
 ```
@@ -3482,7 +3502,7 @@ Direct `el.scrollTop = el.scrollHeight - el.clientHeight` uses DOM `scrollHeight
 **Un-pinning:**
 Un-pinning happens only via explicit user action:
 - `onWheel` on the wrapper div: if `e.deltaY < 0` (scroll up), sets `pinnedRef.current = false` synchronously (fires before the DOM scroll event — required during fast combat where lines arrive every frame)
-- `PageUp` / `Home` key handlers: set `pinnedRef.current = false` before adjusting `scrollTop`
+- `PageUp` / `Ctrl+Home` key handlers: set `pinnedRef.current = false` before adjusting `scrollTop`
 
 The scroll event listener on the Virtuoso scroller element does the opposite — it **only re-pins**:
 
@@ -3501,18 +3521,32 @@ function handleVirtuosoScroll() {
 This separation is critical: `followOutput` and `totalListHeightChanged` both generate scroll events. If the scroll handler also un-pinned on `dist > threshold`, those programmatic events would immediately clear the pin state — breaking auto-follow entirely.
 
 **Suppress-unpin guard:**
-`suppressUnpinRef.current = true` is set for 200ms whenever a programmatic scroll occurs (from `totalListHeightChanged`, `scrollToBottom`, or `scrollToIndex`). The scroll handler returns early while suppressed. The 200ms window covers Virtuoso's async ResizeObserver and rAF timing.
+`suppressUnpinRef.current` is armed for **500ms** (was 200ms) whenever a programmatic scroll occurs (from `totalListHeightChanged`, `scrollToBottom`, or `scrollToIndex`). The scroll handler returns early while suppressed. The window widened to 500ms when `followOutput` became `'smooth'` — a smooth scroll animation runs ~300ms, and the intermediate scroll events it emits would otherwise trip the `dist > 40` unpin branch mid-animation.
 
 **Re-pinning:**
 - Scroll handler re-pins automatically when the user scrolls all the way to the bottom (`dist <= 10`)
-- `scrollToBottom()` — called by badge click or the End key — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: lines.length - 1, align: 'end', behavior: 'auto' })`
+- `scrollToBottom()` — called by badge click, the `End` key (focus-elsewhere), or `Ctrl+End` — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' })`. `index: 'LAST'` (not `lines.length - 1`) is deliberate: the once-at-mount `keydown` listener captures `scrollToBottom` when `lines` is still empty — a `lines.length` reference would be permanently stale and the scroll would silently no-op.
 - `clearLines()` sets `pinnedRef.current = true` so the user is not stranded at the top of an empty buffer after a screen clear
 
 **Word wrap:**
-Virtuoso's scroller div has `overflow: auto` internally, enabling horizontal scrolling and breaking word wrap. Fixed by `el.style.overflowX = 'hidden'` in the `scrollerRef` callback.
+Virtuoso's scroller div has `overflow: auto` internally, enabling horizontal scrolling and breaking word wrap. Fixed by `el.style.overflowX = 'hidden'` in the `scrollerRef` callback. The same callback also sets `el.style.willChange = 'scroll-position'` to promote the scroll subtree to its own GPU layer (compositor-only scroll, no text re-rasterization).
 
-**Keyboard scrolling (PageUp/PageDown/Home/End):**
-`scrollRef.current` points to the Virtuoso scroller div. Directly setting `el.scrollTop` works — Virtuoso observes the scroll event and updates its virtual window accordingly.
+**Render-cost mitigations (v0.6.8):** `.text-line` / `.text-line-wrap` carry `contain: layout style` so a per-row update can't trigger reflow of siblings or ancestors; `.text-window` carries `overscroll-behavior: contain` to kill the rubber-band bounce. Together these address "jerks and tears during heavy scrolling."
+
+**Keyboard scrolling — focus-aware (B77):**
+`scrollRef.current` points to the Virtuoso scroller div; directly setting `el.scrollTop` works. Key behavior depends on whether the command input is focused:
+
+| Key | Command input focused (normal play) | Focus elsewhere |
+|---|---|---|
+| `PageUp` / `PageDown` | Scroll story by a page | Scroll story by a page |
+| `Home` / `End` | **Native** — cursor to start / end of typed command | Scroll story to top / bottom |
+| `Ctrl+Home` / `Ctrl+End` | Scroll story to top / bottom | Scroll story to top / bottom |
+
+`Home`/`End` are left native while typing because testers expect text-editing keys to edit text. `Ctrl+Home` in a single-line input is identical to plain `Home` natively, so repurposing the modified combo for story-scroll loses nothing. `PageUp`/`PageDown` have no native single-line-input meaning, so they always scroll.
+
+### Room-State Pump (v0.6.8)
+
+Fast running emits multiple `room-title` events in quick succession. React 18 auto-batches the resulting `setRoomState` calls across IPC tasks, so only the *last* room survived into the next render — the map indicator skipped 2-3 rooms at a time. Fix: room updates queue into `roomQueueRef` and a `requestAnimationFrame` loop applies one per frame, giving each room visit its own render commit (a "streamed" indicator). The queue is capped at 8 — an extreme burst trims to the most recent 8 rather than letting the marker lag seconds behind the player's real position.
 
 ### Stream ID Case Handling (B34, B37)
 

@@ -179,10 +179,17 @@
   flex: 1;
   overflow: hidden;
   cursor: text;
+  /* Stops scroll chain to the surrounding panel layout and kills the
+     rubber-band overscroll bounce. Both contribute to perceived "tearing"
+     during heavy scroll bursts when bouncing collides with new content. */
+  overscroll-behavior: contain;
 }
 
 .text-line-wrap {
   padding: 0 12px 0.15em;
+  /* See `.text-line` — same isolation, applied at the wrapper so the
+     padding box is also out of the parent's layout pass. */
+  contain: layout style;
 }
 
 .scroll-anchor-badge {
@@ -274,6 +281,14 @@
   min-height: 1.4em;
   font-size: var(--game-font-size);
   line-height: var(--game-line-height);
+  /* Layout/style isolation per row. Tells the browser each row's
+     layout cannot affect siblings or ancestors, so a re-render of one
+     line (highlight match, new segment) skips the parent reflow pass.
+     Significant during heavy text bursts where dozens of rows mount
+     per frame inside Virtuoso. `contain: content` (= layout style
+     paint) is too aggressive — paint containment forces a separate
+     stacking context per row which fights Virtuoso's own composite. */
+  contain: layout style;
 }
 
 .command-bar {

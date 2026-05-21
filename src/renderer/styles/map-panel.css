@@ -20,6 +20,54 @@
   animation-play-state: paused !important;
 }
 
+/* Smooth camera motion — pan/zoom CSS transform transitions over
+   150ms so follow-the-player and wheel zoom slide between positions
+   instead of snapping. Applied to BOTH the pan group and the "you are
+   here" indicator so they move in lockstep (the indicator stays
+   centred instead of bouncing — see `snapTransform` in GenieMapView).
+
+   `linear` is deliberate: a follow camera continuously re-targets on
+   every walk step, and each new target restarts the transition from
+   the current position. With an ease-out curve the restart resets the
+   velocity profile (fast-in, slow-out) on every step, producing a
+   visible accelerate/decelerate pulse — the "jitter" testers saw.
+   Linear has constant velocity, so chained transitions read as one
+   continuous glide. The class is suppressed while `isDragging` so the
+   drag stays 1:1 with the cursor. */
+.genie-pan-smooth {
+  transition: transform 150ms linear;
+}
+
+/* "You are here" sonar ping — an expanding ring that emanates from the
+   solid locator ring and fades. Two circles share this animation
+   staggered half a cycle (`--delayed`) so a fresh ring leaves the
+   centre every ~1s, reading as a continuous radar pulse. The solid
+   ring is drawn on top and never animates, so the exact room stays
+   unambiguous. `transform-box: fill-box` + `transform-origin: center`
+   scales each ring around its own centre regardless of where the
+   indicator sits in world space. */
+@keyframes genie-here-ping {
+  0%   { transform: scale(0.7); opacity: 0; }
+  12%  { opacity: 0.7; }
+  100% { transform: scale(2.7); opacity: 0; }
+}
+.genie-here-ping {
+  animation: genie-here-ping 2s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.genie-here-ping--delayed {
+  animation-delay: -1s;
+}
+/* Keep the locator ping alive even while the map pauses every other
+   animation during drag / walk. It's a single cheap element and it's
+   the one thing the user most wants to keep tracking. Higher
+   specificity than `.genie-pan-dragging *` so it wins the !important
+   duel. */
+.genie-pan-dragging .genie-here-ping {
+  animation-play-state: running !important;
+}
+
 /* ── Genie Maps node-effect animations ────────────────────────
    Each colored room category gets a visual effect that reinforces
    its function. Effects group into structural families:

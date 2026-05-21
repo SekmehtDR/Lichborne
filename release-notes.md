@@ -1,3 +1,48 @@
+## What's new in v0.6.8
+
+A polish release focused on how things *feel* — smoother map motion, a more eye-catching "you are here" marker, a new click model for the map, and smoother text scrolling — plus a batch of bug fixes from tester feedback.
+
+### Genie Maps — new click model
+
+Clicking a room now does different things depending on the mouse button:
+
+- **Left-click a room** — pins the walk path on the map (a gold line from you to that room) so you can study the route before committing. Click it again to clear.
+- **Right-click a room** — walks you there.
+- **Left-click a cross-zone exit (↗)** — peek at the neighbouring zone without moving.
+- **Right-click a cross-zone exit** — walk to the boundary.
+
+The hover tooltip spells out which button does what.
+
+### Genie Maps — smoother camera
+
+- **The camera now glides** as you walk instead of snapping room to room. Big jumps (clicking ◆ from across the zone, switching zones, fit-to-view) still cut instantly — only the small step-to-step moves animate, so the camera never "races" across the screen.
+- **The "you are here" marker no longer bounces.** It now stays locked dead-centre while the map slides beneath it.
+
+### Genie Maps — new "you are here" indicator
+
+The locator ring got a **sonar pulse** — expanding rings ripple outward from your position on a loop, so you can spot yourself at a glance. The solid ring stays crisp underneath so your exact room is never ambiguous. The ring itself is also a touch smaller than before.
+
+### Genie Maps — bug fixes
+
+- **The marker no longer gets stuck on the wrong zone.** Crossing certain boundaries (e.g. the Crossing ↔ Segoltha River) could leave your marker stranded in the zone you just left until you typed `look`. The room-matching logic now searches more thoroughly so the right room wins.
+- **Clicking a cross-zone exit no longer zooms the map all the way out.** It now switches to the neighbouring zone centered on the matching entry room, keeping your zoom level.
+- **The map toolbar no longer disappears** at smaller window sizes.
+- **The follow camera is more reliable** — it can no longer get into a state where your marker is visible but the camera has stopped tracking it.
+- Player-housing rooms now flicker with a warm hearth-glow aura, matching the "interesting room" treatment.
+
+### Text window — smoother scrolling
+
+- **Scrolling is smoother during heavy combat.** New text now slides the view into place instead of snapping, and several rendering optimizations cut the jerks and tearing that showed up during heavy bursts.
+- **The map marker keeps up when you run fast.** Running quickly used to make the map indicator jump 2-3 rooms at a time; it now ticks through each room in turn for a smooth, streamed feel.
+
+### Home / End keys
+
+Reported by Binu — `Home` and `End` were scrolling the story window instead of editing your command box. Fixed:
+
+- **`Home` / `End`** now move the cursor to the start / end of your typed command, like any normal text field.
+- **`Ctrl+Home` / `Ctrl+End`** scroll the story window to the top / bottom.
+- **`PageUp` / `PageDown`** scroll the story window by a page, unchanged.
+
 ## What's new in v0.6.7
 
 Follow-up release to v0.6.6's Genie Maps rewrite. The big addition: every room category on the Genie Maps view now has its own visual signature. Shops glint with gold, healers pulse with a heartbeat, water rooms ripple, transports swirl, lumber rooms drop leaves, and so on. Plus two new status indicators we were missing (poisoned, diseased), command echo for everything you click on a panel, and several debug-panel quality-of-life fixes.

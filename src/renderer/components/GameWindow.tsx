@@ -353,6 +353,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const contactsRef   = useRef(contacts)
   const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
 
+  // Room-state pump — queues room updates and applies one per
+  // animation frame so back-to-back IPC batches (fast running through
+  // a corridor) don't get React-batched into a single render. Without
+  // this, only the LAST room in any rapid burst survives into the
+  // next paint and the map indicator skips intermediate rooms.
+  //
+  // Queue cap of 8 prevents unbounded lag when an extreme burst
+  // arrives — anything beyond 8 collapses to the most recent 8 so
+  // the player isn't watching the marker catch up two seconds after
+  // they've stopped moving. 8 is ~133ms at 60fps, perceptible as
+  // "smooth running" without becoming visibly behind real input.
+  const roomQueueRef     = useRef<Partial<RoomState>[]>([])
+  const roomPumpRafRef   = useRef<number | null>(null)
+  const ROOM_QUEUE_CAP   = 8
+
   // Live game state for the trigger engine — updated directly in the event loop
   // so triggers always see the current values within the same event batch.
   const triggerCtxRef = useRef<TriggerGameState>({
@@ -862,7 +877,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
           // before ours, so the scroll event from followOutput would un-pin us unless
           // the flag is already set when the handler runs.
-          suppressUntilRef.current = Date.now() + 200
+          //
+          // 500ms covers a full smooth-scroll animation (~300ms) plus
+          // margin — without it the intermediate scroll events from the
+          // smooth slide would trigger an unpin (dist > 40) midway.
+          suppressUntilRef.current = Date.now() + 500
           // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
           setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
         } else {
@@ -871,7 +890,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           if (newLineCountRef.current >= MAX_LINES * 3) {
             // Hard cap: buffer is very large; resume auto-scroll and trim.
             pinnedRef.current = true
-            suppressUntilRef.current = Date.now() + 200
+            suppressUntilRef.current = Date.now() + 500
             newLineCountRef.current = 0
             setNewLineCount(0)
             setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
@@ -911,7 +930,28 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         })
       }
 
-      if (Object.keys(roomUpdates).length > 0)    setRoomState(prev => ({ ...prev, ...roomUpdates }))
+      if (Object.keys(roomUpdates).length > 0) {
+        // Push to the room pump queue rather than calling setRoomState
+        // directly — see `roomQueueRef` declaration for the rationale.
+        // The pump applies one update per frame so each room visit
+        // gets its own render commit, eliminating the "skip 2-3 rooms"
+        // behavior when React batches rapid IPC arrivals.
+        roomQueueRef.current.push(roomUpdates)
+        if (roomQueueRef.current.length > ROOM_QUEUE_CAP) {
+          roomQueueRef.current = roomQueueRef.current.slice(-ROOM_QUEUE_CAP)
+        }
+        if (roomPumpRafRef.current == null) {
+          roomPumpRafRef.current = requestAnimationFrame(function pump() {
+            roomPumpRafRef.current = null
+            const next = roomQueueRef.current.shift()
+            if (!next) return
+            setRoomState(prev => ({ ...prev, ...next }))
+            if (roomQueueRef.current.length > 0) {
+              roomPumpRafRef.current = requestAnimationFrame(pump)
+            }
+          })
+        }
+      }
       if (Object.keys(expUpdates).length > 0)     setExpSkills(prev => ({ ...prev, ...expUpdates }))
       if (Object.keys(vitalUpdates).length > 0)   setVitals(prev => ({ ...prev, ...vitalUpdates }))
       if (Object.keys(labelUpdates).length > 0)   setVitalLabels(prev => ({ ...prev, ...labelUpdates }))
@@ -968,7 +1008,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     })
 
     inputRef.current?.focus()
-    return () => { unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current() }
+    return () => {
+      unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current()
+      if (roomPumpRafRef.current != null) {
+        cancelAnimationFrame(roomPumpRafRef.current)
+        roomPumpRafRef.current = null
+      }
+      roomQueueRef.current = []
+    }
   }, [])
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -981,9 +1028,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
-    suppressUnpin(300)
+    // Smooth scrollToIndex animates over ~300ms — bump suppress to 500
+    // so mid-animation scroll events don't unpin us, and so the user's
+    // click on the "▼ N new lines" badge produces a satisfying slide
+    // down rather than a snap.
+    suppressUnpin(500)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
-    if (lines.length > 0) virtuosoRef.current?.scrollToIndex({ index: lines.length - 1, align: 'end', behavior: 'auto' })
+    // `index: 'LAST'` instead of `lines.length - 1`: the keydown listener
+    // captures this function once at mount (deps []), when `lines` is
+    // still empty — a `lines.length` reference here is permanently stale
+    // and the scroll silently no-ops. 'LAST' lets Virtuoso resolve the
+    // final index itself at call time. This is why the End key appeared
+    // to "do nothing."
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'smooth' })
     inputRef.current?.focus()
   }
 
@@ -996,17 +1053,31 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       const active = document.activeElement
       const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
-      // Allow scroll keys (Page/Home/End) to fire when the command input is
-      // focused — that's the normal play state and the keys' DR-client meaning
-      // is "scroll the story window", not "move text cursor". Suppress only
-      // when *another* text field (e.g. a highlight rule editor) is focused.
-      const inOtherTextField = inTextField && active !== inputRef.current
+      const inCommandInput = active === inputRef.current
+      // Suppress story-scroll key handling when *another* text field
+      // (e.g. a highlight-rule editor) is focused — those keys must edit
+      // that field. The command input is handled specially below.
+      const inOtherTextField = inTextField && !inCommandInput
       if (!inOtherTextField) {
         const el = scrollRef.current
-        if (e.key === 'End')     { e.preventDefault(); scrollToBottom() }
-        if (e.key === 'Home')    { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop = 0 }
+        // PageUp/PageDown always scroll the story window — a single-line
+        // command input has no native Page behavior, so there is no
+        // conflict with text editing.
         if (e.key === 'PageUp')  { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop -= el.clientHeight }
         if (e.key === 'PageDown'){ e.preventDefault(); if (el) el.scrollTop += el.clientHeight }
+        // Home/End: when the command input is focused (the normal play
+        // state), leave them NATIVE so they move the cursor to the
+        // start/end of the typed command — testers expect text-editing
+        // keys to edit text (Binu feedback). They still scroll the story
+        // window when focus is anywhere else. Ctrl+Home / Ctrl+End reach
+        // the story even while typing: Ctrl+Home in a single-line input
+        // is identical to plain Home natively, so nothing is lost by
+        // repurposing the modified combo.
+        const homeEndScrollsStory = !inCommandInput || e.ctrlKey
+        if (homeEndScrollsStory) {
+          if (e.key === 'End')  { e.preventDefault(); scrollToBottom() }
+          if (e.key === 'Home') { e.preventDefault(); pinnedRef.current = false; if (el) el.scrollTop = 0 }
+        }
       }
       // Global macro key bindings — suppressed when any modal is open
       if (!anyModalOpenRef.current) {
@@ -1376,21 +1447,37 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                   }
                   scrollRef.current = el as HTMLDivElement | null
                   if (el) {
-                    if (el instanceof HTMLElement) el.style.overflowX = 'hidden'
+                    if (el instanceof HTMLElement) {
+                      el.style.overflowX = 'hidden'
+                      // Hint the compositor to keep this scroll container on
+                      // its own GPU layer. Scrolling then resolves to a pure
+                      // transform of the cached layer rather than re-rasterizing
+                      // text — directly addresses the "jerks/tearing during
+                      // heavy scroll" symptom. `scroll-position` is the
+                      // specific value (not `transform`); `transform` would
+                      // hint the wrong axis and some browsers ignore it.
+                      el.style.willChange = 'scroll-position'
+                    }
                     el.addEventListener('scroll', handleVirtuosoScrollRef.current, { passive: true })
                   }
                 }}
                 style={{ height: '100%' }}
                 data={lines}
-                followOutput={() => pinnedRef.current ? 'auto' : false}
+                followOutput={() => pinnedRef.current ? 'smooth' : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return
                   const el = scrollRef.current
                   if (!el) return
                   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
                   if (dist > 2) {
-                    suppressUntilRef.current = Date.now() + 200
-                    el.scrollTop = el.scrollHeight - el.clientHeight
+                    // Match the followOutput mode — smooth scrollTo lets
+                    // the eye see in-between frames as new content lands,
+                    // instead of the discrete "snap" of a direct scrollTop
+                    // write. Browser will collapse overlapping smooth
+                    // animations from rapid arrivals into one continuous
+                    // slide, which is exactly the streamed feel we want.
+                    suppressUntilRef.current = Date.now() + 500
+                    el.scrollTo({ top: el.scrollHeight - el.clientHeight, behavior: 'smooth' })
                   }
                 }}
                 computeItemKey={(_index, line) => line.id}

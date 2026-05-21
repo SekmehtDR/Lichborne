@@ -215,8 +215,34 @@ export default function MapImageView({
 
       return (
         <g key={room.id}
-          onClick={e => { e.stopPropagation(); setSelectedId(p => p === room.id ? null : room.id); setPathRooms(new Set()) }}
-          onDoubleClick={e => { e.stopPropagation(); if (currentRoom && room.id !== currentRoom.id) walkToRoom(room.id) }}
+          onClick={e => {
+            // Left-click: pin the BFS path from current to clicked room
+            // (visual preview, no walking). Same-room click clears.
+            // Right-click runs the walk — see onContextMenu below.
+            e.stopPropagation()
+            if (selectedId === room.id) {
+              setSelectedId(null)
+              if (!walking) setPathRooms(new Set())
+              return
+            }
+            setSelectedId(room.id)
+            if (currentRoom && room.id !== currentRoom.id && !walking) {
+              const path = bfsPath(lichDb, currentRoom.id, room.id)
+              const set = new Set<number>()
+              let cur = currentRoom.id
+              for (const cmd of path) {
+                const r = lichDb.get(cur)
+                const destStr = Object.entries(r?.wayto ?? {}).find(([, c]) => c === cmd && typeof c === 'string')?.[0]
+                if (destStr) { const dest = parseInt(destStr, 10); set.add(dest); cur = dest }
+              }
+              setPathRooms(set)
+            }
+          }}
+          onContextMenu={e => {
+            e.preventDefault()
+            e.stopPropagation()
+            if (currentRoom && room.id !== currentRoom.id) walkToRoom(room.id)
+          }}
           onMouseEnter={() => setHoveredId(room.id)}
           onMouseLeave={() => setHoveredId(null)}
           style={{ cursor: 'pointer' }}
@@ -230,7 +256,7 @@ export default function MapImageView({
         </g>
       )
     })
-  }, [roomsOnImage, currentRoom, selectedId, hoveredId, pathRooms, transform.scale, imageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomsOnImage, currentRoom, selectedId, hoveredId, pathRooms, walking, lichDb, transform.scale, imageSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const recenter = useCallback(() => {
     if (!currentRoom?.image_coords) return
@@ -368,12 +394,18 @@ export default function MapImageView({
         if (!r || !tooltipPos) return null
         const left = Math.min(tooltipPos.x + 14, window.innerWidth  - 230)
         const top  = Math.min(tooltipPos.y -  8, window.innerHeight - 90)
+        const showActionHint = currentRoom && r.id !== currentRoom.id
         return (
           <div className="map-tooltip" style={{ left, top }}>
             <div className="map-tooltip-id">#{r.id}</div>
             <div className="map-tooltip-name">{lichTitle(r)}</div>
             {r.location && <div className="map-tooltip-zone">{r.location}</div>}
             {r.tags && r.tags.length > 0 && <div className="map-tooltip-note">{r.tags.join(' · ')}</div>}
+            {showActionHint && (
+              <div className="map-tooltip-note" style={{ fontStyle: 'italic' }}>
+                Left-click: pin path · Right-click: walk
+              </div>
+            )}
           </div>
         )
       })()}
