@@ -83,6 +83,17 @@
 
 **B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
+**v0.6.11 — Tunable smooth-scroll burst limit ✅**
+
+A follow-up to v0.6.10. The flood-adaptive smooth scroll cured huge bursts (the login dump) but its trip threshold was hardcoded at 40 lines — moderate commands like `exp` slipped under it and kept smooth-scrolling, which still janked on Binu's 4K rig (he ended up turning smooth scroll off entirely). v0.6.11 makes the threshold a player-tunable setting.
+
+_Smooth scroll — tunable burst limit_
+
+- **`smoothScrollBurstLimit` setting ✅ (B83)** — New `AppSettings` field, **default 25** (down from the hardcoded 40). Surfaced as a **Burst limit** number stepper (range 5–200, step 5) under Settings → Smooth Scrolling — shown only when Smooth Scrolling is enabled, since it's a sub-option of it. Lower = smooth scroll falls back to instant on smaller bursts. `GameWindow`'s flood detector reads the live value via a `floodThresholdRef` mirror (the once-at-mount game-event listener can't see fresh `settings`); the `FLOOD_THRESHOLD` constant is gone. Per-character; persists to the character profile via the `AppSettings` blob (same path as every other setting). The login dump is hundreds-to-thousands of lines so it trips flood mode at *any* setting — the knob only controls whether moderate bursts also snap to instant.
+- Default lowered to 25 so a moderate command trips flood mode out of the box; testers on slow hardware can drop it to 5–10, fast rigs can raise it.
+
+- Build + tsc clean. ✅
+
 **v0.6.10 — Flood-adaptive smooth scroll ✅**
 
 A targeted follow-up to v0.6.9. Binu (4K display) found that *enabling* smooth scrolling reintroduced heavy lag at startup — XML and graphical updates crawled for a minute or two before settling. v0.6.10 makes smooth scroll usable when opted in, by making it adaptive instead of unconditional.

@@ -1,3 +1,16 @@
+## What's new in v0.6.11
+
+A small follow-up to v0.6.10. That release made smooth scrolling automatically snap to instant during huge bursts of text (like the login flood). v0.6.11 lets you tune *how big* a burst has to be before that kicks in.
+
+### Smooth scrolling — tunable burst limit
+
+If you have Smooth Scrolling enabled, there's now a **Burst limit** setting right below the toggle. It controls how many lines need to arrive at once before scrolling snaps to instant:
+
+- **Lower it** (e.g. 5–10) and even moderate commands — `exp`, `inventory`, a detailed room — snap instantly; smooth scrolling is reserved for a line or two trickling in.
+- **Raise it** and smooth scrolling rides through bigger bursts before giving up.
+
+The default is 25, and it saves per character. This is for players who found that v0.6.10 still smooth-scrolled (and lagged) on mid-sized commands — turn the limit down and they'll snap like the big floods already do. The startup login flood always snaps regardless of the setting.
+
 ## What's new in v0.6.10
 
 A focused fix for smooth scrolling. In v0.6.9 it became opt-in because it could cost performance; v0.6.10 makes it genuinely usable when you *do* turn it on.

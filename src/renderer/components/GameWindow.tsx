@@ -69,10 +69,11 @@ const MAX_DEBUG_EVENTS = 500
 // burst (login dump, heavy combat): the lagging scroll position makes
 // react-virtuoso continuously mount/unmount rows as the animation
 // sweeps, saturating the render pipeline (Recalculate Style + Layerize
-// + Paint dominated Binu's 4K startup profile at ~74%). When more than
-// FLOOD_THRESHOLD main lines arrive without a FLOOD_WINDOW_MS quiet
-// gap, scroll falls back to instant until the burst subsides.
-const FLOOD_THRESHOLD  = 40
+// + Paint dominated Binu's 4K startup profile at ~74%). When more main
+// lines than the burst limit arrive without a FLOOD_WINDOW_MS quiet
+// gap, scroll falls back to instant until the burst subsides. The
+// burst limit is the player-tunable `smoothScrollBurstLimit` setting
+// (a moderate command like `exp` should still trip it on a slow rig).
 const FLOOD_WINDOW_MS  = 500
 const MAX_RAW_XML_LINES = 500
 
@@ -529,6 +530,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // closure that can't see fresh `settings` state.
   const smoothScrollRef = useRef(settings.smoothScroll)
   useEffect(() => { smoothScrollRef.current = settings.smoothScroll }, [settings.smoothScroll])
+  // Same mirror for the player-tunable flood burst limit — read by the
+  // once-at-mount game-event handler.
+  const floodThresholdRef = useRef(settings.smoothScrollBurstLimit)
+  useEffect(() => { floodThresholdRef.current = settings.smoothScrollBurstLimit }, [settings.smoothScrollBurstLimit])
 
   // Adaptive smooth-scroll flood state. `floodRef` is read by the three
   // smooth/auto decision points; `floodCountRef` accumulates main lines
@@ -902,12 +907,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       if (newMain.length > 0) {
         // Flood accounting — accumulate the main-line count; trip the
-        // flood flag once it crosses FLOOD_THRESHOLD; the timer restarts
-        // every batch so the count only resets after a genuine
+        // flood flag once it crosses the tunable burst limit; the timer
+        // restarts every batch so the count only resets after a genuine
         // FLOOD_WINDOW_MS lull. Done BEFORE the suppress arming below so
         // `smoothActive()` already reflects the current flood state.
         floodCountRef.current += newMain.length
-        if (floodCountRef.current >= FLOOD_THRESHOLD) floodRef.current = true
+        if (floodCountRef.current >= floodThresholdRef.current) floodRef.current = true
         if (floodTimerRef.current) clearTimeout(floodTimerRef.current)
         floodTimerRef.current = setTimeout(() => {
           floodCountRef.current = 0

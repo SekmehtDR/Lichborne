@@ -13,6 +13,7 @@ export interface AppSettings {
   timerStyle: 'bar' | 'chips'
   autoLinkUrls: boolean
   smoothScroll: boolean    // animate story-window scroll + Genie map camera — opt-in, off by default
+  smoothScrollBurstLimit: number  // lines-in-a-burst before smooth scroll falls back to instant (flood control)
   mapAnimations: boolean   // Genie Maps per-room category animations (motes, ripples, etc.) — on by default
 }
 
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   timerStyle: 'chips',
   autoLinkUrls: true,
   smoothScroll: false,   // opt-in — player enables it in Settings; persists to their profile
+  smoothScrollBurstLimit: 25,
   mapAnimations: true,
 }
 
