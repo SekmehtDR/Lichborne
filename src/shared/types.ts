@@ -84,6 +84,76 @@ export interface ErrorPayload {
   message: string
 }
 
+// --- Session Log ---
+// One captured line of session history. Written to disk as
+// `[YYYY-MM-DD HH:MM:SS.mmm][stream] text` in per-character daily log files.
+
+export interface SessionLogRecord {
+  ts: number       // Date.now() at capture time
+  stream: string   // 'main', 'thoughts', 'combat', 'cmd', 'sys', custom script streams, ...
+  text: string
+}
+
+// Renderer → main: append a batch of captured records for one character.
+// The maintenance config (retention / compression / raw-size cap) travels with
+// the payload so main can prune, compress, and cap per-character without
+// keeping its own copy of the profile config.
+export interface SessionLogAppendPayload {
+  character: string
+  records: SessionLogRecord[]
+  retentionDays: number   // delete day-files older than N days; 0 = keep forever
+  compress: boolean       // gzip closed (non-today) day-files
+  maxRawMB: number        // cap on uncompressed .log bytes; 0 = no cap
+}
+
+// Disk footprint for one character's Logs folder, for the Settings readout.
+export interface SessionLogDiskUsage {
+  totalBytes: number      // every .log + .log.gz
+  rawBytes: number        // uncompressed .log only
+  archiveBytes: number    // .log.gz only
+  dayCount: number        // distinct day-files
+}
+
+// One day-file's metadata, returned by session-log:list-days.
+export interface SessionLogDay {
+  date: string     // 'YYYY-MM-DD'
+  path: string     // absolute path to the .log file
+  size: number     // bytes
+}
+
+// One Quick-Search hit. lineNo/total let the renderer jump back into Recent
+// Tail centered on this line without re-reading the whole file.
+export interface SessionLogSearchHit {
+  date: string     // 'YYYY-MM-DD' of the day-file the hit lives in
+  lineNo: number   // 1-based line index within that day-file
+  total: number    // total lines in that day-file (for window math)
+  line: string     // the raw matched line, '[ts][stream] text'
+}
+
+// "Create Log file From" — the export builder spec. The renderer gathers this
+// in the Export view; main reads the day-files, filters, formats, and writes
+// (or copies) the result. Big data never crosses IPC — only this spec does.
+export interface SessionLogExportSpec {
+  fromDate: string             // 'YYYY-MM-DD' inclusive
+  toDate: string               // 'YYYY-MM-DD' inclusive
+  streams: string[]            // stream layers to include
+  includeTimestamps: boolean   // prefix each line with [YYYY-MM-DD HH:MM:SS]
+  includeStreamTags: boolean   // prefix each line with [stream]
+  dedup: boolean               // collapse consecutive identical text
+  summary: boolean             // prepend a # comment header with counts
+  splitPerStream: boolean      // one file per stream (only with target 'file')
+  target: 'file' | 'clipboard' // save to disk, or copy combined text to clipboard
+}
+
+export interface SessionLogExportResult {
+  ok: boolean
+  canceled?: boolean      // user dismissed the save dialog
+  empty?: boolean         // nothing matched the spec
+  lineCount?: number      // lines written (after dedup)
+  fileCount?: number      // files written (split mode)
+  location?: string       // path / folder written to, for the result message
+}
+
 export interface LichScriptsUpdatePayload {
   sessionId: SessionId
   entries: Array<{ name: string; paused: boolean }>

@@ -167,6 +167,37 @@
 }
 
 .sp-number-input:focus { border-color: var(--accent-dim); }
+
+/* ── Sub-list (indented dependent settings) ──────────────────────── */
+
+.sp-sublist {
+  margin-left: 16px;
+  border-left: 2px solid var(--border-subtle);
+}
+
+/* ── Inline button (Open Logs Folder, etc.) ──────────────────────── */
+
+.sp-button {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.sp-button:hover { border-color: var(--accent-dim); color: var(--accent); }
+
+/* ── Disk-usage readout (Session Log) ────────────────────────────── */
+
+.sp-log-usage {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .sp-number-input::-webkit-inner-spin-button { display: none; }
 
 .sp-number-unit {

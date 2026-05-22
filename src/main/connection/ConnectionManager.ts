@@ -6,6 +6,23 @@ import type { LoginCredentials } from '../../shared/types'
 
 const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
 
+// ── Lich launch serialization ────────────────────────────────────────────────
+// A Lich process serves exactly ONE front-end, then closes its listening
+// socket (verified in Lich's main.rb — `listener.accept` then `listener.close`).
+// Multiple characters therefore reuse the same front-end port *sequentially*.
+// This module-level chain (shared across every per-session ConnectionManager)
+// ensures only one character is in the spawn→connect window at a time, so two
+// Lich instances never contend for the port — which on Windows can otherwise
+// cross-wire connections under SO_REUSEADDR.
+let lichLaunchChain: Promise<unknown> = Promise.resolve()
+function serializeLichLaunch<T>(task: () => Promise<T>): Promise<T> {
+  // `.then(task, task)` runs the next task whether the previous one resolved
+  // or rejected — one character's failure must not block the queue.
+  const result = lichLaunchChain.then(task, task)
+  lichLaunchChain = result.then(() => undefined, () => undefined)
+  return result
+}
+
 export class ConnectionManager extends EventEmitter {
   private lich = new LichConnection()
   private sge = new SGEConnection()
@@ -24,35 +41,66 @@ export class ConnectionManager extends EventEmitter {
   async connectViaLich(creds: LoginCredentials): Promise<void> {
     this.mode = 'lich'
 
-    this.emit('status', 'Launching Lich...')
-    const lichLaunchPromise = this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.lichDelay * 1000, creds.hideLichWindow)
+    // SGE auth is independent of Lich — start it now so it overlaps the time
+    // this character may spend waiting behind another character's Lich launch.
+    // The noop .catch marks the promise handled so a rejection while we're
+    // still queued isn't reported as unhandled; the task below still awaits
+    // (and re-throws) the real rejection.
+    const loginKeyPromise = this.authenticateSge(creds)
+    void loginKeyPromise.catch(() => { /* surfaced by the awaited task */ })
 
-    this.emit('status', 'Connecting to eaccess.play.net:7910...')
-    await this.sge.connect()
+    try {
+      await serializeLichLaunch(async () => {
+        // Resolve SGE auth first. If it failed (bad password, unknown
+        // character) we bail HERE — before spawning Lich — so a failed login
+        // never leaves an orphaned Lich process squatting the port.
+        const loginKey = await loginKeyPromise
 
-    this.emit('status', 'SGE connected — requesting encryption key...')
-    const characters = await this.sge.authenticate(creds.account, creds.password)
-    this.emit('status', `Got ${characters.length} character(s): ${characters.map(c => c.name).join(', ')}`)
+        this.emit('status', 'Launching Lich...')
+        await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.hideLichWindow)
 
-    const char = characters.find(
-      c => c.name.toLowerCase() === creds.character.toLowerCase()
-    )
-    if (!char) {
-      const names = characters.map(c => c.name).join(', ')
-      throw new Error(`Character "${creds.character}" not found. Available: ${names}`)
+        this.emit('status', `Waiting for Lich on localhost:${creds.lichPort}...`)
+        await this.lich.connectWithRetry(loginKey, creds.lichPort, {
+          // lichDelay is repurposed as a timeout floor — most users keep the
+          // default; a slow machine can raise it. Never below 30s.
+          maxWaitMs: Math.max(creds.lichDelay, 30) * 1000,
+          onProgress: (s) => this.emit('status', `Waiting for Lich to start... (${s}s)`),
+        })
+      })
+    } catch (err) {
+      // The connection failed — kill the Lich we spawned (if any) so it does
+      // not hold the front-end port against the next character in the queue.
+      this.lich.killProcess()
+      throw err
     }
 
-    this.emit('status', `Getting login key for ${char.name}...`)
-    const loginResult = await this.sge.getLoginKey(char.key)
-    this.emit('status', `Login key received. Game server: ${loginResult.gameHost}:${loginResult.gamePort}`)
-    this.sge.disconnect()
-
-    this.emit('status', 'Waiting for Lich to finish starting...')
-    await lichLaunchPromise
-
-    this.emit('status', `Connecting to Lich on localhost:${creds.lichPort}...`)
-    await this.lich.connect(loginResult.loginKey, creds.lichPort)
     this.emit('status', 'Connected via Lich')
+  }
+
+  // eaccess.play.net authentication — yields the per-character login key Lich
+  // needs for the Genie handshake. No Lich involvement, so it runs outside the
+  // launch queue (and overlaps the queue wait for later characters).
+  private async authenticateSge(creds: LoginCredentials): Promise<string> {
+    this.emit('status', 'Connecting to eaccess.play.net:7910...')
+    await this.sge.connect()
+    try {
+      this.emit('status', 'SGE connected — authenticating...')
+      const characters = await this.sge.authenticate(creds.account, creds.password)
+
+      const char = characters.find(
+        c => c.name.toLowerCase() === creds.character.toLowerCase()
+      )
+      if (!char) {
+        const names = characters.map(c => c.name).join(', ')
+        throw new Error(`Character "${creds.character}" not found. Available: ${names}`)
+      }
+
+      this.emit('status', `Getting login key for ${char.name}...`)
+      const loginResult = await this.sge.getLoginKey(char.key)
+      return loginResult.loginKey
+    } finally {
+      this.sge.disconnect()
+    }
   }
 
   async connectDirect(creds: LoginCredentials): Promise<void> {

@@ -22,7 +22,12 @@
   border-bottom: none;
   border-radius: 4px 4px 0 0;
   cursor: pointer;
-  color: var(--text-dim, #888);
+  /* Connected-but-inactive tabs read at near-full strength — a live character
+     is not "de-emphasized". The active tab is distinguished by its background,
+     border, and bold weight (see --active); only DISCONNECTED tabs dim, via
+     opacity + italic below. Using --text-dim here made an inactive connected
+     tab drift toward looking stale. */
+  color: var(--text-secondary, #c8c8c8);
   font-size: 0.85rem;
   user-select: none;
   white-space: nowrap;

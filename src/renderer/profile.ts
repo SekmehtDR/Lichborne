@@ -2,6 +2,7 @@ import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter } from './characterScope'
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
+import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -44,6 +45,7 @@ export function buildSharedProfile(): SharedProfile {
     genieMapsDir: localStorage.getItem('lichborne.genieMapsDir') ?? '',
     games:       DEFAULT_GAMES,
     myThemes:  loadMyThemes(),
+    sessionLog: loadSessionLogSettings(),
   }
 }
 
@@ -140,6 +142,12 @@ export async function importSharedProfile(): Promise<void> {
   if (data.mapDir)      localStorage.setItem('lichborne.mapDir',      data.mapDir)
   if (data.genieMapsDir) localStorage.setItem('lichborne.genieMapsDir', data.genieMapsDir)
   if (data.myThemes)    saveMyThemes(data.myThemes)
+
+  // Session Log settings — app-wide. Merge over defaults so a partial or
+  // absent block (older _shared.yaml) still yields a complete settings object.
+  if (data.sessionLog) {
+    saveSessionLogSettings({ ...DEFAULT_SESSION_LOG_SETTINGS, ...data.sessionLog })
+  }
 }
 
 export async function importCharacterProfile(character: string): Promise<CharacterProfile | null> {

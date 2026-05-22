@@ -43,6 +43,7 @@
 }
 
 .btn-debug,
+.btn-session-log,
 .btn-panel-manager,
 .btn-contacts,
 .btn-automations,
@@ -63,6 +64,7 @@
 }
 
 .btn-debug:hover,
+.btn-session-log:hover,
 .btn-panel-manager:hover,
 .btn-contacts:hover,
 .btn-automations:hover,
@@ -74,7 +76,8 @@
   color: var(--accent);
 }
 
-.btn-debug--active {
+.btn-debug--active,
+.btn-session-log--active {
   border-color: var(--link-color);
   color: color-mix(in srgb, var(--link-color) 60%, white);
   background: color-mix(in srgb, var(--link-color) 10%, transparent);

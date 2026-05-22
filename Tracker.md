@@ -81,6 +81,30 @@
 
 ---
 
+**B89 — Inactive character tab too dark ✅: the base `.character-tab` text color was `--text-dim` (the de-emphasized variable), so a connected-but-inactive tab read as dim and drifted toward looking like the disconnected state. Changed to `--text-secondary` (near-full strength) — three brightness tiers now: active (full + bold + bg + border), inactive-connected (near-full), disconnected (opacity 0.55 + italic). One-line CSS. Reported by the developer ✅**
+
+**v0.7.0 — Map performance, automapper & Lich-connection pass ✅**
+
+A polish stream driven by tester profiling and bug reports, alongside the Session Log work (same unreleased v0.7.0).
+
+- **Genie map performance during travel (B86).** DevTools traces during cross-map runs showed the rendering pipeline (Layerize / Paint / Recalculate Style) eating 50–80% of the frame budget — the per-room animated effects, hundreds of CSS-animated SVG elements. Three fixes: (1) **effects are omitted, not paused** while travelling/panning/off — pausing via `animation-play-state` left every element layer-promoted, so the effect groups now simply aren't mounted unless `showEffects` (`mapAnimations && !isDragging && !inMotion`); they re-mount `MOTION_QUIET_MS` (600ms) after the player stops; (2) **viewport culling** — the effect memos iterate `nearbyNodes` (rooms inside the current pan/zoom, `EFFECT_CAP` 30 backstop) instead of every colored room in the zone — idle-in-the-Crossing Recalculate Style was ~29%; (3) **hover suppressed during motion** (`inMotionRef`) — the map scrolling under a stationary cursor was firing a pointer-event storm. Healer heartbeats are a **priority effect** — always rendered zone-wide and exempt from the travel freeze (finding a healer matters; they're rare/cheap). Player-housing rooms lost their hearth-glow flicker (noise — housing is everywhere). Vite `build.sourcemap` enabled so production profiler traces resolve real names.
+- **Automapper loses the player while running (B87).** Same-titled rooms (the Crossing has 7 "Moonstone Street" rooms) couldn't be disambiguated while running — the game streams room titles with no fresh description per step, so `currentLocation` fell back to file order (`pool[0]`) and the marker stuck until a `look`. Added **graph-adjacency disambiguation**: when the title is ambiguous and the description doesn't resolve it, prefer the candidate joined by a Genie arc to the previously-resolved room (`prevLocRef`). Resolution order: description → adjacency → file order.
+- **Inactive character's map camera strands off-screen (B88).** An inactive tab's GameWindow is `display:none`, so its map SVG measures 0×0 — the follow camera can't track, the transform goes stale (or, via an unguarded `centerOnCurrent`, garbage). Tab back and the camera is pointing rooms away. Fix: guarded `centerOnCurrent` against 0 dimensions; a `ResizeObserver` on the SVG recenters on the player when the map regains a layout box (tab shown, or a real panel resize). New CLAUDE.md pitfall #24: hidden ≠ unmounted, but hidden = unmeasurable.
+- **Lich launch & connect rework (B85).** Replaced the fixed `lichDelay` timer (a guess that "sometimes failed") with **connect-with-retry** — `LichConnection.connectWithRetry()` retries the real connection (250ms cadence, ≥30s cap) until Lich's front-end port accepts; the first success is the session socket, no throwaway probes. `launch()` resolves on the child's `spawn` event and watches `exit`/stderr so a Lich that dies on startup fails fast with a real message. Multi-character logins **serialize** their spawn→connect window (`serializeLichLaunch` module-level chain) — one Lich serves one front-end then closes its listener (verified in Lich's `main.rb`), so concurrent characters reusing port 11024 no longer race or cross-wire. A failed launch kills its Lich so it can't squat the port. SGE/eaccess auth runs outside the queue (overlaps the wait) and resolves before the spawn (a bad password no longer orphans a Lich).
+
+**v0.7.0 — Session Log (Release E2) ✅**
+
+The last remaining Release E2 deliverable. Lichborne now writes clean per-character daily log files and surfaces them through a small in-client modal. Built to the locked spec in DESIGN.md §28.
+
+- **Capture pipeline** — `GameWindow.onGameEvent` captures every non-state event (stream text, command echoes, connect/disconnect notices) into per-character buffered writers in the main process ([sessionLog.ts](src/main/sessionLog.ts)). Files at `{userData}/Logs/{Character}/{Character}_YYYY-MM-DD.log`, format `[HH:MM:SS][stream] text`. Buffered 1s / 100-record flush; force-flush at 5000; flushed on graceful close alongside the YAML backup. Room sub-streams, `raw`, and blank lines are skipped (state, not history).
+- **Capture config — app-wide, in `_shared.yaml`** — all Session Log preferences (capture gates, retention, compression, raw-size cap, the Recent-tail filter, the Export format prefs) live in one `SessionLogSettings` object ([sessionLogSettings.ts](src/renderer/sessionLogSettings.ts)) stored in `_shared.yaml` via `SharedProfile.sessionLog`. Logging is configured once for every character. `GameWindow.logToSession` reads it fresh per batch (`loadSessionLogSettings()`); the SettingsPanel section and the Logs modal each read-modify-write the shared object so neither clobbers the other's fields. (Initially built as per-character `AppSettings` fields, then moved to shared — logging is a global behavior, not a per-character one.)
+- **Size management** — three levers, after a tester measured ~6 MB/hour: (1) trimmed the on-disk line format — dropped the redundant per-line date and milliseconds (~15-20% smaller, parsers still accept the legacy dated form); (2) gzip-compress closed (non-today) day-files to `.log.gz` via background `maintain()` (~85-90% smaller), readers gunzip transparently; (3) dual retention — age-based `pruneOldLogs` plus `enforceRawSizeCap`, a cap on *uncompressed* `.log` bytes only (never archives, never today's file). Settings gains a Compress toggle, a raw-size cap input, and a live disk-usage readout (`session-log:disk-usage`). Net ~7-8× smaller 30-day footprint.
+- **Session Log modal** — new "Logs" toolbar button opens [SessionLogModal.tsx](src/renderer/components/SessionLogModal.tsx) with three views. *Recent Tail*: day picker, paginated 200-line tail with anchored "load older", stream multi-select checkboxes (discovered by scanning the day-file), Everything/Combat/Social/Quiet presets, dedup toggle. *Quick Search*: substring/regex match across a Today / 7-day / 30-day / custom window, result list grouped by date, click-to-jump that re-centers Recent Tail on the hit line. *Export*: see below.
+- **Export builder ("Create Log File")** — pick a date range (multi-day), pick stream layers, choose format (include timestamps / stream tags / dedup / summary header / one-file-per-stream), then Copy to Clipboard or Save File. All reading/filtering/formatting/writing runs in main (`session-log:build-export`) — only the `SessionLogExportSpec` and a small result cross IPC, so a 30-day export never serializes line data to the renderer.
+- **Show in Log** — right-click any game line → "Show in Log" opens the modal straight into Quick Search pre-filled with that line's text.
+- New IPC: `session-log:list-streams` (single day or a date range), `session-log:build-export`, `session-log:disk-usage`; `session-log:search` now returns `lineNo`/`total` for jump-to-tail.
+- Build + tsc clean across both projects.
+
 **B54 — Mono-mode lines don't wrap ✅: `<output class="mono"/>` blocks (health output, `>exp`, `>info`) applied `white-space: pre` in `TextLineRow` — `pre` suppresses wrapping entirely so long wound-list lines ran off the right edge of the panel. Fix: changed to `white-space: pre-wrap` — column spacing and leading whitespace are preserved while lines still wrap at the panel boundary. Reported by Legiro ✅**
 
 **v0.6.12 — Scroll-pin fix + story-window smooth scroll removed ✅**
@@ -387,12 +411,12 @@ _Login redesign + scroll-key/pin bug pass — complete reshape of the connect ex
 - [ ] Spell slot display filters to circles relevant to the connected character's guild
 - [ ] Room panel shows guild-specific NPC tag styling
 
-#### Session Log
-- [ ] Structured session log — captures game text, script echo, and Lichborne system messages as tagged records
-- [ ] Filter by: stream, time range, source type (game / script / system)
-- [ ] Export as plain text or JSON
-- [ ] Rolling persistence: last N sessions saved to disk in the data folder
-- [ ] Session boundaries: new session on connect; labeled with character name and timestamp
+#### Session Log — shipped v0.7.0 ✅
+- [x] Structured session log — captures game text, stream content, command echoes, and Lichborne system messages as tagged records
+- [x] Filter by stream (multi-select + presets), time range (Quick Search), with dedup
+- [x] Export current filtered slice as plain text (`.txt`); JSON deferred per §28.10
+- [x] Rolling persistence: per-character daily files with configurable retention pruner
+- [x] Session boundaries inferred from `[sys] Connected`/`Disconnected` markers within each daily file
 
 See the **Lich-Primary Roadmap** section below for broader roadmap context.
 **B52 — boldDepth stuck after unescaped `<` in Lich script output ✅: `<pushBold/>60 < 65<popBold/>` — the tokenizer's `<[^>]*>` consumes ` 65<popBold/>` as one malformed tag, swallowing popBold and leaving boldDepth=1 for the rest of the session (all text bold/yellow). Fix 1: `boldDepth = 0` added to the prompt handler — prompts are frame boundaries, bold cannot survive one. Fix 2: `parser.reset()` called in the `CH.LOGIN` IPC handler so stuck state doesn't bleed into a new session after disconnect/reconnect ✅**

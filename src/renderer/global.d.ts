@@ -1,7 +1,8 @@
 import type {
   LoginCredentials, LoginResult, SessionId,
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
-  LichScriptsUpdatePayload,
+  LichScriptsUpdatePayload, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
+  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
 } from '../shared/types'
 
 declare global {
@@ -76,6 +77,18 @@ declare global {
       writeCharacterProfile: (character: string, data: unknown) => Promise<void>
       listCharacterProfiles: () => Promise<string[]>
       deleteCharacterProfile: (character: string) => Promise<void>
+      // Session Log
+      sessionLogAppend: (payload: SessionLogAppendPayload) => void
+      sessionLogFlush: (character: string) => void
+      sessionLogListDays: (character: string) => Promise<SessionLogDay[]>
+      sessionLogReadDay: (character: string, date: string, tailLines: number, beforeLine: number)
+        => Promise<{ lines: string[]; totalLines: number }>
+      sessionLogSearch: (character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string })
+        => Promise<SessionLogSearchHit[]>
+      sessionLogListStreams: (character: string, fromDate: string, toDate?: string) => Promise<string[]>
+      sessionLogBuildExport: (character: string, spec: SessionLogExportSpec) => Promise<SessionLogExportResult>
+      sessionLogDiskUsage: (character: string) => Promise<SessionLogDiskUsage>
+      sessionLogOpenFolder: (character: string) => void
     }
   }
 }

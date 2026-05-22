@@ -1339,6 +1339,8 @@ Lower-priority conditions are still active in-game, just not surfaced on the tab
 
 **Width stability:** the icon slot has fixed `1.5em` centered width and the health % has fixed `4ch` right-aligned width with `tabular-nums`. Toggling the icon (or transitioning between e.g. `100%` → `9%`) never shifts the tab — only the character name varies width across tabs.
 
+**Brightness tiers (v0.7.0, B89):** three intentional levels. The **active** tab — full-bright text (`--text`), bold, with a `--bg-base` background + border. An **inactive but connected** tab — near-full text (`--text-secondary`), normal weight, no background. A **disconnected** tab — `opacity: 0.55` + italic. The middle tier originally used `--text-dim`, which made a healthy connected character drift toward looking stale; only a genuinely disconnected tab should read as faded. The active tab is distinguished by its background/border/weight, not by dimming its neighbours.
+
 ### 13.6 Adding Characters
 
 Clicking `+` drops a compact character launcher:
@@ -2846,6 +2848,8 @@ Lookup tries exact-case first, falls back to normalized. Without the normalized 
 
 `roomDesc` is plumbed through `MapPanel` → `GenieMapView`. Without it, a same-title cluster collapses to the first candidate.
 
+**Graph-adjacency tiebreaker (v0.7.0).** The description tiebreaker fails *while running* — the game streams room titles with no fresh `<description>` per step, so an ambiguous title fell back to file order (`pool[0]`), stranding the marker on the wrong same-named room until a `look` (B87). `currentLocation` now has a third disambiguation step: when title is ambiguous and description doesn't resolve it, prefer the candidate joined by a Genie arc to the previously-resolved room (`prevLocRef`, a ref advanced one step behind by an effect, only on a non-null match). You walked here from there, so you are in one of its neighbours. **Resolution order: description → graph adjacency → file order.**
+
 #### 19.16.5 Cross-Zone Stubs
 
 Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `note="MapXX_Name.xml"` pointing to the other zone's XML file.
@@ -2859,6 +2863,8 @@ Stubs are boundary rooms duplicated in adjacent zones. The "stub" version has `n
 `followPlayer: boolean` state, default ON. The follow-the-player effect (`useLayoutEffect`) re-centers the viewport on the current room every time the location changes. Manual pan/zoom turns follow OFF automatically (so the map doesn't fight the user); the `◆` button turns it back ON and recenters.
 
 **Gating on `followNode`, not raw equality checks.** The follow effect derives `followNode = followPlayer && currentLocation.zone.id === currentZoneId ? visibleById.get(currentLocation.node.id) : undefined` — the *same* `visibleById` lookup the current-room indicator uses. Earlier the effect ran its own zone/level equality checks, which could diverge from the indicator's gate by one render (marker visible, camera bailed). Sharing the lookup guarantees "marker visible" ⇔ "camera following." The effect also schedules a one-frame `requestAnimationFrame` retry if `svg.clientWidth` reads 0 mid-layout.
+
+**Inactive-tab handling (v0.7.0).** An inactive character's GameWindow is `display:none`, so its map SVG measures **0×0** — `clientWidth`/`clientHeight` read 0. The character keeps travelling in the background (events still process), but the follow effect can't compute a transform, so the camera goes **stale**; tab back and the player is off the side, camera in a corner (B88). Two parts: (1) every layout-reading camera path (`followNode` effect, `centerOnCurrent`, `fitToView`) **bails on `!w||!h`** so it never writes a garbage transform from a 0 viewport; (2) a `ResizeObserver` on the SVG recenters on the player when the box transitions 0→non-zero (tab shown again) — and on genuine panel resizes, when following. The follow effect alone can't cover this: it only fires on a *move*, and the player may have stopped while the tab was hidden. **The observer is wired in the SVG callback ref (`setSvgRef`), not a mount-time `useEffect`** — the SVG mounts only after the Genie-loading early-return clears, so an effect would see a null ref and never attach (the B58 trap; the wheel handler is wired the same way for the same reason). General rule for multi-character map code: hidden ≠ unmounted, but hidden = unmeasurable.
 
 **Why `useLayoutEffect` not `useEffect`:** the transform update must land in the same paint frame as the indicator's new world position. With plain `useEffect`, the indicator paints one frame at its new world coord with the OLD camera, then re-renders next frame with the new camera. `useLayoutEffect` runs after the render commit but before paint, so the second render lands synchronously.
 
@@ -3064,6 +3070,13 @@ Why: Chrome DevTools profiling showed Layerize ~33% + Recalculate Style ~22% + P
 
 **Why class-based, not pointer-events.** Earlier attempts toggled `pointer-events: none` on the pan group during drag for hit-test savings, but that shifts the click-target off the inner node `<g>` (mousedown sets `isDragging` true *before* `click` fires), silently breaking click-to-walk. The animation-pause class doesn't have this hazard because it only affects animation execution, not event routing.
 
+**Omit, don't pause — and cap to the viewport (v0.7.0).** The pause classes above were not enough (B86): `animation-play-state: paused` stops an animation *advancing* but leaves the element layer-promoted, and traces during travel still showed Layerize ~21% from that residual layer churn. Two structural changes:
+
+- **Effects are omitted from the DOM, not paused.** The 10 animated effect groups (sparkles, heartbeats, coin glints, ripples, bubbles, caution/implode rings, leaf/dirt falls, XP rises) render only when `showEffects = mapAnimations && !isDragging && !inMotion`. While travelling/panning/off they are *not mounted* — no elements, no layers, no Layerize/Paint/Recalculate Style. They re-mount once the player has been still for `MOTION_QUIET_MS` (lowered 800 → **600ms**: long enough to ride through a sub-600ms running cadence without re-mount churn, short enough to feel responsive on stop; the mount is cheap now that the set is viewport-capped).
+- **Viewport culling.** The effect memos iterate `nearbyNodes` — the rooms inside the current pan/zoom rectangle, with `EFFECT_CAP` (30) as a backstop for zoomed-far-out views — instead of every COLOR_LEGEND room in the zone. Idle-in-the-Crossing was ~29% Recalculate Style with all ~150 colored rooms animating; capping to what's on screen bounds it regardless of zone density. `nearbyNodes` returns the stable `EMPTY_NODES` ref while effects are off, so the effect memos don't even recompute during travel.
+
+The `genie-pan-dragging` / `genie-anim-off` classes still exist — they now cover only what *stays* rendered: the sonar ping and the static/fire auras. **Healer heartbeats are a priority effect** — rendered zone-wide (full `visibleNodes`), outside the `showEffects` gate, and CSS-exempt from the travel freeze (`.genie-pan-dragging .genie-heartbeat` stays running), so a healer is always findable; healers are rare, so always-on is cheap. Node **hover is suppressed during motion** (`onNodeHoverEnter` checks `inMotionRef`) — the map scrolling under a stationary cursor otherwise fires a pointer enter/leave storm.
+
 **Parse cache.** Initial Genie parse takes several seconds for a 122-XML folder. `genie-cache:load` / `genie-cache:save` IPC handlers (defined in `main.ts`) serialize the parsed `Map<zoneId, GenieZone>` to `userData/genie-cache.json` and verify a fingerprint (sorted `filename:mtimeMs:size` segments joined with `|`) on subsequent loads. If the fingerprint matches: skip the file-read loop entirely, `JSON.parse` the cache, hand the renderer a ready zones map in ~50ms.
 
 Invalidation triggers:
@@ -3077,8 +3090,10 @@ The cache file is single-blob JSON (~2-5 MB depending on folder size); loaded as
 
 Aura is a 1.125× translucent rect behind every COLOR_LEGEND room. Two variants:
 
-- **`AURA_INTENSIFIED_COLORS`** (Guildleader, Housing) — opacity 0.28 instead of 0.15 (`auraScale` stays at 1.125×)
+- **`AURA_INTENSIFIED_COLORS`** (Guildleader) — opacity 0.28 instead of 0.15 (`auraScale` stays at 1.125×)
 - **`AURA_FIRE_COLORS`** (Interesting Room) — opacity is owned by `@keyframes genie-aura-fire` (irregular flicker between 0.15 and 0.55), AND `auraScale` jumps to 1.3× so the larger diffuse area lets the flicker read as firelight rather than a tight color band
+
+Player Housing (`#00FFFF`) was in `AURA_FIRE_COLORS` (hearth-glow flicker) through v0.6.x; **removed v0.7.0** — housing rooms are everywhere, so a flicker on each was visual noise. It now takes the plain default aura, like Ranger Trailhead (`#C2B280`), which was always plain. Auras are static (no per-frame cost) so they are NOT viewport-culled — they render zone-wide as the colour key.
 
 When an animated aura class is applied, the `opacity` SVG attribute is omitted (`undefined`) so CSS owns opacity unambiguously — having both an attribute and a CSS animation on the same property creates browser-inconsistency.
 
@@ -3697,6 +3712,11 @@ Lich5 exposes `lib/common/reusable_tcp_server.rb` — a TCP server for richer bi
 | Command echo | No | ✅ Yes | Keep |
 | Graceful disconnect | No | ✅ Yes | Keep |
 | Display profiles (YAML) | Script YAML (separate concern) | ✅ Yes | Keep — these are different systems |
+
+**Lich launch & connect (reworked v0.7.0, B85).** `LichConnection.launch()` spawns `ruby lich.rbw --stormfront --dragonrealms` as a **detached** child (not a service). With those flags Lich takes its force-mode path (`main.rb`): bind `127.0.0.1:11024`, then `accept` **exactly one** front-end and `close` the listener — one Lich process = one game session. The original code waited a fixed `lichDelay` (5s) timer then made a single connect attempt — fragile, since Lich's startup time is variable (Ruby init, ~40 `require`s, the listener bind which itself retries). Replaced with:
+
+- **`connectWithRetry()`** — retries the real connection (250ms cadence, ≥30s cap) until the port accepts. The first success IS the session socket; no throwaway probe sockets (Lich's listener takes one front-end then closes — a connect-then-disconnect probe could confuse it). `launch()` resolves on the child's `spawn` event and watches `exit`/stderr, so a Lich that dies on startup fails fast with a real message instead of a vague timeout.
+- **Serialized launch queue** — `serializeLichLaunch()`, a module-level promise chain shared across every per-session `ConnectionManager`. Because each Lich serves one front-end then frees port 11024, multiple characters reuse the port *sequentially*; the chain keeps only one character in the spawn→connect window at a time, so concurrent logins never race the bind or cross-wire under Windows `SO_REUSEADDR`. SGE/eaccess auth runs *outside* the chain (overlaps the wait) and resolves *before* the spawn, so a failed login never orphans a Lich. A failed launch `killProcess()`es its Lich so it can't squat the port.
 
 #### The Gray Zone — Keep Thin, Freeze Scope
 
@@ -4750,8 +4770,10 @@ Each rule row in the sidebar gets a drag handle. Drag-to-reorder controls which 
 
 ## 28. Session Log — Release E2
 
-> **Target version:** v0.6.x (the only remaining Release E2 deliverable after Sessions/multi-character shipped as E1 in v0.6.0)
+> **Target version:** v0.7.0 (the only remaining Release E2 deliverable after Sessions/multi-character shipped as E1 in v0.6.0)
 > **Theme:** Lichborne writes clean per-character daily log files in plain text that players review in their own tools. The in-client UI is small and tactical — for "what just happened?" and "when did X occur?" — not a megabyte-scale log browser.
+>
+> **Status: shipped v0.7.0.** As-built notes inline below. The trimmed line format, gzip compression of closed day-files, the dual retention limits (`retentionDays` + `maxRawMB`), and the Settings disk-usage readout are all built — see §28.3. The trigger/highlight-fire capture toggle and a bulk "Delete all my logs" button were deferred (§28.10). §28.4.4 "Show in Log" shipped as a Quick-Search pre-fill rather than a timestamp-centered Recent Tail jump (no game-line→file-line mapping exists; searching the line text is exact and robust).
 
 ### 28.1 What it does
 
@@ -4780,32 +4802,36 @@ Per-stream capture toggles live in Settings, per-character, so a player who only
 ```
 {userData}/Logs/
   Sekmeht/
-    Sekmeht_2026-05-15.log     ← today, being appended
-    Sekmeht_2026-05-14.log
-    Sekmeht_2026-05-13.log
+    Sekmeht_2026-05-15.log     ← today, being appended (plain text)
+    Sekmeht_2026-05-14.log.gz  ← closed days, gzip-compressed
+    Sekmeht_2026-05-13.log.gz
   Agan/
     Agan_2026-05-15.log
 ```
 
 One file per character per day. Character-prefixed filename so logs are identifiable when moved or shared. Sessions inferred from `[sys] Connected` / `Disconnected` markers within the file — multiple sessions per day collapse into one daily file.
 
-**Format — plain text with `[timestamp][stream] text` prefix:**
+**Format — plain text, `[HH:MM:SS][stream] text` per line (as built v0.7.0):**
 ```
-[2026-05-15 18:32:04.123][sys]         Connected
-[2026-05-15 18:32:05.012][cmd]         >look
-[2026-05-15 18:32:05.221][main]        [The Crossing, Town Square]
-[2026-05-15 18:32:42.180][combat]      The troll swings at you and connects!
-[2026-05-15 18:32:42.245][LichScripts] T2: Pausing — combat detected.
-[2026-05-15 19:14:33.000][sys]         Disconnected
+[18:32:04][sys]         Connected
+[18:32:05][cmd]         >look
+[18:32:05][main]        [The Crossing, Town Square]
+[18:32:42][combat]      The troll swings at you and connects!
+[18:32:42][LichScripts] T2: Pausing — combat detected.
+[19:14:33][sys]         Disconnected
 ```
 
-Plain text — double-click opens in Notepad. No compression by default (toggle in settings for disk-conscious users). Greppable: `rg '\[combat\]' Sekmeht_2026-05-15.log` filters by stream from the shell, same as the in-client modal does.
+The line carries only the **clock** — the date is already in the filename, and milliseconds weren't earning their ~4 bytes/line. (The original spec wrote a full `[YYYY-MM-DD HH:MM:SS.mmm]` stamp on every line; trimming it cut ~15 bytes/line, ~15-20%, for free. All parsers still accept the old dated format so pre-v0.7.0 logs keep working.) Plain text — double-click opens in Notepad.
 
 **Format rationale:** considered JSONL (more structured) and per-stream files (one file per stream per day) — both rejected. JSONL costs ~50% more disk and isn't human-eyeball-readable. Per-stream files explode file count and complicate the multi-stream "layered view" use case. Single file with stream tags is the best balance of greppability + filterability + size.
 
-**Retention:** 30 days default, configurable per-character. Disk-conscious users can enable compression on logs older than 7 days (saves ~80-90% via gzip on game text).
+**Compression (as built v0.7.0):** closed (non-today) day-files are gzip-compressed to `.log.gz` — ~85-90% smaller on repetitive game text. Today's file stays plain text (it's being appended to, and it's the one most likely to be grepped directly). Compression runs as background maintenance (streamed, off the main thread) at session start and on day-rollover; it's a per-character setting, **on by default**. The in-client viewer/search/export decompress `.log.gz` transparently; shell users grep old files with `rg -z`.
 
-**Disk reality:** active DR combat sessions can hit 25-30 MB per 8-hour day. Uncompressed, default capture = ~900 MB per character per 30 days. With compression on older logs: ~200 MB per character. A 3-character boxer = 600 MB - 2.7 GB depending on settings — comfortable for modern disks.
+**Retention — two independent limits, both per-character (as built v0.7.0):**
+- **`retentionDays`** (default 30) — delete day-files (compressed or not) older than N days. 0 = keep forever.
+- **`maxRawMB`** (default 500) — a hard cap on the *uncompressed* `.log` footprint. Counts and prunes only raw `.log` files, never `.log.gz` archives, and never today's live file; oldest-first. With compression on this is effectively dormant (the only raw file is today's); with compression off it is the real bound on the folder. 0 = no cap. Archives are governed solely by `retentionDays`.
+
+**Disk reality:** active DR combat is ~6 MB/hour → ~40-48 MB per 8-hour day uncompressed. With the format trim + compression on, a 30-day footprint is roughly today's file (~40 MB) + 29 archived days (~5 MB each) ≈ **~185 MB per character** — about 7-8× smaller than the uncompressed ~1.4 GB. A disk-usage readout in Settings surfaces the live number.
 
 ### 28.4 In-client UI
 
@@ -4871,38 +4897,43 @@ Single button. Opens `Logs/{character}/` in the OS file manager. Player uses VSC
 
 Right-click any line in the main game text → context menu adds **"Show in Log"** → opens Recent Tail centered on that timestamp. Players can scroll back from a moment in the game window straight to its context in the log.
 
-### 28.5 Export
+### 28.5 Export — "Create Log File" builder (as built v0.7.0)
 
-`.txt` only for v1. Dumps the currently-filtered view (current stream selection, current time range, current dedup setting) via the standard save dialog. Preserves the `[timestamp][stream] text` format. JSON / other formats deferred unless a tester requests it.
+A dedicated third view in the modal, not a one-shot dump. The user picks:
+
+- **Date range** — start/end date pickers (can span multiple days) + Today / 7-day / 30-day quick buttons.
+- **Stream layers** — checkboxes for every stream found in the range, plus the Everything / Combat / Social / Quiet presets.
+- **Format** — independent checkboxes: *include timestamps*, *include stream tags* (both off by default → clean transcript), *collapse duplicate lines* (dedup), *add summary header* (a `#` comment block with per-stream line counts), *one file per stream* (split).
+- **Target** — **Copy to Clipboard** (always combined) or **Save File** (a single `.txt`, or a folder of per-stream `.txt` files when split is on).
+
+All filtering/formatting/writing happens in main (`session-log:build-export`); only the `SessionLogExportSpec` and a small `SessionLogExportResult` cross IPC, so a 30-day export never serializes its line data to the renderer. `.txt` only for v1; JSON deferred unless a tester asks.
+
+The earlier plan — "dump the current Recent view via one save dialog" — was replaced: a builder that re-queries a range is more useful and matches the user's intended workflow (turn stream layers on/off, pick a window, produce a clean readable file).
 
 ### 28.6 Settings (per-character)
 
+As built v0.7.0:
 ```
 ┌─ Settings — Session Log ─────────────────────────┐
-│ Capture:                                          │
-│   [✓] Game text (main)         ~80% of volume     │
-│   [✓] Stream content (thoughts, deaths, ...)      │
-│   [✓] Script echo                                 │
-│   [✓] System messages                             │
-│   [ ] Trigger / highlight fires  (debug only)     │
-│                                                   │
-│ Retention:  Keep logs for [30  ] days             │
-│ Storage:    [☐] Compress logs older than 7 days   │
-│                                                   │
-│ Disk usage: 142 MB across 8 days (Sekmeht)        │
-│ [Open Logs Folder]   [Delete all my logs…]        │
+│ [✓] Enable session logging                        │
+│   [✓] Game text          [✓] Stream content       │
+│   [✓] Commands           [✓] System messages      │
+│   [✓] Compress old logs                           │
+│   Keep logs for          [ 30 ] days              │
+│   Cap uncompressed logs  [500 ] MB                │
+│   Disk usage   ·  8 days        12.4 MB · 4.1 MB compressed │
+│   Log files              [ Open Logs Folder ]     │
 └───────────────────────────────────────────────────┘
 ```
 
-All per-character — lives in the existing profile YAML state map via `scopedKey(character, ...)`.
+**App-wide, not per-character** (changed v0.7.0) — a single `SessionLogSettings` object ([sessionLogSettings.ts](src/renderer/sessionLogSettings.ts)) stored in `_shared.yaml` via `SharedProfile.sessionLog`. The SettingsPanel section and the Logs modal both read-modify-write that shared object (the modal owns the filter + export-format prefs, the panel owns capture/retention/storage), so configuring logging once applies it to every character. The "Trigger / highlight fires" capture category from the original mockup was dropped (§28.10); compression, the raw-size cap, and the disk-usage readout were added.
 
 ### 28.7 Multi-character semantics
 
-- Each character writes independently to its own folder — no cross-tab contention
-- Filter state, dedup preference, capture toggles all per-character
-- Window close: log buffer flush is added to the existing `window.__flushProfileSaves` handler so it runs alongside YAML save + `.bak` backup
-- Tab close mid-session: graceful flush + `[sys] Disconnected` marker appended before destroy
-- Modal is per-tab (opened from each GameWindow's toolbar) — shows only that character's logs
+- Each character writes independently to its own `Logs/{Character}/` folder — no cross-tab contention; the log *files* are per-character
+- **Configuration is app-wide, not per-character** (changed v0.7.0). All Session Log preferences — capture gates, retention/compression/size cap, the Recent-tail filter, the Export format prefs — are one `SessionLogSettings` object in `_shared.yaml` (`SharedProfile.sessionLog`). Logging is configured once and applies to every character. (The original spec had these per-character; consolidating to shared matched how players actually think about logging — a single global behavior.)
+- Window close: log buffer flush runs alongside the YAML save + `.bak` backup
+- Modal is per-tab (opened from each GameWindow's toolbar) — shows only that character's log files, but the filter/format preferences it edits are the shared ones
 
 ### 28.8 Performance
 
@@ -4913,9 +4944,9 @@ All per-character — lives in the existing profile YAML state map via `scopedKe
 
 ### 28.9 Capture pipeline
 
-Intercepts at the same point as the trigger engine and highlight engine — `GameWindow.onGameEvent` handler. The handler already iterates every event in the batch; logging adds one line per event-type. Per-character because we're inside the per-tab `GameWindow` already.
+Intercepts at the same point as the trigger engine and highlight engine — `GameWindow.onGameEvent` handler. The handler already iterates every event in the batch; logging adds one line per event-type. Capture is per-tab (each `GameWindow` logs its own character's events) but the capture *config* is the app-wide `SessionLogSettings` — `logToSession` reads it fresh per batch via `loadSessionLogSettings()` (a tiny localStorage read), so a Settings change applies to every open character immediately with no cross-component wiring.
 
-For events the user has opted out of (e.g. trigger/highlight fires), the capture check is a single bit-flag lookup against the per-character capture-config — zero cost when off.
+For a category the user has opted out of, the capture check is a single boolean lookup against that config — effectively zero cost when off.
 
 ### 28.10 What's explicitly deferred
 
@@ -4924,6 +4955,10 @@ For events the user has opted out of (e.g. trigger/highlight fires), the capture
 - **Manifest files** (per-day metadata sidecar for sub-100ms modal opens) — scan is fast enough; add only if perf demands
 - **Per-stream files** — single file with stream tags is simpler and fits the layered-view model
 - **Cross-character search** — search is per-character (the modal lives in a per-tab context). Could be added later as a separate global-search modal if requested
+- **Trigger / highlight-fire capture** (was the 5th capture category in §28.2 / §28.6) — not built in v0.7.0. The Debug Fires tab already covers it; revisit if a tester wants it persisted. As built there are four capture categories: game text (`main`), stream content, commands (`cmd`), system (`sys`)
+- **"Delete all my logs" button** (§28.6 mockup) — not built. The Settings section ships the capture toggles, retention input, compression toggle, raw-size cap, a disk-usage readout, and an Open Logs Folder button; the bulk-delete button was dropped (retention + the size cap already bound growth, and Open Logs Folder lets a user delete manually)
+
+> **Built after the original deferral:** log compression and the Settings disk-usage readout were both deferred in the first v0.7.0 cut, then built later in the same release after a tester measured ~6 MB/hour. See §28.3 for the compression + dual-retention design.
 
 ### 28.11 Implementation effort estimate
 

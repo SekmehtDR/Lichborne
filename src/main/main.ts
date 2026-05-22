@@ -8,6 +8,7 @@ import { SGEConnection } from './connection/SGEConnection'
 import { StormFrontParser } from './parser/StormFrontParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
+import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type {
@@ -136,6 +137,10 @@ function destroySession(id: SessionId) {
 // read a shared SQLite file and are session-agnostic.
 registerLichSqliteHandlers()
 
+// Register Session Log IPC handlers (append / flush / list / read / search /
+// open-folder). The writer buffers per-character and flushes to per-day files.
+registerSessionLogHandlers()
+
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow() {
@@ -182,7 +187,7 @@ function createWindow() {
     const flushAndBackup = mainWindow?.webContents
       .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
       .catch((err: unknown) => console.error('[shutdown] flush failed', err))
-      .finally(() => backupAllProfiles())
+      .finally(() => { backupAllProfiles(); flushAllSessionLogs() })
 
     const drain = active.length > 0
       ? Promise.all(active.map(s => s.connection.gracefulDisconnect()))

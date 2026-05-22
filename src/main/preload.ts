@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, LoginResult, SessionId,
+  SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
+  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
 } from '../shared/types'
 
 const CH = {
@@ -170,4 +172,23 @@ contextBridge.exposeInMainWorld('api', {
   writeCharacterProfile:(character: string, data: unknown):       Promise<void>           => ipcRenderer.invoke('profile:write-character', character, data),
   listCharacterProfiles:():                                        Promise<string[]>       => ipcRenderer.invoke('profile:list'),
   deleteCharacterProfile:(character: string):                      Promise<void>           => ipcRenderer.invoke('profile:delete-character', character),
+
+  // ── Session Log ─────────────────────────────────────────────────────────────
+  sessionLogAppend:   (payload: SessionLogAppendPayload): void => ipcRenderer.send('session-log:append', payload),
+  sessionLogFlush:    (character: string):                void => ipcRenderer.send('session-log:flush', character),
+  sessionLogListDays: (character: string): Promise<SessionLogDay[]> =>
+    ipcRenderer.invoke('session-log:list-days', character),
+  sessionLogReadDay:  (character: string, date: string, tailLines: number, beforeLine: number):
+    Promise<{ lines: string[]; totalLines: number }> =>
+    ipcRenderer.invoke('session-log:read-day', character, date, tailLines, beforeLine),
+  sessionLogSearch:   (character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string }):
+    Promise<SessionLogSearchHit[]> =>
+    ipcRenderer.invoke('session-log:search', character, query, opts),
+  sessionLogListStreams: (character: string, fromDate: string, toDate?: string): Promise<string[]> =>
+    ipcRenderer.invoke('session-log:list-streams', character, fromDate, toDate),
+  sessionLogBuildExport: (character: string, spec: SessionLogExportSpec): Promise<SessionLogExportResult> =>
+    ipcRenderer.invoke('session-log:build-export', character, spec),
+  sessionLogDiskUsage: (character: string): Promise<SessionLogDiskUsage> =>
+    ipcRenderer.invoke('session-log:disk-usage', character),
+  sessionLogOpenFolder: (character: string): void => ipcRenderer.send('session-log:open-folder', character),
 })

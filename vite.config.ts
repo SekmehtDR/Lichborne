@@ -15,6 +15,10 @@ export default defineConfig({
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
+    // Source maps — lets the DevTools performance profiler resolve minified
+    // names (Lx, Pu, kj…) back to real functions. Temporary debugging aid;
+    // revert to false before release if bundle/.map size is a concern.
+    sourcemap: true,
     rollupOptions: {
       output: {
         // Avoid crossorigin attribute which breaks Electron file:// loading

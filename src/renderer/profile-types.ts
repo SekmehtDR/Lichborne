@@ -1,4 +1,5 @@
 import type { CustomTheme } from './myThemes'
+import type { SessionLogSettings } from './sessionLogSettings'
 
 // ── Shared (_shared.yaml) ─────────────────────────────────────────────────────
 
@@ -28,6 +29,9 @@ export interface SharedProfile {
   genieMapsDir: string
   games: Record<string, GameDefinition>
   myThemes: CustomTheme[]
+  // Session Log preferences — app-wide, not per-character. Optional so a
+  // pre-v0.7.0 _shared.yaml without it still imports (defaults fill in).
+  sessionLog?: SessionLogSettings
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

@@ -202,7 +202,6 @@ const AURA_FIRE_COLORS = new Set<string>([
             //                     larger aura (auraScale = 1.3× vs the
             //                     default 1.125×) so the flicker has
             //                     more diffuse area to glow through.
-  '#00FFFF', // Player Housing — hearth-glow flicker ("home fires").
 ])
 // Categories that get a stronger static aura without animation. The
 // extra weight just reads as "this room matters" without competing
@@ -210,8 +209,23 @@ const AURA_FIRE_COLORS = new Set<string>([
 const AURA_INTENSIFIED_COLORS = new Set<string>([
   '#FF8000', // Guildleader — formal, strong steady glow
 ])
-// Sand (#C2B280, Ranger Trailhead) is intentionally absent from every
-// modifier set — stays plain aura as the deliberate quiet marker.
+// Player Housing (#00FFFF, aqua) and Ranger Trailhead (#C2B280, sand) are
+// intentionally absent from every modifier set — they keep the plain default
+// aura. Housing rooms are everywhere, so a flicker on each was visual noise.
+
+// Stable empty-node array — the `nearbyNodes` memo returns this exact ref when
+// effects are off so the downstream effect memos see an unchanged dep and skip
+// recomputation entirely.
+const EMPTY_NODES: GenieNode[] = []
+
+// Backstop cap on how many rooms animate at once. A dense zone (the Crossing)
+// has 100+ colored rooms; animating every one is ~hundreds of SVG elements all
+// forcing Recalculate Style every frame (profiling: ~29% of frame budget idle
+// in town). Effects are normally viewport-culled (see `nearbyNodes`); this cap
+// only bites when the player is zoomed far enough out that more than this many
+// rooms are on screen at once — at which point the effects are tiny specks
+// anyway, so showing the EFFECT_CAP nearest the viewport centre is plenty.
+const EFFECT_CAP = 30
 
 // ── BFS over Genie arcs within a zone ──────────────────────────────────────
 // Returns a list of `move` commands from `fromId` to `toId`, or [] if no
@@ -320,6 +334,9 @@ export default function GenieMapView({
   // motion frees that budget for React reconciliation + camera follow.
   const [inMotion, setInMotion] = useState(false)
   const motionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Mirror of `inMotion` for the stable (empty-dep) hover callbacks — they
+  // must not re-create on every motion toggle or `nodeRects` would rebuild.
+  const inMotionRef = useRef(false)
   const svgRef    = useRef<SVGSVGElement | null>(null)
   const dragRef   = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
   const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -424,6 +441,12 @@ export default function GenieMapView({
   // as a tiebreaker — Genie's own findRoom helper in mapTypes.ts does
   // the same. Prefer non-stub matches in either case so cross-zone
   // marker nodes never win.
+  //
+  // `prevLocRef` holds the last resolved location so an ambiguous title can be
+  // disambiguated by graph adjacency (see the bottom of the memo). Updated by
+  // an effect below — inside the memo it always reads the PREVIOUS render's
+  // value, which is exactly the room the player just walked from.
+  const prevLocRef = useRef<{ zone: GenieZone; node: GenieNode } | null>(null)
   const currentLocation = useMemo(() => {
     if (!roomTitle) return null
     const target = roomTitle.trim()
@@ -457,8 +480,32 @@ export default function GenieMapView({
       const exact = pool.find(c => c.node.descriptions.some(d => normalizeDesc(d) === nd))
       if (exact) return exact
     }
+    // Graph-adjacency disambiguation. When the title is ambiguous (the
+    // Crossing has 7 rooms titled "Moonstone Street") and the description
+    // didn't resolve it — the norm while RUNNING, since the game streams room
+    // titles without a fresh description on each step — prefer the candidate
+    // joined by a Genie arc to the room we were last in. You walked here from
+    // there, so the room you're in now must be a neighbour of it. Without this
+    // the matcher fell back to file order (`pool[0]`) and the marker stuck on
+    // the wrong same-named room until the player typed `look`.
+    const prev = prevLocRef.current
+    if (prev) {
+      const adj = pool.find(c =>
+        c.zone === prev.zone && (
+          prev.node.arcs.some(a => a.destination === c.node.id) ||
+          c.node.arcs.some(a => a.destination === prev.node.id)
+        ))
+      if (adj) return adj
+    }
     return pool[0]
   }, [titleLookup, roomTitle, roomDesc])
+
+  // Keep `prevLocRef` one step behind `currentLocation` for the adjacency
+  // disambiguation above. Only advance it on a real (non-null) match so a
+  // transient unmatched title doesn't wipe the breadcrumb.
+  useEffect(() => {
+    if (currentLocation) prevLocRef.current = currentLocation
+  }, [currentLocation])
 
   // Auto-switch displayed zone ONLY when `currentLocation` itself changes —
   // i.e., the player walked. We deliberately do NOT depend on currentZoneId
@@ -482,22 +529,27 @@ export default function GenieMapView({
     setCurrentLevel(currentLocation.node.z)
   }, [currentLocation])
 
-  // Motion-detect: pause animations while the player is actively
-  // walking. Resets a quiet-window timer on every walk; if no new walk
-  // arrives within MOTION_QUIET_MS, animations resume. Eliminates the
-  // per-frame Recalculate Style / Layerize cost of dozens of
-  // concurrently-animating elements during sustained travel — the user
-  // isn't stationary long enough to appreciate the animations during a
-  // cross-map run anyway.
+  // Motion-detect: while the player is travelling, `inMotion` is true and the
+  // animated per-category effects are not rendered at all (see `showEffects`).
+  // Resets a quiet-window timer on every room change; effects re-mount only
+  // once no new room has arrived for MOTION_QUIET_MS.
+  //
+  // 600ms: long enough to ride through a sub-600ms running cadence (effects
+  // stay off for the whole run, no per-step mount/unmount churn), short enough
+  // that effects feel responsive when the player actually stops. Now that the
+  // effect set is viewport-culled + capped (see `nearbyNodes`) the re-mount is
+  // cheap, so the window can be tighter than the original 1.5s without the
+  // tear-up/tear-down cost — and healers animate continuously regardless, so
+  // the map is never fully "dead" mid-run.
   //
   // `prevLocationForMotionRef` skips the FIRST currentLocation transition
   // (null → non-null on game connect or first valid match). Without this
-  // sentinel, the user's animations would pause for 800ms the instant
+  // sentinel, the effects would drop out for MOTION_QUIET_MS the instant
   // they connect, even though no walking has occurred. Real walks all
   // have a non-null prev value; the only time prev is null is the very
   // first arrival (or post-disconnect re-arrival, which is functionally
   // the same as a fresh connect).
-  const MOTION_QUIET_MS = 800
+  const MOTION_QUIET_MS = 600
   const prevLocationForMotionRef = useRef<typeof currentLocation>(null)
   useEffect(() => {
     const prev = prevLocationForMotionRef.current
@@ -506,9 +558,16 @@ export default function GenieMapView({
     if (!prev) return                       // first non-null = connect, not a walk
     if (prev === currentLocation) return    // no actual change
     setInMotion(true)
+    inMotionRef.current = true
+    // Drop any stale hover the moment travel begins — the map is about to
+    // scroll out from under the cursor, and we suppress hover updates while
+    // in motion (see onNodeHoverEnter), so a lingering hover would stick.
+    setHoveredId(null)
+    setTooltipPos(null)
     if (motionTimerRef.current) clearTimeout(motionTimerRef.current)
     motionTimerRef.current = setTimeout(() => {
       setInMotion(false)
+      inMotionRef.current = false
       motionTimerRef.current = null
     }, MOTION_QUIET_MS)
   }, [currentLocation])
@@ -624,14 +683,20 @@ export default function GenieMapView({
     }
     const svg = svgRef.current
     if (!svg) return
+    // Bail if the SVG has no layout box — an inactive character's GameWindow
+    // is display:none, so clientWidth/Height read 0. Centering against 0 would
+    // write a garbage transform (x = -cx*scale) that strands the camera in a
+    // corner once the tab is shown again.
+    const w = svg.clientWidth, h = svg.clientHeight
+    if (!w || !h) return
     // The XML position IS the rect center (rects are anchored at
     // `pos − radius`), so center the viewport on the XML coord directly.
     const cx = currentLocation.node.x
     const cy = currentLocation.node.y
     setTransform(prev => ({
       ...prev,
-      x: svg.clientWidth  / 2 - cx * prev.scale,
-      y: svg.clientHeight / 2 - cy * prev.scale,
+      x: w / 2 - cx * prev.scale,
+      y: h / 2 - cy * prev.scale,
     }))
   }, [currentLocation, currentZoneId, currentLevel])
 
@@ -694,6 +759,34 @@ export default function GenieMapView({
     return () => { if (raf) cancelAnimationFrame(raf) }
   }, [followNode])
 
+  // Recenter on the player when the map regains a layout box. While a
+  // character's tab is inactive its GameWindow is display:none, so the SVG
+  // measures 0×0 and the follow camera above can't track — the transform goes
+  // stale as the character travels in the background. The follow effect only
+  // re-fires on a move, so tabbing back to a character that walked while
+  // hidden would otherwise leave the camera rooms away. A ResizeObserver on
+  // the SVG (wired in `setSvgRef` below — NOT a mount-time effect, because the
+  // SVG mounts late, after the Genie-loading early-return clears; cf. B58)
+  // catches the 0→size transition when the tab is shown and re-centers.
+  // `recenterRef` carries the current closure so `setSvgRef` stays `[]`-stable.
+  const recenterOnPlayer = () => {
+    const svg = svgRef.current
+    if (!svg) return
+    const w = svg.clientWidth, h = svg.clientHeight
+    if (!w || !h) return
+    if (!followPlayer || !currentLocation || currentLocation.zone.id !== currentZoneId) return
+    const node = visibleById.get(currentLocation.node.id)
+    if (!node) return
+    setTransform(prev => {
+      const nx = w / 2 - node.x * prev.scale
+      const ny = h / 2 - node.y * prev.scale
+      if (nx === prev.x && ny === prev.y) return prev
+      return { ...prev, x: nx, y: ny }
+    })
+  }
+  const recenterRef = useRef(recenterOnPlayer)
+  recenterRef.current = recenterOnPlayer
+
   // ── Pan / zoom ─────────────────────────────────────────────────────────
   //
   // Wheel must be attached as NON-passive so we can preventDefault and stop
@@ -703,8 +796,12 @@ export default function GenieMapView({
   // to wire the listener manually with { passive: false }.
   const setSvgRef = useCallback((el: SVGSVGElement | null) => {
     const prev = svgRef.current
-    if (prev && (prev as any).__wheelHandler) {
-      prev.removeEventListener('wheel', (prev as any).__wheelHandler)
+    if (prev) {
+      if ((prev as any).__wheelHandler) {
+        prev.removeEventListener('wheel', (prev as any).__wheelHandler)
+      }
+      const prevRo = (prev as any).__resizeObserver as ResizeObserver | undefined
+      if (prevRo) prevRo.disconnect()
     }
     svgRef.current = el
     if (!el) return
@@ -725,6 +822,17 @@ export default function GenieMapView({
     }
     ;(el as any).__wheelHandler = handler
     el.addEventListener('wheel', handler, { passive: false })
+
+    // ResizeObserver — recenters the camera when the map regains a layout box
+    // (the inactive tab being shown again, or a real panel resize). Wired here,
+    // on the element callback ref, because the SVG mounts after GenieMapView's
+    // Genie-loading early-return — a mount-time `useEffect` would see a null
+    // ref and never attach. A 0×0 callback is the tab being hidden; ignore it.
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth > 0 && el.clientHeight > 0) recenterRef.current()
+    })
+    ro.observe(el)
+    ;(el as any).__resizeObserver = ro
   }, [])
 
   const onMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
@@ -876,7 +984,11 @@ export default function GenieMapView({
   // isDragging before click fires, so the click target would shift off
   // the node). Gate at the React layer instead.
   const onNodeHoverEnter = useCallback((node: GenieNode, e: React.MouseEvent) => {
-    if (dragRef.current) return
+    // Skip hover work while panning OR travelling — during travel the map
+    // scrolls under a stationary cursor, firing a storm of enter/leave events
+    // (the `pointerout` cost in profiling); processing them just churns
+    // re-renders for hover state the player isn't actually driving.
+    if (dragRef.current || inMotionRef.current) return
     const svg = svgRef.current
     if (!svg) return
     const rect = svg.getBoundingClientRect()
@@ -1081,6 +1193,49 @@ export default function GenieMapView({
     [visibleNodes, isStubNode]
   )
 
+  // Whether the animated per-category effects render at all. False while
+  // panning, travelling, or with map animations off — when false the effects
+  // are not mounted (no DOM, no compositor layers, no Layerize/Paint/Recalc
+  // Style). They re-mount once the player has been still for MOTION_QUIET_MS.
+  const showEffects = mapAnimations && !isDragging && !inMotion
+
+  // The node set the animated effects iterate. When effects are off it's the
+  // stable EMPTY_NODES ref, so the effect memos below skip recomputation
+  // entirely during travel. When on, it's the rooms inside the current
+  // viewport — what actually animates tracks the current pan + zoom, so a
+  // zoomed-in view animates only the handful of rooms on screen and panning
+  // moves the live region with the eye. EFFECT_CAP is a backstop for
+  // zoomed-way-out views (keeps the count bounded regardless of zone density).
+  //
+  // svgRef dimensions are read imperatively (not a dep) — `transform` already
+  // changes on every camera move and on the resize-driven re-fit, so the memo
+  // re-runs whenever the viewport could have changed.
+  const nearbyNodes = useMemo<GenieNode[]>(() => {
+    if (!showEffects || visibleNodes.length === 0) return EMPTY_NODES
+    const svg = svgRef.current
+    const W = svg?.clientWidth ?? 0
+    const H = svg?.clientHeight ?? 0
+    if (W <= 0 || H <= 0) {
+      // SVG not laid out yet — fall back to a plain cap.
+      return visibleNodes.length <= EFFECT_CAP ? visibleNodes : visibleNodes.slice(0, EFFECT_CAP)
+    }
+    const { x: tx, y: ty, scale } = transform
+    const M = 48   // screen-px margin so effects just off-edge still count
+    const inView = visibleNodes.filter(n => {
+      const sx = n.x * scale + tx
+      const sy = n.y * scale + ty
+      return sx >= -M && sx <= W + M && sy >= -M && sy <= H + M
+    })
+    if (inView.length <= EFFECT_CAP) return inView
+    // Zoomed far out — keep the EFFECT_CAP nearest the viewport centre.
+    const cx = (W / 2 - tx) / scale
+    const cy = (H / 2 - ty) / scale
+    return inView
+      .sort((p, q) =>
+        ((p.x - cx) ** 2 + (p.y - cy) ** 2) - ((q.x - cx) ** 2 + (q.y - cy) ** 2))
+      .slice(0, EFFECT_CAP)
+  }, [showEffects, visibleNodes, transform])
+
   // Aura layer — soft translucent square behind every COLOR_LEGEND-tagged
   // room. One element per colored node, rendered BEFORE arcs so arc lines
   // paint over auras (auras shouldn't compete visually with structural
@@ -1147,7 +1302,7 @@ export default function GenieMapView({
   // differ in motion, not in look.
   const sparkles = useMemo(() => {
     const out: React.ReactNode[] = []
-    for (const n of visibleNodes) {
+    for (const n of nearbyNodes) {
       if (!n.color) continue
       const effect = MOTE_EFFECTS[n.color]
       if (!effect) continue
@@ -1221,14 +1376,14 @@ export default function GenieMapView({
       }
     }
     return out
-  }, [visibleNodes])
+  }, [nearbyNodes])
 
   // Caution ring — Obstacle (amber). Stroke around the rect with slow
   // on/off opacity blink, like a warning beacon. Same structure as the
   // healer heartbeat ring, different rhythm (square wave instead of
   // ECG double-beat).
   const cautionRings = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && CAUTION_COLORS.has(n.color))
       .map(n => (
         <rect
@@ -1245,14 +1400,14 @@ export default function GenieMapView({
           pointerEvents="none"
         />
       ))
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Implode — Depart (eggplant). Two staggered rings start large and
   // shrink inward while fading. Opposite direction from water ripples,
   // so the room's energy reads as "collapsing inward" — somber finality
   // appropriate for a Depart Room.
   const implodes = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && IMPLODE_COLORS.has(n.color))
       .flatMap(n => [
         <circle
@@ -1276,7 +1431,7 @@ export default function GenieMapView({
           pointerEvents="none"
         />,
       ])
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // XP rise — Guildleader (orange). Two small gold particles rise
   // from the bottom edge of the rect upward past the top, fading at
@@ -1289,7 +1444,7 @@ export default function GenieMapView({
   // rather than from inside the rect, consistent visual language for
   // every "particles per room" effect.
   const xpRises = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && XP_RISE_COLORS.has(n.color))
       .flatMap(n => [
         <circle
@@ -1307,7 +1462,7 @@ export default function GenieMapView({
           pointerEvents="none"
         />,
       ])
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Leaf fall — Lumberjacking (green). Three small green dots start
   // at the bottom edge of the rect and drift downward past it,
@@ -1317,7 +1472,7 @@ export default function GenieMapView({
   // Particle colors vary slightly across the three to suggest
   // mixed foliage.
   const leafFalls = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && LEAF_FALL_COLORS.has(n.color))
       .flatMap(n => [
         <circle key={`leaf-${n.id}-0`} className="genie-leaf-fall"
@@ -1330,7 +1485,7 @@ export default function GenieMapView({
           cx={n.x + 2} cy={n.y + 4} r={0.55}
           fill="#4a8020" pointerEvents="none" />,
       ])
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Dirt fall — Mining (sienna) + Ranger Trailhead (sand). Brown
   // particles fall straight down (no wobble — dirt has weight) at a
@@ -1338,7 +1493,7 @@ export default function GenieMapView({
   // brown for Mining (broken stone / ore), lighter tan for Trailhead
   // (trail dust). Three staggered particles per node.
   const dirtFalls = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && DIRT_FALL_COLORS.has(n.color))
       .flatMap(n => {
         const c = dirtParticleColor(n.color!)
@@ -1354,7 +1509,7 @@ export default function GenieMapView({
             fill={c} pointerEvents="none" />,
         ]
       })
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Heartbeat ring for Auto-Healer (mint). A single rect wrapping the
   // node, fill=none with an animated-opacity stroke in the room's mint
@@ -1362,6 +1517,12 @@ export default function GenieMapView({
   // double-beat rhythm — two close peaks then a longer rest. Sits just
   // outside the node's own 1px border so the heartbeat reads as a
   // pulse-ring rather than a fill change.
+  //
+  // PRIORITY effect: healers iterate the full `visibleNodes` (not the
+  // viewport-culled `nearbyNodes`) and render outside the `showEffects` gate,
+  // so a healer pulses everywhere in the zone and keeps pulsing during travel.
+  // Healers are rare (a handful per zone) so always-on is cheap, and finding
+  // one fast matters. Still respects the `mapAnimations` master switch.
   const heartbeats = useMemo(() => (
     visibleNodes
       .filter(n => n.color && HEARTBEAT_COLORS.has(n.color))
@@ -1390,7 +1551,7 @@ export default function GenieMapView({
   // catching gold — commerce signal that contrasts with the rect's
   // red fill instead of competing with it.
   const coinGlints = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && COIN_GLINT_COLORS.has(n.color))
       .map(n => (
         <rect
@@ -1408,7 +1569,7 @@ export default function GenieMapView({
           pointerEvents="none"
         />
       ))
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Water ripples — Water (blue) rooms. Three concentric circles
   // centered on the node, each scaled outward by CSS `transform: scale`
@@ -1421,7 +1582,7 @@ export default function GenieMapView({
   // reads against both the blue rect and the dark map background as
   // the ring grows past the rect edge.
   const ripples = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && RIPPLE_COLORS.has(n.color))
       .flatMap(n => [
         <circle
@@ -1455,7 +1616,7 @@ export default function GenieMapView({
           pointerEvents="none"
         />,
       ])
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Bubbles — Underwater (navy) rooms. Two small circles per node start
   // near the bottom of the rect, rise upward past the top edge, and pop
@@ -1465,7 +1626,7 @@ export default function GenieMapView({
   // motion endpoint with the "pop") so underwater feels like a different
   // category from the magical 4.
   const bubbles = useMemo(() => (
-    visibleNodes
+    nearbyNodes
       .filter(n => n.color && BUBBLE_COLORS.has(n.color))
       .flatMap(n => [
         <circle
@@ -1483,7 +1644,7 @@ export default function GenieMapView({
           pointerEvents="none"
         />,
       ])
-  ), [visibleNodes])
+  ), [nearbyNodes])
 
   // Static-per-zone node rectangles. Critically: this memo's dep array
   // does NOT include `currentNodeId` or `selectedId`. Those used to
@@ -2009,44 +2170,31 @@ export default function GenieMapView({
                 perceptible; inside clusters it answers "which room does
                 this arc actually connect to?" */}
             {arcPathsOver}
-            {/* Sparkle motes — animated upward-drifting dots for the
-                "magical" tier (transport, shrine, favor altar, stat
-                training). Drawn after arcs-over so the motes paint on
-                top of the map content, but before the indicators so the
-                "you are here" halo and selection outline still win. */}
-            {sparkles}
-            {/* Heartbeat ring — mint-colored stroke pulses on each Auto-
-                Healer room in a lub-dub rhythm. Same layer as sparkles. */}
-            {heartbeats}
-            {/* Coin glint — gold dash slides around each Shop room's
-                perimeter. Reinforces "commerce" without changing the
-                rect's primary red fill. */}
-            {coinGlints}
-            {/* Water ripples — concentric blue rings expand outward
-                from Water rooms. Staggered delays produce a continuous
-                wave. */}
-            {ripples}
-            {/* Bubbles — cyan dots rise upward and pop on Underwater
-                rooms. Distinct from sparkles so navy reads as "danger:
-                drowning" rather than "magical." */}
-            {bubbles}
-            {/* Caution rings — slow-blink warning beacon on Obstacle
-                rooms (amber). Reads as "this room costs you roundtime." */}
-            {cautionRings}
-            {/* Implode rings — shrink-inward halo on Depart rooms
-                (eggplant). Opposite direction from ripples; somber
-                "finality" motif. */}
-            {implodes}
-            {/* Leaf falls — green leaves wafting downward from below
-                Lumberjacking rooms. */}
-            {leafFalls}
-            {/* Dirt falls — brown particles falling straight down
-                from below Mining (dark brown) and Ranger Trailhead
-                (sandy tan) rooms. */}
-            {dirtFalls}
-            {/* XP rises — gold particles rise upward from Guildleader
-                (orange) rooms. "Level up here" — XP-gain metaphor. */}
-            {xpRises}
+            {/* Healer heartbeats — PRIORITY effect: rendered whenever map
+                animations are on at all (even mid-travel), zone-wide, so a
+                healer is always findable. Cheap (healers are rare). */}
+            {mapAnimations && heartbeats}
+            {/* Animated per-category effects — sparkles, coin glints, ripples,
+                bubbles, caution/implode rings, leaf/dirt falls, XP rises. Each
+                animates `transform`/`opacity`, so each is its own compositor
+                layer. Mounted ONLY when `showEffects` (animations on, not
+                panning, not travelling) — during travel they're omitted
+                entirely so there are no layers to churn. They re-mount once
+                the player has been still for MOTION_QUIET_MS, and the set is
+                viewport-culled (see `nearbyNodes`). */}
+            {showEffects && (
+              <>
+                {sparkles}
+                {coinGlints}
+                {ripples}
+                {bubbles}
+                {cautionRings}
+                {implodes}
+                {leafFalls}
+                {dirtFalls}
+                {xpRises}
+              </>
+            )}
             {/* Hover path preview — bright line tracing the BFS route from
                 the player to the hovered room. Sits above the arc layers
                 so it visually wins over them, but below the indicators so

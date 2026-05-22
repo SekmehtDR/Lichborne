@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry } from '../../shared/types'
+import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
 import { TextLineRow } from './TextLineRow'
 import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
@@ -20,6 +20,7 @@ import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES,
 import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
+import SessionLogModal from './SessionLogModal'
 import ContextMenu from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
 import AutomationsPanel from './AutomationsPanel'
@@ -29,6 +30,7 @@ import { useGroups } from './GroupsContext'
 import { isRuleActive } from '../groups'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
+import { loadSessionLogSettings } from '../sessionLogSettings'
 import { THEMES, applyTheme, applyCustomTheme } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
 import { scopedKey } from '../characterScope'
@@ -314,6 +316,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [showSettings,    setShowSettings]      = useState(false)
   const [showContacts,    setShowContacts]      = useState(false)
+  const [showSessionLog,  setShowSessionLog]    = useState(false)
+  const [sessionLogSearch, setSessionLogSearch] = useState<string | null>(null)
+  // Bumped on every open so the modal remounts fresh — picks up a new
+  // "Show in Log" search even when the modal is already on screen.
+  const [sessionLogKey,   setSessionLogKey]     = useState(0)
   const [showAutomations,   setShowAutomations]   = useState(false)
   const [showLichDash,      setShowLichDash]      = useState(false)
   const [lichDashTab,       setLichDashTab]       = useState<DashTab>('scripts')
@@ -352,6 +359,31 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   const contactsRef   = useRef(contacts)
   const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
+
+  // Append captured records to this character's session log on disk, filtered
+  // by the Session Log config. That config is app-wide (sessionLogSettings.ts /
+  // _shared.yaml), so it's read fresh per batch — no stale-closure ref needed,
+  // and a change in Settings takes effect immediately for every open character.
+  // session.character is stable for this GameWindow's life.
+  function logToSession(records: SessionLogRecord[]) {
+    if (records.length === 0) return
+    const s = loadSessionLogSettings()
+    if (!s.enabled) return
+    const kept = records.filter(r => {
+      if (r.stream === 'cmd')  return s.captureCommands
+      if (r.stream === 'sys')  return s.captureSystem
+      if (r.stream === 'main') return s.captureMain
+      return s.captureStreams
+    })
+    if (kept.length === 0) return
+    window.api.sessionLogAppend({
+      character: session.character,
+      records: kept,
+      retentionDays: s.retentionDays,
+      compress: s.compress,
+      maxRawMB: s.maxRawMB,
+    })
+  }
 
   // Room-state pump — queues room updates and applies one per
   // animation frame so back-to-back IPC batches (fast running through
@@ -551,8 +583,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => {
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
       showSettings || showContacts || showAutomations || showMapOverlay ||
-      showLichDash
-  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations])
+      showLichDash || showSessionLog
+  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showSessionLog])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
   const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
@@ -727,6 +759,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       let newCt: number | null = null
       let newStance: string | null = null
       let newSpell: string | null = null
+      const logRecords: SessionLogRecord[] = []
 
       for (const evt of events) {
         switch (evt.type) {
@@ -735,6 +768,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             const stream = rawStream
             const lineText = segments.map(s => s.text).join('')
             const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}) })
+            // Session-log capture — skip room sub-streams (current state, not
+            // history) and `raw`/blank lines. One record per non-empty line.
+            if (stream !== 'raw' && !ROOM_STREAMS.has(stream) && lineText.trim()) {
+              logRecords.push({ ts: Date.now(), stream, text: lineText })
+            }
             if (/^--- Map loaded .+\.json$/i.test(lineText.trim())) setLichMapVersion(v => v + 1)
             if (stream === 'main') {
               if (!isExpReadout(segments)) newMain.push(mkLine())
@@ -973,17 +1011,24 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         if (debugEventsBufRef.current.length > MAX_DEBUG_EVENTS) debugEventsBufRef.current.splice(0, debugEventsBufRef.current.length - MAX_DEBUG_EVENTS)
         setDebugEvents([...debugEventsBufRef.current])
       }
+
+      // One session-log append per event batch — keeps IPC chatter low.
+      logToSession(logRecords)
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
       if (s.sessionId !== sessionIdRef.current) return
       setStatus(s.message)
+      if (s.connected && s.message === 'Connected') {
+        logToSession([{ ts: Date.now(), stream: 'sys', text: 'Connected' }])
+      }
       if (s.message === 'Disconnecting...') {
         setDisconnecting(true)
       }
       if (!s.connected && s.message === 'Disconnected') {
         setDropped(true)
         setStatus(s.clean ? 'Disconnected' : 'Connection lost')
+        logToSession([{ ts: Date.now(), stream: 'sys', text: s.clean ? 'Disconnected' : 'Connection lost' }])
         // We deliberately do NOT auto-open the debug panel on dirty
         // disconnect. The previous behaviour opened it on any non-clean
         // drop, which intruded on the common cases: Lich scripts that
@@ -1232,6 +1277,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const echoCmd = (cmd: string) => {
       setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
       window.api.sendCommand(session.sessionId,cmd)
+      logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${cmd}` }])
     }
     if (delayMs > 0) {
       commands.forEach((cmd, i) => {
@@ -1268,6 +1314,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     } else {
       setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
       window.api.sendCommand(session.sessionId,command)
+      logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${command}` }])
     }
     setCommand('')
   }
@@ -1388,6 +1435,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         <span className="toolbar-title"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
         <span className={`toolbar-status${dropped ? ' toolbar-status--disconnected' : ''}`}>{status}</span>
         <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
+        <button className={`btn-session-log${showSessionLog ? ' btn-session-log--active' : ''}`} onClick={() => { if (showSessionLog) { setShowSessionLog(false) } else { setSessionLogSearch(null); setSessionLogKey(k => k + 1); setShowSessionLog(true) } }}>Logs</button>
         <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
         <button className={`btn-map${showMapOverlay ? ' btn-map--active' : ''}`} onClick={() => setShowMapOverlay(v => !v)}>Maps</button>
         <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
@@ -1548,8 +1596,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           ...(mainCtxMenu.word ? [{ label: `Trigger for "${mainCtxMenu.word}"`, onClick: () => openTriggerEditor(mainCtxMenu.word!) }] : []),
           ...(mainCtxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => openTriggerEditor(mainCtxMenu.lineText!) }] : []),
         ]
+        const logGroup = mainCtxMenu.lineText
+          ? [{ label: 'Show in Log', onClick: () => { setSessionLogSearch(mainCtxMenu.lineText!); setSessionLogKey(k => k + 1); setShowSessionLog(true) } }]
+          : []
         const clGroup = [{ label: 'Clear', onClick: clearLines }]
-        const groups = [hlGroup, trGroup, clGroup].filter(g => g.length > 0)
+        const groups = [hlGroup, trGroup, logGroup, clGroup].filter(g => g.length > 0)
         const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
         return (
           <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)} items={items} />
@@ -1599,8 +1650,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       {showSettings && (
         <SettingsPanel
           settings={settings}
+          character={session.character}
           onChange={s => { setSettings(s); saveSettings(session.character, s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showSessionLog && (
+        <SessionLogModal
+          key={sessionLogKey}
+          character={session.character}
+          initialSearch={sessionLogSearch}
+          onClose={() => setShowSessionLog(false)}
         />
       )}
 

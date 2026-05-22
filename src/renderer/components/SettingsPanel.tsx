@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import type { SessionLogDiskUsage } from '../../shared/types'
 import { FONT_FAMILIES, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import { type AdvancedSettings, loadAdvanced, saveAdvanced } from '../lichSettings'
+import { type SessionLogSettings, loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
 import { exportSharedProfile } from '../profile'
 import LichSetupFields from './LichSetupFields'
 import '../styles/settings.css'
@@ -21,6 +23,13 @@ const LEGACY_KEYS: Record<string, string> = {
   serif:     'Georgia',
 }
 
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
 const PREVIEW_LINES = [
   { text: '[The Crossing, Town Square]',           cls: 'sp-preview-roomname' },
   { text: 'A bustling square at the heart of the city.' },
@@ -31,6 +40,7 @@ const PREVIEW_LINES = [
 
 interface Props {
   settings: AppSettings
+  character: string                 // owning character — for "Open Logs Folder"
   onChange: (s: AppSettings) => void
   onClose: () => void
 }
@@ -76,7 +86,7 @@ function RadioGroup<T extends string>({ label, value, options, onChange }: {
   )
 }
 
-export default function SettingsPanel({ settings, onChange, onClose }: Props) {
+export default function SettingsPanel({ settings, character, onChange, onClose }: Props) {
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const [monoFonts,   setMonoFonts]   = useState<Set<string>>(new Set())
   const [fontQuery,   setFontQuery]   = useState('')
@@ -97,6 +107,42 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
   }
+
+  // ── Session Log settings (app-wide — _shared.yaml, not per-character) ────
+  // Same flow as the `adv` block above: working copy in localStorage, debounced
+  // exportSharedProfile keeps _shared.yaml current. The save is a read-modify-
+  // write of only the capture/retention fields this panel owns, so it can't
+  // clobber the filter / export prefs the Logs modal owns (relevant only if
+  // both modals are open at once).
+  const [logCfg, setLogCfg] = useState<SessionLogSettings>(loadSessionLogSettings)
+  useEffect(() => {
+    saveSessionLogSettings({
+      ...loadSessionLogSettings(),
+      enabled:         logCfg.enabled,
+      captureMain:     logCfg.captureMain,
+      captureStreams:  logCfg.captureStreams,
+      captureCommands: logCfg.captureCommands,
+      captureSystem:   logCfg.captureSystem,
+      retentionDays:   logCfg.retentionDays,
+      compress:        logCfg.compress,
+      maxRawMB:        logCfg.maxRawMB,
+    })
+    const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
+    return () => clearTimeout(t)
+  }, [logCfg])
+  function setLog<K extends keyof SessionLogSettings>(key: K, value: SessionLogSettings[K]) {
+    setLogCfg(c => ({ ...c, [key]: value }))
+  }
+
+  // ── Session Log disk usage ──────────────────────────────────────────────
+  const [logUsage, setLogUsage] = useState<SessionLogDiskUsage | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    window.api.sessionLogDiskUsage(character)
+      .then(u => { if (!cancelled) setLogUsage(u) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [character])
 
   // Migrate legacy preset key → font name on first open
   useEffect(() => {
@@ -310,6 +356,127 @@ export default function SettingsPanel({ settings, onChange, onClose }: Props) {
               { value: 'bar',   label: 'Bar',   description: 'Classic draining strip that shrinks with remaining time' },
             ]}
           />
+
+          <div className="sp-divider" />
+
+          {/* ── Session Log ─────────────────────────────────────── */}
+          {/* App-wide settings — shared across all characters (_shared.yaml). */}
+          <div className="sp-section-label">Session Log</div>
+
+          <Toggle
+            label="Enable session logging"
+            description="Write game text to dated log files on disk. Applies to every character. Logs stay on your computer and are never sent anywhere."
+            checked={logCfg.enabled}
+            onChange={v => setLog('enabled', v)}
+          />
+
+          {logCfg.enabled && (
+            <div className="sp-sublist">
+              <Toggle
+                label="Game text"
+                description="The main game window — room text, speech, combat narration"
+                checked={logCfg.captureMain}
+                onChange={v => setLog('captureMain', v)}
+              />
+              <Toggle
+                label="Stream content"
+                description="Thoughts, combat, death, and any script-driven streams (LichScripts, etc.)"
+                checked={logCfg.captureStreams}
+                onChange={v => setLog('captureStreams', v)}
+              />
+              <Toggle
+                label="Commands"
+                description="Echo of the commands you type, prefixed with >"
+                checked={logCfg.captureCommands}
+                onChange={v => setLog('captureCommands', v)}
+              />
+              <Toggle
+                label="System messages"
+                description="Connect / disconnect notices"
+                checked={logCfg.captureSystem}
+                onChange={v => setLog('captureSystem', v)}
+              />
+
+              <Toggle
+                label="Compress old logs"
+                description="Gzip yesterday-and-older day-files — about 85% smaller. Today's log stays plain text; the in-client viewer reads compressed logs transparently."
+                checked={logCfg.compress}
+                onChange={v => setLog('compress', v)}
+              />
+
+              <div className="sp-field-row">
+                <label className="sp-field-label" htmlFor="sp-log-retention">
+                  Keep logs for <span className="sp-field-hint">(0 = forever)</span>
+                </label>
+                <div className="sp-number-row">
+                  <button
+                    className="sp-num-btn"
+                    onClick={() => setLog('retentionDays', Math.max(0, logCfg.retentionDays - 1))}
+                  >−</button>
+                  <input
+                    id="sp-log-retention"
+                    type="number" min={0} max={3650} step={1}
+                    value={logCfg.retentionDays}
+                    onChange={e => setLog('retentionDays', Math.max(0, Math.min(3650, parseInt(e.target.value) || 0)))}
+                    className="sp-number-input"
+                  />
+                  <span className="sp-number-unit">days</span>
+                  <button
+                    className="sp-num-btn"
+                    onClick={() => setLog('retentionDays', Math.min(3650, logCfg.retentionDays + 1))}
+                  >+</button>
+                </div>
+              </div>
+
+              <div className="sp-field-row">
+                <label className="sp-field-label" htmlFor="sp-log-maxraw">
+                  Cap uncompressed logs <span className="sp-field-hint">(0 = no cap)</span>
+                </label>
+                <div className="sp-number-row">
+                  <button
+                    className="sp-num-btn"
+                    onClick={() => setLog('maxRawMB', Math.max(0, logCfg.maxRawMB - 50))}
+                  >−</button>
+                  <input
+                    id="sp-log-maxraw"
+                    type="number" min={0} max={100000} step={50}
+                    value={logCfg.maxRawMB}
+                    onChange={e => setLog('maxRawMB', Math.max(0, Math.min(100000, parseInt(e.target.value) || 0)))}
+                    className="sp-number-input"
+                  />
+                  <span className="sp-number-unit">MB</span>
+                  <button
+                    className="sp-num-btn"
+                    onClick={() => setLog('maxRawMB', Math.min(100000, logCfg.maxRawMB + 50))}
+                  >+</button>
+                </div>
+              </div>
+
+              <div className="sp-field-row">
+                <span className="sp-field-label">
+                  Disk usage
+                  {logUsage && (
+                    <span className="sp-field-hint"> · {logUsage.dayCount} day{logUsage.dayCount === 1 ? '' : 's'}</span>
+                  )}
+                </span>
+                <span className="sp-log-usage">
+                  {logUsage
+                    ? `${formatBytes(logUsage.totalBytes)}${logUsage.archiveBytes > 0 ? ` · ${formatBytes(logUsage.archiveBytes)} compressed` : ''}`
+                    : '…'}
+                </span>
+              </div>
+
+              <div className="sp-field-row">
+                <span className="sp-field-label">Log files</span>
+                <button
+                  className="sp-button"
+                  onClick={() => window.api.sessionLogOpenFolder(character)}
+                >
+                  Open Logs Folder
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="sp-divider" />
 

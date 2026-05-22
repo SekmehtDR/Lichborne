@@ -13,6 +13,8 @@ export interface AppSettings {
   timerStyle: 'bar' | 'chips'
   autoLinkUrls: boolean
   mapAnimations: boolean   // Genie Maps motion — per-room category effects AND the camera glide; on by default
+  // NOTE: Session Log preferences are NOT here — they are app-wide, not
+  // per-character. See sessionLogSettings.ts (stored in _shared.yaml).
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

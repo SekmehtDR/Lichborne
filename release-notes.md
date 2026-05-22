@@ -1,3 +1,72 @@
+## What's new in v0.7.0
+
+Lichborne now keeps a session log.
+
+### Session logging
+
+Every character now writes a clean, dated log of its game session to disk — game text, channel content (thoughts, combat, deaths, script output), the commands you type, and connect/disconnect notices. One plain-text file per character per day, so a week of playing one character is just seven files.
+
+Where they live: a **Logs** folder inside Lichborne's data folder, with a subfolder per character. The files are ordinary text — double-click to open them in Notepad, or point VSCode / Notepad++ / `rg` at the folder for serious review.
+
+### The Logs button
+
+A new **Logs** button in the toolbar opens a small in-client viewer with three modes:
+
+- **Recent** — the tail end of the current day's log. Pick which day to view, check or uncheck individual streams, or hit a preset (**Everything / Combat / Social / Quiet**) to flip a whole layer at once. "Load older" pages further back. A **Dedup** toggle collapses lines that scripts emitted to several streams at once.
+- **Search** — find a phrase (or a regex) across today, the last 7 or 30 days, or a custom date range. Click any result to jump straight into Recent centered on that line.
+- **Export** — see below.
+
+It's built for quick "what just happened?" and "when did X occur?" lookups — not for scrolling a 30 MB file. For that, use **Open Logs Folder** and your own editor.
+
+### Right-click → Show in Log
+
+Right-click any line in the game window and choose **Show in Log** to find that line in your logs instantly.
+
+### Create a log file from your streams
+
+The **Export** tab builds a clean log file exactly the way you want it:
+
+- Pick a **date range** — a single day, the last week, the last month, or any custom span.
+- Pick which **stream layers** to include — just thoughts, just combat, everything, or a preset.
+- Choose the **format** — include timestamps or not, include stream tags or not, collapse duplicate lines, add a summary header, or split the result into one file per stream.
+- Then **Copy to Clipboard** or **Save File**.
+
+By default the output is a clean transcript with the metadata stripped — just the game text — but every part of that is a checkbox, so you can keep the timestamps and tags if you want them.
+
+### Logs stay small
+
+Session logs are designed to be light on disk. Older days are automatically **gzip-compressed** (about 85% smaller) — today's log stays plain text, and the in-client viewer reads the compressed days without you noticing. Together with a leaner line format, a month of daily play lands around 150–200 MB per character instead of well over a gigabyte.
+
+Two cleanup limits keep it bounded: delete logs older than **N days** (default 30), and an optional **size cap** on uncompressed logs (default 500 MB). Settings shows a live disk-usage readout so you can always see what your logs are costing.
+
+### Settings
+
+A new **Session Log** section in Settings lets you turn logging off entirely, choose which categories to capture (game text / stream content / commands / system messages), toggle compression of old logs, set the retention period and the size cap, see current disk usage, and open the Logs folder. Logging and compression are on by default. These are **application-wide settings** — configure logging once and it applies to every character.
+
+### Smoother Genie Maps while travelling
+
+Running across the map — especially through a dense town like the Crossing — used to cost a lot of frame rate. The per-room animations (shop glints, water ripples, sparkles, and so on) are now far lighter:
+
+- They **switch off while you travel** and come back about half a second after you stop — you can't appreciate them mid-run anyway, and turning them off entirely while moving is what reclaims the frame budget.
+- Only the rooms **on screen** animate, instead of every room in the zone — so idling in a big town no longer churns.
+- **Healers always pulse** — the heartbeat ring on auto-healer rooms keeps going even while you run, so a healer is always easy to spot.
+- Player-housing rooms no longer flicker — they're everywhere, so the effect was just noise.
+
+If you'd already turned **Genie Map Animations** off, nothing changes for you.
+
+### The map keeps up better
+
+- **The marker tracks you while running.** Rooms that share a name (the Crossing has seven "Moonstone Street" rooms) used to confuse the map mid-run, leaving the marker on the wrong room until you typed `look`. The map now follows the connections between rooms to keep itself straight.
+- **A background character's map no longer drifts off.** If you run one character while playing another, switching back used to show the map stuck in a corner with your character off the edge. The map now re-centres on you the moment you switch to that character.
+
+### More reliable Lich connection
+
+Connecting through Lich used to wait a fixed five seconds and then try once — which sometimes wasn't long enough (and failed) and sometimes was too long. Lichborne now **watches for Lich to be ready and connects the instant it is**, with clear progress in the connection log. If Lich fails to start, you get a real error instead of a vague timeout. Logging in several characters at once is handled cleanly — their Lich instances start one at a time instead of racing each other.
+
+### Smaller fixes
+
+- Character tabs for connected characters now read at a consistent brightness — an inactive tab no longer looks dimmed. The tab you're viewing still stands out (background, border, bold); only a *disconnected* character's tab fades.
+
 ## What's new in v0.6.12
 
 A fix and a cleanup.
@@ -517,7 +586,7 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## How to install
 
-1. Download `Lichborne-0.6.3-setup.exe` below
+1. Download `Lichborne-0.7.0-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -528,4 +597,4 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.6.2...v0.6.3
+https://github.com/SekmehtDR/Lichborne/compare/v0.6.12...v0.7.0

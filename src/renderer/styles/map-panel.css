@@ -72,6 +72,16 @@
   animation-play-state: running !important;
 }
 
+/* Healer heartbeats are a PRIORITY effect — exempt from the transient
+   drag/walk freeze so a healer keeps pulsing while the player travels
+   (finding a healer fast matters; healers are rare, so it's cheap). Like
+   the ping, this exemption is for the transient freeze only — the
+   persistent `genie-anim-off` setting still stops it, and the renderer
+   additionally omits heartbeats entirely when map animations are off. */
+.genie-pan-dragging .genie-heartbeat {
+  animation-play-state: running !important;
+}
+
 /* Persistent animations-off (Settings → Genie Map Animations). Same
    cascade as the drag/walk freeze, but applied permanently and with
    NO ping exemption — "off" means off, locator ping included. */
