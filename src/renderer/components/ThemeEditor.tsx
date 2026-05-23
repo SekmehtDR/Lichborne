@@ -161,12 +161,8 @@ const TABS: EditorTab[] = [
       ]},
       { label: 'Compass', fields: [
         c('--compass-active-text',     'Active direction text'),
-        c('--compass-active-bg',       'Active direction background'),
-        c('--compass-active-border',   'Active direction border'),
         r('--compass-active-glow',     'Active direction glow'),
         c('--compass-inactive-text',   'Inactive direction text'),
-        c('--compass-inactive-bg',     'Inactive direction background'),
-        c('--compass-inactive-border', 'Inactive direction border'),
         c('--compass-center-text',     'Center marker'),
       ]},
       { label: 'Hands & Spell', fields: [

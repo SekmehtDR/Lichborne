@@ -19,7 +19,17 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   fontSize: 12,
-  fontFamily: 'Consolas',
+  // 'cascadia' is a key into FONT_FAMILIES — resolves to
+  // "'Cascadia Code', 'Fira Code', 'Consolas', monospace". Cascadia Code
+  // is bundled with Windows Terminal (and stock with Windows 11) so it's
+  // present on most installs. Critically it ships with weights 200–700
+  // (200/300/350/400/500/600/700) — Consolas only has 400 and 700, which
+  // made every "semibold" emphasis in the UI fall back to full-bold and
+  // produced the "everything is too bold" reports. Cascadia honours the
+  // intermediate weights so the hierarchy reads softer (v0.7.1 follow-up).
+  // Users on Consolas explicitly (via existing profile) keep it; only
+  // fresh installs / unset characters get the new default.
+  fontFamily: 'cascadia',
   lineHeight: 1.2,
   largePrint: false,
   highContrast: false,
@@ -132,7 +142,6 @@ const COLORBLIND_VARS: Record<string, Partial<ThemeVars>> = {
     '--exit-text-hover': '#60e8e8',
     '--exit-border-hover': '#2a8888',
     '--compass-active-text':   '#28c8c8',
-    '--compass-active-border': '#1a5858',
     '--compass-active-glow':   'rgba(40, 200, 200, 0.35)',
   },
 
@@ -159,7 +168,6 @@ const COLORBLIND_VARS: Record<string, Partial<ThemeVars>> = {
     '--exit-text-hover': '#60e8e8',
     '--exit-border-hover': '#2a8888',
     '--compass-active-text':   '#28c8c8',
-    '--compass-active-border': '#1a5858',
     '--compass-active-glow':   'rgba(40, 200, 200, 0.35)',
   },
 

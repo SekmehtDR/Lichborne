@@ -446,7 +446,12 @@ export default function GenieMapView({
   // disambiguated by graph adjacency (see the bottom of the memo). Updated by
   // an effect below — inside the memo it always reads the PREVIOUS render's
   // value, which is exactly the room the player just walked from.
-  const prevLocRef = useRef<{ zone: GenieZone; node: GenieNode } | null>(null)
+  // Type widened to include `isStub` because the disambiguation chain
+  // below can return `prev` directly (as `currentLocation`) when no
+  // confident match exists — see the "conservative cross-zone fallback"
+  // at the end of the memo. The runtime value is already an Entry from
+  // titleLookup; the older narrower type was just understating reality.
+  const prevLocRef = useRef<{ zone: GenieZone; node: GenieNode; isStub: boolean } | null>(null)
   const currentLocation = useMemo(() => {
     if (!roomTitle) return null
     const target = roomTitle.trim()
@@ -496,9 +501,44 @@ export default function GenieMapView({
           c.node.arcs.some(a => a.destination === prev.node.id)
         ))
       if (adj) return adj
+
+      // Cross-zone adjacency via stubs. Same-zone adjacency above fires
+      // when you walk WITHIN a zone; this fires when you walk ACROSS a
+      // Genie-mapped boundary. Stubs are 1-room markers whose `note`
+      // contains the target zone's `.xml` filename — if `prev` had an
+      // arc to a stub whose target file matches a candidate's zone,
+      // that's strong evidence you just crossed that boundary into
+      // candidate `c`'s zone. Prefer `c`. No false positives in
+      // practice: stubs are explicit cross-zone markers, not generic
+      // edges.
+      const crossAdj = pool.find(c => {
+        if (c.zone === prev.zone) return false
+        return prev.node.arcs.some(arc => {
+          const dest = prev.zone.nodes.find(n => n.id === arc.destination)
+          if (!dest || !isStubNode(dest)) return false
+          const stubXml = noteAliases(dest.note).find(a => a.toLowerCase().endsWith('.xml'))
+          if (!stubXml) return false
+          return sourceFileToZoneId.get(stubXml.toLowerCase()) === c.zone.id
+        })
+      })
+      if (crossAdj) return crossAdj
+    }
+    // Conservative cross-zone fallback. With no desc match, no same-zone
+    // adjacency, and no stub-cross-zone link, `pool[0]` is just file
+    // order — a low-confidence guess. If that guess would teleport us
+    // to a DIFFERENT zone than `prev`, refuse: keep the marker at the
+    // previous location until a confident match arrives (or `look`
+    // re-emits a fresh desc). Honest-stale beats confidently-wrong —
+    // the alternative is what testers were seeing: marker stranded in
+    // Shard while they were in some other hunting area.
+    // Same-zone `pool[0]` is still trusted (legitimate walk within the
+    // current zone). And first-render with no `prev` falls through to
+    // `pool[0]` as before — there is nothing better to do.
+    if (prev && pool[0].zone !== prev.zone) {
+      return prev
     }
     return pool[0]
-  }, [titleLookup, roomTitle, roomDesc])
+  }, [titleLookup, roomTitle, roomDesc, isStubNode, sourceFileToZoneId])
 
   // Keep `prevLocRef` one step behind `currentLocation` for the adjacency
   // disambiguation above. Only advance it on a real (non-null) match so a

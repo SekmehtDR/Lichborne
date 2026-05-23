@@ -5,9 +5,15 @@
 [data-preset="speech"]       { color: var(--preset-speech);   background-color: var(--preset-speech-bg);   font-style: italic; }
 [data-preset="whisper"]      { color: var(--preset-whisper);  background-color: var(--preset-whisper-bg);  font-style: italic; }
 [data-preset="thought"]      { color: var(--preset-thought);  background-color: var(--preset-thought-bg); }
-[data-preset="roomname"]     { color: var(--preset-roomname); background-color: var(--preset-roomname-bg); font-weight: bold; }
+/* v0.7.1 follow-up: roomname + game-<bold> dropped from `bold` (700) to
+   600. On Cascadia Code (the new default font) 600 is real semibold and
+   reads softer than the old full-bold — testers compared it against
+   Genie/Frostbite and the 700 was too hard a hit. On Consolas (no 600
+   face) the browser still falls back to 700, so no regression for users
+   who explicitly stayed on Consolas. */
+[data-preset="roomname"]     { color: var(--preset-roomname); background-color: var(--preset-roomname-bg); font-weight: 600; }
 [data-preset="roomdesc"]     { color: var(--preset-roomdesc); background-color: var(--preset-roomdesc-bg); }
-[data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: bold; }
+[data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: 600; }
 [data-preset="expiry"]       { color: var(--preset-expiry);   background-color: var(--preset-expiry-bg); }
 [data-preset="store"]        { color: var(--preset-store);    background-color: var(--preset-store-bg); }
 [data-preset="command-echo"]   { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }

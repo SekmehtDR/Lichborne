@@ -566,7 +566,7 @@ Bar 1 (Stance) is always active. Bars 2–6 are empty when the condition is not 
 
 **Floating Compass**
 
-The compass is a **semi-transparent overlay** anchored to the **bottom-right corner of the game text area**, floating above the scrolling text. It shows the standard 3×3 directional grid (NW/N/NE/W/·/E/SW/S/SE) plus a special column (up/dn/out). Active exits light up with a colored glow; inactive cells are near-invisible. The compass is non-interactive (`pointer-events: none`) and consumes no layout space.
+The compass is a **chrome-less overlay** (v0.7.1) anchored to the **bottom-right corner of the game text area**, floating above the scrolling text. It shows the standard 3×3 directional grid (NW/N/NE/W/·/E/SW/S/SE) above a horizontal row of special exits (UP / DOWN / OUT). There is no panel background, border, or padding — the cells float directly over the game text. **Active exits illuminate via themed text color + `text-shadow` glow** (`--compass-active-text` + `--compass-active-glow`); inactive cells render at `opacity: 0.45` (visible enough to see the compass shape at rest, faint enough that lit cells obviously dominate). Arrow glyphs (↖ ↑ ↗ …) carry `-webkit-text-stroke: 0.6px currentColor` because Unicode arrows barely respond to font-weight; text-stroke thickens them reliably regardless of font. The compass is non-interactive (`pointer-events: none`) and consumes no layout space. Themed CSS surface: `--compass-active-text`, `--compass-active-glow`, `--compass-inactive-text`, `--compass-center-text`. (Earlier v0.7.x iterations had a themed panel-bg/border + chip-style active cells; those were removed when the chrome-less design landed — the corresponding vars were stripped from the Theme Editor as dead config.)
 
 **RT / CT**
 
@@ -676,11 +676,12 @@ This toggle exists because real players have asked for it. It is easy to find, c
 Font settings work at two levels: **global defaults** and **per-panel overrides**.
 
 **Global defaults** (Settings → Display & Accessibility):
-- Font family: any font installed on the user's system, selected via a scrollable inline picker with live filter. The current selection is shown above the list; typing in the filter box narrows it instantly. The selected font is highlighted and auto-scrolled into view when the panel opens. A **Monospace** filter chip narrows the list to monospace fonts only, detected at enumeration time via a canvas width test (`i` vs `W`).
+- Font family: any font installed on the user's system, selected via a scrollable inline picker with live filter. The current selection is shown above the list; typing in the filter box narrows it instantly. The selected font is highlighted and auto-scrolled into view when the panel opens. **Each entry in the picker list renders in its own face** (v0.7.1, F15) — the inline `style={{ fontFamily: "'<name>'" }}` overrides the picker's monospace inheritance for the label only, so the picker doubles as a visual preview. A **Monospace** filter chip narrows the list to monospace fonts only, detected at enumeration time via a canvas width test (`i` vs `W`).
 - Font enumeration uses the **Local Font Access API** (`window.queryLocalFonts()`), available in Electron 21+ / Chromium 103+. The main process grants the `local-fonts` permission via `setPermissionRequestHandler` + `setPermissionCheckHandler` before the window loads. Results are deduplicated by family name and sorted alphabetically.
-- The stored value is the raw font family name (e.g. `"Cascadia Code"`). Legacy preset keys (`cascadia`, `terminal`, `sansserif`, `serif`) are transparently migrated to their font names the first time Settings is opened.
-- `applySettingsToDOM` applies the stored name as `'FontName', monospace` — monospace is the fallback if the font is later uninstalled. Legacy preset keys still resolve to their full fallback stacks (`'Cascadia Code', 'Fira Code', 'Consolas', monospace`) for any settings not yet migrated.
-- Default font: **Consolas 12px, Compact (1.2) line height**.
+- Stored value is usually the raw font family name (e.g. `"Cascadia Code"`). Three truly-retired preset keys (`terminal`, `sansserif`, `serif`) still transparently migrate to their font names the first time Settings is opened. The active default key `'cascadia'` is **not** migrated (v0.7.1, B94) — it intentionally stays as a key so `applySettingsToDOM` keeps resolving it to the full fallback chain `'Cascadia Code' → 'Fira Code' → 'Consolas' → monospace`. Migrating it would collapse the fallback to `'Cascadia Code', monospace` and cause a Cascadia-less Win10 user's font to visibly flip from Consolas to generic monospace the moment Settings opened.
+- `applySettingsToDOM` ([settings.ts](src/renderer/settings.ts)) resolves the stored value via `FONT_FAMILIES[fontFamily]` first (key match → full chain) and falls through to `'FontName', monospace` for an explicit font name.
+- Default font: **Cascadia Code (key: `cascadia`), 12px, Compact (1.2) line height** (v0.7.1, B93). Cascadia Code ships with weights 200/300/350/400/500/600/700 — critically, real `500` and `600` faces — so the codebase's intermediate-weight emphasis (hands HUD, status bars, panel tabs, character tabs, vitals, game `<bold>`) actually renders at its intended weight instead of falling back to full bold 700 on a two-weight font like Consolas. The previous default (`'Consolas'` literal name) collapsed every `font-weight: 600` declaration to 700 and read as "everything is too bold." Players who explicitly chose Consolas (or any other font) keep their choice through profile load — only fresh installs / unset characters get the new default.
+- **Player-facing weight emphasis** (v0.7.1, B93): game `<bold>` and `<roomname>` use `font-weight: 600` (real semibold on Cascadia, falls back to 700 on Consolas — no regression for opt-in Consolas users). Hand-held / spell-active items use color-only emphasis — no weight bump — so picking something up doesn't snap the HUD from 400 straight to 700. Other 600/700 chrome (status bars, vitals labels, toolbar title, panel tabs, character tabs) was inventoried but left as-is; can be dialled back further if testers find it heavy now that the font default changed.
 - Font family propagates globally via `body { font-family: var(--game-font-family) }` — all panels inherit it automatically.
 - Font size and line height propagate to all game content panels via CSS vars `--game-font-size` and `--game-line-height` anchored on each content container: main text window (`.text-line`), stream panels, room panel, exp panel, injuries panel, panel tab labels, and the toolbar (buttons, title, status). Child elements within structured panels (room, exp) use `em` units so they scale proportionally with the container font size.
 
@@ -1367,6 +1368,8 @@ Clicking `+` drops a compact character launcher:
 | `Ctrl+Tab` | Cycle through connected characters |
 | `Ctrl+Shift+Enter` | Quick-send overlay (see §13.8) |
 
+Tab-switch chords (`Ctrl+1..9`, `Ctrl+Tab`) **also refocus the new tab's command bar** after the switch (v0.7.1). The app-level handler waits one animation frame after `setActive(...)` (React commit needs to land first so the new tab's `.session-shell` isn't `display:none` anymore) and focuses `.session-shell:not(.session-shell--hidden) .command-input`. Without this you'd have to click the new bar before typing. `Ctrl+Shift+Enter` is excluded — focus should land in QuickSend, which auto-focuses its own input.
+
 ### 13.8 Quick-Send Overlay
 
 A floating input that sends a command to any character without switching tabs. Useful for boxing — tell your Empath to heal without leaving your main character's screen.
@@ -1380,6 +1383,10 @@ A floating input that sends a command to any character without switching tabs. U
 ```
 
 Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends the command and closes without switching sessions.
+
+**Prefill from active command bar (v0.7.1).** App.tsx snapshots `.command-input`'s value at the moment the chord fires and passes it through as `initialCommand`. QuickSend uses it as initial state and `select()`s the input on open so the player can either replace it by typing or send as-is with Enter. The source bar is intentionally not cleared on send — less destructive (Esc-cancel preserves what was being composed). The state is `{ initialCommand: string } | null` rather than a boolean so the value rides through cleanly to the modal.
+
+**Broadcast target (v0.7.1).** A "Send to all connected" option appears at the bottom of the target dropdown when ≥2 characters are connected. Implemented as an `ALL_TARGET` sentinel value living in `target` state alongside real `CharacterId`s — keeps the single-`<select>` model intact rather than adding a separate broadcast checkbox. The send handler branches on the sentinel and iterates `sessions.filter(s => s.status.connected)`, calling `window.api.sendCommand` per session. Sends to *every* connected character including the active one (literal "all"); disconnected sessions are skipped silently. Placed last in the dropdown so single-target stays visually primary — fat-fingering a broadcast from the default target shouldn't be a one-click mistake.
 
 ### 13.9 Pop-Out Windows
 
@@ -3240,7 +3247,7 @@ theme: classic     # boot fallback (unnamespaced lichborne.theme — applied bef
 state:
   settings:                                     # ← lichborne.{char}.settings
     fontSize: 12
-    fontFamily: Consolas
+    fontFamily: cascadia     # default key — or any literal font name once user picks one
     lineHeight: 1.2
     vitalsBarPosition: bottom
     iconBarPosition: top

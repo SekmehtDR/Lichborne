@@ -76,6 +76,9 @@ EXPBRIEF works either way — on or off, the experience panel handles both corre
 | `Home` / `End` | Move the cursor to the start / end of your typed command |
 | `Ctrl+Home` | Jump to the top of your text history |
 | `Ctrl+End` | Jump back to the bottom and resume auto-scroll |
+| `Ctrl+1` … `Ctrl+9` | Switch to character tab by slot — focuses the command bar |
+| `Ctrl+Tab` | Cycle to the next character tab — focuses the command bar |
+| `Ctrl+Shift+Enter` | Open Quick-Send (target another character without switching tabs) — pre-fills with whatever you'd typed in the active command bar |
 
 Plain `Home`/`End` edit the command box (where your cursor almost always is during play). Hold `Ctrl` to scroll the story window instead.
 

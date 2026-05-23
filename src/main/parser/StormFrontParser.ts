@@ -604,7 +604,18 @@ export class StormFrontParser {
     }
 
     if (name === 'compass') {
-      this.events.push({ type: 'exits', directions: this.compassDirs })
+      // Only emit the exits event when the compass block actually has
+      // dirs. The game sometimes ships an empty `<compass></compass>`
+      // in non-room-change contexts (intermediate stream updates,
+      // certain Lich-injected refreshes) — emitting `exits: []` there
+      // would blank the FloatingCompass until the player typed `look`
+      // to force a fresh compass with dirs. Trade-off: a genuinely
+      // exitless room (sealed cell) keeps showing the previous room's
+      // exits until next `look`. Acceptable — that case is rare, the
+      // spurious blanking is not.
+      if (this.compassDirs.length > 0) {
+        this.events.push({ type: 'exits', directions: this.compassDirs })
+      }
       this.compassDirs = []
       return
     }

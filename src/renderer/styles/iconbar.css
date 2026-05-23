@@ -56,11 +56,18 @@
   text-overflow: ellipsis;
 }
 
+/* v0.7.1 follow-up: dropped the weight bump on held/active states. Empty
+   and held items now render at the same weight (inherited 400) — the
+   color change is the emphasis, NOT a snap to font-weight 600. The
+   spell-active glow stays as a secondary emphasis cue for prepared
+   spells. Testers reported the 400→600 snap read as "regular → extra
+   bold" against the rest of the UI; this brings the hands HUD in line
+   with how Genie/Frostbite handle the same display. */
 .hand-empty .hand-item { color: var(--hand-empty-color); }
-.hand-held  .hand-item { color: var(--hand-held-color); font-weight: 600; }
+.hand-held  .hand-item { color: var(--hand-held-color); }
 
 .spell-empty  { color: var(--spell-empty-color); }
-.spell-active { color: var(--spell-active-color); font-weight: 600; text-shadow: 0 0 10px var(--spell-active-glow); }
+.spell-active { color: var(--spell-active-color); text-shadow: 0 0 10px var(--spell-active-glow); }
 
 /* ============================================================
    Status bars — 6 fixed-width slots

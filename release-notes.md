@@ -1,3 +1,40 @@
+## What's new in v0.7.1
+
+A small UX pass — three papercuts found by testers using multi-character play.
+
+### Compass redesigned
+
+The floating compass overlay was hard to read — the card it lived in was nearly invisible against a dark game window, blurred whatever text was behind it, and would have dropped a black blob on light themes. The whole card has been removed:
+
+- **No more card.** The compass directions float directly over the game text. Available exits glow in your theme's accent color; unavailable directions stay dim but visible so the compass shape is always there to read.
+- **Arrows are chunkier.** The Unicode arrow glyphs were too thin; they're now stroked thicker so they read clearly even at small sizes.
+- **`DN` is now `DOWN`** in the special-exit row, alongside `UP` and `OUT`.
+- **Text behind the compass reads sharp.** A previous backdrop-blur effect was softening game text behind the compass; that's gone, so you can read whatever's underneath without distortion.
+
+### Ctrl+# now focuses the command bar
+
+*Reported by Binu.* Switching characters with **Ctrl+1**, **Ctrl+2**, … or **Ctrl+Tab** used to flip the tab but leave focus wherever it was — usually nowhere — so you had to click into the new tab's command bar before you could type. Now the new tab's command bar is focused immediately. Type, send, switch, type — no clicking.
+
+### Ctrl+Shift+Enter remembers what you were typing
+
+*Reported by Sekmeht.* If you'd typed half a command and then hit **Ctrl+Shift+Enter** to retarget it to another character, the Quick-Send box opened empty and you had to retype the command. It now opens **pre-filled with whatever was in your command bar** (and the text is selected, so you can immediately replace it or just press Enter to send as-is). Your original command bar is left untouched in case you cancel.
+
+### Font picker shows each font in its own face
+
+*Requested by Binu.* The Settings → Font family list used to render every entry in the same monospace face — Cascadia Code, Comic Sans, and Wingdings all looked identical. Each font name is now rendered in its actual font, so you can visually compare what they'll look like before picking one.
+
+### Text feels lighter
+
+*Reported by Sekmeht and Binu.* Lichborne felt heavier than Genie or Frostbite — regular game text read as already-bold, and the hands display would snap from a normal "Empty" to an extra-bold item name when you picked something up. Three coordinated changes:
+
+- **Default font is now Cascadia Code** (bundled with Windows Terminal and stock on Windows 11). Consolas — the previous default — only has two weights, so the UI's intermediate "soft emphasis" everywhere collapsed into full bold. Cascadia ships with seven weights and finally lets the in-between weights show up the way the design intended. If you'd already picked a specific font in Settings, you keep it; only fresh characters get the new default.
+- **The hands display no longer snaps to bold.** When you pick something up, the item name changes color but stays the same weight as "Empty" was — much less jarring. Same for prepared spells (the colored glow stays as the emphasis).
+- **Game `<bold>` text is now semibold instead of full bold.** Bolded creature names, room titles, and any other game-emitted bold reads softer — a real "hey look" tier between regular and shouting, instead of always being shouting. (On Consolas the browser still falls back to full bold, so opt-in Consolas users see no change.)
+
+### Quick-Send can broadcast to every character
+
+When you have two or more characters connected, the Quick-Send target dropdown now has a **"Send to all connected"** option at the bottom — pick it and your command fires off to every connected character at once (including the one you're currently on). Useful for things like `;buff` everyone, telling every alt to head somewhere, or just yelling `ooc Snack break!` from one place. Disconnected tabs are skipped quietly. The "Send to all" option only appears when you have at least two characters connected — it stays out of the way for solo play.
+
 ## What's new in v0.7.0
 
 Lichborne now keeps a session log.
@@ -586,7 +623,7 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## How to install
 
-1. Download `Lichborne-0.7.0-setup.exe` below
+1. Download `Lichborne-0.7.1-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -597,4 +634,4 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.6.12...v0.7.0
+https://github.com/SekmehtDR/Lichborne/compare/v0.7.0...v0.7.1

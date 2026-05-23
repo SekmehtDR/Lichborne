@@ -150,13 +150,14 @@
   --ind-joined-glow:   rgba(80, 160, 255, 0.3);
 
   /* ── Compass ──────────────────────────────────────────────────── */
+  /* v0.7.1: compass is chrome-less — no panel bg/border, no per-cell
+     bg/border. Active cells illuminate via text color + text-shadow glow.
+     The panel/inactive/active-bg/border vars from earlier v0.7.x were
+     removed (dead config — they were exposed in Theme Editor but nothing
+     read them after the chrome-less switch). */
   --compass-active-text:   #70e870;
-  --compass-active-bg:     #0e2a0e;
-  --compass-active-border: #1e5a1e;
   --compass-active-glow:   rgba(80, 210, 80, 0.35);
-  --compass-inactive-text:   #666666;
-  --compass-inactive-bg:     #181818;
-  --compass-inactive-border: #303030;
+  --compass-inactive-text: #666666;
   --compass-center-text:   #383838;
 
   /* ── Hands / spell ────────────────────────────────────────────── */

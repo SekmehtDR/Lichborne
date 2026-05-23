@@ -1,82 +1,110 @@
 /* ============================================================
    FLOATING COMPASS — semi-transparent overlay, bottom-right
    of .text-window-wrap
+
+   v0.7.x redesign: 16x16 letter cells (6.7px font, microscopic)
+   replaced with 24x24 arrow cells (~16px glyphs, instantly
+   readable). Special exits row moved from a vertical strip
+   beside the grid to a horizontal row underneath for visual
+   cohesion. Active vs inactive contrast amplified (opacity
+   0.35 -> 0.18 on inactive) so available exits really pop.
    ============================================================ */
 
+/* v0.7.1: wrapper is chrome-less — no bg, no border, no padding. Active
+   cells illuminate via themed text color + text-shadow glow alone. The
+   --compass-panel-bg / panel-border / *-bg / *-border CSS vars from
+   earlier v0.7.x iterations were stripped from theme.css, themes.ts, and
+   the Theme Editor (dead config — nothing rendered them). Live themed
+   surface area: --compass-active-text, --compass-active-glow,
+   --compass-inactive-text, --compass-center-text. */
 .floating-compass {
   position: absolute;
   bottom: 12px;
   right: 12px;
   z-index: 10;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 6px;
-  padding: 5px 6px;
   pointer-events: none;
-  backdrop-filter: blur(2px);
 }
 
 .fc-grid {
   display: grid;
-  grid-template-columns: repeat(3, 16px);
-  grid-template-rows: repeat(3, 16px);
+  grid-template-columns: repeat(3, 24px);
+  grid-template-rows: repeat(3, 24px);
   gap: 2px;
 }
 
 .fc-cell {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
-  font-size: 0.42rem;
+  width: 24px;
+  height: 24px;
+  border-radius: 3px;
+  font-size: 0.95rem;        /* arrow glyphs render at ~15-16px */
   font-weight: 700;
+  /* Arrow glyphs (↖ ↑ ↗ …) are stroked thin by most fonts and barely
+     respond to font-weight. text-stroke thickens the path directly so
+     the arrows read as chunky regardless of which font is in play. */
+  -webkit-text-stroke: 0.6px currentColor;
   display: flex;
   align-items: center;
   justify-content: center;
-  text-transform: uppercase;
-  letter-spacing: 0;
   line-height: 1;
+  /* Smooth contrast change on direction set/clear — avoids harsh
+     flicker between rooms while still feeling responsive. */
+  transition: color 0.12s ease-out, background 0.12s ease-out,
+              box-shadow 0.12s ease-out, opacity 0.12s ease-out;
 }
 
+/* Chrome-less compass (v0.7.1 follow-up): active cells are illuminated by
+   their themed text color + glow alone — no chip background, no border.
+   The cell is just a glowing glyph against the game text. */
 .fc-cell--active {
-  background: var(--compass-active-bg);
+  background: transparent;
   color: var(--compass-active-text);
-  border: 1px solid var(--compass-active-border);
-  box-shadow: 0 0 4px var(--compass-active-glow);
+  border: 1px solid transparent;
+  text-shadow: 0 0 6px var(--compass-active-glow),
+               0 0 10px var(--compass-active-glow);
+  font-weight: 700;
 }
 
 .fc-cell--inactive {
   background: transparent;
   color: var(--compass-inactive-text);
   border: 1px solid transparent;
-  opacity: 0.35;
+  opacity: 0.45;             /* visible at rest but clearly subordinate to active */
 }
 
 .fc-cell--center {
   background: transparent;
   border: none;
   color: var(--compass-center-text);
-  font-size: 0.8rem;
-  opacity: 0.4;
+  font-size: 1.2rem;         /* larger dot — clearer "you are here" */
+  opacity: 0.65;
 }
 
+/* Special-exit row underneath the grid (was: vertical strip beside).
+   Pill-shaped chips with horizontal padding so UP / DN / OUT have
+   breathing room. Same active/inactive treatment as the grid via
+   .fc-cell--active / .fc-cell--inactive. */
 .fc-special {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  gap: 3px;
 }
 
 .fc-special-cell {
-  width: 22px;
-  height: 16px;
-  border-radius: 2px;
-  font-size: 0.38rem;
+  min-width: 24px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 0.6rem;         /* readable for UP/DN/OUT text */
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   text-transform: uppercase;
-  letter-spacing: 0;
+  letter-spacing: 0.3px;
+  transition: color 0.12s ease-out, background 0.12s ease-out,
+              box-shadow 0.12s ease-out, opacity 0.12s ease-out;
 }

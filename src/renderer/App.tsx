@@ -41,7 +41,7 @@ function AppShell() {
   // a card connect needs a password that isn't saved.
   const [showWizard, setShowWizard] = useState(false)
   const [showLichSetup, setShowLichSetup] = useState(false)
-  const [showQuickSend, setShowQuickSend] = useState(false)
+  const [showQuickSend, setShowQuickSend] = useState<{ initialCommand: string } | null>(null)
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateDismissed, setUpdateDismissed] = useState(false)
@@ -103,13 +103,32 @@ function AppShell() {
   // the Quick-Send overlay. The active GameWindow's local keydown handler
   // already early-returns when not active, so these don't collide.
   useEffect(() => {
+    // Refocus the active GameWindow's command input after a tab switch. The
+    // session-shell DOM toggle happens on the next React commit, so we wait
+    // a frame before querying. Selector is "the one visible session-shell"
+    // since hidden ones are display:none and their inputs aren't focusable
+    // anyway. (Bug: Ctrl+# used to leave focus wherever it was — usually
+    // nowhere — so testers had to click the bar before they could type.)
+    function refocusActiveCommandBar() {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(
+          '.session-shell:not(.session-shell--hidden) .command-input'
+        ) as HTMLInputElement | null
+        el?.focus()
+      })
+    }
     function onKeyDown(e: KeyboardEvent) {
       // Ctrl+Shift+Enter: Quick-Send — works even from a text field so a player
-      // can hit it from the main command bar.
+      // can hit it from the main command bar. Prefill with whatever's currently
+      // typed into the active command bar so the player can immediately retarget
+      // a command they were composing without retyping it.
       if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
         if (sessions.length === 0) return
         e.preventDefault()
-        setShowQuickSend(true)
+        const srcInput = document.querySelector(
+          '.session-shell:not(.session-shell--hidden) .command-input'
+        ) as HTMLInputElement | null
+        setShowQuickSend({ initialCommand: srcInput?.value ?? '' })
         return
       }
       // Ctrl+1..9 and Ctrl+Tab fire regardless of text-field focus — the whole
@@ -123,6 +142,7 @@ function AppShell() {
           const idx = activeId ? sessions.findIndex(s => s.characterId === activeId) : -1
           const nextIdx = (idx + 1) % sessions.length
           setActive(sessions[nextIdx].characterId)
+          refocusActiveCommandBar()
           return
         }
         if (e.key >= '1' && e.key <= '9') {
@@ -130,6 +150,7 @@ function AppShell() {
           if (slot < sessions.length) {
             e.preventDefault()
             setActive(sessions[slot].characterId)
+            refocusActiveCommandBar()
           }
         }
       }
@@ -454,7 +475,12 @@ function AppShell() {
         </div>
       )}
 
-      {showQuickSend && <QuickSend onClose={() => setShowQuickSend(false)} />}
+      {showQuickSend && (
+        <QuickSend
+          initialCommand={showQuickSend.initialCommand}
+          onClose={() => setShowQuickSend(null)}
+        />
+      )}
     </div>
   )
 }

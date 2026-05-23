@@ -439,7 +439,7 @@
   color: var(--text-primary);
 }
 
-.sp-preview-roomname { color: var(--preset-roomname); font-weight: bold; }
+.sp-preview-roomname { color: var(--preset-roomname); font-weight: 600; }
 .sp-preview-speech   { color: var(--preset-speech); }
 .sp-preview-thought  { color: var(--preset-thought); }
-.sp-preview-bold     { color: var(--preset-bold); font-weight: bold; }
+.sp-preview-bold     { color: var(--preset-bold); font-weight: 600; }

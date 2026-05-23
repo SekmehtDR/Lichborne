@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage } from '../../shared/types'
-import { FONT_FAMILIES, DEFAULT_SETTINGS, type AppSettings } from '../settings'
+import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import { type AdvancedSettings, loadAdvanced, saveAdvanced } from '../lichSettings'
 import { type SessionLogSettings, loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
 import { exportSharedProfile } from '../profile'
@@ -15,9 +15,19 @@ declare global {
   }
 }
 
-// Transparent migration: legacy preset keys stored in settings → actual font name
+// Transparent migration: legacy preset keys stored in settings → actual font name.
+//
+// NOTE: 'cascadia' is intentionally NOT in this map (v0.7.1). It IS the active
+// default value in DEFAULT_SETTINGS, not a legacy preset — migrating it to
+// 'Cascadia Code' loses the wide FONT_FAMILIES fallback chain ('Cascadia Code'
+// → 'Fira Code' → 'Consolas' → monospace) and replaces it with the narrower
+// `'Cascadia Code', monospace` form. On a machine that doesn't have Cascadia
+// installed (e.g. plain Win10 with no Windows Terminal), that change made the
+// font visibly flip from Consolas to generic monospace the moment a fresh
+// user opened Settings. The 'cascadia' key stays through the FONT_FAMILIES
+// lookup forever; only the other three preset keys (which were truly retired)
+// migrate to a real font name.
 const LEGACY_KEYS: Record<string, string> = {
-  cascadia: 'Cascadia Code',
   terminal: 'Lucida Console',
   sansserif: 'Segoe UI',
   serif:     'Georgia',
@@ -179,6 +189,19 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
     ? baseList.filter(f => f.toLowerCase().includes(fontQuery.toLowerCase()))
     : baseList
 
+  // When `settings.fontFamily` is a preset key like 'cascadia', no installed
+  // font name matches it literally — the FONT_FAMILIES chain resolves it at
+  // render time but the picker's `name === settings.fontFamily` comparison
+  // would never highlight anything. Resolve to the FIRST font in the chain
+  // (the preferred face) so the list shows the correct active row. For an
+  // explicit font name the value passes through unchanged.
+  const activeFontName = (() => {
+    const chain = FONT_FAMILIES[settings.fontFamily]
+    if (!chain) return settings.fontFamily
+    const first = chain.match(/^'([^']+)'/)
+    return first ? first[1] : settings.fontFamily
+  })()
+
   return createPortal(
     <div className="sp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="sp-modal">
@@ -197,7 +220,7 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
           <div className="sp-font-picker">
             <div className="sp-font-picker-header">
               <span className="sp-field-label">Font family</span>
-              <span className="sp-font-current">{settings.fontFamily}</span>
+              <span className="sp-font-current">{FONT_FAMILY_LABELS[settings.fontFamily] ?? settings.fontFamily}</span>
             </div>
             <div className="sp-font-filters">
               <button className={`sp-font-filter${fontFilter === 'all'  ? ' sp-font-filter--active' : ''}`} onClick={() => setFontFilter('all')}>All</button>
@@ -214,8 +237,18 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
               {filteredFonts.map(name => (
                 <div
                   key={name}
-                  className={`sp-font-item${name === settings.fontFamily ? ' sp-font-item--active' : ''}`}
+                  className={`sp-font-item${name === activeFontName ? ' sp-font-item--active' : ''}`}
                   onClick={() => { set('fontFamily', name); setFontQuery('') }}
+                  // Render each entry in its own face so the picker doubles as
+                  // a visual preview — Binu's request (v0.7.1). No fallback
+                  // family: the list is sourced from `queryLocalFonts()` so
+                  // every name is guaranteed installed. `'X', inherit` is
+                  // invalid CSS (the `inherit` keyword can't appear in a
+                  // font-family list, only as the sole value), and most
+                  // browsers silently discard the whole declaration when
+                  // they see it — which made the first cut of this feature
+                  // a no-op.
+                  style={{ fontFamily: `'${name.replace(/'/g, "\\'")}'` }}
                 >
                   {name}
                 </div>
