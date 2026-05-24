@@ -45,7 +45,17 @@ export class LichConnection extends EventEmitter {
   // Spawn the Lich ruby process. Resolves once the process has spawned (or
   // rejects if the spawn itself fails — e.g. a bad ruby path). Does NOT wait
   // for Lich to be *ready* — connectWithRetry() is the readiness gate.
-  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', hideWindow = false): Promise<void> {
+  //
+  // `lichArguments` is the per-shard CLI flag string from DEFAULT_GAMES — e.g.
+  // '--dragonrealms', '--test --dragonrealms', '--platinum --dragonrealms',
+  // '--fallen'. Until v0.8.0 this was hardcoded to '--dragonrealms', which
+  // silently routed DRT / DRX / DRF characters to DR.
+  //
+  // v0.8.0 also dropped the `hideWindow` parameter — Lich now always launches
+  // hidden (the shell-spawn-via-cmd.exe path was the only thing the visible
+  // window enabled, and stderr is piped so startup crashes still surface via
+  // describeExit()). One spawn shape, every time.
+  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', lichArguments = '--dragonrealms'): Promise<void> {
     this.exitInfo = null
     this.stderrTail = ''
     this.buffer = ''
@@ -53,27 +63,16 @@ export class LichConnection extends EventEmitter {
 
     return new Promise((resolve, reject) => {
       let settled = false
-      const args = [lichPath, mode, '--dragonrealms']
+      const args = [lichPath, mode, ...lichArguments.trim().split(/\s+/)]
 
       try {
-        if (hideWindow) {
-          // Direct spawn, no console window. stderr is piped so a Ruby/Lich
-          // startup crash can be surfaced in the error message.
-          this.lichProcess = cp.spawn(rubyPath, args, {
-            detached: true,
-            stdio: ['ignore', 'ignore', 'pipe'],
-            windowsHide: true,
-          })
-        } else {
-          // Shell spawn — cmd.exe gives Lich its own visible console window
-          // (a direct spawn from a GUI process has no console to show in).
-          this.lichProcess = cp.spawn(rubyPath, args, {
-            detached: true,
-            stdio: 'ignore',
-            shell: true,
-            windowsHide: false,
-          })
-        }
+        // Direct spawn, no console window. stderr is piped so a Ruby/Lich
+        // startup crash can be surfaced in the error message.
+        this.lichProcess = cp.spawn(rubyPath, args, {
+          detached: true,
+          stdio: ['ignore', 'ignore', 'pipe'],
+          windowsHide: true,
+        })
       } catch (err) {
         reject(err as Error)
         return
@@ -208,6 +207,23 @@ export class LichConnection extends EventEmitter {
   // running — it's the proxy, and it's meant to outlive us.
   killProcess() {
     try { this.lichProcess?.kill() } catch { /* already gone */ }
+  }
+
+  // v0.8.0 (B99 quickClose path): graceful TCP half-close. Calls socket.end()
+  // which writes any pending bytes from our OS send buffer, then sends FIN
+  // after the buffer drains. The other end (Lich) sees a clean half-close
+  // with our QUIT delivered, processes it, and then drops its game socket.
+  // We wait for the 'close' event (or timeout) so the caller knows the
+  // bytes left our process. Way more reliable than `write + setTimeout +
+  // destroy` because we're not racing the OS send queue.
+  async endAndAwaitClose(timeoutMs: number): Promise<void> {
+    const sock = this.socket
+    if (!sock) return
+    return new Promise<void>(resolve => {
+      const timer = setTimeout(resolve, timeoutMs)
+      sock.once('close', () => { clearTimeout(timer); resolve() })
+      sock.end()
+    })
   }
 
   send(command: string) {

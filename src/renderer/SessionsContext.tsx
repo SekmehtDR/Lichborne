@@ -3,12 +3,16 @@ import type { SessionInfo } from './components/LoginScreen'
 import type { SessionId } from '../shared/types'
 
 // CharacterId is the stable identity of a tab — survives reconnects within
-// the tab. For now it's the lowercased account::character so two characters
-// with the same name on different accounts get distinct tabs.
+// the tab. v0.8.0: includes the game shard so the same character on a
+// different shard gets a separate tab (Sekmeht-DRT and Sekmeht-DR are
+// independent tabs, not the same tab renamed). DR's one-character-per-account
+// rule still prevents both from being CONNECTED simultaneously — the conflict
+// modal handles that case — but a tester can have one shard's tab live and
+// the other in disconnected state for re-login.
 export type CharacterId = string
 
-export function makeCharacterId(account: string, character: string): CharacterId {
-  return `${account.toLowerCase()}::${character.toLowerCase()}`
+export function makeCharacterId(account: string, character: string, game: string): CharacterId {
+  return `${account.toLowerCase()}::${character.toLowerCase()}::${game.toLowerCase()}`
 }
 
 // Snapshot of game-state signals that the tab bar (and any other consumer)
@@ -64,10 +68,17 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
   const [activeId, setActiveId] = useState<CharacterId | null>(null)
 
   const addSession = useCallback((info: SessionInfo): CharacterId => {
-    const characterId = makeCharacterId(info.account, info.character)
+    const characterId = makeCharacterId(info.account, info.character, info.game)
     setSessions(prev => {
       // Replace if a session for this characterId already exists (reconnect
-      // within an existing tab). Otherwise append.
+      // within an existing tab). Otherwise append. Either way the status
+      // resets to DEFAULT_STATUS — addSession is only called after a
+      // successful login IPC, so `connected: true` is correct, and the prior
+      // session's vitals/indicators are stale (the disconnect cleared them
+      // in-game anyway). v0.8.0 (B96): the previous code preserved
+      // `prev[existing].status` on reconnect, which carried the old
+      // `connected: false` from a user-initiated Disconnect into the new
+      // session — tab stayed greyed out even though main was fully connected.
       const existing = prev.findIndex(s => s.characterId === characterId)
       const record: SessionRecord = {
         characterId,
@@ -76,7 +87,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         character: info.character,
         game: info.game,
         useLich: info.useLich,
-        status: existing >= 0 ? prev[existing].status : { ...DEFAULT_STATUS },
+        status: { ...DEFAULT_STATUS },
       }
       if (existing >= 0) {
         const next = prev.slice()

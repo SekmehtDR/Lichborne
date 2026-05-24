@@ -17,13 +17,56 @@
   background: transparent;
 }
 
+/* When the launcher is rendered inside the Add Character modal (logged-in
+   user clicks +), the modal's flex centering means the launcher's height
+   is content-driven; `overflow-y: auto` from .launcher above never gets
+   to kick in because the element isn't bounded. Cap the height to the
+   viewport so it can actually scroll. v0.8.0 (B97 follow-up). */
+.add-character-modal .launcher--compact {
+  width: 100%;
+  max-width: 760px;
+  max-height: calc(100vh - 48px);  /* modal has 24px padding top + bottom */
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
 /* ── Top bar (Lich Setup access in disconnected state) ───────────────── */
 
 .launcher-topbar {
   align-self: stretch;
   display: flex;
   justify-content: flex-end;
+  gap: 6px;
   padding: 0 4px 16px;
+}
+
+/* v0.8.0 UX: Add-account + Bulk-Connect buttons sit alongside Lich Setup
+   in the top bar. The accent style on Add Account makes it the prominent
+   action — testers were scrolling past collapsed accounts to find it. */
+.launcher-topbar-btn--add {
+  color: var(--accent) !important;
+  border-color: var(--accent-dim) !important;
+  background: var(--accent-bg) !important;
+  font-weight: 600;
+}
+
+.launcher-topbar-btn--add:hover {
+  background: color-mix(in srgb, var(--accent) 14%, var(--accent-bg)) !important;
+}
+
+.launcher-topbar-btn--bulk {
+  color: var(--color-success) !important;
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent) !important;
+}
+
+.launcher-topbar-btn--bulk:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-success) 8%, transparent) !important;
+}
+
+.launcher-topbar-btn--bulk:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .launcher-topbar-btn {
@@ -115,12 +158,350 @@
 
 .launcher-error-dismiss:hover { opacity: 1; }
 
+/* v0.8.0: characters are now organized by Account → Game section. The grid
+   is reused inside each section; the outer .launcher-groups stacks them. */
+.launcher-groups {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.launcher-account {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Account header — wraps a sibling toggle button + a refresh button. v0.8.0
+   fix: was a single <button> with a nested span-role-button for refresh
+   (invalid HTML); now a wrapper div with two real buttons inside. Default
+   collapsed per tester request — accounts with many characters spread
+   across the page felt noisy; collapsing keeps it tidy and the user opens
+   what they want to launch from. */
+.launcher-account-header {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0;
+  border-bottom: 1px solid var(--border-faint);
+  border-radius: 4px 4px 0 0;
+  background: transparent;
+}
+
+/* The toggle button takes the full row width (minus the refresh button on
+   the right). flex:1 + text-align:left so the chevron/name align cleanly. */
+.launcher-account-header-toggle {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px 0 0 0;
+  transition: background 0.12s;
+}
+
+.launcher-account-header-toggle:hover {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.launcher-account-chevron {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  width: 0.9em;
+  display: inline-block;
+}
+
+.launcher-account-count {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+
+/* Collapsed accounts hide their sections via DOM (sections only render when
+   isExpanded), so this is just for the header's bottom-border (no need
+   when collapsed). */
+.launcher-account--collapsed .launcher-account-header {
+  border-bottom-color: transparent;
+  border-radius: 4px;
+}
+
+.launcher-account-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.launcher-account-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.launcher-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.launcher-section-header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
 .launcher-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px;
   width: 100%;
-  max-width: 720px;
+}
+
+/* The bottom Add-character row gets the same grid so it lines up with the
+   character grids above (the + tile picks up minmax(260px) sizing). */
+.launcher-add-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+/* Test Server pill — v0.8.0 redesign. Was a labelled checkbox; now a
+   styled pill that matches the Lich/Direct pair, sitting right under it.
+   Greyed out (.launcher-card-mode--inactive cascade) when the character
+   is connecting to DR; themed-accent color when set to DRT. Only rendered
+   on DR/DRT tiles — DRX/DRF have no test variant. */
+.launcher-card-modes--test {
+  margin-top: 2px;
+}
+
+/* v0.8.0 UX pass: compressed-tile action row — pills on the left, Connect
+   on the right, single line. Replaces the old stacked layout (pills row +
+   test row + connect row → 3 rows down to 1). */
+.launcher-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;        /* v0.8.0 polish: Connect drops to its own line if pills + button can't fit at narrow tile widths */
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.launcher-card-footer .launcher-card-modes {
+  margin-top: 0;
+}
+
+.launcher-card-footer .launcher-card-connect {
+  margin-top: 0;
+}
+
+/* Favorites discoverability hint — small dismissable line above the
+   account sections. Shown only when user has tiles but no favorites and
+   hasn't already dismissed. v0.8.0 UX pass. */
+.launcher-fav-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.launcher-fav-tip > span {
+  flex: 1;
+}
+
+.launcher-fav-tip-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.launcher-fav-tip-dismiss:hover { color: var(--text-primary); }
+
+/* Active Test Server uses --accent (the theme's signature color) so it
+   reads distinctly from lich-green / direct-blue. When inactive the
+   --inactive modifier already greys it out via the shared rule above. */
+.launcher-card-mode--test {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+/* v0.8.0 (F19): paired Lich/Direct pills replace the single click-to-toggle
+   badge. Both pills render side-by-side; the active one keeps its themed
+   color, the inactive one is greyed out (--text-faint) and clickable to
+   switch. Clicking the active one is a no-op (disabled). The pair lives on
+   its own row inside the tile so it doesn't crowd the header. */
+.launcher-card-modes {
+  display: inline-flex;
+  gap: 4px;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.launcher-card-mode {
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 0.12s ease-out, opacity 0.12s ease-out;
+  border: 1px solid transparent;
+}
+
+.launcher-card-mode:hover:not(:disabled) {
+  filter: brightness(1.2);
+}
+
+.launcher-card-mode:disabled {
+  cursor: default;
+}
+
+/* Inactive variant — greyed out so it reads as "the other option exists,
+   click to switch". Overrides the themed lich/direct colors. */
+.launcher-card-mode--inactive {
+  background: color-mix(in srgb, var(--text-faint) 14%, transparent) !important;
+  color: var(--text-faint) !important;
+  border-color: color-mix(in srgb, var(--text-faint) 28%, transparent) !important;
+  opacity: 0.7;
+}
+
+.launcher-card-mode--inactive:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--text-secondary) !important;
+}
+
+/* v0.8.0 (F19): heart favorite toggle in the tile header. Empty (♡) when
+   not favorited, filled (♥) when favorited. The filled state uses
+   --color-danger for the universal "favorited" red. */
+.launcher-card-favorite {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  transition: color 0.12s, transform 0.12s;
+}
+
+.launcher-card-favorite:hover {
+  color: var(--color-danger);
+  transform: scale(1.15);
+}
+
+.launcher-card-favorite--on {
+  color: var(--color-danger);
+}
+
+.launcher-card-favorite:disabled {
+  cursor: default;
+}
+
+/* Favorites section header gets a small heart prefix to echo the toggle
+   icon. Otherwise renders the same as any other section header. */
+.launcher-section--favorites .launcher-section-header {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.launcher-section-header-heart {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+}
+
+/* v0.8.0: kebab-menu button — same context menu as right-click. Discreet
+   so the tile reads cleanly; brighter on hover. */
+.launcher-card-menu {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: 2px;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.launcher-card-menu:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-color: var(--border-subtle);
+}
+
+/* Refresh-from-account button — sibling of the toggle button, not nested.
+   v0.8.0 (bug 1 fix). */
+.launcher-account-refresh {
+  align-self: center;
+  margin-right: 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-family: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.launcher-account-refresh:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+/* Hidden-tile visual: dimmed + dashed border so it reads as "soft-deleted,
+   still here for un-hiding" without looking broken. */
+.launcher-card--hidden {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+/* Show-hidden toggle row at the bottom of the launcher (under the
+   add-account tile). Only renders when there's at least one hidden tile. */
+.launcher-hidden-toggle-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.launcher-hidden-toggle {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.launcher-hidden-toggle:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 /* ── Character card ──────────────────────────────────────────────────── */
@@ -150,6 +531,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+/* Right-edge action cluster (heart + kebab). flex container keeps them tight
+   together while the name span fills the remaining space on the left. */
+.launcher-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
 .launcher-card-name {
@@ -183,6 +573,17 @@
 .launcher-card-meta {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+/* v0.8.0 (F20): guild + circle inline addition to the meta line, plus the
+   has-notes ✎ indicator. Both are subtle so they don't dominate the tile;
+   the actual edit path is the ⋯ menu → Edit Profile…. */
+.launcher-card-guildline {
+  color: var(--text-secondary);
+}
+
+.launcher-card-notes-indicator {
+  color: var(--accent-dim);
 }
 
 .launcher-card-connect {

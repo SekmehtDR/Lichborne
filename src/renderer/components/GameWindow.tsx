@@ -185,8 +185,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // state for this tab. Bails out fast when nothing has actually changed.
   const { updateStatus, updateCharacterName } = useSessions()
   const characterId = useMemo(
-    () => makeCharacterId(session.account, session.character),
-    [session.account, session.character],
+    () => makeCharacterId(session.account, session.character, session.game),
+    [session.account, session.character, session.game],
   )
 
   // Schedule a debounced YAML save after any per-character localStorage write.

@@ -57,13 +57,15 @@ export class ConnectionManager extends EventEmitter {
         const loginKey = await loginKeyPromise
 
         this.emit('status', 'Launching Lich...')
-        await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.hideLichWindow)
+        await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.lichArguments)
 
         this.emit('status', `Waiting for Lich on localhost:${creds.lichPort}...`)
         await this.lich.connectWithRetry(loginKey, creds.lichPort, {
-          // lichDelay is repurposed as a timeout floor — most users keep the
-          // default; a slow machine can raise it. Never below 30s.
-          maxWaitMs: Math.max(creds.lichDelay, 30) * 1000,
+          // 30s cap — covers a slow Ruby init + Lich listener bind on every
+          // machine we've tested. A user-facing knob existed before v0.8.0
+          // (`lichDelay`) but the connect-with-retry loop made it pointless;
+          // bumping this constant is the escape hatch if anyone ever needs it.
+          maxWaitMs: 30_000,
           onProgress: (s) => this.emit('status', `Waiting for Lich to start... (${s}s)`),
         })
       })
@@ -80,12 +82,17 @@ export class ConnectionManager extends EventEmitter {
   // eaccess.play.net authentication — yields the per-character login key Lich
   // needs for the Genie handshake. No Lich involvement, so it runs outside the
   // launch queue (and overlaps the queue wait for later characters).
+  //
+  // `creds.game` is threaded through to `sge.authenticate` (v0.8.0) so the
+  // login key is for the right shard. Until v0.8.0 this call passed only
+  // account/password — SGEConnection defaulted gameCode to 'DR', so even DRT/
+  // DRX/DRF characters got a DR login key and were silently routed there.
   private async authenticateSge(creds: LoginCredentials): Promise<string> {
     this.emit('status', 'Connecting to eaccess.play.net:7910...')
     await this.sge.connect()
     try {
       this.emit('status', 'SGE connected — authenticating...')
-      const characters = await this.sge.authenticate(creds.account, creds.password)
+      const characters = await this.sge.authenticate(creds.account, creds.password, creds.game)
 
       const char = characters.find(
         c => c.name.toLowerCase() === creds.character.toLowerCase()
@@ -108,7 +115,8 @@ export class ConnectionManager extends EventEmitter {
     this.emit('status', 'Authenticating with Simutronics...')
 
     await this.sge.connect()
-    const characters = await this.sge.authenticate(creds.account, creds.password)
+    // creds.game threaded through (v0.8.0) — see authenticateSge above for why.
+    const characters = await this.sge.authenticate(creds.account, creds.password, creds.game)
 
     const char = characters.find(
       c => c.name.toLowerCase() === creds.character.toLowerCase()
@@ -170,24 +178,57 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
-  async gracefulDisconnect(): Promise<void> {
-    // Send QUIT and wait for the server to close the connection.
-    // DR will process the logout and drop the connection on its own.
+  // Graceful disconnect. Default behavior: send QUIT, wait up to 5s for the
+  // server-side disconnect ack, then force-close. Used by the in-tab
+  // Disconnect button and the conflict-modal auto-disconnect path — both
+  // care about the server actually releasing the account slot before the
+  // next action (especially the conflict-modal, which immediately retries
+  // a login on the same account).
+  //
+  // `quickClose: true` (v0.8.0, B99) skips the ack-wait. Used by the app
+  // shutdown path — the user wants the window gone NOW. We use **socket
+  // half-close** (`socket.end()`) so the QUIT is GUARANTEED to leave our
+  // process: end() writes the queued bytes, then sends FIN after the send
+  // buffer drains. (The earlier cut used `write + 300ms + destroy`, which
+  // was a race against the OS send queue — fine on Lich loopback but not
+  // guaranteed for the Direct internet socket. With end() both paths are
+  // bytes-out-the-door guaranteed; we just don't wait for the server ack.)
+  // The 1.5s timeout is the safety cap if the OS never reports 'close'.
+  async gracefulDisconnect(opts: { quickClose?: boolean } = {}): Promise<void> {
     this.send('QUIT')
 
-    await new Promise<void>((resolve) => {
-      const forceClose = setTimeout(() => {
-        resolve()
-      }, 5000)
+    if (opts.quickClose) {
+      await this.endActiveSocket(1500)
+      this.forceDisconnect()
+      return
+    }
 
-      // Resolve early if the game closes the connection itself
+    await new Promise<void>((resolve) => {
+      const forceClose = setTimeout(() => resolve(), 5000)
+      // Resolve early if the game closes the connection itself.
       this.once('disconnect', () => {
         clearTimeout(forceClose)
         resolve()
       })
     })
-
     this.forceDisconnect()
+  }
+
+  // Half-close the active session socket via socket.end() and wait for the
+  // OS-level 'close' event (capped by `timeoutMs`). Routes to the Lich
+  // helper for Lich sessions or directly to the game socket for Direct.
+  // Used only by the quickClose path in gracefulDisconnect above.
+  private async endActiveSocket(timeoutMs: number): Promise<void> {
+    if (this.mode === 'lich') {
+      await this.lich.endAndAwaitClose(timeoutMs)
+    } else if (this.gameSocket) {
+      const sock = this.gameSocket
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, timeoutMs)
+        sock.once('close', () => { clearTimeout(timer); resolve() })
+        sock.end()
+      })
+    }
   }
 
   forceDisconnect() {

@@ -6,12 +6,13 @@ import LichSetupDialog from './components/LichSetupDialog'
 import GameWindow from './components/GameWindow'
 import CharacterTabBar from './components/CharacterTabBar'
 import QuickSend from './components/QuickSend'
+import BulkConnectPicker from './components/BulkConnectPicker'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
 import { CharacterProvider } from './CharacterContext'
 import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile } from './profile'
-import { loadAdvanced, saveAdvanced } from './lichSettings'
-import type { LoginCredentials } from '../shared/types'
+import { loadAdvanced, saveAdvanced, gameOptionByCode } from './lichSettings'
+import type { LoginCredentials, SessionId } from '../shared/types'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -36,12 +37,30 @@ function AppShell() {
   const { sessions, activeId, addSession, removeSession, setActive } = useSessions()
   const [showAdd, setShowAdd] = useState(false)
   // The Add modal renders the Launcher (cards) so the user can pick a saved
-  // character. Clicking "+ Add character" inside the Launcher opens the wizard
-  // by flipping showWizard true. The wizard is also used as the fallback when
-  // a card connect needs a password that isn't saved.
+  // character. Clicking "+ Add account" inside the Launcher opens the wizard
+  // by setting showWizard. wizardPrefillAccount carries the account name when
+  // the wizard is opened via "↺ Refresh" on a launcher account header (v0.8.0).
   const [showWizard, setShowWizard] = useState(false)
+  const [wizardPrefillAccount, setWizardPrefillAccount] = useState<string | undefined>(undefined)
+  // Bumped each time the wizard adds tiles — Launcher useEffect-keyed on this
+  // re-fetches the profiles list so newly-discovered characters appear.
+  const [launcherRefreshKey, setLauncherRefreshKey] = useState(0)
+  // Bulk Connect (v0.8.0, F21). Three states across the lifecycle:
+  //  - bulkPickerSource: Launcher passed its character list → picker modal open
+  //  - bulkProgress: sequential connect is running; shows progress overlay
+  //  - bulkSummary: all attempts done; shows summary modal with per-char status
+  const [bulkPickerSource, setBulkPickerSource] = useState<LauncherCharacter[] | null>(null)
+  const [bulkProgress, setBulkProgress] = useState<{ currentIndex: number; total: number; currentName: string } | null>(null)
+  const [bulkSummary, setBulkSummary] = useState<{ ok: string[]; failed: { name: string; error: string }[] } | null>(null)
   const [showLichSetup, setShowLichSetup] = useState(false)
   const [showQuickSend, setShowQuickSend] = useState<{ initialCommand: string } | null>(null)
+  // Visible "Closing…" overlay shown while main is shutting down (v0.8.0,
+  // B99). Without it, the up-to-5s gracefulDisconnect wait looks like a
+  // frozen window — OS animations stall and the user sees nothing happen.
+  // Main sends 'shutdown-starting' with the active-session count the moment
+  // it intercepts the window close; this state flips on, the overlay paints,
+  // and the window destroys shortly after.
+  const [shutdownInfo, setShutdownInfo] = useState<{ activeCount: number } | null>(null)
   const [updateState, setUpdateState] = useState<UpdateState>('idle')
   const [updateVersion, setUpdateVersion] = useState('')
   const [updateDismissed, setUpdateDismissed] = useState(false)
@@ -56,6 +75,20 @@ function AppShell() {
   const [connectError,    setConnectError]    = useState<string>('')
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCancelledRef = useRef(false)
+
+  // v0.8.0: when the user picks a character whose account already has another
+  // character connected, we show a confirmation modal instead of flat-out
+  // refusing. On Continue we await-disconnect the conflicting session and
+  // then start the new connect (with a single 2s retry to ride out DR's
+  // server-side account-slot release lag). The conflicting tab is NOT
+  // removed — it stays in the bar in disconnected state, same as if the user
+  // had pressed the in-tab Disconnect button. They can close it via X or
+  // re-login to it later.
+  const [pendingConflict, setPendingConflict] = useState<{
+    incoming: LauncherCharacter
+    conflict: { character: string; sessionId: SessionId; characterId: CharacterId; game: string }
+  } | null>(null)
+  const [conflictBusy, setConflictBusy] = useState(false)
 
   // __flushProfileSaves is called by main's window-close handler. It fires every
   // pending debounced save AND unconditionally saves every active character's
@@ -76,6 +109,15 @@ function AppShell() {
     }
     return () => { delete window.__flushProfileSaves }
   }, [sessions])
+
+  // v0.8.0 (B99): listen for the shutdown-starting signal from main and flip
+  // the "Closing…" overlay on so the up-to-5s graceful-disconnect wait gets
+  // visible feedback. Once on, this stays on — the window destroys shortly
+  // after, no need to clear.
+  useEffect(() => {
+    const unsub = window.api.onShutdownStarting((info) => setShutdownInfo(info))
+    return unsub
+  }, [])
 
   // Single source of truth for document.title. Re-fires on tab switch (activeId)
   // and on the active session's character / game / connection-status changes.
@@ -228,12 +270,23 @@ function AppShell() {
   // until the timer expires.
   function handleCardConnect(c: LauncherCharacter) {
     if (pendingConnect) return  // already connecting; ignore double-clicks
+    if (pendingConflict) return // resolution modal already open
 
-    // Block if same SimuCo account is already connected — DR allows only one
-    // active character per account. Same guard LoginScreen has.
+    // Same-account guard. DR allows only one active character per account at
+    // a time — pre-v0.8.0 this was a flat refusal (`setConnectError(...)`).
+    // Now we surface a confirmation modal: the user can either disconnect the
+    // conflicting session and continue, or cancel and manage it themselves.
     const conflict = sessions.find(s => s.account.toLowerCase() === c.account.toLowerCase() && s.status.connected)
     if (conflict) {
-      setConnectError(`${conflict.character} is already connected on account ${c.account}. Disconnect them first.`)
+      setPendingConflict({
+        incoming: c,
+        conflict: {
+          character: conflict.character,
+          sessionId: conflict.sessionId,
+          characterId: conflict.characterId,
+          game: conflict.game,
+        },
+      })
       return
     }
 
@@ -248,6 +301,52 @@ function AppShell() {
         setPendingConnect(null)
       })
     }, 1500)
+  }
+
+  // Resolve a pending account conflict by disconnecting the conflicting
+  // session and starting the new connect. The disconnect is awaited (NOT
+  // fire-and-forget) so SGE sees the slot as free by the time we try the new
+  // login — otherwise it returns "Invalid login key" because the old session
+  // is still considered connected.
+  //
+  // Single 2-second retry on the new connect: DR's server-side account-slot
+  // release sometimes lags our local disconnect-ack by a beat. One retry
+  // catches the common race without complicating the UX. Both attempts fail
+  // → the user sees the real error and can retry manually from the launcher.
+  async function continueWithDisconnect() {
+    if (!pendingConflict) return
+    const { incoming, conflict } = pendingConflict
+    setConflictBusy(true)
+    try {
+      await window.api.disconnectAwait(conflict.sessionId)
+      // The disconnected tab stays in the bar (in disconnected state) — we
+      // intentionally don't destroy/remove it. User decides whether to close
+      // it via X or re-login to it later. Matches the in-tab Disconnect
+      // button's behaviour.
+      setPendingConflict(null)
+      setConflictBusy(false)
+      try {
+        await runConnect(incoming)
+      } catch (err1) {
+        // Retry once after 2s — see comment above.
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+          await runConnect(incoming)
+        } catch {
+          setConnectError(String(err1))
+          setPendingConnect(null)
+        }
+      }
+    } catch (err) {
+      setConnectError(`Failed to disconnect ${conflict.character}: ${String(err)}`)
+      setPendingConflict(null)
+      setConflictBusy(false)
+    }
+  }
+
+  function cancelConflict() {
+    if (conflictBusy) return
+    setPendingConflict(null)
   }
 
   function cancelPendingConnect() {
@@ -273,17 +372,24 @@ function AppShell() {
       return
     }
 
+    // Derive Lich port + CLI args from the character's saved game (v0.8.0).
+    // Before this, runConnect used `adv.lichPort` — the GLOBAL last-saved port
+    // from _shared.yaml — which meant a character configured for DRT/DRX/DRF
+    // silently routed to whatever shard the global port pointed at (usually
+    // DR). The character's saved `game` field is now the authority; the
+    // global `adv.lichPort` is only used as a fallback default for the wizard.
+    const gameOpt = gameOptionByCode(c.game)
     const creds: LoginCredentials = {
-      account:        c.account,
+      account:       c.account,
       password,
-      character:      c.name,
-      useLich:        c.useLich,
-      lichPath:       adv.lichPath,
-      rubyPath:       adv.rubyPath,
-      lichPort:       adv.lichPort,
-      lichMode:       adv.lichMode,
-      lichDelay:      adv.lichDelay,
-      hideLichWindow: adv.hideLichWindow,
+      character:     c.name,
+      game:          c.game,
+      lichArguments: gameOpt.lichArguments,
+      useLich:       c.useLich,
+      lichPath:      adv.lichPath,
+      rubyPath:      adv.rubyPath,
+      lichPort:      gameOpt.port,
+      lichMode:      adv.lichMode,
     }
 
     const result = await window.api.login(creds)
@@ -316,6 +422,84 @@ function AppShell() {
       character: c.name,
       game:      c.game,
       useLich:   c.useLich,
+    })
+  }
+
+  // Bulk Connect: walks the user-confirmed picks sequentially. Each char
+  // gets the same connect flow as a single-tile click (login IPC, profile
+  // import/export, session.add). Per-character errors don't abort the
+  // sequence — we accumulate them and show a summary at the end. v0.8.0 (F21).
+  async function runBulkConnect(picks: LauncherCharacter[]) {
+    setBulkPickerSource(null)
+    const ok: string[] = []
+    const failed: { name: string; error: string }[] = []
+    for (let i = 0; i < picks.length; i++) {
+      const c = picks[i]
+      setBulkProgress({ currentIndex: i + 1, total: picks.length, currentName: c.name })
+      try {
+        const adv = loadAdvanced()
+        const password = await window.api.loadPassword(c.account)
+        if (password === null) {
+          failed.push({ name: c.name, error: 'No saved password — add via Add Account' })
+          continue
+        }
+        const gameOpt = gameOptionByCode(c.game)
+        const creds: LoginCredentials = {
+          account: c.account, password, character: c.name,
+          game: c.game, lichArguments: gameOpt.lichArguments,
+          useLich: c.useLich, lichPath: adv.lichPath, rubyPath: adv.rubyPath,
+          lichPort: gameOpt.port, lichMode: adv.lichMode,
+        }
+        const result = await window.api.login(creds)
+        if (!result.ok) {
+          failed.push({ name: c.name, error: result.error ?? 'Connection failed' })
+          continue
+        }
+        try {
+          const loaded = await importCharacterProfile(c.name)
+          if (!loaded) clearCharacterLocalStorage(c.name)
+        } catch (err) { console.error(err) }
+        try {
+          await exportCharacterProfile(c.account, c.name, c.game, c.useLich)
+        } catch (err) { console.error(err) }
+        handleConnected({
+          sessionId: result.sessionId,
+          account: c.account,
+          character: c.name,
+          game: c.game,
+          useLich: c.useLich,
+        })
+        ok.push(c.name)
+      } catch (err) {
+        failed.push({ name: c.name, error: String(err) })
+      }
+    }
+    setBulkProgress(null)
+    setBulkSummary({ ok, failed })
+  }
+
+  // Build per-account groups for the BulkConnectPicker. Filters out hidden
+  // tiles (not eligible for bulk), marks an account as "already connected"
+  // if any of its characters has an active session.
+  function buildBulkGroups(characters: LauncherCharacter[]) {
+    const byAccount = new Map<string, LauncherCharacter[]>()
+    for (const c of characters) {
+      if (c.hidden) continue
+      const list = byAccount.get(c.account) ?? []
+      list.push(c)
+      byAccount.set(c.account, list)
+    }
+    const accountsSorted = [...byAccount.keys()].sort((a, b) => a.localeCompare(b))
+    return accountsSorted.map(account => {
+      const candidates = byAccount.get(account)!
+      const activeOnAccount = sessions.find(
+        s => s.account.toLowerCase() === account.toLowerCase() && s.status.connected
+      )
+      return {
+        account,
+        candidates: candidates.sort((a, b) => a.name.localeCompare(b.name)),
+        alreadyConnected: activeOnAccount ? activeOnAccount.character : null,
+      }
     })
   }
 
@@ -385,8 +569,14 @@ function AppShell() {
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {showFullLogin ? (
           <Launcher
+            refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
+            onBulkConnect={(characters) => setBulkPickerSource(characters)}
             onAddNew={openAddNew}
+            onRefreshAccount={(account) => {
+              setWizardPrefillAccount(account)
+              setShowWizard(true)
+            }}
             onOpenLichSetup={() => setShowLichSetup(true)}
             connectingName={pendingConnect?.name ?? null}
             connectError={connectError}
@@ -440,8 +630,15 @@ function AppShell() {
             title="Cancel"
           >✕</button>
           <Launcher
+            refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
+            onBulkConnect={(characters) => setBulkPickerSource(characters)}
             onAddNew={openAddNew}
+            onRefreshAccount={(account) => {
+              setShowAdd(false)
+              setWizardPrefillAccount(account)
+              setShowWizard(true)
+            }}
             onOpenLichSetup={() => setShowLichSetup(true)}
             compact
             connectingName={pendingConnect?.name ?? null}
@@ -453,9 +650,17 @@ function AppShell() {
 
       {showWizard && (
         <AddCharacterWizard
-          onCompleted={handleConnected}
-          onCancel={() => setShowWizard(false)}
+          onCompleted={(addedCount) => {
+            setShowWizard(false)
+            setWizardPrefillAccount(undefined)
+            if (addedCount > 0) setLauncherRefreshKey(k => k + 1)
+          }}
+          onCancel={() => {
+            setShowWizard(false)
+            setWizardPrefillAccount(undefined)
+          }}
           onOpenLichSetup={() => setShowLichSetup(true)}
+          prefillAccount={wizardPrefillAccount}
         />
       )}
 
@@ -475,11 +680,122 @@ function AppShell() {
         </div>
       )}
 
+      {pendingConflict && (
+        <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget && !conflictBusy) cancelConflict() }}>
+          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 460, gap: 12 }}>
+            <div className="launcher-connecting-text">
+              <span className="launcher-connecting-name">{pendingConflict.conflict.character}</span>{' '}
+              is currently connected on account <strong>{pendingConflict.incoming.account}</strong>{' '}
+              ({pendingConflict.conflict.game}).
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              DragonRealms only allows one character per account at a time. Continue and{' '}
+              {pendingConflict.conflict.character} will be disconnected automatically before{' '}
+              {pendingConflict.incoming.name} ({pendingConflict.incoming.game}) connects.
+              The disconnected tab stays open in case you want to log back into it later.
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="launcher-connecting-cancel" onClick={cancelConflict} disabled={conflictBusy}>
+                Cancel
+              </button>
+              <button
+                className="launcher-connecting-cancel"
+                style={{ background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' }}
+                onClick={continueWithDisconnect}
+                disabled={conflictBusy}
+              >
+                {conflictBusy
+                  ? `Disconnecting ${pendingConflict.conflict.character}…`
+                  : `Disconnect ${pendingConflict.conflict.character} and continue`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showQuickSend && (
         <QuickSend
           initialCommand={showQuickSend.initialCommand}
           onClose={() => setShowQuickSend(null)}
         />
+      )}
+
+      {/* Bulk Connect picker — selection modal. Confirm → runBulkConnect. */}
+      {bulkPickerSource && (
+        <BulkConnectPicker
+          groups={buildBulkGroups(bulkPickerSource)}
+          onCancel={() => setBulkPickerSource(null)}
+          onConfirm={runBulkConnect}
+        />
+      )}
+
+      {/* Bulk Connect progress — single "currently connecting Sekmeht (1 of 3)…"
+          overlay during the sequential connect. No cancel button mid-sequence
+          (would leave a partially-connected state); user can disconnect any
+          unwanted tabs afterward. */}
+      {bulkProgress && (
+        <div className="launcher-connecting" style={{ zIndex: 9000 }}>
+          <div className="launcher-connecting-card">
+            <div className="launcher-spinner" />
+            <div className="launcher-connecting-text">
+              Bulk Connect ({bulkProgress.currentIndex} of {bulkProgress.total}) — connecting{' '}
+              <span className="launcher-connecting-name">{bulkProgress.currentName}</span>…
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Connect summary — shown when all attempts finish. Reports
+          per-character success/failure so the user knows what landed and
+          what didn't. */}
+      {bulkSummary && (
+        <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget) setBulkSummary(null) }}>
+          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 480, gap: 10 }}>
+            <div className="launcher-connecting-text" style={{ fontWeight: 600 }}>
+              Bulk Connect finished
+            </div>
+            {bulkSummary.ok.length > 0 && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-success)' }}>
+                Connected: {bulkSummary.ok.join(', ')}
+              </div>
+            )}
+            {bulkSummary.failed.length > 0 && (
+              <div style={{ fontSize: '0.8rem', color: 'var(--color-danger)' }}>
+                Failed:
+                <ul style={{ marginLeft: 16, marginTop: 4 }}>
+                  {bulkSummary.failed.map(f => (
+                    <li key={f.name}><strong>{f.name}</strong>: {f.error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignSelf: 'stretch', marginTop: 4 }}>
+              <button className="launcher-connecting-cancel" onClick={() => setBulkSummary(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v0.8.0 (B99): "Closing…" overlay covers the up-to-5s graceful-
+          disconnect wait so the window doesn't look frozen. Inline styles
+          keep this self-contained — no separate CSS file needed for one
+          short-lived element that paints once and then the window destroys. */}
+      {shutdownInfo && (
+        <div className="launcher-connecting" style={{ zIndex: 10000, background: 'rgba(0,0,0,0.75)' }}>
+          <div className="launcher-connecting-card">
+            <div className="launcher-spinner" />
+            <div className="launcher-connecting-text">
+              {/* Two messages by active-session count. The "no sessions" case
+                  isn't really *saving* profiles (we only rewrite ones the
+                  GameWindow modified — see B97) — it's mostly backing up
+                  every YAML to .bak as the crash-recovery safety net. The
+                  copy reflects that. v0.8.0 wording polish. */}
+              {shutdownInfo.activeCount > 0
+                ? `Closing — disconnecting ${shutdownInfo.activeCount} ${shutdownInfo.activeCount === 1 ? 'character' : 'characters'}…`
+                : 'Closing — backing up profiles…'}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

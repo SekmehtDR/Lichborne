@@ -1,7 +1,7 @@
 {
   "name": "lichborne",
-  "version": "0.7.1",
-  "description": "DragonRealms game client with Lich support and AI features",
+  "version": "0.8.0",
+  "description": "DragonRealms game client with a primary Lich integration focus.",
   "main": "dist/main/main.js",
   "scripts": {
     "dev:renderer": "vite",

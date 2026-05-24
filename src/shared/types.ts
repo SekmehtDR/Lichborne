@@ -25,13 +25,28 @@ export interface LoginCredentials {
   account: string
   password: string
   character: string
+  // Game shard code (DR / DRX / DRT / DRF). v0.8.0 — was previously dropped
+  // on the way to main, which silently routed every Lich-mode connect to DR
+  // regardless of the saved character.game. Now it flows through to both the
+  // SGE G-handshake (`G\t<code>` selects which character list / login key)
+  // AND `lichArguments` below (which selects Lich's per-shard front-end port
+  // and runtime mode).
+  game: string
+  // Lich CLI flags appended after the mode flag — e.g. '--dragonrealms',
+  // '--test --dragonrealms', '--platinum --dragonrealms', '--fallen'.
+  // Resolved by the renderer from DEFAULT_GAMES[game]; passed through so
+  // LichConnection.launch can spawn Lich with the correct per-shard mode
+  // without main needing its own game→args lookup.
+  lichArguments: string
   useLich: boolean
   lichPath: string
   rubyPath: string
+  // Lich front-end port. Derived per-character from DEFAULT_GAMES[game] —
+  // each shard listens on its own port (DR: 11024, DRX: 11124, DRT: 11624,
+  // DRF: 11324). Until v0.8.0 this was always the global advanced-settings
+  // port, which made cross-shard logins land on the wrong server.
   lichPort: number
   lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
-  lichDelay: number
-  hideLichWindow: boolean
 }
 
 export interface CharacterEntry {

@@ -1342,23 +1342,86 @@ Lower-priority conditions are still active in-game, just not surfaced on the tab
 
 **Brightness tiers (v0.7.0, B89):** three intentional levels. The **active** tab — full-bright text (`--text`), bold, with a `--bg-base` background + border. An **inactive but connected** tab — near-full text (`--text-secondary`), normal weight, no background. A **disconnected** tab — `opacity: 0.55` + italic. The middle tier originally used `--text-dim`, which made a healthy connected character drift toward looking stale; only a genuinely disconnected tab should read as faded. The active tab is distinguished by its background/border/weight, not by dimming its neighbours.
 
-### 13.6 Adding Characters
+### 13.6 Launcher & Character Selection (v0.8.0)
 
-Clicking `+` drops a compact character launcher:
+The launcher ([Launcher.tsx](src/renderer/components/Launcher.tsx)) is the primary login surface. It renders in two contexts: **full-page** (`session.length === 0`, returns when the user logs everyone out) and **modal-compact** (clicked + while logged in, opens the same launcher inside `.add-character-modal`). The two are the same component with a `compact` prop.
+
+**Section structure (top-down):**
+
+1. **Top bar** — `⚡ Bulk Connect` (conditional on ≥2 accounts with connectable characters), `+ Add account` (accent-colored, persistent — always reachable regardless of scroll), `⚙ Lich Setup`.
+2. **Welcome card** — when there are zero character profiles on disk. Single `+ Add account` CTA.
+3. **Favorites discoverability hint** — a single dismissable line above the account sections, shown only when the user has tiles but no Favorites and hasn't already dismissed (`lichborne.launcher.favTipDismissed` localStorage flag).
+4. **Favorites section** — always at the top, always expanded. Mirrors any tile with `profile.favorite === true`. Account-mixed, so tiles here keep the account name in their meta line (the `showAccount` prop is true here, false in the account-section context). Hidden overrides favorite — a hidden + favorited character only appears here when Show Hidden is on.
+5. **Per-account sections** — grouped by account, sorted alphabetically. Within each account, sub-sectioned by game (DR/DRX/DRF — DRT tiles render under DR since DRT is a per-character override). Empty sections don't render.
+6. **`+ Add account` bottom tile** + **Show N hidden profiles** toggle at the bottom of the grid.
+
+**Tile structure (3 rows):**
 
 ```
-┌─────────────────────────────────────────┐
-│  Add Character                          │
-│                                         │
-│  [Sekmeht        ▼]  ← saved profiles  │
-│  [Agan           ▼]                     │
-│  [+ New login...  ]                     │
-│                                         │
-│  [ Launch Selected ]                    │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│ Sekmeht                       ♥ ⋯   │  ← header: name (flex 1) + heart + kebab
+│ DR · Empath 50 ✎                    │  ← meta: game · guild + circle · ✎ notes indicator
+│ [LICH][DIRECT] [TEST]   [Connect →] │  ← footer: paired pills + test pill (DR only) + Connect
+└──────────────────────────────────────┘
 ```
 
-**Character profiles** store: account credentials (encrypted), preferred layout, preferred theme, connection mode (Lich / direct). "Launch all" connects every saved character at startup.
+The footer is `display: flex; flex-wrap: wrap` so Connect drops to its own line if the tile gets too narrow. Inside an account section the meta drops the account name (already in the section header).
+
+**Account sections are collapsible** (default collapsed) with state persisted in `lichborne.launcher.expandedAccounts` (JSON array of expanded account names). Two override rules: **(1)** if there's exactly one account, that account is always expanded and the collapse toggle is hidden; **(2)** the wizard auto-expands the just-added account on completion (writes to localStorage before `onCompleted` bumps `refreshKey`, and Launcher re-reads the key on `refreshKey` change). The 1→2 transition also re-expands the prior account so the user doesn't see it suddenly collapse.
+
+**Per-tile UI affordances (each persists immediately to YAML via a small read-modify-write helper in Launcher.tsx — never via the GameWindow's debounced save path):**
+
+- **♡/♥ heart** — toggles `profile.favorite`. ♥ uses `--color-danger` red.
+- **⋯ kebab menu** — opens a `ContextMenu` (right-click on the tile also opens the same menu). Items: `Edit Profile…` (opens `CharacterNotesEditor`), `Hide Profile`/`Unhide Profile`, `Delete Profile…`.
+- **Paired LICH/DIRECT pills** — active pill colored, inactive grey + clickable to switch. Active pill is `disabled` (no-op click).
+- **TEST pill** (DR only) — grey when off (character is `game: 'DR'`), accent-colored when on (`game: 'DRT'`). Hidden on DRX/DRF tiles.
+- **Connect →** — fires `handleCardConnect` in App.tsx with a 1.5s grace window before the actual login IPC.
+
+**Character profiles** ([profile-types.ts](src/renderer/profile-types.ts) `CharacterProfile`) store all the per-character launcher-owned fields alongside the GameWindow-owned ones:
+- GameWindow-owned: `theme`, `state` (a map of all `lichborne.{character}.*` localStorage keys)
+- Launcher-owned: `game`, `useLich`, `hidden?`, `favorite?`, `guild?`, `circle?`, `notes?`
+
+The split matters because both ends save the profile (the GameWindow on its debounced timer, the launcher on every helper write). `exportCharacterProfile` ([profile.ts](src/renderer/profile.ts)) does a read-merge-write so launcher-owned fields aren't stripped when the GameWindow saves (B97 fix — see CLAUDE.md pitfall).
+
+### 13.6.1 Add Account Flow
+
+The single entry point for adding characters. Renamed from "Add Character" in v0.8.0 — the flow is now account-driven, creating tiles for every character on an account in one shot rather than one wizard run per character.
+
+[AddCharacterWizard.tsx](src/renderer/components/AddCharacterWizard.tsx) — 2 steps:
+
+1. **Account / Password / Game.** Same-account conflict check: if any of the active sessions are on this account, a confirmation modal offers to disconnect + continue (the launcher's tile-click path has the same modal — see §13.6.2). DRT is *not* a game option here — it's a per-tile toggle after creation (mirrors the launcher's TEST pill). A "Connect to Prime Test (DRT) instead" sub-checkbox appears when DR is picked, which writes `game: 'DRT'` to the stub.
+2. **Discovery.** Lichborne runs the existing `eaccessFetchCharacters` IPC (no Lich needed — SimuCo's auth service is mode-agnostic). The character roster comes back as a checkbox list with "Select all new" plus per-character checkboxes. Already-existing profiles are listed with a disabled checkbox and `[already added]` badge so the user knows what's there. Confirm → bulk-write one stub `CharacterProfile` per checked character, then call `onCompleted(addedCount)`. App.tsx bumps `launcherRefreshKey`; Launcher re-fetches the profile list and the new tiles appear.
+
+A `prefillAccount` prop lets a launcher "↺ Refresh from account" button open the wizard with that account pre-filled — discovery is the same operation, just adds anything new for that account.
+
+### 13.6.2 Same-Account Conflict & Auto-Disconnect
+
+DR allows only one character per account active at a time. Three places enforce this:
+
+- **Launcher tile click** ([App.tsx](src/renderer/App.tsx) `handleCardConnect`) — when clicking a tile for an account that already has an active session, raise a confirmation modal: Cancel or "Disconnect {conflict} and continue". On Continue: `disconnectAwait` IPC (waits for the gracefulDisconnect to complete — see §13.6.3), then `runConnect(incoming)` with a single 2-second retry to ride out DR's server-side account-slot release lag.
+- **Wizard step 1** ([AddCharacterWizard.tsx](src/renderer/components/AddCharacterWizard.tsx) `nextFromStep1`) — same conflict check before EAccess auth.
+- **Bulk Connect picker** ([BulkConnectPicker.tsx](src/renderer/components/BulkConnectPicker.tsx)) — accounts already in active sessions are listed but disabled with a "({char} already connected — skip)" hint; can't be selected for the bulk sequence.
+
+The conflicting session's tab is **not** removed when auto-disconnected — it stays in the bar in disconnected state (same as if the user had clicked the in-tab Disconnect button), so the user can close it via × or re-login later.
+
+### 13.6.3 Disconnect IPC Channels
+
+Two IPC channels for disconnect, differing only in wait semantics:
+
+| Channel | Wait shape | Caller |
+|---|---|---|
+| `disconnect` (fire-and-forget) | `gracefulDisconnect` with 5s ack-wait, fire-and-forget | In-tab Disconnect button |
+| `disconnect-await` (returns Promise) | Same `gracefulDisconnect` but awaitable | Conflict-modal auto-disconnect path (needs the slot release confirmed) |
+
+App shutdown (`mainWindow.on('close')`) uses a third variant: `gracefulDisconnect({ quickClose: true })` — sends QUIT, calls `socket.end()` so the OS sends FIN after the send buffer drains (bytes guaranteed to leave), then force-closes. No server-ack wait. Shutdown drops from up-to-5s/session to ~300ms total. A "Closing — disconnecting N characters…" overlay (or "Closing — backing up profiles…" when no sessions are active) paints during the brief work via the new `shutdown-starting` IPC.
+
+### 13.6.4 Bulk Connect
+
+[BulkConnectPicker.tsx](src/renderer/components/BulkConnectPicker.tsx) + `runBulkConnect` in App.tsx. Surfaces only when ≥2 accounts have at least one connectable (non-hidden) character. Picker lists each account with a dropdown of its non-hidden characters; defaults to a favorited character if any, else first alphabetical. Already-connected accounts are disabled. Confirm → sequential connect (one character at a time — DR's account-slot rule forbids parallel within the same account; sequential is also simpler for error isolation across different accounts). Progress overlay during the run; per-character errors don't abort; final summary modal lists what succeeded and what failed.
+
+### 13.6.5 Per-Shard Tabs (CharacterId)
+
+`makeCharacterId(account, character, game)` in [SessionsContext.tsx](src/renderer/SessionsContext.tsx). `Sekmeht-DR` and `Sekmeht-DRT` get separate tabs because their characterIds differ. You still can't have both connected simultaneously (the account-slot rule), but you can have one connected and one in disconnected state for easy switching. The character profile YAML is keyed by character name only (one `Sekmeht.yaml` shared across shards — same automations / theme / layout regardless of shard).
 
 ### 13.7 Keyboard Navigation
 

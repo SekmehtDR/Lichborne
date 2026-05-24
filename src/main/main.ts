@@ -177,23 +177,49 @@ function createWindow() {
     const active = Array.from(sessions.values()).filter(s => s.connected)
     active.forEach(s => { s.connected = false; s.cleanDisconnect = true })
 
+    // Tell the renderer the shutdown is starting so it can paint a "Closing…"
+    // overlay (v0.8.0, B99). Without this the window appears frozen for up to
+    // 5s while gracefulDisconnect waits for the server-side QUIT ack — the
+    // OS animation stalls and the user has no idea anything is happening.
+    // Send before the flush+drain Promise.all kicks off so the overlay is
+    // visible from the moment the close starts.
+    try {
+      mainWindow?.webContents.send('shutdown-starting', { activeCount: active.length })
+    } catch { /* renderer may already be unresponsive — overlay is best-effort */ }
+
+    // Timing instrumentation — surfaces where shutdown time actually goes
+    // so we can diagnose if testers report it feeling slow. console.time
+    // pairs are caught by Electron's main-process log. v0.8.0 (B99 followup).
+    const t0 = Date.now()
+    const stamp = (label: string) => console.log(`[shutdown] ${label} +${Date.now() - t0}ms`)
+    stamp('start')
+
     // 1) Ask the renderer to fire every pending debounced profile save so the
     //    latest in-memory state reaches disk before we back up.
     // 2) Back up each live YAML to {name}.yaml.bak so a corrupted live file
     //    can be recovered from the last clean shutdown.
-    // 3) Drain active TCP sessions with QUIT (5s timeout per session).
+    // 3) Drain active TCP sessions with QUIT (quickClose — see below).
     // (1+2) and (3) run in parallel — backup is local file I/O and finishes
     //    well before the network drain.
     const flushAndBackup = mainWindow?.webContents
       .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
       .catch((err: unknown) => console.error('[shutdown] flush failed', err))
-      .finally(() => { backupAllProfiles(); flushAllSessionLogs() })
+      .finally(() => { backupAllProfiles(); flushAllSessionLogs(); stamp('flushAndBackup done') })
 
+    // v0.8.0 (B99 followup): quickClose=true skips the 5s server-ack wait.
+    // We fire QUIT, give it ~300ms to flush over the local Lich socket, then
+    // force-close. The character is still logged out (either via clean QUIT
+    // or via Simu's socket-drop timeout), and the user doesn't sit watching
+    // a 5s-per-session "Closing…" overlay just so we can be polite to the
+    // server. In-tab Disconnect and the conflict-modal auto-disconnect keep
+    // the full 5s wait — they need the slot release to be confirmed before
+    // the next action.
     const drain = active.length > 0
-      ? Promise.all(active.map(s => s.connection.gracefulDisconnect()))
+      ? Promise.all(active.map(s => s.connection.gracefulDisconnect({ quickClose: true })))
+          .then(() => stamp('drain done'))
       : Promise.resolve()
 
-    Promise.all([flushAndBackup, drain]).finally(() => mainWindow?.destroy())
+    Promise.all([flushAndBackup, drain]).finally(() => { stamp('destroy'); mainWindow?.destroy() })
   })
 
   mainWindow.on('closed', () => {
@@ -237,6 +263,23 @@ ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
   s.connection.gracefulDisconnect().then(() => {
     sendStatus(s, false, 'Disconnected', true)
   })
+})
+
+// Awaitable variant of CH.DISCONNECT (v0.8.0). The fire-and-forget channel
+// above is fine when the caller doesn't care exactly when the disconnect
+// completes (most cases — the connection-status event keeps the UI in sync).
+// The auto-disconnect-then-connect flow in the launcher conflict modal DOES
+// care: it has to wait for DR's server-side account slot to actually release
+// before attempting the next login, otherwise SGE returns "Invalid login key"
+// because the old character is still considered connected. Returns when
+// gracefulDisconnect resolves (server-acked drop OR 5s timeout floor).
+ipcMain.handle('disconnect-await', async (_event, sessionId: SessionId) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  s.cleanDisconnect = true
+  sendStatus(s, false, 'Disconnecting...')
+  await s.connection.gracefulDisconnect()
+  sendStatus(s, false, 'Disconnected', true)
 })
 
 ipcMain.on(CH.SESSION_DESTROY, (_event, sessionId: SessionId) => {

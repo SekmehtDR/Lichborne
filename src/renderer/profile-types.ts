@@ -14,11 +14,12 @@ export interface SharedAdvancedSettings {
   lichPath: string
   rubyPath: string
   lichClientFlag: string
-  lichDelay: number
-  hideLichWindow: boolean
   lichPort: number
   portLocked: boolean
   modeLocked: boolean
+  // v0.8.0 dropped `lichDelay` and `hideLichWindow`. See lichSettings.ts for
+  // the rationale. Old _shared.yaml files with these keys parse fine and the
+  // values are silently ignored on import — no migration needed.
 }
 
 export interface SharedProfile {
@@ -47,6 +48,23 @@ export interface CharacterProfile {
   character: string
   game: string
   useLich: boolean
+  // v0.8.0: optional soft-delete flag. Hidden characters keep their full
+  // profile (automations, theme, layout) but don't render in the launcher
+  // grid unless the user toggles "Show hidden" on the top bar. Optional so
+  // existing profiles without the field parse fine — undefined === visible.
+  hidden?: boolean
+  // v0.8.0: pinned to the launcher's Favorites section at the top. Tile
+  // still appears in its account / game section too — Favorites is a
+  // quick-access mirror, not a re-categorization. Hidden overrides
+  // favorite — a hidden tile doesn't show in Favorites unless "Show
+  // hidden" is on. Optional; undefined === not favorited.
+  favorite?: boolean
+  // v0.8.0: per-character launcher metadata. Edited via the Notes editor
+  // modal (Edit Profile… in the tile ⋯ menu). All optional — undefined
+  // means "not set" and is rendered as empty / hidden on the tile.
+  guild?: string         // canonical guild key (lowercase, matches themes.ts entries: 'empath', 'moonmage', etc.)
+  circle?: number        // character circle / level — surfaced on the tile meta line
+  notes?: string         // free-text notes (multi-line); when non-empty, the tile shows a ✎ indicator
   theme: string                            // boot-fallback theme (shared)
   state: Record<string, unknown>           // dynamic map of localStorage scope
 }

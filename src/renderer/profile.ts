@@ -35,8 +35,6 @@ export function buildSharedProfile(): SharedProfile {
       lichPath:       adv.lichPath       ?? 'C:\\Ruby4Lich5\\Lich5\\lich.rbw',
       rubyPath:       adv.rubyPath       ?? 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe',
       lichClientFlag: adv.lichMode       ?? '--stormfront',
-      lichDelay:      adv.lichDelay      ?? 5,
-      hideLichWindow: adv.hideLichWindow ?? false,
       lichPort:       adv.lichPort       ?? 11024,
       portLocked:     adv.portLocked     ?? true,
       modeLocked:     adv.modeLocked     ?? true,
@@ -95,7 +93,37 @@ export async function exportCharacterProfile(
   game: string,
   useLich: boolean,
 ): Promise<void> {
-  await window.api.writeCharacterProfile(character, buildCharacterProfile(account, character, game, useLich))
+  // Read-merge-write so launcher-managed fields survive a save triggered from
+  // the GameWindow (v0.8.0, B97). `buildCharacterProfile` only knows about
+  // {account, character, game, useLich, theme, state} — when the active
+  // GameWindow's debounced save fires (every 2.5s after any per-character
+  // settings change), the old code wrote that shape verbatim and silently
+  // stripped every field the launcher owns: favorite, hidden, notes, guild,
+  // circle. So toggling a pill, opening a panel, or any other ambient
+  // activity on a logged-in character was un-favoriting them. The same
+  // mechanism reverted launcher-edited game/useLich back to the stale
+  // session.game / session.useLich the GameWindow was holding.
+  //
+  // Fix: pull the existing YAML, then merge with `built` winning ONLY on the
+  // fields the GameWindow has authoritative state for (theme, state). Game,
+  // useLich, and the launcher-only fields stay whatever the YAML currently
+  // says — that's where the launcher's writes land.
+  const existing = await window.api.readCharacterProfile(character).catch(() => null) as Partial<CharacterProfile> | null
+  const built = buildCharacterProfile(account, character, game, useLich)
+  const merged: CharacterProfile = existing
+    ? {
+        ...built,
+        // Launcher owns these — preserve whatever the YAML currently has.
+        game:     existing.game     ?? built.game,
+        useLich:  existing.useLich  ?? built.useLich,
+        hidden:   existing.hidden,
+        favorite: existing.favorite,
+        guild:    existing.guild,
+        circle:   existing.circle,
+        notes:    existing.notes,
+      }
+    : built
+  await window.api.writeCharacterProfile(character, merged)
 }
 
 // ── Import (YAML file → localStorage) ────────────────────────────────────────
@@ -131,8 +159,6 @@ export async function importSharedProfile(): Promise<void> {
       lichPath:       adv.lichPath       ?? existing.lichPath,
       rubyPath:       adv.rubyPath       ?? existing.rubyPath,
       lichMode:       adv.lichClientFlag ?? existing.lichMode,
-      lichDelay:      adv.lichDelay      ?? existing.lichDelay,
-      hideLichWindow: adv.hideLichWindow ?? existing.hideLichWindow,
       lichPort:       adv.lichPort       ?? existing.lichPort,
       portLocked:     adv.portLocked     ?? existing.portLocked,
       modeLocked:     adv.modeLocked     ?? existing.modeLocked,

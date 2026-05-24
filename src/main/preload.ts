@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('api', {
   disconnect: (sessionId: SessionId) =>
     ipcRenderer.send(CH.DISCONNECT, sessionId),
 
+  // Awaitable disconnect (v0.8.0). Use when the caller needs the disconnect
+  // to actually complete before doing the next thing — specifically the
+  // launcher's conflict-resolution flow, which auto-disconnects the existing
+  // session then connects a new character on the same account. Without
+  // awaiting, the SGE server still sees the old session and rejects the new
+  // login with "Invalid login key".
+  disconnectAwait: (sessionId: SessionId): Promise<void> =>
+    ipcRenderer.invoke('disconnect-await', sessionId),
+
   // Explicit teardown — call when the renderer is done with a session entry
   // (tab closed, app shutting down). Idempotent: main looks up by id and
   // silently no-ops if the session has already been removed.
@@ -61,6 +70,18 @@ contextBridge.exposeInMainWorld('api', {
     const listener = (_e: Electron.IpcRendererEvent, payload: RawXmlPayload) => cb(payload)
     ipcRenderer.on(CH.RAW_XML, listener)
     return () => ipcRenderer.removeListener(CH.RAW_XML, listener)
+  },
+
+  // Fired by main when the user has triggered window close and shutdown is
+  // about to begin (v0.8.0, B99). Renderer uses this to paint a "Closing…"
+  // overlay so the up-to-5s graceful-disconnect wait doesn't look like a
+  // frozen window. The renderer can't cancel — main has already called
+  // e.preventDefault and committed to the shutdown sequence; this is just
+  // a visual heads-up.
+  onShutdownStarting: (cb: (info: { activeCount: number }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, info: { activeCount: number }) => cb(info)
+    ipcRenderer.on('shutdown-starting', listener)
+    return () => ipcRenderer.removeListener('shutdown-starting', listener)
   },
 
   browseFile: (filters: { name: string; extensions: string[] }[]) =>

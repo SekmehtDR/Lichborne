@@ -19,7 +19,13 @@ interface Props {
 }
 
 export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysShowFields = false }: Props) {
-  const { useLich, lichPath, rubyPath, lichMode, modeLocked, lichDelay, hideLichWindow } = adv
+  // v0.8.0 dropped `lichDelay` and `hideLichWindow` from AdvancedSettings —
+  // delay was vestigial after the connect-with-retry rework (the only use was
+  // a `Math.max(..., 30)` floor in ConnectionManager, now hardcoded to 30s);
+  // the hide-window toggle is gone because Lich always launches hidden now
+  // (stderr is still piped to the error banner, so the visible cmd.exe console
+  // offered no diagnostic value the banner doesn't).
+  const { useLich, lichPath, rubyPath, lichMode, modeLocked } = adv
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
 
   function setAdv1<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) {
@@ -134,57 +140,35 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
           {lichOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
         </div>
       </label>
-      <div className="advanced-row">
-        <label>
-          Delay (s)
-          <input
-            type="number"
-            value={lichDelay}
-            min={1}
-            max={30}
-            onChange={e => setAdv1('lichDelay', parseInt(e.target.value, 10))}
+      <label>
+        XML Stream Mode
+        <div className="port-input-row">
+          <select
+            value={lichMode}
+            onChange={e => setAdv1('lichMode', e.target.value as AdvancedSettings['lichMode'])}
+            disabled={disabled || modeLocked}
+            className={modeLocked ? 'port-locked' : ''}
+          >
+            <option value="--stormfront">--stormfront</option>
+            <option value="--wizard">--wizard</option>
+            <option value="--avalon">--avalon</option>
+            <option value="--frostbite">--frostbite</option>
+            <option value="--genie">--genie</option>
+          </select>
+          <button
+            type="button"
+            className={`btn-lock ${modeLocked ? 'btn-lock--locked' : 'btn-lock--unlocked'}`}
+            title={modeLocked ? 'Unlock mode' : 'Lock mode'}
             disabled={disabled}
-          />
-        </label>
-        <label>
-          XML Stream Mode
-          <div className="port-input-row">
-            <select
-              value={lichMode}
-              onChange={e => setAdv1('lichMode', e.target.value as AdvancedSettings['lichMode'])}
-              disabled={disabled || modeLocked}
-              className={modeLocked ? 'port-locked' : ''}
-            >
-              <option value="--stormfront">--stormfront</option>
-              <option value="--wizard">--wizard</option>
-              <option value="--avalon">--avalon</option>
-              <option value="--frostbite">--frostbite</option>
-              <option value="--genie">--genie</option>
-            </select>
-            <button
-              type="button"
-              className={`btn-lock ${modeLocked ? 'btn-lock--locked' : 'btn-lock--unlocked'}`}
-              title={modeLocked ? 'Unlock mode' : 'Lock mode'}
-              disabled={disabled}
-              onClick={() => setAdv(prev => ({
-                ...prev,
-                modeLocked: !prev.modeLocked,
-                ...(!prev.modeLocked ? { lichMode: ADV_DEFAULTS.lichMode } : {}),
-              }))}
-            >
-              {modeLocked ? '🔒' : '🔓'}
-            </button>
-          </div>
-        </label>
-      </div>
-      <label className="checkbox-label">
-        <input
-          type="checkbox"
-          checked={hideLichWindow}
-          onChange={e => setAdv1('hideLichWindow', e.target.checked)}
-          disabled={disabled}
-        />
-        Hide Lich window (run as background process)
+            onClick={() => setAdv(prev => ({
+              ...prev,
+              modeLocked: !prev.modeLocked,
+              ...(!prev.modeLocked ? { lichMode: ADV_DEFAULTS.lichMode } : {}),
+            }))}
+          >
+            {modeLocked ? '🔒' : '🔓'}
+          </button>
+        </div>
       </label>
 
       {/* Read-only inventory of the game shards and the Lich front-end port each

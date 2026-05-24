@@ -46,6 +46,16 @@
   font-weight: 600;
 }
 
+/* v0.8.0 UX: tight name+pill+game cluster. Sits inside .character-tab
+   which has gap: 6px — the cluster's own gap: 0 keeps the three pieces
+   flush against each other, while the parent gap still spaces the cluster
+   from health / glyph / close. */
+.character-tab-id {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+}
+
 .character-tab-name {
   letter-spacing: 0.02em;
 }
@@ -55,6 +65,34 @@
   color: var(--text-faint, #585);
   letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+/* Connection-mode pill (L / D) — v0.8.0. Mirrors the LICH/DIRECT launcher
+   pill palette (--color-success / --link-color via color-mix). Sits between
+   the character name and the game code, tight against both — name and
+   pill have no gap by design (the pill colors are the visual separator). */
+.character-tab-mode {
+  font-size: 0.56rem;
+  font-weight: 700;
+  padding: 0 3px;
+  margin: 0 2px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  line-height: 1.4;
+  display: inline-block;
+}
+
+.character-tab-mode--lich {
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 45%, transparent);
+}
+
+.character-tab-mode--direct {
+  background: color-mix(in srgb, var(--link-color) 18%, transparent);
+  color: var(--link-color);
+  border-color: color-mix(in srgb, var(--link-color) 45%, transparent);
 }
 
 /* Fixed-width right-aligned column so "9%", "85%", "100%" all reserve the

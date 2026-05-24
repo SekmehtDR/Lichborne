@@ -1,3 +1,105 @@
+## What's new in v0.8.0
+
+A major rework of the login and character-selection experience. The Add Character flow becomes Add Account, the launcher gains Favorites + grouping + collapse + bulk connect, the wizard discovers your characters in one shot, and four real bug fixes shipped along the way (DRT/DRX/DRF routing, tab reconnect, profile field stripping, scrollable modal).
+
+### DRT, DRX, and DRF characters now actually go to the right server *(B95)*
+
+*Reported by Binu.* Characters configured for Prime Test (DRT), Platinum (DRX), or The Fallen (DRF) were silently routed to DR regardless of the saved game. Four separate layers of the connect path were each throwing the game info away — fixed end-to-end. Your character's saved game now drives the Lich port, the Lich launch flags, and the Simutronics SGE authentication. If you have a DRT/DRX/DRF character that's been misbehaving, this release fixes it; no profile changes needed on your end.
+
+### Add Account — one-shot character discovery
+
+The "Add Character" flow has been rebuilt as **"Add Account."** Type your account, password, and game once; Lichborne pulls your character list straight from the Simutronics auth service and shows it as a checkbox list. Pick which characters you want as launcher tiles, click Add, done — every selected character lands as a tile in one pass. No more running the wizard once per alt.
+
+The discovery doesn't need Lich running — it's just the standard SimuCo authentication. So you can add an account before you've ever launched Lich on this machine, and tiles for every character are ready to click. Discovered characters that already have a profile in your launcher are skipped (existing automations, themes, and layouts stay untouched).
+
+A small **↺ Refresh** button now sits next to each account name on the launcher — click it to re-run discovery and pull in any characters you've made in-game since you last added the account.
+
+### Bulk Connect — log in everyone in one click
+
+New **⚡ Bulk Connect** button in the launcher top bar (appears once you have two or more accounts with characters). Click it: Lichborne shows a picker listing each of your accounts with a dropdown to pick one character per account. Confirm and Lichborne logs them in one after another, with a progress overlay along the way. A final summary tells you what landed and what didn't. Accounts that are already in use are skipped automatically.
+
+The picker defaults each account's dropdown to a favorited character if you have one, so daily-login is usually just two clicks: Bulk Connect → Confirm.
+
+### Launcher reorganized
+
+Several things at once:
+
+- **Grouped by account → game.** Characters now live under their account, sub-sectioned by game (DragonRealms / Platinum / Fallen). Empty sections don't render.
+- **Account sections are collapsible** to keep the launcher tidy if you have many characters across many accounts. State persists across launches.
+- **Single-account users always see their account expanded** — no collapse toggle, no friction.
+- **Accounts you just added auto-expand once** so you actually see what you added (and on your first 1→2 transition, your existing account stays expanded too).
+- **A persistent + Add account button in the top bar** — no scrolling past collapsed sections to find it.
+- **Tiles are more compact** — three rows instead of five (header / meta / pills + Connect).
+- **First-time hint** suggests clicking the ♡ to pin daily characters. Dismissable.
+- **Welcome card copy** rewritten for the account-based flow.
+
+### Favorites + heart toggle
+
+The launcher has a new **Favorites** section at the top. Each tile has a small heart icon — click ♡ to add a character, click ♥ to remove. Favorited characters get pinned to the top for quick access; they also still appear in their normal account section below, so you don't lose the overall organization. The Favorites section is always open (it IS the at-a-glance view for daily logins).
+
+### Lich/Direct pills are now a pair
+
+The single LICH/DIRECT badge has been split into a pair — both pills render next to each other on the tile, with the active one in colour (Lich green / Direct blue) and the inactive one greyed out. Click the grey pill to switch modes. The "other option exists" is now obvious without needing to hover for a tooltip.
+
+### Test Server is a pill too
+
+Each DR character tile shows a **TEST** pill alongside LICH / DIRECT — greyed when off (the default; character connects to DR), colored when on (character connects to DRT). Click to toggle. DRX and DRF tiles don't show it (no test variant exists for them).
+
+### Character profiles — guild, circle, and notes
+
+Each tile has an **Edit Profile…** option in its ⋯ menu. It opens a modal where you can record:
+
+- **Guild** — pick from the 12 playable DR guilds (or leave blank).
+- **Circle** — your character's circle / level.
+- **Notes** — free-form text. Whatever you'd like to remember about this character — gear, training plans, script settings, whatever.
+
+When set, guild + circle appear inline on the tile (`DR · Empath 50`). When you've written any notes, the tile shows a small **✎** indicator at the end of the meta line.
+
+### Hide tiles you're not using
+
+Each tile has a visible **⋯** menu button in its top-right corner (right-click on the tile still works for the same menu). Options:
+
+- **Edit Profile…** — opens the notes editor above.
+- **Hide Profile** — removes the tile from the launcher but keeps the YAML on disk. A "Show N hidden profiles" button appears at the bottom of the launcher when you have any hidden, so you can un-hide them later.
+- **Delete Profile…** — the destructive delete (previously only reachable by right-click).
+
+### Same-account conflict is a question now, not a refusal
+
+*Requested by the developer.* If you try to connect Sekmeht when Sekmeht is already connected on the same account (DragonRealms only allows one character per account at a time), you used to see a flat error refusing to continue. You now get a confirmation — *"Sekmeht is currently connected on account FORTISSABROK. Continue and Sekmeht will be disconnected automatically before {newchar} connects."* — with Cancel and "Disconnect Sekmeht and continue" buttons. The disconnected character's tab stays open (dim) in case you want to log back into it later.
+
+### Each shard gets its own tab
+
+Logging Sekmeht into DRT then logging Sekmeht into DR used to share a single tab — the second connect just renamed the first. Now each (character, shard) combo is its own tab — Sekmeht-DR and Sekmeht-DRT are distinct entries. You still can't have both connected at the same time (the account-slot rule), but you can have one connected and one disconnected for easy switching.
+
+### Character tabs reordered with a tight cluster
+
+Inside the game window, character tabs now read **Name → L/D pill → Game code → Indicators** (was Name → Game → L/D). The L/D pill mirrors the launcher's LICH/DIRECT colors. The name + pill + game code render flush against each other (no whitespace) with the colored pill providing the visual separation; health %, status glyph, and × stay properly spaced after.
+
+### Faster shutdown *(B99)*
+
+Closing Lichborne while connected used to take up to 5 seconds per session while we waited for the game server to acknowledge the disconnect. Shutdown is now ~300ms regardless of session count — we send QUIT and force-close as soon as the bytes have left the wire, instead of waiting for the round-trip ack. The character is still logged out either way. A brief "Closing — disconnecting N characters…" overlay covers the wait so the window doesn't look frozen.
+
+### Profile fields stop disappearing *(B97)*
+
+If you favorited a character or set notes / guild / circle on them, the GameWindow's background save could quietly strip those fields back to nothing. The save now reads the existing YAML and preserves launcher-managed fields before writing. Favoriting on a connected character now sticks.
+
+### Add Character modal scrolls *(B98)*
+
+Clicking + while logged in opened the Add Character modal, but the content was cut off if it didn't fit the window — no scrollbar. Fixed; the modal now caps its height to the viewport and scrolls inside.
+
+### Reconnecting no longer leaves the tab grey *(B96)*
+
+Disconnecting a character then reconnecting (same character) used to leave the tab rendered as if still disconnected. Fixed.
+
+### Lich Setup — two removed fields
+
+Two settings in **Lich Setup** are gone:
+
+- **Delay (s)** — the old wait-before-connect timer. Since v0.7.0 the client retries the Lich connection until it succeeds, so a manual delay didn't do anything useful.
+- **Hide Lich window** — the toggle for showing the Lich console. Lich now always launches hidden.
+
+If your saved profile has these old settings, nothing breaks — they're silently ignored on load.
+
 ## What's new in v0.7.1
 
 A small UX pass — three papercuts found by testers using multi-character play.
@@ -623,7 +725,7 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## How to install
 
-1. Download `Lichborne-0.7.1-setup.exe` below
+1. Download `Lichborne-0.8.0-setup.exe` below
 2. Run the installer — installs to your user profile, no admin rights needed
 3. Windows may show a SmartScreen warning. Click **More info** → **Run anyway**
 
@@ -634,4 +736,4 @@ Profiles are now `profileVersion: 2`. Existing YAMLs are upgraded automatically 
 
 ## Full Changelog
 
-https://github.com/SekmehtDR/Lichborne/compare/v0.7.0...v0.7.1
+https://github.com/SekmehtDR/Lichborne/compare/v0.7.1...v0.8.0

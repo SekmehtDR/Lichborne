@@ -12,6 +12,7 @@ declare global {
       login: (creds: LoginCredentials) => Promise<LoginResult>
       sendCommand: (sessionId: SessionId, command: string) => void
       disconnect: (sessionId: SessionId) => void
+      disconnectAwait: (sessionId: SessionId) => Promise<void>
       destroySession: (sessionId: SessionId) => void
 
       // ── Per-session push channels ────────────────────────────────────────────
@@ -19,6 +20,7 @@ declare global {
       onConnectionStatus: (cb: (status: ConnectionStatusPayload) => void) => () => void
       onError: (cb: (payload: ErrorPayload) => void) => () => void
       onRawXml: (cb: (payload: RawXmlPayload) => void) => () => void
+      onShutdownStarting: (cb: (info: { activeCount: number }) => void) => () => void
       debugPanelToggle: (sessionId: SessionId, open: boolean) => void
 
       // ── Lich SQLite readers (session-agnostic) ───────────────────────────────

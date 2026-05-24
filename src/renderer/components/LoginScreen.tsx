@@ -7,6 +7,7 @@ import {
   loadAdvanced,
   saveAdvanced,
   gameCodeFromPort,
+  gameOptionByCode,
 } from '../lichSettings'
 import LichSetupFields from './LichSetupFields'
 import '../styles/login.css'
@@ -40,7 +41,7 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
   const [rememberPassword, setRememberPassword] = useState(() => localStorage.getItem(REMEMBER_KEY) === 'true')
 
   const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
-  const { useLich, lichPath, rubyPath, lichPort, lichMode, lichDelay, hideLichWindow, showAdvanced } = adv
+  const { useLich, lichPath, rubyPath, lichPort, lichMode, showAdvanced } = adv
   function setAdv1<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) {
     setAdv(prev => ({ ...prev, [key]: value }))
   }
@@ -120,17 +121,23 @@ export default function LoginScreen({ onConnected, isModal = false }: Props) {
     setStatusLog([])
     setConnecting(true)
 
+    // LoginScreen is the legacy single-character path (Launcher/Wizard own the
+    // modern flow per CLAUDE.md). Game is inferred from the global lichPort
+    // here since this screen has no character.game field to consult — the
+    // wizard supersedes this for any multi-shard setup.
+    const inferredGame = gameCodeFromPort(lichPort)
+    const gameOpt = gameOptionByCode(inferredGame)
     const creds: LoginCredentials = {
       account,
       password,
       character: character.trim(),
+      game: inferredGame,
+      lichArguments: gameOpt.lichArguments,
       useLich,
       lichPath,
       rubyPath,
-      lichPort,
+      lichPort: gameOpt.port,
       lichMode,
-      lichDelay,
-      hideLichWindow,
     }
 
     const result = await window.api.login(creds)

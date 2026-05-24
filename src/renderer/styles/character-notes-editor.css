@@ -1,0 +1,144 @@
+/* Character Notes Editor — modal for per-character guild / circle / notes.
+   Opened from a launcher tile's ⋯ menu → "Edit Profile…". Persists to the
+   character's YAML profile. v0.8.0 (F20). */
+
+.cne-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.cne-modal {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: min(520px, 90vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  font-family: inherit;
+  color: var(--text-primary);
+}
+
+.cne-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  gap: 8px;
+}
+
+.cne-title {
+  flex: 1;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.cne-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.cne-close:hover { color: var(--text-primary); }
+
+.cne-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.cne-row {
+  display: flex;
+  gap: 12px;
+}
+
+.cne-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.cne-label--circle {
+  flex: 0 0 110px;
+}
+
+.cne-label--notes {
+  flex: 1;
+}
+
+.cne-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.cne-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.cne-textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.45;
+}
+
+.cne-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cne-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.cne-btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.cne-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cne-btn-save {
+  background: var(--accent-bg);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.cne-btn-save:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 14%, var(--accent-bg));
+}

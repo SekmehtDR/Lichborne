@@ -72,6 +72,7 @@ function CharacterTab({
 }) {
   const { connected, healthPct } = session.status
   const icon = resolveIcon(session, now)
+  const useLich = session.useLich
 
   // Disconnect is conveyed purely by tab styling (dim + italic) — the
   // last-known icon is preserved so a player can still see "Katasha was dead
@@ -89,8 +90,21 @@ function CharacterTab({
       aria-selected={isActive}
       onClick={() => onSelect(session.characterId)}
     >
-      <span className="character-tab-name">{session.character}</span>
-      <span className="character-tab-game">{session.game}</span>
+      {/* Name + L/D + Game cluster rendered tight in a sub-container so the
+          parent tab's `gap: 6px` doesn't separate them. The pill's color and
+          the uppercase game code give visual separation without whitespace.
+          v0.8.0 UX pass (tightened from earlier 3px/4px margins). */}
+      <span className="character-tab-id">
+        <span className="character-tab-name">{session.character}</span>
+        <span
+          className={`character-tab-mode character-tab-mode--${useLich ? 'lich' : 'direct'}`}
+          title={useLich ? 'Connected via Lich' : 'Direct connect (Lich integration unavailable)'}
+          aria-label={useLich ? 'Lich' : 'Direct'}
+        >
+          {useLich ? 'L' : 'D'}
+        </span>
+        <span className="character-tab-game">{session.game}</span>
+      </span>
       {healthPct != null && (
         <span className={`character-tab-health ${healthClassName(healthPct)}`} title={`Health ${healthPct}%`}>
           {healthPct}%
