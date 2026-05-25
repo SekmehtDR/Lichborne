@@ -335,6 +335,13 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
           />
 
           <Toggle
+            label="Web Link Safety"
+            description="Route external URL clicks through Simu's bounce page (play.net/bounce/redirect.asp) — shows a 'you are leaving Play.net' warning before opening any link from game text or a script. Matches Genie's behavior."
+            checked={settings.webLinkSafety}
+            onChange={v => set('webLinkSafety', v)}
+          />
+
+          <Toggle
             label="Genie Map Animations"
             description="Genie Maps motion — per-room effects (shop glints, water ripples, sparkles) and the camera glide as it follows you. Turn off if the map feels sluggish; the map then snaps instantly with no effects."
             checked={settings.mapAnimations}

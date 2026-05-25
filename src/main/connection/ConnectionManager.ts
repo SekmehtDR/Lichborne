@@ -193,12 +193,14 @@ export class ConnectionManager extends EventEmitter {
   // was a race against the OS send queue — fine on Lich loopback but not
   // guaranteed for the Direct internet socket. With end() both paths are
   // bytes-out-the-door guaranteed; we just don't wait for the server ack.)
-  // The 1.5s timeout is the safety cap if the OS never reports 'close'.
+  // v0.8.1: cap tightened from 1500ms → 500ms. Loopback Lich 'close' fires
+  // in ~1–10ms; Direct internet sockets ~50–150ms; 500ms is the paranoid
+  // safety net for the rare case the OS never reports 'close' at all.
   async gracefulDisconnect(opts: { quickClose?: boolean } = {}): Promise<void> {
     this.send('QUIT')
 
     if (opts.quickClose) {
-      await this.endActiveSocket(1500)
+      await this.endActiveSocket(500)
       this.forceDisconnect()
       return
     }

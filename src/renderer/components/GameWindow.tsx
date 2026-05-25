@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
 import { TextLineRow } from './TextLineRow'
@@ -73,32 +73,39 @@ const ROOM_STREAMS = new Set([
 
 // Stream IDs that should never appear as user-discoverable streams —
 // either handled internally or aliased to a built-in panel type.
+// v0.8.1: any id matching a builtin PanelType is treated as never-discover
+// implicitly (see filter at discovery site). NEVER_DISCOVER only needs to
+// list the ALIASES and structural IDs that aren't already builtin types —
+// adding 'combat' here was the cause of the "combat shows up twice in
+// Available Streams" bug; the more robust fix is to filter every builtin
+// PanelType id at discovery so future panels don't have to remember.
 const NEVER_DISCOVER = new Set([
   'main', 'raw',
-  'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
+  'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
   // Aliases the game sends that map to built-in panel types
   'experience', // → exp panel
-  'thoughts', 'thought',
-  'deaths', 'death',
-  'arrivals', 'logons',
-  'conversations', 'talk',
-  'spells', 'percwindow',
+  'thought',    // → thoughts
+  'death',      // → deaths
+  'logons',     // → arrivals
+  'talk',       // → conversations
+  'percwindow', // → spells
   'assess',
-  'familiar',
-  'inv', 'inventory',
-  'exp',
-  'debug',
-  'log',
+  'inventory',  // → inv
 ])
 
 // Streams that fall back to main when no panel is open for them.
 // Prevents important text from being silently buffered and invisible.
+// v0.8.1: 'spells' deliberately omitted — Active Spells is a *state*
+// stream (the game re-emits the whole active-spell list whenever it
+// changes), not a narrative stream. Falling back to main would spam the
+// scroll with repeated lists every time a spell ticks; with no fallback,
+// closing the Active Spells panel just drops the updates until the user
+// opens it again.
 const STREAM_FALLBACK: Record<string, string> = {
   conversations: 'main',
   thoughts:      'main',
   arrivals:      'main',
   deaths:        'main',
-  spells:        'main',
   familiar:      'main',
   combat:        'main',
   assess:        'main',
@@ -113,10 +120,21 @@ const MAX_PANEL_WIDTH     = 600
 const DEFAULT_TOP_HEIGHT = 220
 const MIN_TOP_HEIGHT     = 80
 const MAX_TOP_HEIGHT     = 600
+// v0.8.1: minimum pixel height we leave for the trailing flex:1 zone in the
+// right column when a divider drag is computing its max. Used for both
+// 2-zone (the only remaining zone is flex) and 3-zone (bottom is flex).
+const MIN_PANEL_REMAINDER = 80
 
 const DEFAULT_MID_HEIGHT = 180
 const MIN_MID_HEIGHT     = 80
 const MAX_MID_HEIGHT     = 600
+
+// v0.8.1 (F24): main-text-area top zone (Room + Combat by default). Sits
+// above the main scrolling text; resizable. Default ~250px which is roughly
+// the top 1/3 of a typical game window without squeezing the text below.
+const DEFAULT_MAIN_TOP_HEIGHT = 250
+const MIN_MAIN_TOP_HEIGHT     = 100
+const MAX_MAIN_TOP_HEIGHT     = 600
 
 function loadInt(key: string, def: number, min: number, max: number): number {
   const n = parseInt(localStorage.getItem(key) ?? '', 10)
@@ -135,6 +153,16 @@ function loadTabs(key: string, def: TabDef[]): TabDef[] {
 
 function loadStr(key: string, def: string): string {
   return localStorage.getItem(key) ?? def
+}
+
+// v0.8.1: Panel-location "added" flag loader. Falls back to a deriver so
+// pre-flag users (who only had per-zone tabs in localStorage) auto-migrate:
+// any zone with streams becomes "added", an empty zone becomes "not added".
+function loadZoneAdded(key: string, hasStreamsFallback: boolean): boolean {
+  const raw = localStorage.getItem(key)
+  if (raw === '1' || raw === 'true')  return true
+  if (raw === '0' || raw === 'false') return false
+  return hasStreamsFallback
 }
 
 function removeFromZone(
@@ -303,14 +331,48 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [panelWidth, setPanelWidth]       = useState(() => loadInt(scopedKey(session.character, 'panelWidth'), DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH))
   const [topPanelHeight, setTopPanelHeight] = useState(() => loadInt(scopedKey(session.character, 'topPanelHeight'), DEFAULT_TOP_HEIGHT, MIN_TOP_HEIGHT, MAX_TOP_HEIGHT))
   const [midPanelHeight, setMidPanelHeight] = useState(() => loadInt(scopedKey(session.character, 'midPanelHeight'), DEFAULT_MID_HEIGHT, MIN_MID_HEIGHT, MAX_MID_HEIGHT))
+  // Main-text-area top zone (v0.8.1, F24). Sits ABOVE the main scrolling
+  // text + command bar; full width of the left side (right panel column
+  // is unaffected). Defaults to Room + Combat. Resizable via a horizontal
+  // divider just below the zone.
+  const [mainTopHeight, setMainTopHeight] = useState(() => loadInt(scopedKey(session.character, 'mainTopHeight'), DEFAULT_MAIN_TOP_HEIGHT, MIN_MAIN_TOP_HEIGHT, MAX_MAIN_TOP_HEIGHT))
 
-  // Panel tabs — 3 zones, persisted to localStorage (per-character)
-  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'topTabs'),    [makeTab('room'), makeTab('conversations')]))
-  const [topActiveId, setTopActiveId]   = useState(() => loadStr(scopedKey(session.character, 'topActiveId'),    'room'))
+  // Panel tabs — 3 right-column zones + 1 main-top zone, persisted to localStorage (per-character)
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'topTabs'),    [makeTab('conversations')]))
+  const [topActiveId, setTopActiveId]   = useState(() => loadStr(scopedKey(session.character, 'topActiveId'),    'conversations'))
   const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'midTabs'),    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
   const [midActiveId, setMidActiveId]   = useState(() => loadStr(scopedKey(session.character, 'midActiveId'),    'thoughts'))
   const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'bottomTabs'), [makeTab('exp'), makeTab('log')]))
   const [bottomActiveId, setBottomActiveId] = useState(() => loadStr(scopedKey(session.character, 'bottomActiveId'), 'exp'))
+  // New main-top zone — Room + Combat by default. v0.8.1 (F24). When the
+  // user closes the combat tab here, combat lines fall back to main (via
+  // STREAM_FALLBACK) since no panel is subscribed.
+  const [mainTopTabs, setMainTopTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'mainTopTabs'), [makeTab('room'), makeTab('combat')]))
+
+  // v0.8.1 (Panel Manager V2): each of the 4 panel locations is independently
+  // "added" or "removed" from the layout. Add = slot snaps into the game
+  // window (empty placeholder until streams arrive). Remove = slot hidden +
+  // streams returned to Available Streams (their fallback routes them back to
+  // main automatically). The flag is the authority; tabs.length === 0 alone
+  // no longer hides the slot — that lets users add an empty slot and fill it
+  // afterward. The flag is per-character and persists via the dynamic profile
+  // `state:` pipeline (scopedKey + saveProfile in a useEffect below).
+  //
+  // Migration defaults when the flag is missing:
+  //   - mainTopAdded → false. Main-Top is new in v0.8.1; existing users
+  //     opt in deliberately (the welcome state matches v0.8.0).
+  //   - top/mid/bottomAdded → true. These three zones existed in v0.8.0 and
+  //     were always visible; preserving them keeps the upgrade silent for
+  //     anyone who never touched the new Panel Manager.
+  const [mainTopAdded, setMainTopAdded] = useState(() =>
+    loadZoneAdded(scopedKey(session.character, 'mainTopAdded'), false))
+  const [topAdded, setTopAdded] = useState(() =>
+    loadZoneAdded(scopedKey(session.character, 'topAdded'), true))
+  const [midAdded, setMidAdded] = useState(() =>
+    loadZoneAdded(scopedKey(session.character, 'midAdded'), true))
+  const [bottomAdded, setBottomAdded] = useState(() =>
+    loadZoneAdded(scopedKey(session.character, 'bottomAdded'), true))
+  const [mainTopActiveId, setMainTopActiveId] = useState(() => loadStr(scopedKey(session.character, 'mainTopActiveId'), 'room'))
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -629,18 +691,31 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const panelWidthRef    = useRef(panelWidth)
   const topHeightRef     = useRef(topPanelHeight)
   const midHeightRef     = useRef(midPanelHeight)
+  const mainTopHeightRef = useRef(mainTopHeight)
   const isDraggingColRef = useRef(false)
   const colDragStartX    = useRef(0)
   const colDragStartW    = useRef(0)
-  const draggingRow      = useRef<'top-mid' | 'mid-bot' | null>(null)
+  const draggingRow      = useRef<'top-mid' | 'mid-bot' | 'main-top' | null>(null)
+  const mainAreaRef      = useRef<HTMLDivElement>(null)
   const rowDragStartY    = useRef(0)
   const rowDragStartH    = useRef(0)
 
   // Tracks which stream IDs currently have an open panel tab — used for fallback routing.
   const watchedStreamsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    watchedStreamsRef.current = new Set([...topTabs, ...midTabs, ...bottomTabs].map(t => t.id))
-  }, [topTabs, midTabs, bottomTabs])
+    watchedStreamsRef.current = new Set([...mainTopTabs, ...topTabs, ...midTabs, ...bottomTabs].map(t => t.id))
+  }, [mainTopTabs, topTabs, midTabs, bottomTabs])
+
+  // v0.8.1: mirrors of the per-zone "added" flags. The divider drag handler
+  // is attached once and reads these refs to clamp differently in 2-zone vs
+  // 3-zone mode (in 2-zone the trailing zone is flex:1 with just a minimum,
+  // not a saved height).
+  const topAddedRef    = useRef(topAdded)
+  const midAddedRef    = useRef(midAdded)
+  const bottomAddedRef = useRef(bottomAdded)
+  useEffect(() => { topAddedRef.current    = topAdded },    [topAdded])
+  useEffect(() => { midAddedRef.current    = midAdded },    [midAdded])
+  useEffect(() => { bottomAddedRef.current = bottomAdded }, [bottomAdded])
 
   // ── On mount: focus command input + wire auto-copy on text selection ───────
 
@@ -739,6 +814,36 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midActiveId'),   midActiveId);                  saveProfile() }, [session.character, midActiveId, saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomTabs'),    JSON.stringify(bottomTabs));   saveProfile() }, [session.character, bottomTabs, saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomActiveId'), bottomActiveId);              saveProfile() }, [session.character, bottomActiveId, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopTabs'),    JSON.stringify(mainTopTabs));  saveProfile() }, [session.character, mainTopTabs, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopActiveId'), mainTopActiveId);             saveProfile() }, [session.character, mainTopActiveId, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopHeight'),  String(mainTopHeight));        saveProfile() }, [session.character, mainTopHeight, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopAdded'),  mainTopAdded ? '1' : '0'); saveProfile() }, [session.character, mainTopAdded, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topAdded'),      topAdded     ? '1' : '0'); saveProfile() }, [session.character, topAdded,     saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midAdded'),      midAdded     ? '1' : '0'); saveProfile() }, [session.character, midAdded,     saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'bottomAdded'),   bottomAdded  ? '1' : '0'); saveProfile() }, [session.character, bottomAdded,  saveProfile])
+
+  // One-time migration: pre-v0.8.1 users had Room as a default tab in the
+  // right-column top zone. v0.8.1 moved Room to the new main-top zone but
+  // existing profiles still have Room in `topTabs` — leaving it there means
+  // the user sees Room twice. Strip Room from topTabs once per character;
+  // the `mainTopMigrated` flag prevents re-running if the user ever
+  // re-adds Room to topTabs deliberately.
+  useEffect(() => {
+    const key = scopedKey(session.character, 'mainTopMigrated')
+    if (localStorage.getItem(key) === '1') return
+    const hasRoomInMainTop = mainTopTabs.some(t => t.id === 'room')
+    const hasRoomInTop = topTabs.some(t => t.id === 'room')
+    if (hasRoomInMainTop && hasRoomInTop) {
+      setTopTabs(prev => prev.filter(t => t.id !== 'room'))
+      if (topActiveId === 'room') {
+        const fallback = topTabs.find(t => t.id !== 'room')?.id ?? ''
+        setTopActiveId(fallback)
+      }
+    }
+    localStorage.setItem(key, '1')
+    // intentional: run once on mount per character; further changes are user-driven
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.character])
 
   // ── Event stream ──────────────────────────────────────────────────────────
 
@@ -962,7 +1067,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (newDiscovered.length > 0) {
         setDiscoveredStreams(prev => {
           const existing = new Set(prev)
-          const toAdd = newDiscovered.filter(id => !existing.has(id) && !NEVER_DISCOVER.has(id.toLowerCase()))
+          // v0.8.1: also exclude any id that matches a builtin PanelType
+          // (combat, room, exp, etc.) — those have dedicated builtin entries
+          // in Available Streams already; letting them double as a discovered
+          // "custom" entry lets the user add the same stream twice.
+          const toAdd = newDiscovered.filter(id => {
+            if (existing.has(id)) return false
+            const lower = id.toLowerCase()
+            if (NEVER_DISCOVER.has(lower)) return false
+            if (ALL_PANEL_TYPES.includes(lower as PanelType)) return false
+            return true
+          })
           return toAdd.length > 0 ? [...prev, ...toAdd] : prev
         })
       }
@@ -1151,18 +1266,36 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         setPanelWidth(next)
       }
       if (draggingRow.current === 'top-mid') {
+        // 'top-mid' resizes the TOP zone. In 3-zone mode the remainder is
+        // mid (saved height) + bottom (flex, with a minimum). In 2-zone mode
+        // only the flex remainder exists, so we subtract just its minimum.
         const colHeight = panelColumnRef.current?.offsetHeight ?? Infinity
-        const maxTop = Math.min(MAX_TOP_HEIGHT, colHeight - midHeightRef.current - 8 - MIN_TOP_HEIGHT)
+        const threeZone = midAddedRef.current && bottomAddedRef.current
+        const reserved = threeZone ? (midHeightRef.current + MIN_PANEL_REMAINDER) : MIN_PANEL_REMAINDER
+        const maxTop = Math.min(MAX_TOP_HEIGHT, colHeight - 8 - reserved)
         const next = Math.max(MIN_TOP_HEIGHT, Math.min(maxTop, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
         topHeightRef.current = next
         setTopPanelHeight(next)
       }
       if (draggingRow.current === 'mid-bot') {
+        // 'mid-bot' resizes the MID zone. Top is only reserved if top is
+        // actually added (3-zone mode); in 2-zone mid+bot mode top is gone.
         const colHeight = panelColumnRef.current?.offsetHeight ?? Infinity
-        const maxMid = Math.min(MAX_MID_HEIGHT, colHeight - topHeightRef.current - 8 - MIN_MID_HEIGHT)
+        const reserved = (topAddedRef.current ? topHeightRef.current : 0) + MIN_PANEL_REMAINDER
+        const maxMid = Math.min(MAX_MID_HEIGHT, colHeight - 8 - reserved)
         const next = Math.max(MIN_MID_HEIGHT, Math.min(maxMid, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
         midHeightRef.current = next
         setMidPanelHeight(next)
+      }
+      // v0.8.1 (F24): main-top zone resize. Bounded against the available
+      // height in the main game area minus a minimum for the text window
+      // below so dragging can't squeeze the main text into invisibility.
+      if (draggingRow.current === 'main-top') {
+        const mainHeight = mainAreaRef.current?.offsetHeight ?? Infinity
+        const maxMainTop = Math.min(MAX_MAIN_TOP_HEIGHT, mainHeight - 120 - MIN_MAIN_TOP_HEIGHT)
+        const next = Math.max(MIN_MAIN_TOP_HEIGHT, Math.min(maxMainTop, rowDragStartH.current + (e.clientY - rowDragStartY.current)))
+        mainTopHeightRef.current = next
+        setMainTopHeight(next)
       }
     }
     function onMouseUp() {
@@ -1179,6 +1312,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       }
       if (draggingRow.current === 'mid-bot') {
         localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(midHeightRef.current))
+        saveProfile()
+      }
+      if (draggingRow.current === 'main-top') {
+        localStorage.setItem(scopedKey(session.character, 'mainTopHeight'), String(mainTopHeightRef.current))
         saveProfile()
       }
       if (draggingRow.current) {
@@ -1201,56 +1338,91 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     e.preventDefault()
   }
 
-  function handleRowDividerDown(which: 'top-mid' | 'mid-bot', e: React.MouseEvent) {
+  function handleRowDividerDown(which: 'top-mid' | 'mid-bot' | 'main-top', e: React.MouseEvent) {
     draggingRow.current = which
     rowDragStartY.current = e.clientY
-    rowDragStartH.current = which === 'top-mid' ? topHeightRef.current : midHeightRef.current
+    rowDragStartH.current =
+      which === 'top-mid'  ? topHeightRef.current  :
+      which === 'mid-bot'  ? midHeightRef.current  :
+      mainTopHeightRef.current
     document.body.style.cursor = 'row-resize'
     document.body.style.userSelect = 'none'
     e.preventDefault()
   }
 
   function resetLayout() {
-    panelWidthRef.current = DEFAULT_PANEL_WIDTH; setPanelWidth(DEFAULT_PANEL_WIDTH)
-    topHeightRef.current = DEFAULT_TOP_HEIGHT;   setTopPanelHeight(DEFAULT_TOP_HEIGHT)
-    midHeightRef.current = DEFAULT_MID_HEIGHT;   setMidPanelHeight(DEFAULT_MID_HEIGHT)
+    panelWidthRef.current = DEFAULT_PANEL_WIDTH;       setPanelWidth(DEFAULT_PANEL_WIDTH)
+    topHeightRef.current = DEFAULT_TOP_HEIGHT;         setTopPanelHeight(DEFAULT_TOP_HEIGHT)
+    midHeightRef.current = DEFAULT_MID_HEIGHT;         setMidPanelHeight(DEFAULT_MID_HEIGHT)
+    mainTopHeightRef.current = DEFAULT_MAIN_TOP_HEIGHT; setMainTopHeight(DEFAULT_MAIN_TOP_HEIGHT)
     localStorage.setItem(scopedKey(session.character, 'panelWidth'),    String(DEFAULT_PANEL_WIDTH))
     localStorage.setItem(scopedKey(session.character, 'topPanelHeight'), String(DEFAULT_TOP_HEIGHT))
     localStorage.setItem(scopedKey(session.character, 'midPanelHeight'), String(DEFAULT_MID_HEIGHT))
+    localStorage.setItem(scopedKey(session.character, 'mainTopHeight'),  String(DEFAULT_MAIN_TOP_HEIGHT))
     saveProfile()
-    const defaultTop = [makeTab('room'), makeTab('conversations')]
+    // v0.8.1 (F24): Room moved from right-column top into the new main-top
+    // zone; right-column top default is just Conversations now.
+    const defaultMainTop = [makeTab('room'), makeTab('combat')]
+    const defaultTop = [makeTab('conversations')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
     const defaultBot = [makeTab('exp'), makeTab('log')]
-    setTopTabs(defaultTop);    setTopActiveId('room')
-    setMidTabs(defaultMid);    setMidActiveId('thoughts')
-    setBottomTabs(defaultBot); setBottomActiveId('exp')
+    setMainTopTabs(defaultMainTop); setMainTopActiveId('room')
+    setTopTabs(defaultTop);         setTopActiveId('conversations')
+    setMidTabs(defaultMid);         setMidActiveId('thoughts')
+    setBottomTabs(defaultBot);      setBottomActiveId('exp')
+    setMainTopAdded(true); setTopAdded(true); setMidAdded(true); setBottomAdded(true)
   }
 
   // ── Panel management ──────────────────────────────────────────────────────
 
-  function moveTabToZone(tab: TabDef, toZone: 'top' | 'mid' | 'bottom') {
+  function moveTabToZone(tab: TabDef, toZone: 'mainTop' | 'top' | 'mid' | 'bottom') {
+    removeFromZone(tab, mainTopTabs, setMainTopTabs, mainTopActiveId, setMainTopActiveId)
     removeFromZone(tab, topTabs, setTopTabs, topActiveId, setTopActiveId)
     removeFromZone(tab, midTabs, setMidTabs, midActiveId, setMidActiveId)
     removeFromZone(tab, bottomTabs, setBottomTabs, bottomActiveId, setBottomActiveId)
-    if (toZone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id) }
-    if (toZone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id) }
-    if (toZone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id) }
+    if (toZone === 'mainTop') { setMainTopTabs(p => [...p, tab]); setMainTopActiveId(tab.id); setMainTopAdded(true) }
+    if (toZone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id);    setTopAdded(true) }
+    if (toZone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id);    setMidAdded(true) }
+    if (toZone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id); setBottomAdded(true) }
   }
 
   function removeTab(tab: TabDef) {
+    removeFromZone(tab, mainTopTabs, setMainTopTabs, mainTopActiveId, setMainTopActiveId)
     removeFromZone(tab, topTabs, setTopTabs, topActiveId, setTopActiveId)
     removeFromZone(tab, midTabs, setMidTabs, midActiveId, setMidActiveId)
     removeFromZone(tab, bottomTabs, setBottomTabs, bottomActiveId, setBottomActiveId)
   }
 
-  function addToZone(typeOrId: string, zone: 'top' | 'mid' | 'bottom') {
+  function addToZone(typeOrId: string, zone: 'mainTop' | 'top' | 'mid' | 'bottom') {
     const isBuiltin = ALL_PANEL_TYPES.includes(typeOrId as PanelType)
     const tab: TabDef = isBuiltin
       ? makeTab(typeOrId as PanelType)
       : { id: typeOrId, type: 'custom', label: typeOrId.charAt(0).toUpperCase() + typeOrId.slice(1) }
-    if (zone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id) }
-    if (zone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id) }
-    if (zone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id) }
+    if (zone === 'mainTop') { setMainTopTabs(p => [...p, tab]); setMainTopActiveId(tab.id); setMainTopAdded(true) }
+    if (zone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id);    setTopAdded(true) }
+    if (zone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id);    setMidAdded(true) }
+    if (zone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id); setBottomAdded(true) }
+  }
+
+  // v0.8.1 (Panel Manager V2): explicit add/remove a panel LOCATION. The
+  // panel slot itself is always one of the 4 fixed locations; the *Added
+  // flag controls whether it appears in the game window. Removing a panel
+  // clears its streams too — they go back to Available Streams, and any
+  // stream with a STREAM_FALLBACK (combat, conversations, thoughts…) routes
+  // back to the main text window automatically via watchedStreamsRef.
+  // addPanelZone leaves tabs empty so the user fills them deliberately.
+  function addPanelZone(zone: 'mainTop' | 'top' | 'mid' | 'bottom') {
+    if (zone === 'mainTop') setMainTopAdded(true)
+    if (zone === 'top')    setTopAdded(true)
+    if (zone === 'mid')    setMidAdded(true)
+    if (zone === 'bottom') setBottomAdded(true)
+  }
+
+  function removePanelZone(zone: 'mainTop' | 'top' | 'mid' | 'bottom') {
+    if (zone === 'mainTop') { setMainTopAdded(false); setMainTopTabs([]); setMainTopActiveId('') }
+    if (zone === 'top')    { setTopAdded(false);    setTopTabs([]);    setTopActiveId('') }
+    if (zone === 'mid')    { setMidAdded(false);    setMidTabs([]);    setMidActiveId('') }
+    if (zone === 'bottom') { setBottomAdded(false); setBottomTabs([]); setBottomActiveId('') }
   }
 
   // ── Macro/alias helpers ───────────────────────────────────────────────────
@@ -1338,6 +1510,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (unreadRef.current.delete(id)) setUnreadStreams(new Set(unreadRef.current))
   }
 
+  function handleMainTopActive(id: string) { setMainTopActiveId(id); clearUnread(id) }
   function handleTopActive(id: string)    { setTopActiveId(id);    clearUnread(id) }
   function handleMidActive(id: string)    { setMidActiveId(id);    clearUnread(id) }
   function handleBottomActive(id: string) { setBottomActiveId(id); clearUnread(id) }
@@ -1369,6 +1542,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     expFocus, pinnedSkills, onFocusChange: handleFocusChange, onTogglePin: handleTogglePin,
     onSendCommand: sendCommand,
     autoLinkUrls: settings.autoLinkUrls,
+    webLinkSafety: settings.webLinkSafety,
     mapAnimations: settings.mapAnimations,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
@@ -1472,6 +1646,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       )}
 
       <div className="game-main">
+        {/* v0.8.1 (F24): main-area is now a flex column with an optional top
+            zone above the scrolling text + command bar. Only the LEFT side
+            of game-main is split this way; the right panel column is
+            untouched. mainAreaRef is used by the divider-resize handler to
+            bound mainTopHeight against the available main-area height. */}
+        <div className="game-main-area" ref={mainAreaRef}>
+          {mainTopAdded && (
+            <>
+              <div className="main-top-zone" style={{ height: mainTopHeight, flexShrink: 0 }}>
+                {mainTopTabs.length > 0
+                  ? <PanelFrame {...sharedFrameProps} tabs={mainTopTabs} activeId={mainTopActiveId}
+                      onTabsChange={setMainTopTabs} onActiveChange={handleMainTopActive} />
+                  : <EmptyPanelSlot label="Main-Top" onOpenManager={() => setShowPanelManager(true)} />}
+              </div>
+              <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('main-top', e)} />
+            </>
+          )}
         <div className="text-window-wrap">
           <div className="text-area">
             <div className="text-window"
@@ -1534,6 +1725,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                       onContactClick={handleContactClick}
                       onSendCommand={sendCommand}
                       autoLinkUrls={settings.autoLinkUrls}
+                      webLinkSafety={settings.webLinkSafety}
                     />
                   </div>
                 )}
@@ -1561,24 +1753,86 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             <button type="submit" className="btn-send">Send</button>
           </form>
         </div>
+        </div>{/* /game-main-area */}
 
-        <div className="panel-divider" onMouseDown={handleColDividerDown} />
-        <div className="panel-column" ref={panelColumnRef} style={{ width: panelWidth }}>
-          <div className="panel-zone" style={{ height: topPanelHeight, flexShrink: 0 }}>
-            <PanelFrame {...sharedFrameProps} tabs={topTabs} activeId={topActiveId}
-              onTabsChange={setTopTabs} onActiveChange={handleTopActive} />
-          </div>
-          <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('top-mid', e)} />
-          <div className="panel-zone" style={{ height: midPanelHeight, flexShrink: 0 }}>
-            <PanelFrame {...sharedFrameProps} tabs={midTabs} activeId={midActiveId}
-              onTabsChange={setMidTabs} onActiveChange={handleMidActive} />
-          </div>
-          <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('mid-bot', e)} />
-          <div className="panel-zone panel-zone--bottom">
-            <PanelFrame {...sharedFrameProps} tabs={bottomTabs} activeId={bottomActiveId}
-              onTabsChange={setBottomTabs} onActiveChange={handleBottomActive} />
-          </div>
-        </div>
+        {/* v0.8.1 Panel Manager V2: each right-column zone renders iff its
+            *Added flag is true (toggled from the Panel Manager). The whole
+            right column + its vertical divider collapse when all three are
+            removed.
+            Sizing rules — single rule, three outcomes:
+              The LAST visible zone always takes flex:1 (fills remainder);
+              earlier visible zones use their saved px heights. So:
+                1 zone   → that zone is "last" → flex:1, fills the column.
+                2 zones  → first uses saved px, last flex:1. Divider above
+                           the last drags the first's saved height.
+                3 zones  → top + mid use saved px, bottom flex:1 (original
+                           behavior). Both dividers drag.
+            Drag handler keys map to which saved-height slot the divider
+            adjusts: 'top-mid' → topPanelHeight, 'mid-bot' → midPanelHeight.
+            (Naming kept for backward compat — applies regardless of which
+            two zones are currently visible.) */}
+        {(() => {
+          type RZone = {
+            key: 'top' | 'mid' | 'bottom'
+            label: string
+            tabs: TabDef[]
+            activeId: string
+            setTabs: React.Dispatch<React.SetStateAction<TabDef[]>>
+            onActive: (id: string) => void
+            savedHeight: number
+            dividerKey: 'top-mid' | 'mid-bot' | null
+          }
+          const visible: RZone[] = []
+          if (topAdded) visible.push({
+            key: 'top', label: 'Top-Right',
+            tabs: topTabs, activeId: topActiveId, setTabs: setTopTabs, onActive: handleTopActive,
+            savedHeight: topPanelHeight, dividerKey: 'top-mid',
+          })
+          if (midAdded) visible.push({
+            key: 'mid', label: 'Middle-Right',
+            tabs: midTabs, activeId: midActiveId, setTabs: setMidTabs, onActive: handleMidActive,
+            savedHeight: midPanelHeight, dividerKey: 'mid-bot',
+          })
+          if (bottomAdded) visible.push({
+            key: 'bottom', label: 'Bottom-Right',
+            tabs: bottomTabs, activeId: bottomActiveId, setTabs: setBottomTabs, onActive: handleBottomActive,
+            savedHeight: 0, dividerKey: null, // bottom never drives a divider; it's always the flex remainder when visible
+          })
+          if (visible.length === 0) return null
+          return (
+            <>
+              <div className="panel-divider" onMouseDown={handleColDividerDown} />
+              <div className="panel-column" ref={panelColumnRef} style={{ width: panelWidth }}>
+                {visible.map((z, i) => {
+                  const isLast = i === visible.length - 1
+                  // The divider ABOVE this zone (skipped for the first zone)
+                  // drags the PREVIOUS zone's saved height — that's the one
+                  // that gets shorter/taller while this flex/fixed zone
+                  // takes the complement.
+                  const prevDividerKey = i > 0 ? visible[i - 1].dividerKey : null
+                  const zoneStyle = isLast
+                    ? { flex: 1 as const, minHeight: 0 }
+                    : { height: z.savedHeight, flexShrink: 0 as const }
+                  const zoneClass = `panel-zone${isLast ? ' panel-zone--bottom' : ''}`
+                  return (
+                    <Fragment key={z.key}>
+                      {prevDividerKey && (
+                        <div className="panel-h-divider"
+                             onMouseDown={e => handleRowDividerDown(prevDividerKey, e)} />
+                      )}
+                      <div className={zoneClass} style={zoneStyle}>
+                        {z.tabs.length > 0
+                          ? <PanelFrame {...sharedFrameProps} tabs={z.tabs} activeId={z.activeId}
+                              onTabsChange={z.setTabs} onActiveChange={z.onActive} />
+                          : <EmptyPanelSlot label={z.label} onOpenManager={() => setShowPanelManager(true)} />}
+                      </div>
+                    </Fragment>
+                  )
+                })}
+              </div>
+            </>
+          )
+        })()}
       </div>
 
       {settings.iconBarPosition === 'bottom' && (
@@ -1625,13 +1879,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       {showPanelManager && (
         <PanelManager
-          topTabs={topTabs} midTabs={midTabs} bottomTabs={bottomTabs}
+          mainTopTabs={mainTopTabs} topTabs={topTabs} midTabs={midTabs} bottomTabs={bottomTabs}
+          mainTopAdded={mainTopAdded} topAdded={topAdded} midAdded={midAdded} bottomAdded={bottomAdded}
           allTypes={ALL_PANEL_TYPES} labels={PANEL_LABELS}
           discoveredStreams={discoveredStreams}
           streamTitles={streamTitles}
           onMoveTab={moveTabToZone}
           onRemoveTab={removeTab}
           onAddToZone={addToZone}
+          onAddPanelZone={addPanelZone}
+          onRemovePanelZone={removePanelZone}
           onResetLayout={resetLayout}
           onClose={() => setShowPanelManager(false)}
         />
@@ -1745,5 +2002,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     </div>
     </ContactsContext.Provider>
     </HighlightsContext.Provider>
+  )
+}
+
+// v0.8.1: shown in an added-but-empty panel zone. Clicking opens the
+// Panel Manager so the user can drop a stream into the slot from
+// "Available Streams". Kept intentionally tiny — this is a placeholder,
+// not a feature surface.
+function EmptyPanelSlot({ label, onOpenManager }: { label: string; onOpenManager: () => void }) {
+  return (
+    <div className="empty-panel-slot" onClick={onOpenManager}>
+      <div className="empty-panel-slot-label">{label}</div>
+      <div className="empty-panel-slot-hint">Empty panel — click to add a stream</div>
+    </div>
   )
 }

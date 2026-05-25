@@ -160,9 +160,29 @@
   display: flex;
 }
 
+/* v0.8.1 (F24): left side of game-main becomes a flex column so an
+   optional main-top zone (Room + Combat by default) can stack above the
+   scrolling text + command bar. Width-wise, takes the same space the
+   bare text-window-wrap used to take (flex:1, min-width:0). */
+.game-main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-top-zone {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .text-window-wrap {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -271,6 +291,44 @@
 }
 
 .panel-h-divider:hover { background: var(--accent-dim); }
+
+/* v0.8.1: an "added" panel zone whose tabs are all empty. Lives in the
+   layout so the slot is visible / clickable, but reads as a placeholder
+   instead of a panel. Click → opens the Panel Manager. */
+.empty-panel-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--bg-base) 92%, transparent);
+  border: 1px dashed var(--border);
+  margin: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.empty-panel-slot:hover {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-base));
+}
+
+.empty-panel-slot-label {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.empty-panel-slot-hint {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-style: italic;
+}
 
 .panel-zone {
   overflow: hidden;

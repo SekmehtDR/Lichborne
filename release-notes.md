@@ -1,3 +1,50 @@
+## What's new in v0.8.1
+
+A polish release: the Panel Manager gets a real overhaul, the Lich profile YAML editor gets a search field, an optional Main-Top panel zone appears for things like the Combat stream, external link clicks get a safety warning, and a couple of behind-the-scenes annoyances are gone.
+
+### Panel Manager — explicit add / remove of each panel slot
+
+The Panel Manager has been rebuilt around the idea that the four panel locations (**Main-Top**, **Top-Right**, **Middle-Right**, **Bottom-Right**) are individually *added to* or *removed from* your layout. A new **Panel Locations** section at the top of the manager shows each slot with an **Add Panel** or **Remove Panel** button:
+
+- **Add Panel** snaps the slot into the game window as an empty placeholder, ready to receive streams.
+- **Remove Panel** hides the slot and returns its streams to the Available Streams list at the bottom. (Streams like Combat / Conversations / Thoughts that have a fallback drop back to the main window automatically; Active Spells just stops displaying — see below.)
+
+The right column now auto-sizes by how many slots you have added:
+
+- **1 slot** → fills the column.
+- **2 slots** → split 50/50 with a draggable divider between them.
+- **3 slots** → the original layout (top + middle use your saved heights, bottom takes the remainder, both dividers draggable).
+- **0 slots** → the whole right column disappears and the main text gets the full width.
+
+The **Main-Top** zone (introduced this version) defaults to *not added* for existing users — add it via the Panel Manager when you want it. New users also start with Main-Top removed; everything else is added by default to match the v0.8.0 layout.
+
+### Main-Top panel zone — for Combat, Room, or anything you like
+
+A new resizable panel zone sits above the main scrolling text on the left side of the game window. Originally introduced for the Combat stream (now its own panel type — close it and combat lines fall back to the main window) but it can hold any stream. Resize it via the divider between it and the main text. Add it from the Panel Manager → Add Panel next to Main-Top.
+
+### YAML editor — search inside profiles
+
+The Lich profile YAML editor (Lich → Profiles tab) now has a **Search YAML…** input. Press Enter or click Find to jump to the first matching line (case-insensitive); click again to cycle through matches. The search works in both view mode and edit mode — if you find a key in view mode and then click Edit, the editor scrolls to the same line and selects the match in the textarea.
+
+### Web Link Safety — bounce external URL clicks through play.net
+
+A new **Web Link Safety** toggle in Settings (default **on**) mirrors Genie's same-named setting. When on, clicking any external `http://` or `https://` URL in game text routes through `https://www.play.net/bounce/redirect.asp?URL=…` — Simu's "You are leaving Play.net" interstitial. Turn it off if you'd rather have URLs open directly.
+
+### Active Spells no longer spams the main window when closed
+
+Previously, closing the Active Spells panel sent every spell-tick update to the main scroll (because Active Spells fell back to main like the chat-style streams do). Active Spells is a *state* stream — the game re-emits the full list whenever it changes — so that fallback turned out to be noise. Closing the panel now just stops displaying spell updates until you re-add it.
+
+### Closing the app feels instant
+
+The "Closing — backing up profiles…" overlay used to flash for a fraction of a second even when shutdown actually completed in tens of milliseconds. The overlay now waits 250ms before painting, so backup-only shutdowns and single-Lich-session quick-closes never show it at all. Only genuinely slow closes still surface it. The socket-close safety cap was also tightened from 1.5s to 0.5s.
+
+### Smaller fixes
+
+- **Combat stream no longer duplicates** in Available Streams (it was showing up twice once you'd opened a Combat panel; clicking the second row added a duplicate tab). Fixed at the discovery layer and defensively in the Panel Manager — builtin panel ids can no longer enter the "discovered" list.
+- **Panel Manager visuals**: zone labels renamed for clarity (Main / Top / Mid / Bottom → Main-Top / Top-Right / Middle-Right / Bottom-Right), modal widened to fit the new button labels comfortably, sections and rows get clearer visual separation.
+
+---
+
 ## What's new in v0.8.0
 
 A major rework of the login and character-selection experience. The Add Character flow becomes Add Account, the launcher gains Favorites + grouping + collapse + bulk connect, the wizard discovers your characters in one shot, and four real bug fixes shipped along the way (DRT/DRX/DRF routing, tab reconnect, profile field stripping, scrollable modal).

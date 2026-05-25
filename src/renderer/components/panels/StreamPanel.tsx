@@ -14,11 +14,12 @@ interface Props {
   onTrigger?: (pattern: string) => void
   onSendCommand?: (cmd: string) => void
   autoLinkUrls?: boolean
+  webLinkSafety?: boolean
   showTimestamp?: boolean
   onToggleTimestamp?: () => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, showTimestamp, onToggleTimestamp }: Props) {
+export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp, onToggleTimestamp }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -89,6 +90,7 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
           onContactClick={onContactClick}
           onSendCommand={onSendCommand}
           autoLinkUrls={autoLinkUrls}
+          webLinkSafety={webLinkSafety}
           showTimestamp={showTimestamp}
         />
       ))}

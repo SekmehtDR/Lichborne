@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
 import hljs from 'highlight.js/lib/core'
 import yamlLang from 'highlight.js/lib/languages/yaml'
 import * as jsYaml from 'js-yaml'
@@ -339,32 +339,208 @@ function Gutter({ lines, gutterRef }: { lines: number; gutterRef: (el: HTMLEleme
   )
 }
 
-function YamlHighlight({ content }: { content: string }) {
-  const { contentRef, gutterRef, onScroll } = useGutterSync()
-  const html  = useMemo(() => hljs.highlight(content, { language: 'yaml' }).value, [content])
-  const lines = useMemo(() => content.split('\n').length, [content])
-  return (
-    <div className="ld-code-wrap">
-      <Gutter lines={lines} gutterRef={gutterRef} />
-      <pre ref={contentRef} className="ld-yaml-preview"
-        dangerouslySetInnerHTML={{ __html: html }} onScroll={onScroll} />
-    </div>
-  )
+// Imperative handle exposed by both YamlHighlight (view mode) and
+// EditorWithGutter (edit mode). Lets the parent's search input call
+// find/scrollToLine without each component owning its own search UI.
+// v0.8.1 (F25). `find` returns the matched line index (0-based) or -1.
+export interface YamlViewHandle {
+  find(term: string): number
+  scrollToLine(lineIndex: number): void
+  resetSearch(): void
 }
 
-function EditorWithGutter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const { contentRef, gutterRef, onScroll } = useGutterSync()
-  const lines = useMemo(() => value.split('\n').length, [value])
+// Center a line in a scrollable element. Uses getComputedStyle to read
+// the *actual* per-line height + top padding rather than the
+// `scrollHeight / lineCount` shortcut — that shortcut distributed the
+// element's vertical padding evenly across every line and produced a
+// per-line drift of ~0.24px (≈ one line off by line ~56). v0.8.1 (F25
+// follow-up). `styleEl` defaults to `scrollEl` for cases like a textarea
+// where the scrolling element IS the padded element; pass a separate
+// `styleEl` when scroll lives on a wrapper while padding lives on an
+// inner content element.
+function scrollElementToLine(scrollEl: HTMLElement, lineIndex: number, styleEl: HTMLElement = scrollEl) {
+  const cs = window.getComputedStyle(styleEl)
+  const lh = parseFloat(cs.lineHeight)
+  const pt = parseFloat(cs.paddingTop)
+  if (!Number.isFinite(lh) || lh <= 0) return
+  const top = (Number.isFinite(pt) ? pt : 0) + lineIndex * lh
+  scrollEl.scrollTop = Math.max(0, top - (scrollEl.clientHeight / 2) + (lh / 2))
+}
+
+const YamlHighlight = forwardRef<YamlViewHandle, { content: string }>(function YamlHighlight({ content }, ref) {
+  const { contentRef: setContentRef, gutterRef, onScroll } = useGutterSync()
+  // Scroll moved from the pre to the wrapping div so we can absolutely
+  // position the line-highlight overlay inside the same scroll container —
+  // the overlay scrolls with the content (v0.8.1, F25 follow-up).
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const preRef = useRef<HTMLPreElement | null>(null)
+  const lastMatchRef = useRef(-1)
+  const [matchedLine, setMatchedLine] = useState<number | null>(null)
+  // Per-line height + the pre's top padding, both in px. Measured from
+  // the pre's computed style after mount. v0.8.1 follow-up: the earlier
+  // `scrollHeight / lineCount` shortcut distributed the 12px+12px vertical
+  // padding evenly across every line, so per-line was ~0.24px too tall
+  // and the overlay drifted ~one line off by line ~56. Real CSS line-height
+  // is what we need.
+  const [lineMetrics, setLineMetrics] = useState<{ lineHeight: number; paddingTop: number }>({ lineHeight: 0, paddingTop: 0 })
+
+  const html  = useMemo(() => hljs.highlight(content, { language: 'yaml' }).value, [content])
+  const lineList = useMemo(() => content.split('\n'), [content])
+
+  const setScrollRefs = useCallback((el: HTMLDivElement | null) => {
+    setContentRef(el)
+    scrollRef.current = el
+  }, [setContentRef])
+
+  useEffect(() => {
+    if (!preRef.current) return
+    const cs = window.getComputedStyle(preRef.current)
+    const lh = parseFloat(cs.lineHeight)
+    const pt = parseFloat(cs.paddingTop)
+    if (Number.isFinite(lh) && lh > 0) {
+      setLineMetrics({ lineHeight: lh, paddingTop: Number.isFinite(pt) ? pt : 0 })
+    }
+  }, [content])
+
+  function scrollViewToLine(lineIndex: number) {
+    const el = scrollRef.current
+    if (!el || lineMetrics.lineHeight <= 0) return
+    const target = lineMetrics.paddingTop + lineIndex * lineMetrics.lineHeight
+    el.scrollTop = Math.max(0, target - (el.clientHeight / 2) + (lineMetrics.lineHeight / 2))
+  }
+
+  useImperativeHandle(ref, () => ({
+    find(term: string) {
+      if (!term) return -1
+      const lower = term.toLowerCase()
+      const start = lastMatchRef.current + 1
+      const findFrom = (from: number, to: number): number => {
+        for (let i = from; i < to; i++) {
+          if (lineList[i].toLowerCase().includes(lower)) return i
+        }
+        return -1
+      }
+      let idx = findFrom(start, lineList.length)
+      if (idx === -1) idx = findFrom(0, Math.min(start, lineList.length))
+      if (idx === -1) return -1
+      lastMatchRef.current = idx
+      setMatchedLine(idx)
+      scrollViewToLine(idx)
+      return idx
+    },
+    scrollToLine(lineIndex: number) {
+      scrollViewToLine(lineIndex)
+      lastMatchRef.current = lineIndex
+      setMatchedLine(lineIndex)
+    },
+    resetSearch() { lastMatchRef.current = -1; setMatchedLine(null) },
+  }), [lineList, lineMetrics])
+
   return (
     <div className="ld-code-wrap">
-      <Gutter lines={lines} gutterRef={gutterRef} />
-      <textarea ref={contentRef as React.RefCallback<HTMLTextAreaElement>}
+      <Gutter lines={lineList.length} gutterRef={gutterRef} />
+      <div ref={setScrollRefs} className="ld-yaml-scroll" onScroll={onScroll}>
+        <div className="ld-yaml-inner">
+          <pre ref={preRef} className="ld-yaml-preview"
+            dangerouslySetInnerHTML={{ __html: html }} />
+          {matchedLine !== null && lineMetrics.lineHeight > 0 && (
+            <div
+              className="ld-yaml-line-highlight"
+              style={{
+                top: (lineMetrics.paddingTop + matchedLine * lineMetrics.lineHeight) + 'px',
+                height: lineMetrics.lineHeight + 'px',
+              }}
+              aria-hidden
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (v: string) => void }>(function EditorWithGutter({ value, onChange }, ref) {
+  const { contentRef: setContentRef, gutterRef, onScroll } = useGutterSync()
+  const taRef = useRef<HTMLTextAreaElement | null>(null)
+  const lastMatchRef = useRef(-1)  // character offset of the last match, NOT line index
+  const lineList = useMemo(() => value.split('\n'), [value])
+
+  const setRefs = useCallback((el: HTMLTextAreaElement | null) => {
+    setContentRef(el)
+    taRef.current = el
+  }, [setContentRef])
+
+  useImperativeHandle(ref, () => ({
+    find(term: string) {
+      if (!term) return -1
+      const ta = taRef.current
+      if (!ta) return -1
+      const lowerVal = value.toLowerCase()
+      const lower = term.toLowerCase()
+      // Resume from one past the last match offset (so Enter cycles); wrap
+      // to start if nothing further.
+      const start = lastMatchRef.current >= 0 ? lastMatchRef.current + 1 : 0
+      let idx = lowerVal.indexOf(lower, start)
+      if (idx === -1) idx = lowerVal.indexOf(lower, 0)
+      if (idx === -1) return -1
+      lastMatchRef.current = idx
+      ta.focus()
+      ta.setSelectionRange(idx, idx + term.length)
+      const lineIndex = value.slice(0, idx).split('\n').length - 1
+      scrollElementToLine(ta, lineIndex)
+      return lineIndex
+    },
+    scrollToLine(lineIndex: number) {
+      if (!taRef.current) return
+      scrollElementToLine(taRef.current, lineIndex)
+      // Reset char-offset cursor — next find should start from this line top.
+      const charOffset = lineList.slice(0, lineIndex).reduce((sum, l) => sum + l.length + 1, 0)
+      lastMatchRef.current = Math.max(0, charOffset - 1)
+    },
+    resetSearch() { lastMatchRef.current = -1 },
+  }), [value, lineList])
+
+  return (
+    <div className="ld-code-wrap">
+      <Gutter lines={lineList.length} gutterRef={gutterRef} />
+      <textarea ref={setRefs}
         className="ld-yaml-editor"
         value={value}
         onChange={e => onChange(e.target.value)}
         onScroll={onScroll}
         spellCheck={false}
       />
+    </div>
+  )
+})
+
+// Search input used in the Profiles tab's edit-bar. Self-contained so the
+// edit-bar JSX stays readable. Enter triggers find; the parent advances the
+// ref's internal cursor so repeated Enters cycle through matches. v0.8.1 (F25).
+function YamlSearchField({ value, onChange, onFind }: {
+  value: string
+  onChange: (v: string) => void
+  onFind: () => void
+}) {
+  return (
+    <div className="ld-yaml-search">
+      <input
+        type="text"
+        className="ld-yaml-search-input"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onFind() } }}
+        placeholder="Search YAML…"
+      />
+      <button
+        type="button"
+        className="ld-btn ld-btn--secondary ld-yaml-search-btn"
+        onClick={onFind}
+        disabled={!value}
+        title="Find (or press Enter). Each click cycles to the next match."
+      >
+        Find
+      </button>
     </div>
   )
 }
@@ -458,6 +634,12 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
   const [saveError,       setSaveError]       = useState<string | null>(null)
   const [validation,      setValidation]      = useState<{ ok: boolean; message: string; line?: number } | null>(null)
   const [showAllDiff,     setShowAllDiff]     = useState(false)
+  // v0.8.1 (F25): in-file search. `yamlSearch` is what the user typed;
+  // `lastFoundLine` remembers the most recent match so switching between
+  // view and edit mode keeps the user roughly at the same spot.
+  const [yamlSearch,      setYamlSearch]      = useState('')
+  const [lastFoundLine,   setLastFoundLine]   = useState<number | null>(null)
+  const yamlViewRef = useRef<YamlViewHandle | null>(null)
 
   useEffect(() => {
     if (!lichPath) { setLoading(false); return }
@@ -477,23 +659,17 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
     setSaveError(null)
     setValidation(null)
     setLoadingContent(true)
+    // v0.8.1 (F25): reset the YAML search cursor on file change. The input
+    // text stays so the user can re-find the same key in a different file
+    // without retyping; the cursor resets so the next Find starts at line 0.
+    setLastFoundLine(null)
+    yamlViewRef.current?.resetSearch()
     const lichDir = lichPath.replace(/[/\\][^/\\]+$/, '')
     const fullPath = `${lichDir}\\scripts\\profiles\\${name}`
     const text = await window.api.readFile(fullPath)
     // Normalize CRLF → LF so the textarea value matches and the LCS diff works
     setOriginalContent((text ?? '(could not read file)').replace(/\r\n/g, '\n'))
     setLoadingContent(false)
-  }
-
-  // Quick-edit: extract combat_teaching_skill from the live edit buffer
-  const combatSkill = useMemo(() => {
-    if (editContent === null) return null
-    const m = editContent.match(/^combat_teaching_skill:\s+(.+)$/m)
-    return m ? m[1].trim() : null
-  }, [editContent])
-
-  function setCombatSkill(val: string) {
-    setEditContent(prev => prev?.replace(/^(combat_teaching_skill:\s+).+$/m, `$1${val}`) ?? prev)
   }
 
   const diff = useMemo<DiffEntry[] | null | undefined>(() => {
@@ -517,6 +693,17 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
   const lichDir = lichPath ? lichPath.replace(/[/\\][^/\\]+$/, '') : ''
   const fullFilePath = selected ? `${lichDir}\\scripts\\profiles\\${selected}` : ''
   const isEditing = editContent !== null
+
+  // v0.8.1 (F25): when the user clicks Edit (or Cancel) we re-scroll the
+  // newly-mounted component to the last-found line so the search position
+  // survives the mode switch. The ref points at the just-mounted instance
+  // by the time this effect runs (post-commit). Skipped on initial mount
+  // (lastFoundLine is null until the user runs a search).
+  useEffect(() => {
+    if (lastFoundLine == null) return
+    yamlViewRef.current?.scrollToLine(lastFoundLine)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing])
   const origLines = originalContent?.split('\n').length ?? 0
   const editLines = editContent?.split('\n').length ?? 0
 
@@ -594,13 +781,18 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
           <div className={`ld-profile-edit-bar${isEditing ? ' ld-profile-edit-bar--editing' : ''}`}>
             {isEditing ? (
               <>
-                {combatSkill !== null && (
-                  <label className="ld-quick-field">
-                    <span className="ld-quick-label">combat_teaching_skill</span>
-                    <input className="ld-quick-input" value={combatSkill}
-                      onChange={e => setCombatSkill(e.target.value)} />
-                  </label>
-                )}
+                {/* In-file search (v0.8.1, F25). Visible in BOTH view and edit
+                    modes via the same ref pattern — clicking Edit preserves
+                    whatever you'd searched up because lastFoundLine is restored
+                    on mode switch via the useEffect below. */}
+                <YamlSearchField
+                  value={yamlSearch}
+                  onChange={v => { setYamlSearch(v); yamlViewRef.current?.resetSearch() }}
+                  onFind={() => {
+                    const line = yamlViewRef.current?.find(yamlSearch) ?? -1
+                    if (line >= 0) setLastFoundLine(line)
+                  }}
+                />
                 <span className="ld-edit-gap" />
                 <span className="ld-edit-mode-note">plain text</span>
                 <button className="ld-btn ld-btn--secondary" onClick={validateYaml}>Validate</button>
@@ -610,6 +802,14 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
             ) : (
               <>
                 <span className="ld-profile-name">{selected}</span>
+                <YamlSearchField
+                  value={yamlSearch}
+                  onChange={v => { setYamlSearch(v); yamlViewRef.current?.resetSearch() }}
+                  onFind={() => {
+                    const line = yamlViewRef.current?.find(yamlSearch) ?? -1
+                    if (line >= 0) setLastFoundLine(line)
+                  }}
+                />
                 <span className="ld-edit-gap" />
                 <button className="ld-btn ld-btn--secondary" onClick={validateYaml}>Validate</button>
                 <button className="ld-btn ld-btn--secondary" onClick={() => setEditContent(originalContent!)}>Edit</button>
@@ -632,10 +832,10 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
         {loadingContent && <div className="ld-empty">Loading…</div>}
         {!loadingContent && originalContent === null && <div className="ld-empty">Select a profile to preview.</div>}
         {!loadingContent && originalContent !== null && !isEditing && (
-          <YamlHighlight content={originalContent} />
+          <YamlHighlight ref={yamlViewRef} content={originalContent} />
         )}
         {!loadingContent && isEditing && (
-          <EditorWithGutter value={editContent!} onChange={setEditContent} />
+          <EditorWithGutter ref={yamlViewRef} value={editContent!} onChange={setEditContent} />
         )}
       </div>
     </div>

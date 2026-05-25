@@ -12,7 +12,12 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 380px;
+  /* v0.8.1: widened from 380px → 580px (~53% bigger) so the new longer
+     button labels ("Top-Right" / "Middle-Right" / "Bottom-Right") and
+     the four zones' Move/Add button rows fit comfortably without the
+     last button clipping. */
+  width: 580px;
+  max-width: 92vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -68,23 +73,99 @@
   padding: 10px 0;
 }
 
-.pm-section { margin-bottom: 4px; }
+/* v0.8.1: clearer section + row separation in the Panel Manager. Sections
+   get a top border + extra top padding so each zone reads as a distinct
+   block. Rows get a thin divider between them so each stream row is
+   individually scannable. */
+.pm-section {
+  margin-bottom: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+.pm-section:first-child {
+  border-top: none;
+  padding-top: 0;
+}
 
 .pm-section-label {
-  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.74rem;
   font-weight: 700;
-  color: var(--text-dim);
+  color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  padding: 6px 14px 4px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.pm-section-label-text { flex: 1; }
+
+/* v0.8.1 (Panel Manager V2): the "Add Panel" button in the Panel Locations
+   section. Accent-coloured because it's the primary action — adds a new
+   panel slot to the layout. */
+.pm-btn-add-panel {
+  background: transparent;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-family: inherit;
+}
+
+.pm-btn-add-panel:hover {
+  border-color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 60%, white);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* v0.8.1: status pill alongside each Panel Locations row. Shows the
+   current state in muted text so the action button reads as the
+   interactive element. */
+.pm-zone-status {
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border-faint);
+}
+
+.pm-zone-status--added {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.pm-zone-status--removed {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Inline empty-state hint inside an Available Stream row when no panel
+   is added — explains why there are no "+" buttons. */
+.pm-empty-inline {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  font-style: italic;
 }
 
 .pm-row {
   display: flex;
   align-items: center;
-  padding: 5px 14px;
+  padding: 6px 14px;
   gap: 8px;
+  border-top: 1px solid var(--border-faint);
 }
+
+/* No top border on the first row directly below a section label — the
+   label itself acts as the separator. */
+.pm-section-label + .pm-row { border-top: none; }
 
 .pm-row:hover { background: var(--bg-hover); }
 

@@ -786,17 +786,46 @@
   font-style: italic;
 }
 
+/* v0.8.1 (F25 follow-up): scroll moved from the pre to an outer wrapper
+   so an absolutely-positioned line-highlight overlay can live inside the
+   same scroll container and scroll with the content. The pre is now
+   non-scrolling; its parent .ld-yaml-scroll has overflow:auto. */
+.ld-yaml-scroll {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg-base);
+}
+
+.ld-yaml-inner {
+  position: relative;
+  /* Width is at least the scroll viewport so the overlay's left:0/right:0
+     span covers visible lines; height grows with the pre content. */
+  min-width: 100%;
+  display: inline-block;
+}
+
 .ld-yaml-preview {
   font-family: monospace;
   font-size: 0.79rem;
   line-height: 1.65;
   color: var(--text-primary);
-  background: var(--bg-base);
+  background: transparent;
   margin: 0;
   white-space: pre;
   padding: 12px 16px;
-  flex: 1;
-  overflow: auto;
+}
+
+/* Line-highlight overlay for the search match. Translucent so the
+   syntax-highlighted text underneath stays readable; left-border stripe
+   provides a stronger "this is the line" anchor at the gutter side. */
+.ld-yaml-line-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-left: 3px solid var(--accent);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ── YAML syntax highlight (highlight.js — VS Code dark+ palette) ────────────── */
@@ -885,30 +914,35 @@
   border-color: var(--color-danger);
 }
 
-.ld-quick-field {
-  display: flex;
+/* In-file YAML search field (v0.8.1, F25). Sits in the profile-edit-bar
+   alongside Validate / Cancel / Save. Same compact size as the buttons so
+   it doesn't dominate the bar. */
+.ld-yaml-search {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
-.ld-quick-label {
-  font-size: 0.74rem;
-  color: var(--text-muted);
-  font-family: monospace;
-  white-space: nowrap;
-}
-
-.ld-quick-input {
+.ld-yaml-search-input {
   background: var(--bg-input);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  font-family: monospace;
-  font-size: 0.8rem;
-  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 3px 8px;
   border-radius: 3px;
-  width: 140px;
+  width: 160px;
 }
-.ld-quick-input:focus { outline: none; border-color: var(--accent-dim); }
+
+.ld-yaml-search-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.ld-yaml-search-btn {
+  padding: 3px 10px;
+  font-size: 0.78rem;
+}
 
 .ld-yaml-editor {
   display: block;

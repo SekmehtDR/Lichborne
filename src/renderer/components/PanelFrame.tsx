@@ -14,7 +14,7 @@ import ScriptListPanel from './ScriptListPanel'
 import type { ScriptRecord } from '../../shared/types'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'custom'
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'combat' | 'custom'
 
 export interface TabDef {
   id: string
@@ -37,11 +37,12 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   log:           'Log',
   map:           'Map',
   lichScripts:   'Lich Scripts',
+  combat:        'Combat',
   custom:        'Custom',
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map', 'lichScripts',
+  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map', 'lichScripts', 'combat',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -65,6 +66,7 @@ interface Props {
   onTogglePin?: (skill: string) => void
   onSendCommand: (cmd: string) => void
   autoLinkUrls?: boolean
+  webLinkSafety?: boolean
   debugEvents?: GameEvent[]
   onClearDebug?: () => void
   rawXmlLines?: string[]
@@ -99,7 +101,7 @@ interface Props {
 export default function PanelFrame({
   streamLines, roomState, expSkills, rankUpSkills,
   expFocus = 'None', pinnedSkills, onFocusChange, onTogglePin,
-  onSendCommand, autoLinkUrls = true,
+  onSendCommand, autoLinkUrls = true, webLinkSafety = true,
   debugEvents, onClearDebug, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
@@ -187,7 +189,7 @@ export default function PanelFrame({
           rawXmlLines ?? [], onClearRawXml ?? (() => {}),
           fireLog ?? [], onClearFireLog ?? (() => {}),
           onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
-          streamTimestamps, onToggleTimestamp, autoLinkUrls, lichMapVersion,
+          streamTimestamps, onToggleTimestamp, autoLinkUrls, webLinkSafety, lichMapVersion,
           lichScripts, lichLastUpdated, lichPending,
           onLichPause ?? (() => {}), onLichResume ?? (() => {}),
           onLichKill ?? (() => {}), onLichRefresh ?? (() => {}),
@@ -328,6 +330,7 @@ function renderPanel(
   streamTimestamps: Record<string, boolean> = {},
   onToggleTimestamp?: (streamId: string) => void,
   autoLinkUrls = true,
+  webLinkSafety = true,
   lichMapVersion?: number,
   lichScripts: ScriptRecord[] = [],
   lichLastUpdated = 0,
@@ -341,7 +344,7 @@ function renderPanel(
   const clr = (id: string) => () => onClearStream(id)
   const sp = (id: string, lines: TextLine[]) => (
     <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger}
-      onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} showTimestamp={!!streamTimestamps[id]}
+      onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety} showTimestamp={!!streamTimestamps[id]}
       onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(id) : undefined} />
   )
   switch (tab.type) {
@@ -358,10 +361,11 @@ function renderPanel(
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} />
     case 'log':           return sp('log',           streamLines.log           ?? [])
     case 'lichScripts':   return <ScriptListPanel scripts={lichScripts} lastUpdated={lichLastUpdated} pending={lichPending} onPause={onLichPause} onResume={onLichResume} onKill={onLichKill} onRefresh={onLichRefresh} />
+    case 'combat':        return sp('combat',        streamLines.combat        ?? [])
     case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={onSendCommand} mapAnimations={mapAnimations} />
     case 'custom':        return (
       <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
-        onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls}
+        onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety}
         showTimestamp={!!streamTimestamps[tab.id]}
         onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(tab.id) : undefined}
         emptyMessage={`Waiting for content on stream "${tab.label}"…`} />

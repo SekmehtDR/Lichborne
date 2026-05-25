@@ -111,12 +111,23 @@ function AppShell() {
   }, [sessions])
 
   // v0.8.0 (B99): listen for the shutdown-starting signal from main and flip
-  // the "Closing…" overlay on so the up-to-5s graceful-disconnect wait gets
-  // visible feedback. Once on, this stays on — the window destroys shortly
-  // after, no need to clear.
+  // the "Closing…" overlay on so the graceful-disconnect wait gets visible
+  // feedback. v0.8.1: delayed-show. Backups + Lich socket.end() typically
+  // finish well under 250ms; painting the overlay immediately makes it flash
+  // for users whose shutdown is actually instantaneous. We arm a 250ms timer
+  // on the signal — if main destroys the window before it fires (the common
+  // case), no overlay paints. Only genuinely slow shutdowns (hung network,
+  // huge backup) ever surface the overlay.
+  const OVERLAY_DELAY_MS = 250
   useEffect(() => {
-    const unsub = window.api.onShutdownStarting((info) => setShutdownInfo(info))
-    return unsub
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const unsub = window.api.onShutdownStarting((info) => {
+      timer = setTimeout(() => setShutdownInfo(info), OVERLAY_DELAY_MS)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      unsub()
+    }
   }, [])
 
   // Single source of truth for document.title. Re-fires on tab switch (activeId)

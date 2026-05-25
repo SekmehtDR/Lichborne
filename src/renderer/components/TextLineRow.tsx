@@ -15,6 +15,10 @@ export interface TextLineRowProps {
   onContactClick?: (id: string, x: number, y: number) => void
   onSendCommand?: (cmd: string) => void
   autoLinkUrls?: boolean
+  // v0.8.1 (F23): route external URL clicks through Simu's bounce page
+  // (https://www.play.net/bounce/redirect.asp?URL=...) when true. Matches
+  // Genie's bWebLinkSafety setting.
+  webLinkSafety?: boolean
   showTimestamp?: boolean
 }
 
@@ -25,7 +29,7 @@ function fmtTimestamp(ts: number): string {
 
 export const TextLineRow = memo(function TextLineRow({
   line, matchRules, lineRules, contacts, templates, nameRegex,
-  onContactClick, onSendCommand, autoLinkUrls = true, showTimestamp,
+  onContactClick, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp,
 }: TextLineRowProps) {
   const lineStyle = getLineHighlightStyle(line.segments, lineRules)
   const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre-wrap' as const } : lineStyle
@@ -36,8 +40,8 @@ export const TextLineRow = memo(function TextLineRow({
         <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
       )}
       {line.segments.map((seg, i) => hasExtras
-        ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls)
-        : renderSegment(seg, i, onSendCommand, autoLinkUrls)
+        ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety)
+        : renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety)
       )}
     </div>
   )

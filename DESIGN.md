@@ -180,11 +180,34 @@ Layout profiles are saved to `~/.lichborne/layouts/[name].json`.
 
 ### 2.5 Panel Manager
 
-A dedicated UI (accessible via View → Panel Manager or a toolbar button) shows:
-- All available panels and their current state (open / closed / floating)
-- Quick toggles to show/hide each
-- Drag-to-reorder for tabbed panels
-- Layout profile switcher
+A dedicated UI (accessible via the **Panels** toolbar button) lets the user shape the layout in two independent dimensions: which **panel slots** exist in the layout, and which **streams** live in each slot.
+
+**Panel slots (v0.8.1, "V2").** The layout has four fixed slots:
+
+| Slot | Position |
+|---|---|
+| Main-Top | Above the main scrolling text + command bar (left side of the game window) |
+| Top-Right | Top of the right panel column |
+| Middle-Right | Middle of the right panel column |
+| Bottom-Right | Bottom of the right panel column |
+
+Each slot is independently *added to* or *removed from* the layout via the **Panel Locations** section at the top of the manager. "Add Panel" snaps the slot into the game window (empty placeholder until streams arrive); "Remove Panel" hides the slot and returns its streams to the Available Streams pool below. Each slot's added/removed state is per-character, persists in the YAML profile (`mainTopAdded` / `topAdded` / `midAdded` / `bottomAdded` in the state map), and survives across launches.
+
+**Right-column sizing follows the count of added slots:**
+- 0 added → right column + vertical divider don't render; main text gets the full width
+- 1 added → that slot takes the full column height (`flex: 1`)
+- 2 added → 50/50 default; the divider drags the first slot's saved height while the second remains flex
+- 3 added → the canonical layout (top + middle use saved px heights, bottom takes the flex remainder, both dividers draggable)
+
+Saved heights persist across mode changes — toggling 3→2→3 restores the user's split. Main-Top is independent of the right column: it has its own resizable height and its own divider against the main text below.
+
+**Migration defaults when the `*Added` flag is missing:** Main-Top → `false` (Main-Top is new in v0.8.1; users opt in explicitly), other three → `true` (preserves the v0.8.0 always-visible behavior for existing users who never opened the new manager). New users start with the same defaults — three right-column slots populated with their stream defaults, Main-Top removed.
+
+**Streams.** Each added slot's section in the Panel Manager lists the streams currently in that slot, with per-row controls to **move** the stream to a different added slot or **remove** it (returns it to Available Streams). The Available Streams section shows every builtin PanelType not yet placed, plus any discovered custom streams; rows there show `+ Zone` buttons that target each currently-added slot.
+
+A **Reset Panels** button restores defaults — all four slots added (yes, including Main-Top — Reset is "everything visible", not "back to new-user state"), with their default streams.
+
+**Empty added slots** render an `EmptyPanelSlot` placeholder in the layout (dashed border, label, click → opens the Panel Manager) so the slot is visible and reachable. Removing every stream from an added slot doesn't hide the slot — that requires explicit Remove Panel.
 
 ### 2.6 Panel Catalog
 
