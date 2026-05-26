@@ -40,7 +40,11 @@ export default function FloatingCompass({ exits }: { exits: string[] }) {
             {ARROWS[dir]}
           </div>
         ))}
-        <div className="fc-cell fc-cell--center" style={{ gridColumn: 2, gridRow: 2 }}>·</div>
+        {/* v0.8.2: centre dot removed — it sat off-centre at some font
+            sizes (the `·` glyph's baseline metrics differ across fonts,
+            so the grid cell aligned correctly but the character drew
+            high-and-left of cell centre). The 8 directional arrows
+            already imply the centre by negative space. */}
       </div>
       <div className="fc-special">
         {SPECIAL_EXITS.map(({ dir, label }) => (

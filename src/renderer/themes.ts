@@ -214,6 +214,20 @@ export const darkBase: ThemeVars = {
   '--map-arc-hidden':    '#8a6030',
   '--map-dot':           '#2a1e0f',
   '--map-current-color': '#50e038',
+  // v0.8.2: Lich Map "you are here" sonar locator — themable trio.
+  // `--lich-here-color`    bright accent stroke (sonar ping rings + solid ring)
+  // `--lich-here-backdrop` dark contrast halo under the solid ring; guarantees
+  //                        visibility on white/cream Lich Map tiles. Keep the
+  //                        alpha so it darkens whatever's underneath rather
+  //                        than punching a flat black ring.
+  // `--lich-here-fill`     room-rect fill tint — softer than the ring so the
+  //                        ring stays the focal point.
+  // Lime by default (Lich PNG/GIF tiles run cream/white, so saturated lime
+  // pops where Genie's muted #4caf50 would wash out). Themes can override
+  // either color independently from Genie's `--map-current-color`.
+  '--lich-here-color':    '#00ff80',
+  '--lich-here-backdrop': 'rgba(0,0,0,0.55)',
+  '--lich-here-fill':     'rgba(0,255,128,0.30)',
 
   '--bg-deep': 'rgba(0, 0, 0, 0.35)',
 

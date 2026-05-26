@@ -25,7 +25,7 @@ export interface TriggerCallbacks {
   disableTrigger: (id: string) => void
   flashWindow:  () => void
   writeLog:     (file: string, content: string) => void
-  onFire?:      (name: string, matched: string, detail: string, stream: string) => void
+  onFire?:      (name: string, matched: string, detail: string, stream: string, ruleId: string) => void
 }
 
 export function playWavFile(filePath: string) {
@@ -343,7 +343,7 @@ export function useTriggerEngine(
         const gates = summarizeGates(rule.gates)
         if (gates) parts.push(gates)
         for (const a of rule.actions) parts.push(summarizeAction(a, vars))
-        callbacks.onFire(rule.name || rule.pattern.slice(0, 60), lineText.slice(0, 120), parts.join(' | '), stream)
+        callbacks.onFire(rule.name || rule.pattern.slice(0, 60), lineText.slice(0, 120), parts.join(' | '), stream, rule.id)
       }
 
       for (const action of rule.actions) {
@@ -382,7 +382,7 @@ export function useTriggerEngine(
         const gates = summarizeGates(rule.gates)
         if (gates) parts.push(gates)
         for (const a of rule.actions) parts.push(summarizeAction(a, vars))
-        callbacks.onFire(rule.name || rule.watchVariable || rule.pattern.slice(0, 60), newValue.slice(0, 120), parts.join(' | '), `var:${name}`)
+        callbacks.onFire(rule.name || rule.watchVariable || rule.pattern.slice(0, 60), newValue.slice(0, 120), parts.join(' | '), `var:${name}`, rule.id)
       }
 
       for (const action of rule.actions) {

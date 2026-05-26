@@ -63,9 +63,7 @@ export default function MapImageView({
   const [hoveredId,  setHoveredId]  = useState<number | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null)
   const [pathRooms,  setPathRooms]  = useState<Set<number>>(new Set())
-  const [walking,    setWalking]    = useState(false)
   const [searchText, setSearchText] = useState('')
-  const walkTimers = useRef<ReturnType<typeof setTimeout>[]>([])
   const svgRef  = useRef<SVGSVGElement>(null)
   const dragRef = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null)
   // Mirrors transform.scale so the image-onload centering handler
@@ -197,34 +195,18 @@ export default function MapImageView({
 
   // ── Walk ────────────────────────────────────────────────────────────────────
 
-  function cancelWalk() {
-    walkTimers.current.forEach(clearTimeout); walkTimers.current = []
-    setWalking(false); setPathRooms(new Set())
-  }
-
+  // v0.8.2: Lich Map movement now delegates to Lich's `;go2` script instead
+  // of the previous step-by-step BFS walker. `;go2 <room-id>` handles locked
+  // doors, hidden exits, blocked paths, retries, and roundtime — all the
+  // things the local timer-based walker fought with (any block killed the
+  // walk and left the user stranded). One IPC send, fire-and-forget; if the
+  // user wants to stop it they can type `;k go2` in the command bar.
+  // The local BFS in `bfsPath` is still used for the visual path-pin on
+  // left-click (a static preview), and `walkSteps` still shows the step
+  // count on the Walk Here button label as a distance cue.
   function walkToRoom(targetId: number) {
-    if (!currentRoom) return
-    cancelWalk()
-    const path = bfsPath(lichDb, currentRoom.id, targetId)
-    if (path.length === 0) return
-    const pathSet = new Set<number>()
-    let cur = currentRoom.id
-    for (const cmd of path) {
-      const room = lichDb.get(cur)
-      const destStr = Object.entries(room?.wayto ?? {}).find(([, c]) => c === cmd && typeof c === 'string')?.[0]
-      if (destStr) { const dest = parseInt(destStr, 10); pathSet.add(dest); cur = dest }
-    }
-    setPathRooms(pathSet); setWalking(true)
-    path.forEach((cmd, i) => {
-      const t = setTimeout(() => {
-        onSendCommand(cmd)
-        if (i === path.length - 1) { setWalking(false); setPathRooms(new Set()) }
-      }, i * 600)
-      walkTimers.current.push(t)
-    })
+    onSendCommand(`;go2 ${targetId}`)
   }
-
-  useEffect(() => () => cancelWalk(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Rooms on current image ──────────────────────────────────────────────────
 
@@ -258,7 +240,12 @@ export default function MapImageView({
       if (isOnPath)              { fill = 'rgba(180,140,40,0.30)'; stroke = '#d4a820'; strokeW = 1.0 }
       if (isSelected)            { fill = 'rgba(40,100,180,0.35)'; stroke = '#50a0d8'; strokeW = 1.0 }
       if (isHovered && !isSelected) { fill = 'rgba(200,160,60,0.25)'; stroke = '#c09040'; strokeW = 1.0 }
-      if (isCurrent)             { fill = 'rgba(40,180,80,0.45)'; stroke = '#40e080'; strokeW = 1.2 }
+      // v0.8.2: bumped the current-room fill alpha down (0.45 → 0.30) since
+      // the sonar locator ring below is now the primary "you are here" cue.
+      // Stroke pushed to saturated lime to match the sonar accent. Both go
+      // through CSS vars (--lich-here-fill, --lich-here-color) with lime
+      // fallbacks so themes can re-pick without touching code.
+      if (isCurrent)             { fill = 'var(--lich-here-fill, rgba(0,255,128,0.30))'; stroke = 'var(--lich-here-color, #00ff80)'; strokeW = 1.2 }
 
       return (
         <g key={room.id}
@@ -269,11 +256,11 @@ export default function MapImageView({
             e.stopPropagation()
             if (selectedId === room.id) {
               setSelectedId(null)
-              if (!walking) setPathRooms(new Set())
+              setPathRooms(new Set())
               return
             }
             setSelectedId(room.id)
-            if (currentRoom && room.id !== currentRoom.id && !walking) {
+            if (currentRoom && room.id !== currentRoom.id) {
               const path = bfsPath(lichDb, currentRoom.id, room.id)
               const set = new Set<number>()
               let cur = currentRoom.id
@@ -295,15 +282,59 @@ export default function MapImageView({
           style={{ cursor: 'pointer' }}
         >
           <rect x={x1} y={y1} width={w} height={h} fill={fill} stroke={stroke} strokeWidth={strokeW / transform.scale} rx={0.5 / transform.scale} />
-          {isCurrent && (
-            <rect x={x1} y={y1} width={w} height={h} fill="none" stroke="#40e080" strokeWidth={0.6 / transform.scale} rx={0.5 / transform.scale} opacity={0.5}>
-              <animate attributeName="opacity" values="0.5;0.1;0.5" dur="1.8s" repeatCount="indefinite" />
-            </rect>
-          )}
+          {isCurrent && (() => {
+            // v0.8.2: sonar locator — mirrors the Genie Maps "you are here"
+            // pattern adapted to the per-room bounding box. Replaces the
+            // earlier opacity-pulse rect which was invisible on white/cream
+            // Lich Map tiles (the prior #40e080 stroke disappeared into
+            // green map backgrounds, and the pulse was too subtle).
+            // Layers (drawn in render order, so later sits on top):
+            //   1. Two expanding ping circles (CSS `genie-here-ping`,
+            //      staggered ~1s apart for a continuous outward wave).
+            //   2. Dark backdrop ring — guaranteed contrast against any
+            //      background, especially the white/cream Lich tiles.
+            //   3. Bright lime accent ring on top — the identity anchor.
+            // `vectorEffect="non-scaling-stroke"` keeps every stroke a
+            // constant pixel width regardless of the user's map zoom; the
+            // radius itself is in image coordinates so the ring scales with
+            // the room rect (one-room-wide on a small room, larger on a
+            // multi-tile room).
+            const cx = (x1 + x2) / 2
+            const cy = (y1 + y2) / 2
+            // Padding (image-coord units) so the ring sits just outside
+            // the rect rather than tracing its edge.
+            const ringR = Math.max(w, h) / 2 + 3
+            return (
+              <>
+                <circle className="genie-here-ping" cx={cx} cy={cy} r={ringR}
+                        fill="none" stroke="var(--lich-here-color, #00ff80)"
+                        strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+                <circle className="genie-here-ping genie-here-ping--delayed" cx={cx} cy={cy} r={ringR}
+                        fill="none" stroke="var(--lich-here-color, #00ff80)"
+                        strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+                <circle cx={cx} cy={cy} r={ringR}
+                        fill="none" stroke="var(--lich-here-backdrop, rgba(0,0,0,0.55))"
+                        strokeWidth={5} vectorEffect="non-scaling-stroke" />
+                <circle cx={cx} cy={cy} r={ringR}
+                        fill="none" stroke="var(--lich-here-color, #00ff80)"
+                        strokeWidth={3} vectorEffect="non-scaling-stroke" />
+                {/* v0.8.2: bullseye centre dot — pins the exact room when
+                    multiple rooms sit inside the ring radius (dense areas
+                    like the Crossing market). Dark backdrop + bright accent
+                    on top, same dual-contrast trick as the ring. Sized
+                    relative to the room rect so it stays proportional at
+                    any zoom. */}
+                <circle cx={cx} cy={cy} r={Math.max(1.5, Math.min(w, h) * 0.15)}
+                        fill="var(--lich-here-backdrop, rgba(0,0,0,0.55))" />
+                <circle cx={cx} cy={cy} r={Math.max(0.9, Math.min(w, h) * 0.10)}
+                        fill="var(--lich-here-color, #00ff80)" />
+              </>
+            )
+          })()}
         </g>
       )
     })
-  }, [roomsOnImage, currentRoom, selectedId, hoveredId, pathRooms, walking, lichDb, transform.scale, imageSize]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [roomsOnImage, currentRoom, selectedId, hoveredId, pathRooms, lichDb, transform.scale, imageSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const recenter = useCallback(() => {
     if (!currentRoom?.image_coords) return
@@ -324,9 +355,11 @@ export default function MapImageView({
         {currentRoom && (
           <button className="map-btn map-btn--sm" onClick={recenter} title="Re-center on current room">◆</button>
         )}
-        {walking && (
-          <button className="map-btn map-btn--sm map-btn--stop" onClick={cancelWalk} title="Stop walking">■</button>
-        )}
+        {/* v0.8.2: stop-walking button removed — movement now delegates to
+            `;go2`, which runs server-side; the user can stop it with
+            `;k go2` in the command bar (same way they'd kill any Lich
+            script). The local timer-based walker that needed a Stop button
+            is gone. */}
       </div>
 
       {/* Search results */}
@@ -426,9 +459,14 @@ export default function MapImageView({
             ))}
           </div>
           {canWalk && (
-            <button className={`map-walk-btn${walking ? ' map-walk-btn--walking' : ''}`}
-              onClick={() => walking ? cancelWalk() : walkToRoom(selectedRoom.id)}>
-              {walking ? '■ Stop walking' : `▶ Walk here  (${walkSteps} steps)`}
+            // v0.8.2: button now sends `;go2 <id>` via walkToRoom (fire-and-
+            // forget). No more local stop/walking state — `;k go2` in the
+            // command bar cancels it. Step count is still shown as a
+            // distance cue (computed from the local BFS, same as before).
+            <button className="map-walk-btn"
+              onClick={() => walkToRoom(selectedRoom.id)}
+              title={`Sends ;go2 ${selectedRoom.id} to Lich`}>
+              {`▶ Walk here  (${walkSteps} steps)`}
             </button>
           )}
           {selectedRoom.id === currentRoom?.id && <div className="map-detail-here">◆ You are here</div>}

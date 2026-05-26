@@ -146,7 +146,9 @@
 
 .fire-log-entry {
   display: grid;
-  grid-template-columns: 72px 64px 60px minmax(80px, 160px) 1fr auto;
+  /* v0.8.2: added trailing 28px column for the → GOTO button. Columns:
+     time / kind / stream / name / matched / detail / goto */
+  grid-template-columns: 72px 64px 60px minmax(80px, 160px) 1fr auto 28px;
   gap: 6px;
   align-items: baseline;
   padding: 1px 8px;
@@ -154,6 +156,63 @@
   line-height: 1.4;
   overflow: hidden;
 }
+
+/* v0.8.2: header row above the fire log. Same grid template so the column
+   labels sit directly above the column data. Sticky so it stays in view
+   while the user scrolls fire history. */
+.fire-log-header {
+  display: grid;
+  grid-template-columns: 72px 64px 60px minmax(80px, 160px) 1fr auto 28px;
+  gap: 6px;
+  padding: 4px 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* v0.8.2: → GOTO button on each fire row. Compact (28px column) so it
+   doesn't dominate the row; the row hover bg makes it find-able without
+   needing its own visual weight. */
+.fire-log-goto {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fire-log-goto:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+.fire-log-goto:disabled { opacity: 0.3; cursor: default; }
+
+/* v0.8.2: header row above the events log. Flex layout matching .debug-event. */
+.debug-event-header {
+  display: flex;
+  gap: 8px;
+  padding: 4px 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.debug-event-header .debug-type { color: var(--text-muted); }
+.debug-event-header .debug-body { color: var(--text-muted); }
 
 .fire-log-entry:hover {
   background: var(--bg-base);

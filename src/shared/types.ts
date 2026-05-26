@@ -410,4 +410,8 @@ export interface FireLogEntry {
   matched: string   // the text that triggered the match (truncated)
   detail: string    // action types for triggers; sound info for highlights
   stream?: string   // stream or variable name the match came from
+  ruleId?: string   // v0.8.2: id of the source rule — drives the Fires → button
+                    // that opens the rule for edit in the Automations panel.
+                    // Optional so older entries (or future non-rule sources)
+                    // still satisfy the type.
 }

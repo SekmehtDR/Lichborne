@@ -1996,6 +1996,13 @@ export default function GenieMapView({
         vectorEffect="non-scaling-stroke"
         opacity={1}
       />
+      {/* v0.8.2: bullseye centre dot. In dense clusters where multiple
+          rooms sit inside the same sonar ring radius, the dot pins the
+          exact room at a glance. Dark backdrop dot + bright accent dot
+          on top, same dual-contrast trick the ring uses. Radius scales
+          with the indicator; at typical zooms this is a 3-4px dot. */}
+      <circle cx={0} cy={0} r={2}   fill="rgba(0,0,0,0.55)" />
+      <circle cx={0} cy={0} r={1.2} fill="var(--map-current-color, #4caf50)" />
     </g>
   )
 

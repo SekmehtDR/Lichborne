@@ -18,11 +18,12 @@ interface Props {
   highlightPrefill?:    HighlightRule
   highlightTestText?:   string
   triggerPrefillPattern?: string
+  triggerOpenId?:       string
 }
 
 export default function AutomationsPanel({
   onClose, onSaved, onThemeSaved, initialTab = 'highlights',
-  highlightPrefill, highlightTestText, triggerPrefillPattern,
+  highlightPrefill, highlightTestText, triggerPrefillPattern, triggerOpenId,
 }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [showImport, setShowImport] = useState(false)
@@ -70,6 +71,7 @@ export default function AutomationsPanel({
             <TriggersPanel
               onClose={() => {}} inline
               prefillPattern={triggerPrefillPattern}
+              openRuleId={triggerOpenId}
               onSaved={onSaved}
             />
           )}

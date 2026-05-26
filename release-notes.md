@@ -1,3 +1,52 @@
+## What's new in v0.8.2
+
+A polish release driven by Debug panel rough edges and Panel Manager quality-of-life.
+
+### Panel Manager — reorder streams in a slot
+
+Each stream row inside an added panel slot now has **◀ / ▶** buttons that shift the tab one position left or right within the slot. The order in the Panel Manager and the order of tabs in the in-game PanelFrame tab bar are the same — reordering here immediately reorders the tabs you see in the game window. Disabled at the ends so there's no silent no-op.
+
+The Panel Manager modal also got another ~50% wider (now 870px) — the per-row controls had grown to five buttons in the 3-zone "Streams" sections and the prior width was visibly cramped.
+
+### Debug panel — GOTO from Fires to the rule
+
+The **Debug → Fires** tab now has a small **→** button on every row. Click it to jump straight to the source highlight or trigger in the Automations panel, opened for edit. Works for both highlights and triggers; falls back gracefully if the rule was deleted since the fire was logged.
+
+Both Fires and Events tabs gained **column headers** (sticky to the top while you scroll), so the layout reads:
+
+- **Fires**: Time / Kind / Stream / Rule / Matched text / Detail / Goto
+- **Events**: Type / Payload
+
+### Debug panel — Copy All actually works
+
+The **Copy All** button silently did nothing in earlier versions (the renderer's permission handler quietly refused the clipboard call — same root cause as the v0.1.9 auto-copy bug). It now routes through Electron's native clipboard. Click any tab (Fires / Events / Raw XML) to focus it, then **Copy All** copies that tab's content to your system clipboard.
+
+### Debug panel — keeps 4× more history
+
+Buffer limits bumped from 500 → 2000 entries per tab. Collection is only active while the Debug panel is actually open, so this costs nothing during normal play.
+
+### Lich Map walks via Lich's `;go2` script
+
+Requested by Binu. The Lich Map's right-click "walk to room" and the "Walk here" button now delegate to Lich's stock `;go2` script instead of running a local step-by-step walker. `;go2` handles locked doors, hidden exits, blocked paths, retries, and roundtime — everything the old local walker fought with. Click a destination room → right-click → done; Lich figures out the path. To stop a walk in progress, type `;k go2` in the command bar.
+
+(Genie Maps movement is unchanged — Genie uses direction commands like "north" / "climb tree", which `;go2` doesn't speak.)
+
+### Lich Map "you are here" — easier to spot
+
+Requested by Binu — the previous green-rect indicator was hard to see on Lich's white/cream PNG tiles and disappeared into green map regions. Replaced with the same sonar-locator pattern used on Genie Maps: two expanding ping rings + a dual-contrast solid ring (dark backdrop + bright lime accent) so it reads against any background. Both maps also gained a small **bullseye centre dot** so the exact room stays unambiguous even in dense clusters.
+
+Themable via three new CSS variables (`--lich-here-color`, `--lich-here-backdrop`, `--lich-here-fill`) — independent from Genie's `--map-current-color` since the two maps have different visual aesthetics.
+
+### Floating compass — centre dot removed
+
+The little `·` in the middle of the compass drew off-cell at common font sizes (the dot glyph's baseline metrics put it up-and-left of where it visually belonged). The 8 directional arrows imply the centre by negative space anyway, so the dot is gone.
+
+### Bug fixes
+
+- **Phantom "Necromancy" fires (and similar) in the Fires log.** If a highlight regex had a trailing `|` before its closing `)` — e.g. `\b(word1|word2|)\b` — the empty alternative would match the zero-length string at every word boundary, causing the Fires log to record dozens of phantom fires per line on text the rule wasn't actually highlighting. The visual rendering was always correct; only the Fires diagnostic log was lying. Fixed at the engine level so even malformed patterns can no longer flood the log.
+
+---
+
 ## What's new in v0.8.1
 
 A polish release: the Panel Manager gets a real overhaul, the Lich profile YAML editor gets a search field, an optional Main-Top panel zone appears for things like the Combat stream, external link clicks get a safety warning, and a couple of behind-the-scenes annoyances are gone.

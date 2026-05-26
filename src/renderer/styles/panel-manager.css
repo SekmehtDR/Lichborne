@@ -15,8 +15,12 @@
   /* v0.8.1: widened from 380px → 580px (~53% bigger) so the new longer
      button labels ("Top-Right" / "Middle-Right" / "Bottom-Right") and
      the four zones' Move/Add button rows fit comfortably without the
-     last button clipping. */
-  width: 580px;
+     last button clipping.
+     v0.8.2: widened again 580px → 870px (~50% bigger) — the per-stream
+     row now carries ◀/▶ reorder buttons in addition to the move/remove
+     buttons, and the previous width was visibly cramped on the 3-button
+     move rows. */
+  width: 870px;
   max-width: 92vw;
   max-height: 80vh;
   display: flex;
@@ -175,7 +179,25 @@
   font-size: 0.85rem;
 }
 
-.pm-row-actions { display: flex; gap: 6px; }
+.pm-row-actions { display: flex; gap: 6px; align-items: center; }
+
+/* v0.8.2: ◀ / ▶ reorder buttons — narrower than the move/remove buttons
+   so the row reads "reorder cluster, then move cluster, then remove" at
+   a glance. Disabled state dims them so the end-of-list state is obvious. */
+.pm-btn-reorder {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 3px;
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pm-btn-reorder:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
+.pm-btn-reorder:disabled { opacity: 0.35; cursor: default; }
 
 .pm-row-actions button {
   background: var(--bg-btn);

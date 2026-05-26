@@ -49,6 +49,7 @@ interface Props {
   discoveredStreams: string[]
   streamTitles?: Record<string, string>
   onMoveTab: (tab: TabDef, toZone: Zone) => void
+  onReorderTab: (tab: TabDef, direction: 'left' | 'right') => void
   onRemoveTab: (tab: TabDef) => void
   onAddToZone: (typeOrId: string, zone: Zone) => void
   onAddPanelZone: (zone: Zone) => void
@@ -62,7 +63,7 @@ export default function PanelManager({
   mainTopAdded, topAdded, midAdded, bottomAdded,
   allTypes, labels,
   discoveredStreams, streamTitles = {},
-  onMoveTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout, onClose,
+  onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout, onClose,
 }: Props) {
   const allTabs = [...mainTopTabs, ...topTabs, ...midTabs, ...bottomTabs]
   const openTypes = new Set(allTabs.filter(t => t.type !== 'custom').map(t => t.type))
@@ -130,16 +131,31 @@ export default function PanelManager({
               Streams below. */}
           {addedZones.map(z => (
             <Section key={z} label={`${ZONE_LABELS[z]} — Streams`}>
-              {tabsByZone[z].map(tab => (
-                <Row key={tab.id} label={tab.label}>
-                  {addedZones.filter(other => other !== z).map(other => (
-                    <button key={other} onClick={() => onMoveTab(tab, other)}>
-                      → {ZONE_BUTTON_LABELS[other]}
-                    </button>
-                  ))}
-                  <button className="pm-btn-remove" onClick={() => onRemoveTab(tab)}>Remove</button>
-                </Row>
-              ))}
+              {tabsByZone[z].map((tab, idx) => {
+                const tabs = tabsByZone[z]
+                const isFirst = idx === 0
+                const isLast  = idx === tabs.length - 1
+                return (
+                  <Row key={tab.id} label={tab.label}>
+                    {/* v0.8.2: ◀ / ▶ reorder buttons. Each moves the tab one
+                        slot within its current zone — that's the tab order
+                        the user sees in the PanelFrame tab bar. Disabled at
+                        the ends so there's no silent no-op. */}
+                    <button className="pm-btn-reorder" disabled={isFirst}
+                            title={isFirst ? 'Already at the start' : 'Move left'}
+                            onClick={() => onReorderTab(tab, 'left')}>◀</button>
+                    <button className="pm-btn-reorder" disabled={isLast}
+                            title={isLast ? 'Already at the end' : 'Move right'}
+                            onClick={() => onReorderTab(tab, 'right')}>▶</button>
+                    {addedZones.filter(other => other !== z).map(other => (
+                      <button key={other} onClick={() => onMoveTab(tab, other)}>
+                        → {ZONE_BUTTON_LABELS[other]}
+                      </button>
+                    ))}
+                    <button className="pm-btn-remove" onClick={() => onRemoveTab(tab)}>Remove</button>
+                  </Row>
+                )
+              })}
               {tabsByZone[z].length === 0 && (
                 <div className="pm-empty">Empty — add a stream from Available Streams below.</div>
               )}

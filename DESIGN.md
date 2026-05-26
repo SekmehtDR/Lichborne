@@ -203,7 +203,7 @@ Saved heights persist across mode changes — toggling 3→2→3 restores the us
 
 **Migration defaults when the `*Added` flag is missing:** Main-Top → `false` (Main-Top is new in v0.8.1; users opt in explicitly), other three → `true` (preserves the v0.8.0 always-visible behavior for existing users who never opened the new manager). New users start with the same defaults — three right-column slots populated with their stream defaults, Main-Top removed.
 
-**Streams.** Each added slot's section in the Panel Manager lists the streams currently in that slot, with per-row controls to **move** the stream to a different added slot or **remove** it (returns it to Available Streams). The Available Streams section shows every builtin PanelType not yet placed, plus any discovered custom streams; rows there show `+ Zone` buttons that target each currently-added slot.
+**Streams.** Each added slot's section in the Panel Manager lists the streams currently in that slot, with per-row controls to **reorder** the stream within its slot (◀ / ▶ — moves the tab one position left or right in the slot's PanelFrame tab bar; v0.8.2), **move** the stream to a different added slot (`→ Zone-Name`), or **remove** it (returns it to Available Streams). The Available Streams section shows every builtin PanelType not yet placed, plus any discovered custom streams; rows there show `+ Zone` buttons that target each currently-added slot.
 
 A **Reset Panels** button restores defaults — all four slots added (yes, including Main-Top — Reset is "everything visible", not "back to new-user state"), with their default streams.
 
@@ -225,7 +225,7 @@ A **Reset Panels** button restores defaults — all four slots added (yes, inclu
 | `inv` | Floatable | Inventory |
 | `vitalsbar` | Top (fixed) | Health/Mana/Concentration/Fatigue/Spirit |
 | `indicators` | Top (fixed) | Stance, RT, cast time, prepared spell |
-| `debug` | Hidden by default | Two-tab panel: **Events** (parsed GameEvent stream) and **Raw XML** (raw server lines pre-parse); toggled via "Debug" toolbar button |
+| `debug` | Hidden by default | Three-tab panel: **Fires** (live log of highlight/trigger fires with → GOTO to the source rule), **Events** (parsed GameEvent stream), and **Raw XML** (raw server lines pre-parse). Each tab has column headers, a per-tab `Copy All` to the system clipboard (Electron-native IPC, not `navigator.clipboard` — see Pitfall #29), and a Clear button. Buffers hold up to 2000 entries per tab (v0.8.2), ring-trimmed; collection is gated on the panel being open so closed-Debug overhead is zero. Toggled via the "Debug" toolbar button. |
 
 ### 2.7 User-Created Panels
 
@@ -2506,7 +2506,7 @@ The Map System is a spatially-aware map visualization built around two views.
 - **Genie XML** (player's Genie maps folder, e.g. `C:\Genie-Remix\Maps\`) — the spatial source of truth for the Genie Maps view. Provides node positions, arc graph, color tags, free-floating landmark labels, and cross-zone stub markers. Each Genie XML file is one zone.
 
 **Display modes (toolbar buttons in the map panel):**
-- **Lich Map** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required.
+- **Lich Map** — renders the Lich image tiles (`.png` files bundled alongside the JSON). Shows the current room highlighted on the tile with arcs drawn from the JSON exit graph. Lich path required. Movement (right-click a room, or the "Walk here" button) delegates to Lich's stock `;go2` script via `onSendCommand(\`;go2 <id>\`)` — `;go2` handles locked doors, hidden exits, blocked paths, retries, and roundtime, none of which a local cardinal-direction walker could handle reliably (v0.8.2). `;k go2` in the command bar cancels in flight.
 - **Genie Maps** — renders Genie XML directly, one zone at a time. Coordinates come from the XML (no auto-layout). Auto-switches zones when the player's `roomTitle` matches a room in another loaded zone. See §19.16 for the full architecture. Genie maps folder required.
 
 **Component breakdown:**
@@ -2682,7 +2682,10 @@ The map panel is fully theme-aware via 18 CSS custom properties prefixed `--map-
 | `--map-arc-special` | Special `go`/`climb` arc line color |
 | `--map-arc-hidden` | Hidden `exit="none"` arc line color (dashed) |
 | `--map-dot` | Background dot-grid pattern fill |
-| `--map-current-color` | Current room indicator: pulse ring, crosshair, inner border, center dot, label text |
+| `--map-current-color` | Current room indicator: pulse ring, crosshair, inner border, center dot, label text (Genie Maps only) |
+| `--lich-here-color` | **Lich Map** "you are here" sonar locator — bright accent stroke for the ping rings, solid ring, and bullseye centre dot. Kept independent from `--map-current-color` because Lich Map's white/cream PNG aesthetic and Genie Map's themed-bg aesthetic want different colour choices. Defaults to saturated lime `#00ff80`. (v0.8.2) |
+| `--lich-here-backdrop` | **Lich Map** dark contrast halo under the solid ring + bullseye backdrop dot. Guarantees visibility on white/cream Lich tiles. Defaults to `rgba(0,0,0,0.55)`. (v0.8.2) |
+| `--lich-here-fill` | **Lich Map** current-room rect fill tint (softer than the ring so the ring stays the focal point). Defaults to `rgba(0,255,128,0.30)`. (v0.8.2) |
 
 **XML node colors are never overridden by theme.** When a node carries a `color` attribute from the map XML, that color is used as-is for the box fill. The `--map-node-fill` and `--map-node-stroke` vars only apply to nodes without an explicit XML color. State overrides (current room, selected, hovered, search hit, walk path) always take priority over both XML color and the CSS vars.
 

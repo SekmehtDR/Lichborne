@@ -33,6 +33,7 @@ interface Props {
   onClose: () => void
   onSaved?: () => void
   prefillPattern?: string
+  openRuleId?: string // v0.8.2: open an existing trigger for edit (Fires GOTO)
   inline?: boolean
 }
 
@@ -376,7 +377,7 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline = false }: Props) {
+export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRuleId, inline = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]       = useState<TriggerRule[]>(() => loadTriggers(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -396,6 +397,20 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, inline
     setIsPendingNew(true)
     setTimeout(() => nameInputRef.current?.focus(), 0)
   }, [prefillPattern]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v0.8.2: open EXISTING trigger by id (Fires GOTO). Re-runs when openRuleId
+  // changes so clicking → on a different fire entry switches the editor's
+  // draft. Looks up against the current rules list — if the rule was deleted
+  // since the fire was logged, this is a no-op (the user just sees the
+  // empty editor pane, no crash).
+  useEffect(() => {
+    if (!openRuleId) return
+    const r = rules.find(x => x.id === openRuleId)
+    if (!r) return
+    setDraft({ ...r })
+    setSelectedId(r.id)
+    setIsPendingNew(false)
+  }, [openRuleId, rules])
 
   // ── Test result ──────────────────────────────────────────────────────────
 

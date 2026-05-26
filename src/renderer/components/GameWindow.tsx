@@ -64,8 +64,12 @@ function isExpReadout(segments: TextSegment[]): boolean {
 
 const MAX_LINES       = 2000
 const MAX_STREAM_LINES = 500
-const MAX_DEBUG_EVENTS = 500
-const MAX_RAW_XML_LINES = 500
+// v0.8.2: bumped from 500 → 2000. Debug collection is gated on the panel
+// being open (showDebugRef), so the cost is zero unless the user is
+// actively debugging. 2000 gives ~4× more history for diagnosing trigger
+// fires or XML quirks without scrolling out of view mid-event.
+const MAX_DEBUG_EVENTS = 2000
+const MAX_RAW_XML_LINES = 2000
 
 const ROOM_STREAMS = new Set([
   'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
@@ -391,6 +395,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
+  // v0.8.2: open EXISTING trigger by id (drives the Fires-log → GOTO button).
+  // Distinct from prefillPattern, which always creates a new trigger.
+  const [triggerOpenId,        setTriggerOpenId]        = useState<string | undefined>(undefined)
 
   const [contacts,  setContacts]  = useState(() => loadContacts(session.character))
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates(session.character))
@@ -515,7 +522,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     }),
     flashWindow:  () => window.api.flashWindow(),
     writeLog:     (file: string, content: string) => window.api.writeLog(file, content),
-    onFire: (name: string, matched: string, detail: string, stream: string) => {
+    onFire: (name: string, matched: string, detail: string, stream: string, ruleId: string) => {
       if (!showDebugRef.current) return
       const entry: FireLogEntry = {
         id: fireLogId++,
@@ -525,6 +532,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         matched,
         detail,
         stream,
+        ruleId,
       }
       fireLogBufRef.current.push(entry)
       if (fireLogBufRef.current.length > MAX_DEBUG_EVENTS) fireLogBufRef.current.splice(0, fireLogBufRef.current.length - MAX_DEBUG_EVENTS)
@@ -569,8 +577,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const lower = text.toLowerCase()
     for (const cr of allHighlightRulesRef.current) {
       if (cr.fastLower && !lower.includes(cr.fastLower)) continue
+      // v0.8.2: require a NON-EMPTY match before logging a fire. A user
+      // pattern like `(necromancers?|liches?|)\b` has an empty alternative
+      // that matches the zero-length string at every word boundary —
+      // `regex.test()` returns true and we'd log a fire for every line
+      // even though the rendering layer (renderSegmentFull) correctly
+      // skips zero-width matches and shows no actual highlight. The Fires
+      // tab then misleads the user into thinking that rule is firing on
+      // text it isn't visually affecting. Use exec + length check so the
+      // log mirrors what's actually rendered.
       cr.regex.lastIndex = 0
-      if (cr.regex.test(text)) {
+      let firstMatch: RegExpExecArray | null = null
+      let m: RegExpExecArray | null
+      while ((m = cr.regex.exec(text)) !== null) {
+        if (m[0].length > 0) { firstMatch = m; break }
+        cr.regex.lastIndex++ // avoid infinite loop on zero-width match
+      }
+      if (firstMatch !== null) {
         const { style, soundFile, pattern, name, mode, scope } = cr.rule
         const nameFallback = name || pattern.slice(0, 60)
         const parts = [
@@ -590,6 +613,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           matched: text.slice(0, 120),
           detail: parts,
           stream,
+          ruleId: cr.rule.id,
         }
         fireLogBufRef.current.push(entry)
         if (fireLogBufRef.current.length > MAX_DEBUG_EVENTS) fireLogBufRef.current.splice(0, fireLogBufRef.current.length - MAX_DEBUG_EVENTS)
@@ -1386,6 +1410,27 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (toZone === 'bottom') { setBottomTabs(p => [...p, tab]); setBottomActiveId(tab.id); setBottomAdded(true) }
   }
 
+  // v0.8.2: reorder a tab one slot within its current zone — drives the ◀/▶
+  // buttons in the Panel Manager. Updates the same tabs array that the
+  // PanelFrame renders for that zone, so the in-game tab bar ordering
+  // matches the manager's row order. No-op at the ends (the buttons are
+  // also disabled visually so we shouldn't reach here, but defensive).
+  function reorderTab(tab: TabDef, direction: 'left' | 'right') {
+    const reorder = (arr: TabDef[]): TabDef[] => {
+      const idx = arr.findIndex(t => t.id === tab.id)
+      if (idx === -1) return arr
+      const swap = direction === 'left' ? idx - 1 : idx + 1
+      if (swap < 0 || swap >= arr.length) return arr
+      const next = arr.slice()
+      ;[next[idx], next[swap]] = [next[swap], next[idx]]
+      return next
+    }
+    if (mainTopTabs.some(t => t.id === tab.id)) setMainTopTabs(reorder)
+    else if (topTabs.some(t => t.id === tab.id)) setTopTabs(reorder)
+    else if (midTabs.some(t => t.id === tab.id)) setMidTabs(reorder)
+    else if (bottomTabs.some(t => t.id === tab.id)) setBottomTabs(reorder)
+  }
+
   function removeTab(tab: TabDef) {
     removeFromZone(tab, mainTopTabs, setMainTopTabs, mainTopActiveId, setMainTopActiveId)
     removeFromZone(tab, topTabs, setTopTabs, topActiveId, setTopActiveId)
@@ -1590,6 +1635,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   function openHighlightEditor(rule: HighlightRule, testText?: string) {
     setHighlightPrefill(rule)
     setHighlightTestText(testText)
+    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state from prior open
     setAutomationsTab('highlights')
     setShowAutomations(true)
   }
@@ -1597,8 +1643,33 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   function openTriggerEditor(pattern: string) {
     setHighlightPrefill(undefined)
     setTriggerPrefillPattern(pattern)
+    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state — otherwise
+                                // the TriggersPanel's openRuleId effect fires after
+                                // the prefillPattern effect and overwrites the new
+                                // trigger draft with the old goto target.
     setAutomationsTab('triggers')
     setShowAutomations(true)
+  }
+
+  // v0.8.2: drives the "→" GOTO button on Fires log entries. Looks up the
+  // rule by id and opens it for EDIT in the Automations panel. Highlights
+  // already have an open-by-rule path (the prefill prop accepts the whole
+  // HighlightRule and HighlightsPanel sets draft+selectedId from it).
+  // Triggers needed a new prop — see openTriggerId state below.
+  function gotoFireRule(kind: 'highlight' | 'trigger', ruleId: string) {
+    if (kind === 'highlight') {
+      const rule = highlights.find(r => r.id === ruleId)
+      if (!rule) return
+      openHighlightEditor(rule)
+    } else {
+      const rule = triggers.find(r => r.id === ruleId)
+      if (!rule) return
+      setHighlightPrefill(undefined)
+      setTriggerPrefillPattern(undefined)
+      setTriggerOpenId(ruleId)
+      setAutomationsTab('triggers')
+      setShowAutomations(true)
+    }
   }
 
   return (
@@ -1861,7 +1932,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} />}
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} />}
 
       {showMapOverlay && (
         <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>
@@ -1885,6 +1956,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           discoveredStreams={discoveredStreams}
           streamTitles={streamTitles}
           onMoveTab={moveTabToZone}
+          onReorderTab={reorderTab}
           onRemoveTab={removeTab}
           onAddToZone={addToZone}
           onAddPanelZone={addPanelZone}
@@ -1959,6 +2031,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           highlightPrefill={highlightPrefill}
           highlightTestText={highlightTestText}
           triggerPrefillPattern={triggerPrefillPattern}
+          triggerOpenId={triggerOpenId}
           onThemeSaved={(themeId) => {
             const updated = loadMyThemes()
             setMyThemes(updated)

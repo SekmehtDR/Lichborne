@@ -75,13 +75,10 @@
   opacity: 0.45;             /* visible at rest but clearly subordinate to active */
 }
 
-.fc-cell--center {
-  background: transparent;
-  border: none;
-  color: var(--compass-center-text);
-  font-size: 1.2rem;         /* larger dot — clearer "you are here" */
-  opacity: 0.65;
-}
+/* v0.8.2: .fc-cell--center removed — the centre `·` glyph drew off-cell
+   at some font sizes due to per-font baseline metrics. The 8 directional
+   arrows already make the centre obvious by negative space. Kept here as
+   a tombstone in case anyone wonders where the rule went. */
 
 /* Special-exit row underneath the grid (was: vertical strip beside).
    Pill-shaped chips with horizontal padding so UP / DN / OUT have

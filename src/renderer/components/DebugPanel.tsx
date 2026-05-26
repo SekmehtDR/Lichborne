@@ -10,9 +10,12 @@ interface Props {
   onClearRawXml: () => void
   fireLog: FireLogEntry[]
   onClearFireLog: () => void
+  // v0.8.2: open the source rule for edit in the Automations panel.
+  // Wired to GameWindow.gotoFireRule.
+  onGotoFireRule?: (kind: 'highlight' | 'trigger', ruleId: string) => void
 }
 
-export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog }: Props) {
+export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule }: Props) {
   const [tab, setTab] = useState<'fires' | 'events' | 'rawxml'>('fires')
 
   const eventsBottomRef = useRef<HTMLDivElement>(null)
@@ -91,7 +94,13 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
     if (tab === 'events') text = events.map(e => JSON.stringify(e)).join('\n')
     else if (tab === 'rawxml') text = rawXmlLines.map(l => l.trimEnd()).join('\n')
     else text = fireLog.map(e => `${new Date(e.ts).toLocaleTimeString()} [${e.kind}] ${e.name} | ${e.matched}${e.detail ? ' | ' + e.detail : ''}${e.stream ? ' | ' + e.stream : ''}`).join('\n')
-    navigator.clipboard.writeText(text)
+    // v0.8.2: use the native Electron clipboard IPC, not navigator.clipboard.
+    // The renderer's permission handler refuses navigator.clipboard.writeText
+    // silently (same root cause as B18 — Electron's internal name doesn't
+    // match a permission whitelist), so the old `navigator.clipboard.writeText`
+    // here just did nothing on every click. window.api.writeClipboard routes
+    // to main's `clipboard.writeText`, which has no such guard.
+    window.api.writeClipboard(text)
   }
 
   return (
@@ -115,6 +124,19 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
       {tab === 'fires' && (
         <div className="debug-scroll" ref={firesScrollRef} onScroll={handleFiresScroll}
           onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          {/* v0.8.2: column headers — match the row layout exactly so
+              columns align. The Goto column is the same width as the row's
+              → button. Sticky so headers stay pinned while the user scrolls
+              through fire history. */}
+          <div className="fire-log-header">
+            <span className="fire-log-time">Time</span>
+            <span className="fire-log-kind">Kind</span>
+            <span className="fire-log-stream">Stream</span>
+            <span className="fire-log-name">Rule</span>
+            <span className="fire-log-matched">Matched text</span>
+            <span className="fire-log-detail">Detail</span>
+            <span className="fire-log-goto" aria-hidden>Goto</span>
+          </div>
           {fireLog.length === 0 && (
             <div className="fire-log-empty">No fires yet. Highlights and triggers that match will appear here.</div>
           )}
@@ -125,7 +147,19 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
               <span className="fire-log-stream">{entry.stream ?? '—'}</span>
               <span className="fire-log-name" title={entry.name}>{entry.name}</span>
               <span className="fire-log-matched" title={entry.matched}>{entry.matched}</span>
-              {entry.detail && <span className="fire-log-detail" title={entry.detail}>{entry.detail}</span>}
+              {entry.detail
+                ? <span className="fire-log-detail" title={entry.detail}>{entry.detail}</span>
+                : <span className="fire-log-detail" />}
+              {/* v0.8.2: → GOTO button. Opens the source rule for edit in the
+                  Automations panel (Highlights or Triggers tab depending on
+                  kind). Disabled when ruleId is missing (older entries from
+                  before this field existed). */}
+              <button
+                className="fire-log-goto"
+                disabled={!entry.ruleId || !onGotoFireRule}
+                title={entry.ruleId ? `Edit this ${entry.kind} rule in Automations` : 'No rule id on this entry'}
+                onClick={() => entry.ruleId && onGotoFireRule?.(entry.kind, entry.ruleId)}
+              >→</button>
             </div>
           ))}
           <div ref={firesBottomRef} />
@@ -135,6 +169,13 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
       {tab === 'events' && (
         <div className="debug-scroll" ref={eventsScrollRef} onScroll={handleEventsScroll}
           onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          {/* v0.8.2: column headers matching the row layout. Type is the
+              parsed GameEvent.type (e.g. "stream-text", "vital-update");
+              Payload is the JSON-stringified rest of the event. */}
+          <div className="debug-event-header">
+            <span className="debug-type">Type</span>
+            <span className="debug-body">Payload</span>
+          </div>
           {events.map((evt, i) => (
             <div key={eventBaseRef.current + i} className={`debug-event debug-event--${evt.type}`}>
               <span className="debug-type">{evt.type}</span>
