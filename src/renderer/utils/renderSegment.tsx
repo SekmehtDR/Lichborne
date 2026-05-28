@@ -5,10 +5,13 @@ import type { TextSegment } from '../../shared/types'
 // opens. Matches Genie's behaviour (FormMain.cs LinkClicked path, gated on
 // the bWebLinkSafety config flag). The bounce handles play.net URLs
 // transparently — no need to detect-and-skip for Simu's own domains.
+// The URL param is passed RAW (not URL-encoded): redirect.asp treats the
+// value after `URL=` literally — encoding `://` to `%3A%2F%2F` makes the
+// bounce hand the browser a malformed destination and the redirect fails.
 function wrapExternalLink(href: string, safety: boolean): string {
   if (!safety) return href
   if (!/^https?:\/\//i.test(href)) return href  // file://, mailto:, etc. pass through
-  return 'https://www.play.net/bounce/redirect.asp?URL=' + encodeURIComponent(href)
+  return 'https://www.play.net/bounce/redirect.asp?URL=' + href
 }
 
 export function renderSegment(

@@ -5,7 +5,7 @@ import {
   loadAliases, saveAliases, newAlias,
   loadMacros,  saveMacros,  newMacro,
   formatKeyCombo,
-  ALIAS_VARS, MACRO_VARS,
+  ALIAS_VARS, MACRO_VARS, MACRO_TOKENS,
 } from '../macros'
 import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
@@ -28,9 +28,13 @@ interface VarPickerProps {
   value: string
   onChange: (v: string) => void
   vars: { name: string; desc: string }[]
+  // v0.8.3: optional list of {Name} tokens (RepeatLast etc.) rendered as a
+  // second section below the $vars. Only the macro editor passes this —
+  // aliases don't support token playback.
+  tokens?: { name: string; desc: string }[]
 }
 
-function MaVarPicker({ inputRef, value, onChange, vars }: VarPickerProps) {
+function MaVarPicker({ inputRef, value, onChange, vars, tokens }: VarPickerProps) {
   const [open, setOpen]       = useState(false)
   const [pos,  setPos]        = useState({ top: 0, left: 0 })
   const btnRef  = useRef<HTMLButtonElement>(null)
@@ -52,30 +56,41 @@ function MaVarPicker({ inputRef, value, onChange, vars }: VarPickerProps) {
     setOpen(v => !v)
   }
 
-  function insert(name: string) {
+  function insertText(literal: string) {
     const el  = inputRef.current
-    const pos = el ? (el.selectionStart ?? value.length) : value.length
-    const next = value.slice(0, pos) + `$${name}` + value.slice(pos)
+    const at  = el ? (el.selectionStart ?? value.length) : value.length
+    const next = value.slice(0, at) + literal + value.slice(at)
     onChange(next)
     setOpen(false)
     setTimeout(() => {
       el?.focus()
-      const np = pos + name.length + 1
+      const np = at + literal.length
       el?.setSelectionRange(np, np)
     }, 0)
   }
 
   return (
     <>
-      <button ref={btnRef} className="ma-var-btn" type="button" onClick={handleOpen} title="Insert variable">$</button>
+      <button ref={btnRef} className="ma-var-btn" type="button" onClick={handleOpen} title="Insert variable or token">$</button>
       {open && createPortal(
         <div ref={menuRef} className="ma-var-menu" style={{ top: pos.top, left: pos.left, transform: 'translateX(-100%)' }}>
           {vars.map(v => (
-            <div key={v.name} className="ma-var-item" onClick={() => insert(v.name)}>
+            <div key={`v-${v.name}`} className="ma-var-item" onClick={() => insertText(`$${v.name}`)}>
               <code>${v.name}</code>
               <span>{v.desc}</span>
             </div>
           ))}
+          {tokens && tokens.length > 0 && (
+            <>
+              <div className="ma-var-section">Special tokens</div>
+              {tokens.map(t => (
+                <div key={`t-${t.name}`} className="ma-var-item" onClick={() => insertText(`{${t.name}}`)}>
+                  <code>{`{${t.name}}`}</code>
+                  <span>{t.desc}</span>
+                </div>
+              ))}
+            </>
+          )}
         </div>,
         document.body,
       )}
@@ -89,9 +104,10 @@ interface CommandListProps {
   commands: string[]
   onChange: (commands: string[]) => void
   vars: { name: string; desc: string }[]
+  tokens?: { name: string; desc: string }[]
 }
 
-function CommandList({ commands, onChange, vars }: CommandListProps) {
+function CommandList({ commands, onChange, vars, tokens }: CommandListProps) {
   const refs = useRef<(HTMLInputElement | null)[]>([])
 
   function update(i: number, val: string) {
@@ -116,7 +132,7 @@ function CommandList({ commands, onChange, vars }: CommandListProps) {
               placeholder="Command to send…"
               spellCheck={false}
             />
-            <MaVarPicker inputRef={iRef} value={cmd} onChange={v => update(i, v)} vars={vars} />
+            <MaVarPicker inputRef={iRef} value={cmd} onChange={v => update(i, v)} vars={vars} tokens={tokens} />
             {commands.length > 1 && (
               <button className="ma-cmd-remove" type="button" onClick={() => remove(i)} title="Remove">×</button>
             )}
@@ -640,6 +656,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         commands={macroDraft.commands}
                         onChange={commands => setMacroDraft({ ...macroDraft, commands })}
                         vars={MACRO_VARS}
+                        tokens={MACRO_TOKENS}
                       />
                     </div>
 

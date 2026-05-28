@@ -65,7 +65,19 @@ export default function PanelManager({
   discoveredStreams, streamTitles = {},
   onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout, onClose,
 }: Props) {
-  const allTabs = [...mainTopTabs, ...topTabs, ...midTabs, ...bottomTabs]
+  // v0.8.3: Only count tabs from zones that are actually added to the
+  // layout. A tab sitting in an un-added zone is invisible to the user,
+  // so it must not block its stream id from appearing under Available
+  // Streams — otherwise a discovered stream (e.g. a Lich script's
+  // "Moons" tab) silently has no slot to land in, even though the user
+  // can't see it anywhere. Same shape as the watchedStreamsRef gate in
+  // GameWindow — same fix, different place.
+  const allTabs = [
+    ...(mainTopAdded ? mainTopTabs : []),
+    ...(topAdded     ? topTabs     : []),
+    ...(midAdded     ? midTabs     : []),
+    ...(bottomAdded  ? bottomTabs  : []),
+  ]
   const openTypes = new Set(allTabs.filter(t => t.type !== 'custom').map(t => t.type))
   const openCustomIds = new Set(allTabs.filter(t => t.type === 'custom').map(t => t.id))
   // v0.8.1: a stream id that matches a builtin PanelType ('combat', 'room',

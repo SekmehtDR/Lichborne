@@ -210,3 +210,33 @@ export const MACRO_VARS: { name: string; desc: string }[] = [
   { name: 'right',         desc: 'right hand item' },
   { name: 'room',          desc: 'room name' },
 ]
+
+// ── Special macro tokens (v0.8.3) ─────────────────────────────────────────────
+// A token is a `{Name}` placeholder a macro can use as its command text. When
+// the macro fires the token is resolved at dispatch time, not at definition
+// time — so it can reference live state (the player's command history, what's
+// currently typed in the command bar). Tokens are matched only when they
+// occupy an entire command entry (`cmd.trim() === '{Token}'`). Mixed text
+// like `cast spell ; {RepeatLast}` is sent literally — keeps the parser
+// trivial and matches Frostbite's surface syntax. Seeded into new character
+// profiles as Ctrl+Enter / Alt+Enter / NumpadEnter macros so the
+// Stormfront/Wrayth repeat-command convention works out of the box.
+
+export type MacroTokenName =
+  | 'RepeatLast'
+  | 'RepeatSecondToLast'
+  | 'ReturnOrRepeatLast'
+
+export const MACRO_TOKENS: { name: MacroTokenName; desc: string }[] = [
+  { name: 'RepeatLast',         desc: 'send the previous command you typed' },
+  { name: 'RepeatSecondToLast', desc: 'send the command before that' },
+  { name: 'ReturnOrRepeatLast', desc: 'if the command bar has text, send it; otherwise send the last command' },
+]
+
+const MACRO_TOKEN_NAMES = new Set<string>(MACRO_TOKENS.map(t => t.name))
+
+export function getMacroToken(cmd: string): MacroTokenName | null {
+  const m = cmd.trim().match(/^\{(\w+)\}$/)
+  if (!m) return null
+  return MACRO_TOKEN_NAMES.has(m[1]) ? (m[1] as MacroTokenName) : null
+}

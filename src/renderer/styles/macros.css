@@ -546,6 +546,18 @@
   font-size: 0.75rem;
 }
 
+/* Section divider inside the variable picker (separates $vars from {Tokens}). */
+.ma-var-section {
+  padding: 6px 10px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-faint);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* ── Settings row ────────────────────────────────────────────────────────── */
 
 .ma-settings-row {

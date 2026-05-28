@@ -574,3 +574,111 @@
 
 .exp-footer-sleep--1 { color: var(--exp-sleep-1); }
 .exp-footer-sleep--2 { color: var(--exp-sleep-2); }
+
+/* Rested-Experience inline dual-bar widget (replaces the inline RXP chip).
+   Single-line layout: RXP label | S [bar] value | U [bar] value | ↻ resets.
+   Sits inside .exp-footer below the chip row; auto-hides when the game
+   isn't reporting an `exp rexp` component (F2P with no Brain Boost,
+   or when Death's Sting is active and rxp display is suppressed). */
+.exp-rxp {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border-faint) 60%, transparent);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.82em;
+}
+
+.exp-rxp-label {
+  color: var(--text-dim);
+  font-size: 0.95em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}
+
+.exp-rxp-refresh {
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Bar groups flex-share the remaining width after the RXP label and the
+   refresh chip take their fixed space — so the bars grow with panel width
+   instead of being pinned at 64px. min-width:0 lets them shrink past
+   content-size when the panel is narrow; flex-wrap on the parent kicks
+   them onto a second row only when the panel gets very narrow. */
+.exp-rxp-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.exp-rxp-bar-tag {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.92em;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Bar track is the positioning context. The fill paints behind, the text
+   floats centered on top of it — so the value text is always visible at
+   the centre of the bar regardless of fill level (including 0%). Height
+   bumped from 8px to 16px so the centered text has room to read. */
+.exp-rxp-bar-track {
+  flex: 1 1 0;
+  min-width: 80px;
+  height: 16px;
+  background: color-mix(in srgb, var(--border-faint) 80%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.exp-rxp-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease, background 0.2s ease;
+}
+
+.exp-rxp-bar-fill--stored { background: var(--accent); }
+.exp-rxp-bar-fill--usable { background: var(--color-success); }
+/* Empty state: no fill at all — the centered "Empty" text inside the
+   bar's silhouette carries the meaning on its own. The class is kept
+   on the element so any future per-state styling has a hook, but it
+   intentionally sets no background. */
+.exp-rxp-bar-fill--empty { background: transparent; }
+
+/* Centered value text — sits over the fill, readable on both filled and
+   unfilled portions thanks to the text-shadow halo matching the track bg. */
+.exp-rxp-bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-shadow:
+    0 0 2px var(--exp-bar-bg),
+    0 0 2px var(--exp-bar-bg),
+    0 0 3px var(--exp-bar-bg);
+  pointer-events: none;
+  line-height: 1;
+}
+
+.exp-rxp-bar-text--empty {
+  color: var(--text-muted);
+  font-style: italic;
+}

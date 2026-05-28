@@ -9,7 +9,7 @@ import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
-import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, type AliasRule, type MacroRule } from '../macros'
+import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import MapPanel from './panels/MapPanel'
 import DebugPanel from './DebugPanel'
@@ -260,6 +260,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   }, [session.character]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [command, setCommand] = useState('')
+  // Mirror of `command` for the global keydown handler (mounts once with
+  // empty deps, so the closure-captured `command` would be stale). Used by
+  // the {ReturnOrRepeatLast} token to peek at what's currently typed.
+  const commandRef = useRef('')
+  useEffect(() => { commandRef.current = command }, [command])
   const historyRef    = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
   const [status, setStatus]           = useState('Connected')
@@ -348,10 +353,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [midActiveId, setMidActiveId]   = useState(() => loadStr(scopedKey(session.character, 'midActiveId'),    'thoughts'))
   const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'bottomTabs'), [makeTab('exp'), makeTab('log')]))
   const [bottomActiveId, setBottomActiveId] = useState(() => loadStr(scopedKey(session.character, 'bottomActiveId'), 'exp'))
-  // New main-top zone — Room + Combat by default. v0.8.1 (F24). When the
-  // user closes the combat tab here, combat lines fall back to main (via
-  // STREAM_FALLBACK) since no panel is subscribed.
-  const [mainTopTabs, setMainTopTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'mainTopTabs'), [makeTab('room'), makeTab('combat')]))
+  // New main-top zone — empty by default. v0.8.1 (F24). Adding the panel
+  // gets an empty placeholder; the user picks what goes in it from
+  // Available Streams. Streams not assigned to any zone fall back via
+  // STREAM_FALLBACK (combat → main, conversations → main, etc.). Defaulting
+  // to [room, combat] caused two issues fixed in v0.8.3: (1) the phantom
+  // tabs poisoned watchedStreamsRef so combat didn't fall back to main
+  // while Main-Top was un-added; (2) the first Add Main-Top click silently
+  // re-populated [room, combat] instead of giving the expected empty slot.
+  const [mainTopTabs, setMainTopTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'mainTopTabs'), []))
 
   // v0.8.1 (Panel Manager V2): each of the 4 panel locations is independently
   // "added" or "removed" from the layout. Add = slot snaps into the game
@@ -423,6 +433,32 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers(session.character))
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases(session.character))
   const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros(session.character))
+
+  // v0.8.3: One-time seed of Stormfront/Wrayth repeat-command macros so
+  // the convention works out of the box on a fresh character. Skipped if
+  // an existing macro already binds the key — never silently overrides
+  // user customization. The per-character flag in localStorage means the
+  // seed runs at most once; a user who deletes the defaults won't see
+  // them reappear on next launch.
+  useEffect(() => {
+    const flagKey = scopedKey(session.character, 'seededRepeatMacros')
+    if (localStorage.getItem(flagKey) === '1') return
+    const SEED: { key: string; token: string; name: string }[] = [
+      { key: 'Ctrl+Enter', token: '{RepeatLast}',         name: 'Repeat last command' },
+      { key: 'Alt+Enter',  token: '{RepeatSecondToLast}', name: 'Repeat second-to-last command' },
+      { key: 'NumEnter',   token: '{ReturnOrRepeatLast}', name: 'Send / repeat last (numpad Enter)' },
+    ]
+    setMacros(prev => {
+      const existing = new Set(prev.map(m => m.key.toLowerCase()))
+      const toAdd = SEED.filter(s => !existing.has(s.key.toLowerCase()))
+      localStorage.setItem(flagKey, '1')
+      if (toAdd.length === 0) return prev
+      const next = [...prev, ...toAdd.map(s => ({ ...newMacro(s.key), name: s.name, commands: [s.token] }))]
+      saveMacros(session.character, next)
+      return next
+    })
+  }, [session.character])
+
   const [contactPopover, setContactPopover] = useState<{ contactId: string; x: number; y: number } | null>(null)
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
@@ -724,11 +760,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const rowDragStartY    = useRef(0)
   const rowDragStartH    = useRef(0)
 
-  // Tracks which stream IDs currently have an open panel tab — used for fallback routing.
+  // Tracks which stream IDs currently have an open panel tab — used for
+  // fallback routing. v0.8.3: gate on the per-zone "added" flag so that a
+  // zone with leftover tabs but rendered=false does NOT count as watching
+  // those streams. Otherwise a removed/never-added Main-Top zone with
+  // phantom mainTopTabs blocks STREAM_FALLBACK from routing combat /
+  // conversations / etc. back to the main window — the panel is hidden but
+  // its streams effectively disappear instead of falling through.
   const watchedStreamsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
-    watchedStreamsRef.current = new Set([...mainTopTabs, ...topTabs, ...midTabs, ...bottomTabs].map(t => t.id))
-  }, [mainTopTabs, topTabs, midTabs, bottomTabs])
+    watchedStreamsRef.current = new Set([
+      ...(mainTopAdded ? mainTopTabs : []),
+      ...(topAdded     ? topTabs     : []),
+      ...(midAdded     ? midTabs     : []),
+      ...(bottomAdded  ? bottomTabs  : []),
+    ].map(t => t.id))
+  }, [mainTopTabs, topTabs, midTabs, bottomTabs, mainTopAdded, topAdded, midAdded, bottomAdded])
 
   // v0.8.1: mirrors of the per-zone "added" flags. The divider drag handler
   // is attached once and reads these refs to clamp differently in 2-zone vs
@@ -1272,7 +1319,42 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         const resolved = resolveMacro(e, activeMacros, buildMacroVars())
         if (resolved && resolved.commands.length > 0) {
           e.preventDefault()
-          sendCommandSequence(resolved.commands, resolved.delayMs)
+          // v0.8.3: expand {RepeatLast} / {RepeatSecondToLast} /
+          // {ReturnOrRepeatLast} tokens inline. Plain commands batch into
+          // a sendCommandSequence call (so delayMs still works for them);
+          // tokens flush the plain batch first, then dispatch through
+          // dispatchUserText so the replayed command runs through alias
+          // resolution exactly as if the user had retyped it.
+          const plain: string[] = []
+          const flushPlain = () => {
+            if (plain.length === 0) return
+            sendCommandSequence([...plain], resolved.delayMs)
+            plain.length = 0
+          }
+          const replay = (text: string, pushToHistory: boolean, clearInput: boolean) => {
+            const fn = dispatchUserTextRef.current
+            if (fn) fn(text, { pushToHistory, clearInput })
+          }
+          for (const cmd of resolved.commands) {
+            const tok = getMacroToken(cmd)
+            if (!tok) { plain.push(cmd); continue }
+            flushPlain()
+            if (tok === 'RepeatLast') {
+              const last = historyRef.current[0]
+              if (last) replay(last, false, false)
+            } else if (tok === 'RepeatSecondToLast') {
+              const prev = historyRef.current[1]
+              if (prev) replay(prev, false, false)
+            } else if (tok === 'ReturnOrRepeatLast') {
+              const typed = commandRef.current
+              if (typed.trim()) replay(typed, true, true)
+              else {
+                const last = historyRef.current[0]
+                if (last) replay(last, false, false)
+              }
+            }
+          }
+          flushPlain()
         }
       }
     }
@@ -1508,33 +1590,54 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Command bar ───────────────────────────────────────────────────────────
 
-  function handleCommand(e: React.FormEvent) {
-    e.preventDefault()
-    if (!command.trim()) return
-    if (historyRef.current[0] !== command) historyRef.current = [command, ...historyRef.current].slice(0, 200)
-    historyIdxRef.current = -1
-
+  // Dispatches a single user-input string through the same path the command
+  // bar uses: alias resolution + echo + send + log. Extracted from
+  // handleCommand so the {RepeatLast} / {RepeatSecondToLast} /
+  // {ReturnOrRepeatLast} macro tokens can replay a historical command
+  // without duplicating the alias/echo/log machinery.
+  //
+  // `pushToHistory` — only the command bar's normal Enter pushes; repeated
+  //   commands from RepeatLast shouldn't pollute history (pressing
+  //   RepeatLast twice would otherwise re-pin the previous command and
+  //   break the next RepeatSecondToLast).
+  // `clearInput` — only true when the input is the source of the text.
+  function dispatchUserText(text: string, opts: { pushToHistory: boolean; clearInput: boolean }) {
+    if (!text.trim()) return
+    if (opts.pushToHistory) {
+      if (historyRef.current[0] !== text) historyRef.current = [text, ...historyRef.current].slice(0, 200)
+      historyIdxRef.current = -1
+    }
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
-    const resolved = resolveAlias(command, activeAliases, buildMacroVars())
+    const resolved = resolveAlias(text, activeAliases, buildMacroVars())
     if (resolved) {
-      // Alias matched — sendCommandSequence echoes the resolved commands; skip echoing the alias name
       sendCommandSequence(resolved.commands, resolved.delayMs)
       if (resolved.passThrough) {
         const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
         if (delay > 0) {
-          const h = setTimeout(() => window.api.sendCommand(session.sessionId,command), delay)
+          const h = setTimeout(() => window.api.sendCommand(session.sessionId, text), delay)
           macroTimersRef.current.add(h)
         } else {
-          window.api.sendCommand(session.sessionId,command)
+          window.api.sendCommand(session.sessionId, text)
         }
       }
     } else {
-      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${command}`, preset: 'command-echo' }], timestamp: Date.now() }])
-      window.api.sendCommand(session.sessionId,command)
-      logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${command}` }])
+      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${text}`, preset: 'command-echo' }], timestamp: Date.now() }])
+      window.api.sendCommand(session.sessionId, text)
+      logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${text}` }])
     }
-    setCommand('')
+    if (opts.clearInput) setCommand('')
   }
+
+  function handleCommand(e: React.FormEvent) {
+    e.preventDefault()
+    dispatchUserText(command, { pushToHistory: true, clearInput: true })
+  }
+
+  // Latest-version mirror of dispatchUserText so the global keydown
+  // handler (mounted once with empty deps) can replay history through
+  // the same alias/echo/log machinery as a fresh user-typed command.
+  const dispatchUserTextRef = useRef(dispatchUserText)
+  useEffect(() => { dispatchUserTextRef.current = dispatchUserText })
 
   function handleCommandKey(e: React.KeyboardEvent<HTMLInputElement>) {
     const h = historyRef.current

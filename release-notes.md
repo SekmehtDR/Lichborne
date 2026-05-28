@@ -1,3 +1,51 @@
+## What's new in v0.8.3
+
+A small release: Stormfront/Wrayth-style repeat-command macros, a graphical Rested-Experience widget in the Exp panel, plus three quality-of-life bug fixes (external links, combat falling back to main, and Lich script streams not appearing under Available Streams).
+
+### Repeat-command macros (Ctrl+Enter, Alt+Enter, NumpadEnter)
+
+Requested by Binu — the Stormfront/Wrayth convention for replaying recent commands without retyping them.
+
+Fresh characters get three macros pre-seeded:
+
+- **Ctrl+Enter** — sends the **last command** you typed.
+- **Alt+Enter** — sends the **second-to-last command** you typed.
+- **NumpadEnter** — if the command bar has text typed in it, sends that (acts as Enter); if the bar is empty, sends the last command (like Ctrl+Enter). This is what Wrayth's NumpadEnter does.
+
+Useful for the classic DR loop of `get pile` / `stow flower` — type both once, then `Ctrl+Enter` / `Alt+Enter` over and over.
+
+These are implemented as **special macro tokens** rather than hardcoded keybindings, so you can rebind them in the Macros panel. The tokens are `{RepeatLast}`, `{RepeatSecondToLast}`, and `{ReturnOrRepeatLast}` — they appear under a new "Special tokens" section in the variable picker (`$` button next to each command field in the Macros editor), click to insert. If you've already bound Ctrl+Enter or Alt+Enter to something else, the seeding step skips that key — never silently overrides your customization. If you delete one of the seeded defaults, it doesn't come back on next launch.
+
+Repeated commands run through the same alias machinery as a freshly-typed command — so repeating `hunt` re-fires your `hunt → stalk creature` alias instead of sending the literal word raw.
+
+### Rested-Experience widget in the Exp panel footer
+
+The single-line RXP chip (`RXP 2:35h / 1:48h`) has been replaced with a small dual-bar widget that's much easier to read at a glance:
+
+- **Stored** bar — how much rested-XP you currently have banked.
+- **Usable** bar — how much you can spend before the cycle resets (can be larger or smaller than Stored — the game tracks them independently).
+- **Resets in X:XXh** caption — the cycle-refresh countdown (previously not displayed anywhere).
+
+Both bars are scaled to your subscription cap (4h Standard / 6h Premium / 8h Platinum). The cap **auto-calibrates** — it starts at 4h and grows the first time your Stored or Usable observation exceeds the current cap, so Premium and Platinum testers will see correct scaling after one normal play session. No subscription-tier setting required. The widget hides when you don't have any RXP data (F2P without Brain Boost), and the existing red Death's Sting badge takes its place while DS is active.
+
+### External links through the play.net bounce now actually open
+
+In v0.8.1 we added Genie-style web-link safety — clicking an external `http`/`https` URL in the game window routes through Simu's bounce page (`https://www.play.net/bounce/redirect.asp?URL=...`) so you get the standard "you are leaving Play.net" confirmation before the actual destination opens. Unfortunately the URL we handed to the bounce was URL-encoded, and `redirect.asp` takes that value literally — it treated the encoded `://` as part of the destination, so the browser landed on a "site doesn't exist" page instead of the link you clicked.
+
+Fixed by passing the URL raw, the same way Genie does. Web-Link Safety can stay on (default) and external clicks now actually open the page you clicked.
+
+### Combat (and conversations / thoughts / atmospherics / …) fall back to the main window correctly
+
+When you remove a panel zone from your layout — or never add the new Main-Top zone in the first place — the streams that *would* have lived there are supposed to fall back to the main text window. Combat, Conversations, Thoughts, Arrivals, Deaths, Familiar, Group, Assess, and Atmospherics all have this fallback. A bug was preventing it from kicking in: phantom tabs left behind in a never-rendered zone still "counted" as watching their stream, so the fallback was silently skipped and the lines disappeared into a buffer you couldn't see.
+
+Fixed. With no Main-Top panel added (or any other zone removed), combat is back in the main scroll where you can read it. Related side fix: the first time you add the Main-Top panel via Panel Manager, you'll now get an empty placeholder you fill yourself — instead of the surprise `[Room, Combat]` auto-population. (If you already have tabs saved in Main-Top from an earlier session, they stay.)
+
+### Lich-script streams (moonwatch, etc.) now reliably show up under Available Streams
+
+A scrap of the same bug above also affected the Panel Manager's Available Streams list. If a Lich script had once declared a stream and the tab landed in a zone that you later un-added, the Panel Manager treated that invisible tab as "already placed" and hid the stream from Available Streams — leaving you with no path to re-add it to a visible slot. Reported by Legiro with the moonwatch script. Fixed the same way: tabs in un-added zones don't count as "open" anymore, so the stream shows up under Available Streams and you can drop it into the panel you actually want.
+
+---
+
 ## What's new in v0.8.2
 
 A polish release driven by Debug panel rough edges and Panel Manager quality-of-life.

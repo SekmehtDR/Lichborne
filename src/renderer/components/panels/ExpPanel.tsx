@@ -126,6 +126,92 @@ function ExpGroup({ label, count, locked = false, defaultExpanded, children }: G
   )
 }
 
+// Parses a single RXP time value as it appears in the game's `exp rexp`
+// component. Formats: "2:25 hours" (H:MM), "2 hours" (H), "23 minutes" (M),
+// "none" (zero). Returns minutes or null when unparseable.
+function parseRexpTime(raw: string | undefined): number | null {
+  if (!raw) return null
+  const s = raw.trim().toLowerCase()
+  if (s === 'none' || s === '') return 0
+  const hm = s.match(/^(\d+):(\d+)\s*hour/)
+  if (hm) return parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10)
+  const h = s.match(/^(\d+)\s*hour/)
+  if (h) return parseInt(h[1], 10) * 60
+  const m = s.match(/^(\d+)\s*minute/)
+  if (m) return parseInt(m[1], 10)
+  return null
+}
+
+function formatRexpTime(min: number): string {
+  if (min <= 0) return 'none'
+  if (min < 60) return `${min}m`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return `${h}:${m.toString().padStart(2, '0')}h`
+}
+
+// Dual-bar Rested-Experience widget. Renders three values from the `exp rexp`
+// component as two stacked progress bars (Stored, Usable This Cycle) plus a
+// "resets in …" caption for the refresh countdown. The bar cap is the largest
+// of (4h default, observed peak of Stored or Usable) so it self-calibrates to
+// the player's subscription tier (Standard 4h / Premium 6h / Platinum 8h)
+// without needing a manual setting — Premium users will see the cap grow the
+// first time their Stored or Usable observation exceeds 4h. Persisted per
+// character so the calibration survives across sessions.
+function RestExpWidget({ rexp }: { rexp: string }) {
+  const character = useCharacter()
+  const storedRaw  = rexp.match(/Stored:\s*(.*?)(?=\s{2,}|\s+Usable|$)/i)?.[1]
+  const usableRaw  = rexp.match(/Usable[^:]*:\s*(.*?)(?=\s{2,}|\s+Cycle|$)/i)?.[1]
+  const refreshRaw = rexp.match(/Refreshes:\s*(.*?)$/i)?.[1]
+  const stored  = parseRexpTime(storedRaw)
+  const usable  = parseRexpTime(usableRaw)
+  const refresh = parseRexpTime(refreshRaw)
+
+  const capKey = scopedKey(character, 'rxpCapMin')
+  const [capMin, setCapMin] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem(capKey) ?? '0', 10)
+    return Math.max(240, isFinite(v) ? v : 0)
+  })
+  useEffect(() => {
+    const observed = Math.max(stored ?? 0, usable ?? 0)
+    if (observed > capMin) {
+      setCapMin(observed)
+      localStorage.setItem(capKey, String(observed))
+    }
+  }, [stored, usable, capMin, capKey])
+
+  if (stored == null && usable == null) return null
+
+  const storedPct = Math.min(100, Math.round(100 * (stored ?? 0) / capMin))
+  const usablePct = Math.min(100, Math.round(100 * (usable ?? 0) / capMin))
+  const storedEmpty = (stored ?? 0) === 0
+  const usableEmpty = (usable ?? 0) === 0
+  const barValue = (min: number, empty: boolean) => empty ? 'None' : formatRexpTime(min)
+
+  return (
+    <div className="exp-rxp" title={`Rested XP — Resets / Stored / Usable (cap ${formatRexpTime(capMin)})`}>
+      <span className="exp-rxp-label">RXP</span>
+      {refresh != null && refresh > 0 && (
+        <span className="exp-rxp-refresh" title="Cycle resets in">↻ {formatRexpTime(refresh)}</span>
+      )}
+      <span className="exp-rxp-bar-group">
+        <span className="exp-rxp-bar-tag">Stored</span>
+        <span className="exp-rxp-bar-track">
+          <span className={`exp-rxp-bar-fill ${storedEmpty ? 'exp-rxp-bar-fill--empty' : 'exp-rxp-bar-fill--stored'}`} style={{ width: `${storedPct}%` }} />
+          <span className={`exp-rxp-bar-text ${storedEmpty ? 'exp-rxp-bar-text--empty' : ''}`}>{barValue(stored ?? 0, storedEmpty)}</span>
+        </span>
+      </span>
+      <span className="exp-rxp-bar-group">
+        <span className="exp-rxp-bar-tag">Usable</span>
+        <span className="exp-rxp-bar-track">
+          <span className={`exp-rxp-bar-fill ${usableEmpty ? 'exp-rxp-bar-fill--empty' : 'exp-rxp-bar-fill--usable'}`} style={{ width: `${usablePct}%` }} />
+          <span className={`exp-rxp-bar-text ${usableEmpty ? 'exp-rxp-bar-text--empty' : ''}`}>{barValue(usable ?? 0, usableEmpty)}</span>
+        </span>
+      </span>
+    </div>
+  )
+}
+
 function ExpFooter({ skills }: { skills: Record<string, string> }) {
   const tdp   = (skills['tdp']   ?? '').match(/(\d+)/)?.[1]
   const favor = (skills['favor'] ?? '').match(/(\d+)/)?.[1]
@@ -133,25 +219,15 @@ function ExpFooter({ skills }: { skills: Record<string, string> }) {
   const sleepRaw = (skills['sleep'] ?? '').trim()
   const sleepLevel = !sleepRaw ? 0 : /deep sleep/i.test(sleepRaw) ? 2 : 1
   const deathsSting = rexp.startsWith("[Because of Death's Sting")
+  const hasRexp = !deathsSting && /Stored:|Usable/i.test(rexp)
 
-  const rexpStored     = !deathsSting ? rexp.match(/Stored:\s*([\d:]+)\s*hour/i)?.[1] : undefined
-  const rexpUsableMin  = !deathsSting ? rexp.match(/Usable.*?:\s*(\d+)\s*min/i)?.[1] : undefined
-  const rexpUsableHr   = !deathsSting ? rexp.match(/Usable.*?:\s*([\d:]+)\s*hour/i)?.[1] : undefined
-  const rexpUsable     = rexpUsableMin != null ? `${rexpUsableMin}m` : rexpUsableHr != null ? `${rexpUsableHr}h` : undefined
-
-  if (!tdp && !favor && !rexpStored && !sleepLevel && !deathsSting) return null
+  if (!tdp && !favor && !hasRexp && !sleepLevel && !deathsSting) return null
 
   return (
     <div className="exp-footer">
       <div className="exp-footer-row">
         {tdp        && <span className="exp-footer-item"><span className="exp-footer-label">TDP</span>{tdp}</span>}
         {favor      && <span className="exp-footer-item"><span className="exp-footer-label">Fav</span>{favor}</span>}
-        {(rexpUsable || rexpStored) && (
-          <span className="exp-footer-item exp-footer-rest">
-            <span className="exp-footer-label">RXP</span>
-            {rexpUsable ?? '—'}{rexpStored ? ` / ${rexpStored}h` : ''}
-          </span>
-        )}
         {deathsSting && (
           <span className="exp-footer-item exp-footer-sting">Death's Sting</span>
         )}
@@ -161,6 +237,7 @@ function ExpFooter({ skills }: { skills: Record<string, string> }) {
           </span>
         )}
       </div>
+      {hasRexp && <RestExpWidget rexp={rexp} />}
     </div>
   )
 }
