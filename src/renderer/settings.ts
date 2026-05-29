@@ -19,6 +19,18 @@ export interface AppSettings {
   // trust every script-emitted URL.
   webLinkSafety: boolean
   mapAnimations: boolean   // Genie Maps motion — per-room category effects AND the camera glide; on by default
+  // v0.8.4 (B113): text-weight offset for game text. Positive values
+  // (0.2–0.6) add faux-bold via -webkit-text-stroke to compensate for
+  // Chromium DirectWrite's lighter rendering vs Frostbite's GDI ClearType
+  // — most useful on light themes where DirectWrite's grey fringe reads
+  // as "not black enough" even at #000. Negative values (-0.4, -0.2) drop
+  // the CSS font-weight below the default 400 (-0.4 → 200, -0.2 → 300).
+  // The negative path only renders thinner on fonts that ship light
+  // weights — Cascadia Code (default) has 200/300/400/500/600/700;
+  // Consolas/Lucida Console fall back to 400 (no visible change). 0 is
+  // the renderer's default; UI caps at ±0.6 (above ~0.5 the stroke looks
+  // blurry rather than bold).
+  textWeight: number
   // NOTE: Session Log preferences are NOT here — they are app-wide, not
   // per-character. See sessionLogSettings.ts (stored in _shared.yaml).
 }
@@ -47,6 +59,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoLinkUrls: true,
   webLinkSafety: true,
   mapAnimations: true,
+  textWeight: 0,
 }
 
 export const FONT_FAMILIES: Record<string, string> = {
@@ -215,6 +228,25 @@ export function applySettingsToDOM(s: AppSettings): void {
   setVar('--game-font-size',   `${fontSize}px`)
   setVar('--game-line-height', `${lineHeight}`)
   setVar('--game-font-family', FONT_FAMILIES[s.fontFamily] ?? `'${s.fontFamily}', monospace`)
+  // B113: textWeight = 0 → default font-weight 400, no stroke (no change
+  // vs pre-B113). Positive values add a -webkit-text-stroke for faux-bold.
+  // Negative values lower CSS font-weight below 400 — only visible on
+  // fonts that ship light weights (Cascadia Code has 200/300/350; Consolas
+  // falls back to 400 silently). Values are CSS unit-less weight steps:
+  // each ±0.2 maps to ±100 weight units (or ±0.X px stroke on the bold side).
+  const w = s.textWeight
+  if (w > 0) {
+    setVar('--game-text-stroke', `${w}px`)
+    setVar('--game-text-weight', '400')
+  } else if (w < 0) {
+    setVar('--game-text-stroke', '0')
+    // -0.2 → 300, -0.4 → 200, -0.6 → 100. Round to nearest 100 for clean fallback.
+    const weight = Math.max(100, Math.round(400 + w * 500))
+    setVar('--game-text-weight', String(weight))
+  } else {
+    setVar('--game-text-stroke', '0')
+    setVar('--game-text-weight', '400')
+  }
 
   // Scale entire UI for large print
   root.style.fontSize = s.largePrint ? '16px' : ''

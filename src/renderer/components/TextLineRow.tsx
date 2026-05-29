@@ -34,15 +34,25 @@ export const TextLineRow = memo(function TextLineRow({
   const lineStyle = getLineHighlightStyle(line.segments, lineRules)
   const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre-wrap' as const } : lineStyle
   const hasExtras = !!nameRegex || matchRules.length > 0
+  // B115: build the joined line text once per render and pass it down with
+  // each segment's offset, so match-scope regexes and contact-name lookups
+  // run against the full line (not just the segment's own slice). DR wraps
+  // player names in XML attributes that fragment a thought line into 3+
+  // segments — without this, regex highlights like `Your mind hears .*?
+  // thinking,` could never match because the text was split.
+  const lineText = hasExtras ? line.segments.map(s => s.text).join('') : ''
+  let cursor = 0
   return (
     <div className="text-line" style={monoStyle ?? undefined}>
       {showTimestamp && line.timestamp && (
         <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
       )}
-      {line.segments.map((seg, i) => hasExtras
-        ? renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety)
-        : renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety)
-      )}
+      {line.segments.map((seg, i) => {
+        if (!hasExtras) return renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety)
+        const offset = cursor
+        cursor += seg.text.length
+        return renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety, lineText, offset)
+      })}
     </div>
   )
 })

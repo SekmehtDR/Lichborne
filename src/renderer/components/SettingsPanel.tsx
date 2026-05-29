@@ -292,6 +292,31 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
             </select>
           </div>
 
+          {/* B113: text weight tuning. Positive = faux-bold via stroke
+              widening (useful on light themes where Chromium DirectWrite
+              renders thinner than GDI ClearType in apps like Frostbite).
+              Negative = lower font-weight (only renders thinner on fonts
+              with light weights; Cascadia Code default ships 200/300/350,
+              Consolas / Lucida Console silently fall back to 400). */}
+          <div className="sp-field-row">
+            <label className="sp-field-label" htmlFor="sp-text-weight">Text weight</label>
+            <select
+              id="sp-text-weight"
+              className="sp-select"
+              value={settings.textWeight}
+              onChange={e => set('textWeight', parseFloat(e.target.value))}
+              title="Tunes game text weight. Positive thickens via stroke (helps on light themes). Negative thins via font-weight (only visible on fonts that ship light weights, like Cascadia Code)."
+            >
+              <option value={-0.6}>Thinnest (-0.6)</option>
+              <option value={-0.4}>Thinner (-0.4)</option>
+              <option value={-0.2}>Slightly thinner (-0.2)</option>
+              <option value={0}>Default</option>
+              <option value={0.2}>Slightly bolder (+0.2)</option>
+              <option value={0.4}>Bolder (+0.4)</option>
+              <option value={0.6}>Boldest (+0.6)</option>
+            </select>
+          </div>
+
           <div className="sp-preview">
             <div className="sp-preview-label">Preview</div>
             <div
@@ -300,6 +325,15 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
                 fontFamily: FONT_FAMILIES[settings.fontFamily] ?? `'${settings.fontFamily}'`,
                 fontSize: `${settings.largePrint ? 18 : settings.fontSize}px`,
                 lineHeight: settings.largePrint ? 1.8 : settings.lineHeight,
+                // B113: mirror the live text-weight tuning into the
+                // preview so users can see the chosen rendering before
+                // applying. Positive → stroke widening; negative →
+                // font-weight reduction (only visible on fonts that
+                // ship light weights, like Cascadia Code).
+                WebkitTextStroke: settings.textWeight > 0 ? `${settings.textWeight}px currentColor` : undefined,
+                fontWeight: settings.textWeight < 0
+                  ? Math.max(100, Math.round(400 + settings.textWeight * 500))
+                  : undefined,
               }}
             >
               {PREVIEW_LINES.map((line, i) => (

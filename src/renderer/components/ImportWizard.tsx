@@ -4,13 +4,15 @@ import { ImportResult, ImportSource } from '../import/types'
 import { parseGenieFiles } from '../import/parsers/genie'
 import { parseWraythXml } from '../import/parsers/wrayth'
 import { parseFrostbiteFiles } from '../import/parsers/frostbite'
+import { parseLichborneYaml } from '../import/parsers/lichborne'
 import { mapImportResult, MergeStrategy } from '../import/mapper'
 import { loadHighlights, saveHighlights } from '../highlights'
 import { loadMacros, saveMacros, loadAliases, saveAliases } from '../macros'
 import { loadTriggers, saveTriggers } from '../triggers'
 import { loadMyThemes, saveMyThemes, createCustomThemeFrom } from '../myThemes'
 import { THEMES } from '../themes'
-import { type Contact, loadContacts, saveContacts } from '../contacts'
+import { type Contact, type ContactTemplate, loadContacts, saveContacts, loadContactTemplates, saveContactTemplates } from '../contacts'
+import { type RuleGroup, type GameMode, loadGroups, saveGroups, loadModes, saveModes } from '../groups'
 import { useCharacter } from '../CharacterContext'
 import '../styles/import-wizard.css'
 
@@ -54,6 +56,21 @@ const THEME_VAR_LABELS: Record<string, string> = {
   '--rt-start':                'Roundtime bar gradient start',
   '--ct-end':                  'Cast bar color',
   '--ct-start':                'Cast bar gradient start',
+}
+
+// F29 follow-up: content-based dedup keys. Highlights and triggers can
+// legitimately share patterns (different colors / actions on the same
+// match), so we include scope and case-sensitivity to make "duplicate"
+// mean "matches the same text in the same way," not just "matches the
+// same text." Macros and aliases are keyed by their unique binding
+// (one Ctrl+Enter per character, one "hunt" alias).
+function hlContentKey(pattern: string, scope: string, caseSensitive: boolean): string {
+  const p = caseSensitive ? pattern : pattern.toLowerCase()
+  return `${p}|${scope}|${caseSensitive ? 1 : 0}`
+}
+function trContentKey(pattern: string, caseSensitive: boolean): string {
+  const p = caseSensitive ? pattern : pattern.toLowerCase()
+  return `${p}|${caseSensitive ? 1 : 0}`
 }
 
 interface FileSlot {
@@ -120,6 +137,20 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
   const [selA, setSelA] = useState<Set<number>>(new Set())
   const [selT, setSelT] = useState<Set<number>>(new Set())
   const [selC, setSelC] = useState<Set<number>>(new Set())
+
+  // F29 follow-up: per-index "duplicate of existing entry" flags, computed
+  // when entering the preview step so the UI can badge them and start them
+  // unchecked. Set IS index-based (matches sel* sets). Content-based
+  // comparison: highlights by pattern+scope+caseSensitivity; triggers by
+  // pattern+caseSensitivity; macros by key; aliases by input. Names not
+  // included (the existing contact import path already dedups by name).
+  const [dupH, setDupH] = useState<Set<number>>(new Set())
+  const [dupM, setDupM] = useState<Set<number>>(new Set())
+  const [dupA, setDupA] = useState<Set<number>>(new Set())
+  const [dupT, setDupT] = useState<Set<number>>(new Set())
+  // Toggle: "Hide items already in this profile" — filters preview rows
+  // and uncheck-all / select-all act on visible rows only.
+  const [hideExisting, setHideExisting] = useState(false)
   const [selTheme, setSelTheme] = useState(false)
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
@@ -161,6 +192,11 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         general:     fileTexts['general'],
       })
     }
+    if (source === 'lichborne') {
+      const yamlText = fileTexts['yaml']
+      if (!yamlText) return null
+      return parseLichborneYaml(yamlText)
+    }
     return null
   }
 
@@ -168,11 +204,40 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     const r = parse()
     if (!r) return
     setResult(r)
-    // Pre-select all ready/partial items
+
+    // F29 follow-up: compute "already exists" sets per type. Pre-build keys
+    // from the existing rules on this character; flag any incoming item
+    // whose key matches as a duplicate. Auto-deselect duplicates so the
+    // default import is "everything new"; user can still tick them to
+    // overwrite or just to make the import a no-op for that row.
+    const existingHl = loadHighlights(character)
+    const existingTr = loadTriggers(character)
+    const existingMa = loadMacros(character)
+    const existingAl = loadAliases(character)
+    const hlExist = new Set(existingHl.map(h => hlContentKey(h.pattern, h.scope, h.caseSensitive)))
+    const trExist = new Set(existingTr.map(t => trContentKey(t.pattern, t.caseSensitive)))
+    const maExist = new Set(existingMa.map(m => m.key.toLowerCase()).filter(Boolean))
+    const alExist = new Set(existingAl.map(a => a.input.toLowerCase()).filter(Boolean))
+
+    const dH = new Set<number>(); r.highlights.forEach((h, i) => { if (hlExist.has(hlContentKey(h.pattern, h.scope, h.caseSensitive))) dH.add(i) })
+    const dT = new Set<number>(); r.triggers  .forEach((t, i) => { if (trExist.has(trContentKey(t.pattern, t.caseSensitive))) dT.add(i) })
+    const dM = new Set<number>(); r.macros    .forEach((m, i) => { if (m.key && maExist.has(m.key.toLowerCase())) dM.add(i) })
+    const dA = new Set<number>(); r.aliases   .forEach((a, i) => { if (a.input && alExist.has(a.input.toLowerCase())) dA.add(i) })
+    setDupH(dH); setDupT(dT); setDupM(dM); setDupA(dA)
+
+    // Pre-select all ready/partial items, INCLUDING duplicates. (Earlier
+    // draft auto-unchecked duplicates here, but that broke Replace merge:
+    // if the user switched to Replace, the unchecked duplicates would be
+    // wiped from their profile along with everything else, leaving them
+    // with neither the imported version nor their original. Better to
+    // ship everything checked by default — duplicates are visually
+    // flagged with the EXISTS badge, the "Hide items already in this
+    // profile" toggle declutters the view, and append-time dedup silently
+    // skips them with a count reported on the done screen.)
     setSelH(new Set(r.highlights.map((h, i) => h.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
-    setSelM(new Set(r.macros.map((m, i) => m.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
-    setSelA(new Set(r.aliases.map((a, i) => a.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
-    setSelT(new Set(r.triggers.map((t, i) => t.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
+    setSelM(new Set(r.macros    .map((m, i) => m.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
+    setSelA(new Set(r.aliases   .map((a, i) => a.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
+    setSelT(new Set(r.triggers  .map((t, i) => t.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
     setSelC(allIndices(r.names.length))
     // Pre-select theme import if presets were found
     setSelTheme(!!(r.themeVars && Object.keys(r.themeVars).length > 0))
@@ -191,16 +256,103 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     if (!result) return
     const mapped = mapImportResult(result, selH, selM, selA, selT)
 
+    // F29 follow-up: dedup against existing entries on append merge so a
+    // re-import (or an import into a profile that already has the seeded
+    // defaults like Ctrl+Enter → {RepeatLast}) doesn't pile up duplicates.
+    // Per-type dedup keys:
+    //   - Highlights/Triggers: by id (UUID — same rule from the same
+    //     export). Pattern-match would be wrong since users legitimately
+    //     have multiple rules with the same pattern but different colors.
+    //   - Macros: by id OR key binding (one Ctrl+Enter per character).
+    //   - Aliases: by id OR input (one "hunt" alias makes sense).
+    //   - Native (groups/modes/contacts/contact templates): handled below
+    //     with their own dedup, see further down.
+    // Replace merge bypasses dedup — the user explicitly opted to wipe and
+    // overwrite, and we should honor that.
+    let skipped = { highlights: 0, triggers: 0, macros: 0, aliases: 0 }
+    let toSave = mapped
     if (merge === 'append') {
-      saveHighlights(character, [...loadHighlights(character), ...mapped.highlights])
-      saveMacros(character, [...loadMacros(character), ...mapped.macros])
-      saveAliases(character, [...loadAliases(character), ...mapped.aliases])
-      saveTriggers(character, [...loadTriggers(character), ...mapped.triggers])
+      const existingHl = loadHighlights(character)
+      const existingTr = loadTriggers(character)
+      const existingMa = loadMacros(character)
+      const existingAl = loadAliases(character)
+      // Match the preview's content-based duplicate semantics so the
+      // "skipped N already present" message reflects what the user
+      // already saw flagged in the preview. mapper.ts assigns fresh
+      // ids on every import (nanoid), so id-based dedup wouldn't
+      // catch anything for highlights/triggers anyway.
+      const hlExist = new Set(existingHl.map(h => hlContentKey(h.pattern, h.scope, h.caseSensitive)))
+      const trExist = new Set(existingTr.map(t => trContentKey(t.pattern, t.caseSensitive)))
+      const maKeys = new Set(existingMa.map(r => r.key.toLowerCase()).filter(Boolean))
+      const alIn   = new Set(existingAl.map(r => r.input.toLowerCase()).filter(Boolean))
+
+      const keepHl = mapped.highlights.filter(r => !hlExist.has(hlContentKey(r.pattern, r.scope, r.caseSensitive)))
+      const keepTr = mapped.triggers  .filter(r => !trExist.has(trContentKey(r.pattern, r.caseSensitive)))
+      const keepMa = mapped.macros    .filter(r => !maKeys.has(r.key.toLowerCase()))
+      const keepAl = mapped.aliases   .filter(r => !alIn.has(r.input.toLowerCase()))
+
+      skipped = {
+        highlights: mapped.highlights.length - keepHl.length,
+        triggers:   mapped.triggers.length   - keepTr.length,
+        macros:     mapped.macros.length     - keepMa.length,
+        aliases:    mapped.aliases.length    - keepAl.length,
+      }
+      toSave = { highlights: keepHl, triggers: keepTr, macros: keepMa, aliases: keepAl }
+
+      saveHighlights(character, [...existingHl, ...keepHl])
+      saveMacros    (character, [...existingMa, ...keepMa])
+      saveAliases   (character, [...existingAl, ...keepAl])
+      saveTriggers  (character, [...existingTr, ...keepTr])
     } else {
       saveHighlights(character, mapped.highlights)
-      saveMacros(character, mapped.macros)
-      saveAliases(character, mapped.aliases)
-      saveTriggers(character, mapped.triggers)
+      saveMacros    (character, mapped.macros)
+      saveAliases   (character, mapped.aliases)
+      saveTriggers  (character, mapped.triggers)
+    }
+
+    // F29: Lichborne-native data (groups / modes / contacts / contact
+    // templates). Bulk apply, no per-item selection — the user can edit
+    // individual items in their respective panels post-import. Append
+    // merge de-dupes by id; replace merge overwrites the whole list.
+    if (result.nativeGroups && Array.isArray(result.nativeGroups)) {
+      const incoming = result.nativeGroups as RuleGroup[]
+      if (merge === 'append') {
+        const existing = loadGroups(character)
+        const seen = new Set(existing.map(g => g.id))
+        saveGroups(character, [...existing, ...incoming.filter(g => !seen.has(g.id))])
+      } else {
+        saveGroups(character, incoming)
+      }
+    }
+    if (result.nativeModes && Array.isArray(result.nativeModes)) {
+      const incoming = result.nativeModes as GameMode[]
+      if (merge === 'append') {
+        const existing = loadModes(character)
+        const seen = new Set(existing.map(m => m.id))
+        saveModes(character, [...existing, ...incoming.filter(m => !seen.has(m.id))])
+      } else {
+        saveModes(character, incoming)
+      }
+    }
+    if (result.nativeContactTemplates && Array.isArray(result.nativeContactTemplates)) {
+      const incoming = result.nativeContactTemplates as ContactTemplate[]
+      if (merge === 'append') {
+        const existing = loadContactTemplates(character)
+        const seen = new Set(existing.map(t => t.id))
+        saveContactTemplates(character, [...existing, ...incoming.filter(t => !seen.has(t.id))])
+      } else {
+        saveContactTemplates(character, incoming)
+      }
+    }
+    if (result.nativeContacts && Array.isArray(result.nativeContacts)) {
+      const incoming = result.nativeContacts as Contact[]
+      if (merge === 'append') {
+        const existing = loadContacts(character)
+        const seen = new Set(existing.map(c => c.name.toLowerCase()))
+        saveContacts(character, [...existing, ...incoming.filter(c => !seen.has(c.name.toLowerCase()))])
+      } else {
+        saveContacts(character, incoming)
+      }
     }
 
     // Import name highlights as Contacts
@@ -238,15 +390,33 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     }
 
     const parts: string[] = []
-    if (mapped.highlights.length) parts.push(`${mapped.highlights.length} highlights`)
+    if (toSave.highlights.length) parts.push(`${toSave.highlights.length} highlights`)
     if (selC.size > 0)            parts.push(`${selC.size} contacts`)
-    if (mapped.macros.length)     parts.push(`${mapped.macros.length} macros`)
-    if (mapped.aliases.length)    parts.push(`${mapped.aliases.length} aliases`)
-    if (mapped.triggers.length)   parts.push(`${mapped.triggers.length} triggers`)
+    if (toSave.macros.length)     parts.push(`${toSave.macros.length} macros`)
+    if (toSave.aliases.length)    parts.push(`${toSave.aliases.length} aliases`)
+    if (toSave.triggers.length)   parts.push(`${toSave.triggers.length} triggers`)
+    // F29: native counts from a Lichborne export
+    if (result.nativeGroups?.length)           parts.push(`${result.nativeGroups.length} groups`)
+    if (result.nativeModes?.length)            parts.push(`${result.nativeModes.length} modes`)
+    if (result.nativeContacts?.length)         parts.push(`${result.nativeContacts.length} contacts`)
+    if (result.nativeContactTemplates?.length) parts.push(`${result.nativeContactTemplates.length} contact templates`)
     if (selTheme && result.themeVars && Object.keys(result.themeVars).length > 0)
       parts.push('1 theme')
 
-    setDoneStats(parts.join(', ') || 'nothing')
+    // F29 follow-up: report duplicates that were skipped so the user
+    // knows nothing was silently dropped without a reason.
+    const skipTotal = skipped.highlights + skipped.triggers + skipped.macros + skipped.aliases
+    let statsMsg = parts.join(', ') || 'nothing'
+    if (skipTotal > 0) {
+      const skipParts: string[] = []
+      if (skipped.highlights) skipParts.push(`${skipped.highlights} highlights`)
+      if (skipped.triggers)   skipParts.push(`${skipped.triggers} triggers`)
+      if (skipped.macros)     skipParts.push(`${skipped.macros} macros`)
+      if (skipped.aliases)    skipParts.push(`${skipped.aliases} aliases`)
+      statsMsg += ` (skipped ${skipParts.join(', ')} already present)`
+    }
+
+    setDoneStats(statsMsg)
     setStep('done')
     onSaved?.()
   }
@@ -321,12 +491,14 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       { id: 'wrayth',    name: 'Wrayth',    desc: 'Single XML settings file' },
       { id: 'genie',     name: 'Genie',     desc: 'Config folder (.cfg files)' },
       { id: 'frostbite', name: 'Frostbite', desc: 'Profile folder (.ini files)' },
+      { id: 'lichborne', name: 'Lichborne', desc: 'YAML export from another Lichborne character' },
     ]
 
     const slots: FileSlot[] =
       source === 'genie'     ? GENIE_SLOTS :
       source === 'frostbite' ? FROSTBITE_SLOTS :
       source === 'wrayth'    ? [{ key: 'xml', label: 'settings.xml', hint: 'Wrayth XML export' }] :
+      source === 'lichborne' ? [{ key: 'yaml', label: 'automations.yaml', hint: 'Lichborne export file (.yaml)' }] :
       []
 
     return (
@@ -371,7 +543,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                     <input
                       type="file"
                       style={{ display: 'none' }}
-                      accept=".cfg,.ini,.xml"
+                      accept=".cfg,.ini,.xml,.yaml,.yml"
                       ref={el => { fileInputRefs.current[slot.key] = el }}
                       onChange={e => handleFileChange(slot.key, e.target.files?.[0])}
                     />
@@ -432,6 +604,16 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
               <button className="iw-select-bar-btn" onClick={() => selectAllTab(previewTab, true)}>Select all</button>
               <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>·</span>
               <button className="iw-select-bar-btn" onClick={() => selectAllTab(previewTab, false)}>Deselect all</button>
+              <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem', marginLeft: 12 }}>·</span>
+              <label className="iw-select-bar-toggle" style={{ marginLeft: 12, fontSize: '0.78rem' }}>
+                <input
+                  type="checkbox"
+                  checked={hideExisting}
+                  onChange={e => setHideExisting(e.target.checked)}
+                  style={{ accentColor: 'var(--accent)', marginRight: 6 }}
+                />
+                Hide items already in this profile
+              </label>
             </>
           )}
         </div>
@@ -452,34 +634,38 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.highlights.map((h, i) => (
-                    <tr key={i} className={h.status === 'unsupported' ? 'iw-row--unsupported' : ''}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selH.has(i)}
-                          disabled={h.status === 'unsupported'}
-                          onChange={() => toggleSel(selH, i, setSelH)}
-                        />
-                      </td>
-                      <td><span className="iw-pattern" title={h.pattern}>{h.pattern}</span></td>
-                      <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{h.matchType}</td>
-                      <td>
-                        {h.textColor
-                          ? <span className="iw-color-swatch" style={{ background: h.textColor }} title={h.textColor} />
-                          : <span className="iw-color-none">—</span>
-                        }
-                      </td>
-                      <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }} title={h.soundFile}>
-                        {h.soundFile
-                          ? <span className="iw-sound-tag">🔊 {h.soundFile.split(/[\\/]/).pop()}</span>
-                          : <span className="iw-color-none">—</span>
-                        }
-                      </td>
-                      <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{h.sourceClass ?? '—'}</td>
-                      <td>{renderStatusBadge(h.status, h.statusNote)}</td>
-                    </tr>
-                  ))}
+                  {result.highlights.map((h, i) => {
+                    const isDup = dupH.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${h.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selH.has(i)}
+                            disabled={h.status === 'unsupported'}
+                            onChange={() => toggleSel(selH, i, setSelH)}
+                          />
+                        </td>
+                        <td><span className="iw-pattern" title={h.pattern}>{h.pattern}</span></td>
+                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{h.matchType}</td>
+                        <td>
+                          {h.textColor
+                            ? <span className="iw-color-swatch" style={{ background: h.textColor }} title={h.textColor} />
+                            : <span className="iw-color-none">—</span>
+                          }
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }} title={h.soundFile}>
+                          {h.soundFile
+                            ? <span className="iw-sound-tag">🔊 {h.soundFile.split(/[\\/]/).pop()}</span>
+                            : <span className="iw-color-none">—</span>
+                          }
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{h.sourceClass ?? '—'}</td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(h.status, h.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
         )}
@@ -497,21 +683,25 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.macros.map((m, i) => (
-                    <tr key={i} className={m.status === 'unsupported' ? 'iw-row--unsupported' : ''}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selM.has(i)}
-                          disabled={m.status === 'unsupported'}
-                          onChange={() => toggleSel(selM, i, setSelM)}
-                        />
-                      </td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{m.key}</td>
-                      <td><span className="iw-pattern" title={m.commands.join('; ')}>{m.commands.join('; ')}</span></td>
-                      <td>{renderStatusBadge(m.status, m.statusNote)}</td>
-                    </tr>
-                  ))}
+                  {result.macros.map((m, i) => {
+                    const isDup = dupM.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${m.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selM.has(i)}
+                            disabled={m.status === 'unsupported'}
+                            onChange={() => toggleSel(selM, i, setSelM)}
+                          />
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{m.key}</td>
+                        <td><span className="iw-pattern" title={m.commands.join('; ')}>{m.commands.join('; ')}</span></td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(m.status, m.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
         )}
@@ -529,21 +719,25 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.aliases.map((a, i) => (
-                    <tr key={i} className={a.status === 'unsupported' ? 'iw-row--unsupported' : ''}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selA.has(i)}
-                          disabled={a.status === 'unsupported'}
-                          onChange={() => toggleSel(selA, i, setSelA)}
-                        />
-                      </td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{a.input}</td>
-                      <td><span className="iw-pattern" title={a.commands.join('; ')}>{a.commands.join('; ')}</span></td>
-                      <td>{renderStatusBadge(a.status, a.statusNote)}</td>
-                    </tr>
-                  ))}
+                  {result.aliases.map((a, i) => {
+                    const isDup = dupA.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${a.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selA.has(i)}
+                            disabled={a.status === 'unsupported'}
+                            onChange={() => toggleSel(selA, i, setSelA)}
+                          />
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{a.input}</td>
+                        <td><span className="iw-pattern" title={a.commands.join('; ')}>{a.commands.join('; ')}</span></td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(a.status, a.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
         )}
@@ -561,21 +755,25 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                   </tr>
                 </thead>
                 <tbody>
-                  {result.triggers.map((t, i) => (
-                    <tr key={i} className={t.status === 'unsupported' ? 'iw-row--unsupported' : ''}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selT.has(i)}
-                          disabled={t.status === 'unsupported'}
-                          onChange={() => toggleSel(selT, i, setSelT)}
-                        />
-                      </td>
-                      <td><span className="iw-pattern" title={t.pattern}>{t.pattern}</span></td>
-                      <td><span className="iw-pattern" title={t.commands.join('; ')}>{t.commands.join('; ')}</span></td>
-                      <td>{renderStatusBadge(t.status, t.statusNote)}</td>
-                    </tr>
-                  ))}
+                  {result.triggers.map((t, i) => {
+                    const isDup = dupT.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${t.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selT.has(i)}
+                            disabled={t.status === 'unsupported'}
+                            onChange={() => toggleSel(selT, i, setSelT)}
+                          />
+                        </td>
+                        <td><span className="iw-pattern" title={t.pattern}>{t.pattern}</span></td>
+                        <td><span className="iw-pattern" title={t.commands.join('; ')}>{t.commands.join('; ')}</span></td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(t.status, t.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
         )}

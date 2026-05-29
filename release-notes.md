@@ -1,3 +1,76 @@
+## What's new in v0.8.4
+
+A small theme + Lich Map polish + Genie Map tracking + Room panel highlights + accessibility audit release.
+
+### New "Text weight" setting in Settings → Display
+
+Reported by Rakkor on a light theme — game text reads visibly less black in Lichborne than in Frostbite even at the same `#000000`. The cause is Chromium's text antialiasing on Windows (DirectWrite) painting more grey fringe around each stroke compared to Frostbite's GDI ClearType. Same color, different renderer.
+
+Added a per-character **Text weight** dropdown in Settings → Display with seven options on a symmetric scale: Thinnest, Thinner, Slightly thinner, **Default**, Slightly bolder, Bolder, Boldest. Positive options widen the stroke for a darker / heavier look (handy for light themes). Negative options drop the font weight below regular — these only render thinner on fonts that ship light weights (Cascadia Code, the default, has 200/300/350; Consolas and Lucida Console fall back to regular silently). The Settings preview reflects your choice live, so you can see the effect before saving.
+
+### Color-blind and high-contrast settings now survive theme edits
+
+Self-found while auditing the accessibility settings — switching themes, previewing a custom theme in the Theme picker, or live-editing one in the Theme editor was silently wiping out the color-blind / high-contrast overlay until the next setting change re-applied it. Fixed so the overlays re-apply automatically after every theme write. The effect is invisible if you didn't notice the bug; only color-blind users editing custom themes were hitting it.
+
+### RT / CT timer chips are easier to read at a glance
+
+Requested by Rakkor. The little orange dashes that show your remaining roundtime (top of the command bar) and cast time (bottom) were too small to glance-count without focusing — defeating the whole point of having a visual readout you can see while looking at the game text.
+
+Doubled the chip size, tightened the spacing between them. Five chips now reads as "five" without your brain having to stop and tally — the same way Frostbite's seconds-bar works.
+
+### Regex highlights now apply across the Thoughts stream (and other panels)
+
+Reported by Rakkor. A regex highlight like `Your mind hears .*? thinking,` was matching correctly in the highlight editor's preview but never painted on actual thoughts in the Thoughts stream. The reason was a parsing detail — the game wraps player names like "Yarwend" in XML attributes that split a single thought line into multiple pieces internally, and the highlight engine was matching each piece in isolation. So a pattern that spanned the player name could never find a match.
+
+The highlight engine now matches against the joined line text before splitting back to apply colors per piece — so cross-name regex highlights work in every stream panel (Thoughts, Conversations, Arrivals, Deaths) as well as the main scroll. Contact-name lookups got the same treatment for free.
+
+### Share your automations between characters with Import / Export
+
+Requested by Rakkor. Until now, the only way to share rules or contacts between characters was to copy the per-character YAML profile by hand — which also dragged along your theme, layout, and connection settings.
+
+Two new buttons in the **Automations** panel header:
+
+- **Export** — saves your active character's highlights, triggers, macros, aliases, groups, modes, contacts, and contact templates into a single YAML file named after your character and today's date. Just a regular file you can drop into Discord, email to a friend, or back up.
+- **Import** — the existing Import wizard now has a 4th tile, **Lichborne**, alongside Wrayth / Genie / Frostbite. Pick your `.yaml` file and it surfaces the contents in the normal preview screen so you can pick what to bring in.
+
+**See what's new vs. what's already in your profile.** The preview marks rows that already exist in your profile with an **EXISTS** badge in the Status column, dimmed so they recede visually. A new **Hide items already in this profile** toggle in the select bar declutters the list so you can focus on just the new stuff.
+
+**On append**, the importer skips items that already exist — so re-importing into a profile that already has the seeded `Ctrl+Enter` / `Alt+Enter` / `NumpadEnter` repeat-command macros won't pile on duplicates. The post-import summary tells you both what was added and what was skipped (e.g. *"3 highlights, 5 macros (skipped 2 macros already present)"*). **On replace**, the importer wipes existing rules and writes the import wholesale, exactly as you'd expect — duplicates included.
+
+The Export and Import buttons themselves also picked up a small style fix: their hover state now matches the toolbar buttons elsewhere in the UI instead of jumping to a saturated accent color, which on some custom themes read as the buttons "losing their theming" on hover.
+
+### Theme Editor — panel body text follows the general text colors
+
+Reported by Rakkor. If you built a light theme, setting **Game Text** in the Theme Editor didn't catch all the body text — panels like Room, Hands & Spell, and Experience had their own greyish text colors that the editor's main "Text" group never touched. So getting a clean light theme meant hunting down ~10 different specialty rows.
+
+That's now mostly automatic. The panel-specific body-text colors (Room section labels, Room content, Hand label / empty, Spell empty, Exp skill / mindstate / rate) default to the general **Game Text / Labels / Muted Text / Dim Text** scale unless a built-in theme deliberately overrides. Set the four general text colors and every panel follows along.
+
+Every row in the Theme Editor also picked up a hover tooltip explaining where in the UI that color paints — hover the row label (or the small **ⓘ** marker) to see the description. No more "tweak the field, restart, see what didn't change."
+
+### Highlights and contact colors now apply in the Room panel
+
+Reported by Rakkor. If you'd tagged a player as a contact (e.g. Dawan = blue), their name showed correctly in the main text scroll on `look`, but the Room panel's **Players** section rendered the name in the default color. Same gap was there for the Objects / Creatures / Extra / Description sections.
+
+The Room panel now routes its text through the same render pipeline as the main scroll, so contact colors and match-scope highlight rules apply consistently. Tagged friends light up in the Players list, creature-name highlights you've set up for hunting light up in the Creatures list, and so on.
+
+### Genie Map no longer gets stuck on your last location after teleports / disconnected moves
+
+If you walked between two zones that the Genie maps don't have a stub connecting (a teleport, `;go2`, recall, or just an unmapped boundary), the marker would refuse to leave your previous room. Typing `look` wouldn't help — only **↺ Refresh Genie maps** would snap you to the right place.
+
+The "conservative cross-zone" guard that protected against one-off file-order accidents now has an escape valve: after three consecutive room titles all wanting the same different zone, the map gives up on the old location and commits to the new one. One-off accidents are still blocked exactly as before — only a sustained run of "I really am somewhere else" triggers the escape.
+
+### Lich Map no longer flashes "NEEDS MAPPING" between walk steps
+
+During fast travel the Lich Map briefly painted a "NEEDS MAPPING" warning banner for a single frame between every room — the new room title arrived a frame before the description and id caught up, and the room-match step ran on the incomplete data. Now the map waits a beat (400ms) before clearing its current-room match. Normal walking resolves long before that, so the banner never appears. Genuinely-unmapped rooms still surface the diagnostic — just without the strobe effect on every step. As a bonus, the "you are here" locator no longer briefly disappears between rooms either.
+
+### Genie Map background follows your App Background
+
+Reported by Binu. The map panel's background was a separate, hardcoded brown-black — so when you picked a different **App Background** in the Theme Editor, the rest of the game windows updated but the map stayed dark and looked visually disconnected from the rest of the UI.
+
+The map now follows App Background by default. Built-in themes that intentionally style the map differently (Parchment, Mist) still use their own map color — only the default dark theme and any custom themes you've built in the Theme Editor are affected.
+
+---
+
 ## What's new in v0.8.3
 
 A small release: Stormfront/Wrayth-style repeat-command macros, a graphical Rested-Experience widget in the Exp panel, plus three quality-of-life bug fixes (external links, combat falling back to main, and Lich script streams not appearing under Available Streams).

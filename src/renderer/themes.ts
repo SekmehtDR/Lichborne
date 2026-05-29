@@ -163,17 +163,25 @@ export const darkBase: ThemeVars = {
   '--compass-inactive-text':   '#7a7a7a',
   '--compass-center-text':     '#565656',
 
-  '--hand-label-color':   '#6e6e6e',
-  '--hand-empty-color':   '#888888',
+  // v0.8.4 (B112): panel body-text vars cascade from the general --text-*
+  // scale by default. So when a user sets "Game text" / "Labels" / etc. in
+  // the Theme Editor, the equivalent text inside each structured panel
+  // (Hand status, Room sections, Exp rows…) follows automatically — no need
+  // to find the same ~10 specialty rows and set them one by one. Built-in
+  // themes that explicitly override a specialty var still win via the
+  // applyTheme merge. Held / active states keep their accent colors because
+  // they ARE the visual cue (a held weapon should pop against body text).
+  '--hand-label-color':   'var(--text-dim)',
+  '--hand-empty-color':   'var(--text-muted)',
   '--hand-held-color':    '#e8d898',
-  '--spell-empty-color':  '#888888',
+  '--spell-empty-color':  'var(--text-muted)',
   '--spell-active-color': '#d0a8ff',
   '--spell-active-glow':  'rgba(190, 140, 255, 0.45)',
 
   '--room-title-color':    '#e8e8e8',
   '--room-desc-color':     '#b8b8b8',
-  '--room-section-color':  '#6e6e6e',
-  '--room-content-color':  '#8a8a8a',
+  '--room-section-color':  'var(--text-dim)',
+  '--room-content-color':  'var(--text-muted)',
   '--exit-bg':             '#0d1a0d',
   '--exit-border':         '#1e3a1e',
   '--exit-text':           '#60a840',
@@ -181,11 +189,11 @@ export const darkBase: ThemeVars = {
   '--exit-border-hover':   '#366030',
   '--exit-text-hover':     '#90d860',
 
-  '--exp-skill-color':     '#aaaaaa',
+  '--exp-skill-color':     'var(--text-secondary)',
   '--exp-rank-color':      '#777777',
   '--exp-pct-color':       '#777777',
-  '--exp-mindstate-color': '#777777',
-  '--exp-rate-color':      '#7a7a7a',
+  '--exp-mindstate-color': 'var(--text-dim)',
+  '--exp-rate-color':      'var(--text-dim)',
   '--exp-bar-bg':          '#181818',
   '--exp-locked-skill':    '#d07030',
   '--exp-locked-mind':     '#a05020',
@@ -196,7 +204,12 @@ export const darkBase: ThemeVars = {
   '--exp-bar-locked':      '#cc4444',
 
   // ── Automap ────────────────────────────────────────────────────────────────
-  '--map-bg':            '#0a0807',
+  // Default: follow the App Background. Custom themes built in the Theme
+  // Editor only set --bg-app (they don't expose --map-bg), so without this
+  // alias the map stays the darkBase brown-black regardless of how the
+  // user themed their other windows (B108). Built-in themes that want a
+  // distinct map background still override --map-bg explicitly.
+  '--map-bg':            'var(--bg-app)',
   '--map-chrome-bg':     '#110e07',
   '--map-border':        '#2a1e0f',
   '--map-border-subtle': '#1e1608',
@@ -1798,12 +1811,26 @@ export const THEMES: Theme[] = [
   { id: 'warriormage', name: 'Warrior Mage',category: 'guild', vars: warriormage, swatches: ['#0f0f1a', '#c86020', '#e0d8f8'] },
 ]
 
+// v0.8.4 (B114): post-apply hook so accessibility overlays (high contrast,
+// color blind) get re-applied immediately after any theme write. Without
+// this, applyTheme / applyCustomTheme overwrite the overlay vars and leave
+// them dead until something else triggers re-apply — e.g. ThemeEditor
+// live-editing repeatedly clobbered the colorblind overlay until save.
+// settings.ts can't be imported here without a circular dep, so GameWindow
+// (the live owner of AppSettings) registers a callback that closes over
+// its current settings state.
+let postApplyHook: (() => void) | null = null
+export function registerThemeAppliedHook(fn: (() => void) | null): void {
+  postApplyHook = fn
+}
+
 export function applyTheme(theme: Theme): void {
   const vars: ThemeVars = theme.id === 'dark' ? darkBase : { ...darkBase, ...theme.vars }
   for (const [key, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(key, value)
   }
   localStorage.setItem('lichborne.theme', theme.id)
+  postApplyHook?.()
 }
 
 export function applyCustomTheme(vars: ThemeVars, id?: string): void {
@@ -1812,6 +1839,7 @@ export function applyCustomTheme(vars: ThemeVars, id?: string): void {
     document.documentElement.style.setProperty(key, value)
   }
   if (id) localStorage.setItem('lichborne.theme', id)
+  postApplyHook?.()
 }
 
 export function initTheme(): void {

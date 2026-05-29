@@ -452,6 +452,18 @@ export default function GenieMapView({
   // at the end of the memo. The runtime value is already an Entry from
   // titleLookup; the older narrower type was just understating reality.
   const prevLocRef = useRef<{ zone: GenieZone; node: GenieNode; isStub: boolean } | null>(null)
+  // v0.8.4 (B110): counter for the "conservative cross-zone fallback" below.
+  // The fallback refuses to jump the marker to a different zone when no
+  // adjacency / stub / description match confirms the move — good defense
+  // against one-off file-order accidents, but with no escape it traps the
+  // marker forever when the player legitimately moves to a disconnected zone
+  // (recall, go2, death/depart, or just a missing stub in the Genie data).
+  // After STALE_ZONE_ESCAPE consecutive different-zone titles all blocked
+  // by the fallback, give up on `prev` and trust `pool[0]` — three different
+  // room titles in a row wanting the same different zone is strong evidence
+  // the player has actually moved, not a parser glitch.
+  const staleZoneCountRef = useRef(0)
+  const STALE_ZONE_ESCAPE = 3
   const currentLocation = useMemo(() => {
     if (!roomTitle) return null
     const target = roomTitle.trim()
@@ -475,7 +487,10 @@ export default function GenieMapView({
     if (candidates.length === 0) return null
     const nonStubs = candidates.filter(c => !c.isStub)
     const pool = nonStubs.length > 0 ? nonStubs : candidates
-    if (pool.length === 1) return pool[0]
+    // Every confident-match path below resets staleZoneCountRef so an
+    // interleaved good match clears the counter — only sustained
+    // consecutive blocks at the conservative fallback should escape.
+    if (pool.length === 1) { staleZoneCountRef.current = 0; return pool[0] }
     // Disambiguate by description. Genie XML stores one or more
     // `<description>` strings per node; the game emits a single
     // description per look. A normalized substring/equality match
@@ -483,7 +498,7 @@ export default function GenieMapView({
     const nd = normalizeDesc(roomDesc)
     if (nd) {
       const exact = pool.find(c => c.node.descriptions.some(d => normalizeDesc(d) === nd))
-      if (exact) return exact
+      if (exact) { staleZoneCountRef.current = 0; return exact }
     }
     // Graph-adjacency disambiguation. When the title is ambiguous (the
     // Crossing has 7 rooms titled "Moonstone Street") and the description
@@ -500,7 +515,7 @@ export default function GenieMapView({
           prev.node.arcs.some(a => a.destination === c.node.id) ||
           c.node.arcs.some(a => a.destination === prev.node.id)
         ))
-      if (adj) return adj
+      if (adj) { staleZoneCountRef.current = 0; return adj }
 
       // Cross-zone adjacency via stubs. Same-zone adjacency above fires
       // when you walk WITHIN a zone; this fires when you walk ACROSS a
@@ -521,7 +536,7 @@ export default function GenieMapView({
           return sourceFileToZoneId.get(stubXml.toLowerCase()) === c.zone.id
         })
       })
-      if (crossAdj) return crossAdj
+      if (crossAdj) { staleZoneCountRef.current = 0; return crossAdj }
     }
     // Conservative cross-zone fallback. With no desc match, no same-zone
     // adjacency, and no stub-cross-zone link, `pool[0]` is just file
@@ -535,8 +550,20 @@ export default function GenieMapView({
     // current zone). And first-render with no `prev` falls through to
     // `pool[0]` as before — there is nothing better to do.
     if (prev && pool[0].zone !== prev.zone) {
+      // Escape valve (B110): after STALE_ZONE_ESCAPE consecutive blocks
+      // we treat sustained "wants a different zone" as a real move and
+      // commit to pool[0]. Counter is a ref mutation inside a memo, which
+      // is a deliberate exception — the memo's result still depends only
+      // on its declared deps, and we reset it on every confident-match
+      // path below so a one-off bad fallback can't poison subsequent runs.
+      if (staleZoneCountRef.current >= STALE_ZONE_ESCAPE) {
+        staleZoneCountRef.current = 0
+        return pool[0]
+      }
+      staleZoneCountRef.current += 1
       return prev
     }
+    staleZoneCountRef.current = 0
     return pool[0]
   }, [titleLookup, roomTitle, roomDesc, isStubNode, sourceFileToZoneId])
 

@@ -152,6 +152,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  cursor: help;
+}
+
+/* Tiny info marker next to rows that carry a description (hover-tooltip).
+   Sits as a faint subscript so the label still reads cleanly. */
+.te-row-info {
+  color: var(--text-faint);
+  font-size: 0.85em;
+  margin-left: 2px;
 }
 
 .te-row-inputs {

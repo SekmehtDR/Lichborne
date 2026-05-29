@@ -18,34 +18,59 @@ export function renderSegmentFull(
   onSendCommand?: (cmd: string) => void,
   autoLinkUrls = true,
   webLinkSafety = true,
+  // B115: when the line's full concatenated text and this segment's offset
+  // into that text are provided, regex matching runs against the joined
+  // line instead of just this segment. Matches are intersected with the
+  // segment range and translated to segment-local offsets. This lets
+  // match-scope highlights and contact regexes cross segment boundaries
+  // (DR wraps player names in XML attributes that fragment a line into
+  // 3+ segments, so `Your mind hears .*? thinking,` was failing to match
+  // in the thoughts stream — every regex test ran against a tiny slice).
+  // Backward compatible: callers that omit these args keep the original
+  // per-segment behavior.
+  lineText?: string,
+  segOffset?: number,
 ): React.ReactNode {
   const text = seg.text
   if (!text) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
   if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
 
   const ranges: MatchRange[] = []
+  const lineMode = lineText !== undefined && segOffset !== undefined
+  const matchSource = lineMode ? lineText! : text
+  const offset = lineMode ? segOffset! : 0
+  // Push a range only if its line-coords [s,e] intersect this segment's
+  // window [offset, offset + text.length]. Translate to segment-local
+  // coords on the way in. End-exclusive on both sides.
+  const pushIntersection = (lineStart: number, lineEnd: number, kind: 'contact' | 'highlight', extras: object) => {
+    const segStart = Math.max(0, lineStart - offset)
+    const segEnd = Math.min(text.length, lineEnd - offset)
+    if (segEnd > segStart) {
+      ranges.push({ start: segStart, end: segEnd, kind, ...extras } as MatchRange)
+    }
+  }
 
   if (nameRegex) {
     nameRegex.lastIndex = 0
     let m: RegExpExecArray | null
-    while ((m = nameRegex.exec(text)) !== null) {
+    while ((m = nameRegex.exec(matchSource)) !== null) {
       if (m[0].length === 0) { nameRegex.lastIndex++; continue }
       const contact = contacts.find(c => c.name.toLowerCase() === m![0].toLowerCase()) ?? null
       if (contact) {
         const template = templates.find(t => t.id === contact.templateId) ?? null
-        ranges.push({ start: m.index, end: m.index + m[0].length, kind: 'contact', contact, template })
+        pushIntersection(m.index, m.index + m[0].length, 'contact', { contact, template })
       }
     }
   }
 
-  const textLower = text.toLowerCase()
+  const matchSourceLower = matchSource.toLowerCase()
   for (const compiled of matchRules) {
-    if (compiled.fastLower !== null && !textLower.includes(compiled.fastLower)) continue
+    if (compiled.fastLower !== null && !matchSourceLower.includes(compiled.fastLower)) continue
     compiled.regex.lastIndex = 0
     let m: RegExpExecArray | null
-    while ((m = compiled.regex.exec(text)) !== null) {
+    while ((m = compiled.regex.exec(matchSource)) !== null) {
       if (m[0].length === 0) { compiled.regex.lastIndex++; continue }
-      ranges.push({ start: m.index, end: m.index + m[0].length, kind: 'highlight', compiled })
+      pushIntersection(m.index, m.index + m[0].length, 'highlight', { compiled })
     }
   }
 

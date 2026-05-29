@@ -72,17 +72,29 @@
   color: var(--accent);
 }
 
+/* Aligned with the main game-toolbar button pattern (game.css) so the
+   Automations header buttons match the rest of the UI on every theme.
+   Previously the hover used full --accent (border + text) with no
+   transition, which read as jarring "loses the theming" on themes
+   where the accent is a high-contrast brand color. The toolbar pattern
+   uses --accent-dim border + --accent text with a 0.2s ease, plus a
+   softer --text-muted resting color. */
 .at-import-btn {
   background: transparent;
   border: 1px solid var(--border);
-  color: var(--text-dim);
+  color: var(--text-muted);
   border-radius: 4px;
   padding: 3px 10px;
   font-family: inherit;
   font-size: 0.75rem;
   cursor: pointer;
+  transition: all 0.2s;
 }
-.at-import-btn:hover { color: var(--accent); border-color: var(--accent); }
+.at-import-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-hover);
+}
 
 .at-close {
   background: transparent;

@@ -342,6 +342,22 @@
 .iw-table tr:last-child td { border-bottom: none; }
 .iw-table tr.iw-row--unsupported td { opacity: 0.4; }
 
+/* F29 follow-up: duplicates of existing rules. Subtle dim so the row is
+   visible but de-emphasised, and an "EXISTS" badge in the status column
+   so the user sees immediately why it's unchecked. */
+.iw-table tr.iw-row--exists td { opacity: 0.55; }
+.iw-exists-badge {
+  font-size: 0.68rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: color-mix(in srgb, var(--text-dim) 20%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in srgb, var(--text-dim) 40%, transparent);
+}
+
 .iw-color-swatch {
   width: 14px;
   height: 14px;

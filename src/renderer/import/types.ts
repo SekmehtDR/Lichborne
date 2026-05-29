@@ -1,7 +1,7 @@
 // Neutral intermediate types produced by each parser.
 // These are converted to Frostborne rule types by mapper.ts.
 
-export type ImportSource = 'wrayth' | 'genie' | 'frostbite'
+export type ImportSource = 'wrayth' | 'genie' | 'frostbite' | 'lichborne'
 
 export type ImportStatus =
   | 'ready'         // fully importable
@@ -98,4 +98,12 @@ export interface ImportResult {
   scriptsCount?: number         // Wrayth <scripts> block entry count
   stringsCount?: number         // Wrayth <strings> substitution rule count
   skippedMacroSetsCount?: number // Wrayth non-empty macro sets 1–9
+  // v0.8.4 (F29): Lichborne-native data carried straight through — these
+  // are already in our own format so the parser doesn't need to convert
+  // them to ImportCandidate shape. The Lichborne import path applies
+  // them directly; other parsers leave them undefined.
+  nativeGroups?: unknown[]            // RuleGroup[] (loose type to avoid circular import)
+  nativeModes?: unknown[]             // GameMode[]
+  nativeContacts?: unknown[]          // Contact[]
+  nativeContactTemplates?: unknown[]  // ContactTemplate[]
 }

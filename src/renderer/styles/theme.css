@@ -185,6 +185,17 @@
   --game-line-height: 1.5;
   --game-font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
 
+  /* B113: text weight scale. `--game-text-weight` is the body font-weight
+     (set by Settings → Text weight; defaults to 400). `--ui-bold-weight`
+     is +200 above it so the bold/roomname/title contrast survives at any
+     user setting — when body is 100 (Thinnest) bolds are 300; when body
+     is 400 (Default) bolds are 600. Bolds clamp at 900 (max CSS weight).
+     Specialty bold rules in panels.css use this var instead of literal
+     600/700 so they cascade. */
+  --game-text-weight: 400;
+  --game-text-stroke: 0;
+  --ui-bold-weight: calc(var(--game-text-weight) + 200);
+
   /* ── Experience panel ─────────────────────────────────────────── */
   --exp-skill-color:     #aaaaaa;
   --exp-rank-color:      #777777;   /* improved from #555 */

@@ -19,6 +19,24 @@ body {
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
+  /* B113: text weight cascades from body so panels, room title, presets,
+     toolbar — every text surface — follows the user's Settings → Text
+     weight. Positive weights add -webkit-text-stroke (faux-bold via stroke
+     widening; compensates for Chromium DirectWrite's lighter rendering vs
+     GDI ClearType on light themes). Negative weights drop font-weight
+     below 400 (only visible on fonts with light weights, like Cascadia
+     Code). Bold-styled elements use --ui-bold-weight (defined in theme.css)
+     which is calc()'d above --game-text-weight so the bold contrast
+     survives at any user setting. */
+  font-weight: var(--game-text-weight, 400);
+  -webkit-text-stroke: var(--game-text-stroke, 0) currentColor;
+}
+
+/* B113: HTML <strong> / <b> default to font-weight: bold (=700) per browser
+   UA stylesheet, which would ignore the user's text-weight setting. Route
+   them through --ui-bold-weight so bold game text scales with body. */
+strong, b {
+  font-weight: var(--ui-bold-weight);
 }
 
 ::-webkit-scrollbar { width: 12px; }

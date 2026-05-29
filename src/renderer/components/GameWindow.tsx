@@ -31,7 +31,7 @@ import { isRuleActive } from '../groups'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
 import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
 import { loadSessionLogSettings } from '../sessionLogSettings'
-import { THEMES, applyTheme, applyCustomTheme } from '../themes'
+import { THEMES, applyTheme, applyCustomTheme, registerThemeAppliedHook } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
 import { scopedKey } from '../characterScope'
 import { useSessions, makeCharacterId } from '../SessionsContext'
@@ -866,6 +866,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // visible until B changed a setting.
   useEffect(() => {
     if (!isActive) return  // inactive tabs don't own the DOM
+    // B114: register a post-apply hook that re-runs the accessibility
+    // overlays (high contrast + color blind) whenever applyTheme /
+    // applyCustomTheme is called from anywhere — ThemePicker preview,
+    // ThemeEditor live editing, etc. Without this the overlays got
+    // erased whenever the theme vars were rewritten, since theme vars
+    // and overlay vars overlap (e.g. --vital-health-ok-start). Closure
+    // captures the current settings; the cleanup clears it so the next
+    // GameWindow doesn't apply the wrong character's overlays.
+    registerThemeAppliedHook(() => applySettingsToDOM(settings))
     const base = THEMES.find(t => t.id === currentThemeId)
     if (base) applyTheme(base)
     else {
@@ -873,6 +882,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (custom) applyCustomTheme(custom.vars)
     }
     applySettingsToDOM(settings)
+    return () => registerThemeAppliedHook(null)
   }, [isActive, currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist panel layout ─────────────────────────────────────────────────

@@ -346,6 +346,9 @@
   min-height: 1.4em;
   font-size: var(--game-font-size);
   line-height: var(--game-line-height);
+  /* B113: text weight cascades from body (set in global.css) so panel text,
+     room title, presets, etc. all follow the user's Settings → Text weight.
+     .text-line inherits naturally — no per-line declaration needed here. */
   /* DO NOT add `contain` here (or on `.text-line-wrap`). It was a v0.6.8
      perf hint but layout containment on a react-virtuoso row breaks
      scroll-pin position retention — see the note on `.text-line-wrap`.
@@ -400,13 +403,17 @@
 
 [data-epilepsy-safe="true"] .cmd-bar { animation: none; }
 
-/* RT / CT chip strips inside the input box */
+/* RT / CT chip strips inside the input box. v0.8.4 (F30, Rakkor): chips
+   roughly doubled in size with a tighter inter-chip gap — easier to count
+   at a glance without the brain having to focus on tiny dashes. Each chip
+   represents one second of remaining timer; bigger + closer together
+   reads more like Frostbite's classic seconds-bar. */
 .cmd-chips {
   position: absolute;
   left: 2px;
   right: 2px;
   display: flex;
-  gap: 6px;
+  gap: 4px;
   overflow: hidden;
   pointer-events: none;
   z-index: 1;
@@ -416,10 +423,10 @@
 .cmd-chips--ct { bottom: 0; }
 
 .cmd-chip {
-  width: 8px;
+  width: 16px;
   flex-shrink: 0;
-  height: 6px;
-  border-radius: 2px;
+  height: 12px;
+  border-radius: 3px;
   animation: chip-pulse 1.1s ease-in-out infinite;
 }
 
@@ -440,7 +447,7 @@
 
 .prompt-marker {
   color: var(--accent-dim);
-  font-weight: bold;
+  font-weight: var(--ui-bold-weight);
   font-size: 1rem;
   flex-shrink: 0;
 }

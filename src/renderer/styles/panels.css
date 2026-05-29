@@ -11,9 +11,9 @@
    Genie/Frostbite and the 700 was too hard a hit. On Consolas (no 600
    face) the browser still falls back to 700, so no regression for users
    who explicitly stayed on Consolas. */
-[data-preset="roomname"]     { color: var(--preset-roomname); background-color: var(--preset-roomname-bg); font-weight: 600; }
+[data-preset="roomname"]     { color: var(--preset-roomname); background-color: var(--preset-roomname-bg); font-weight: var(--ui-bold-weight); }
 [data-preset="roomdesc"]     { color: var(--preset-roomdesc); background-color: var(--preset-roomdesc-bg); }
-[data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: 600; }
+[data-preset="bold"]         { color: var(--preset-bold);     background-color: var(--preset-bold-bg);     font-weight: var(--ui-bold-weight); }
 [data-preset="expiry"]       { color: var(--preset-expiry);   background-color: var(--preset-expiry-bg); }
 [data-preset="store"]        { color: var(--preset-store);    background-color: var(--preset-store-bg); }
 [data-preset="command-echo"]   { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
@@ -83,7 +83,7 @@
 }
 
 .injuries-section-label {
-  font-weight: bold;
+  font-weight: var(--ui-bold-weight);
   color: var(--text-muted);
   font-size: 0.8em;
   text-transform: uppercase;
@@ -132,7 +132,9 @@
 
 .room-panel-title {
   color: var(--room-title-color);
-  font-weight: bold;
+  /* B113: use the cascading bold weight so the title scales with the
+     user's text-weight setting (Thinnest → ~300, Default → 600, etc.). */
+  font-weight: var(--ui-bold-weight);
   font-size: 1.09em;
   margin-bottom: 6px;
   padding-bottom: 5px;
@@ -376,7 +378,7 @@
   border-radius: 0;
   font-family: inherit;
   font-size: 0.87em;
-  font-weight: 700;
+  font-weight: var(--ui-bold-weight);
   text-transform: uppercase;
   letter-spacing: 1.2px;
   color: var(--text-muted);
@@ -431,7 +433,7 @@
 
 .exp-badge {
   font-size: 0.68em;
-  font-weight: bold;
+  font-weight: var(--ui-bold-weight);
   padding: 1px 3px;
   border-radius: 2px;
   letter-spacing: 0;
@@ -501,7 +503,7 @@
 .exp-row--rank-up .exp-skill,
 .exp-row--rank-up .exp-rank,
 .exp-row--rank-up .exp-pct,
-.exp-row--rank-up .exp-mindstate { font-weight: bold; }
+.exp-row--rank-up .exp-mindstate { font-weight: var(--ui-bold-weight); }
 
 .exp-pin-btn {
   background: none;
@@ -544,7 +546,7 @@
 .exp-footer-label {
   color: var(--text-dim);
   font-size: 0.89em;
-  font-weight: 700;
+  font-weight: var(--ui-bold-weight);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-right: 3px;
@@ -594,7 +596,7 @@
 .exp-rxp-label {
   color: var(--text-dim);
   font-size: 0.95em;
-  font-weight: 700;
+  font-weight: var(--ui-bold-weight);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   flex-shrink: 0;
@@ -622,7 +624,7 @@
 
 .exp-rxp-bar-tag {
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--ui-bold-weight);
   font-size: 0.92em;
   flex-shrink: 0;
   white-space: nowrap;

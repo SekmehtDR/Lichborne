@@ -142,14 +142,31 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMa
   }, [lichMapVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Match current room when title/desc changes ───────────────────────────────
-
+  //
+  // During fast movement the room title, description, and id update across
+  // separate render commits — there's a brief window where the title has
+  // advanced to the new room but the description / id haven't caught up,
+  // so `findRoom` returns undefined and the "NEEDS MAPPING" banner flashes
+  // for a single frame before the next prop settles and the match resolves.
+  // (B109)
+  //
+  // Match resolved → commit immediately so the indicator tracks the player.
+  // No match → delay the `setCurrentRoom(undefined)` by 400ms. If a real
+  // match arrives in the meantime, the effect's cleanup cancels the timer
+  // and the banner never paints. If the player genuinely is in an unmapped
+  // room and stays there, the 400ms wait is imperceptible before the
+  // diagnostic appears.
   useEffect(() => {
     if (dbStatus !== 'ready') return
-    setCurrentRoom(
-      roomId !== undefined
-        ? (lichDb.get(roomId) ?? findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current))
-        : findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current)
-    )
+    const found = roomId !== undefined
+      ? (lichDb.get(roomId) ?? findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current))
+      : findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current)
+    if (found) {
+      setCurrentRoom(found)
+      return
+    }
+    const h = setTimeout(() => setCurrentRoom(undefined), 400)
+    return () => clearTimeout(h)
   }, [roomTitle, roomDesc, roomId, dbStatus, lichDb])
 
   // ── Load Genie XML progressively ─────────────────────────────────────────────
