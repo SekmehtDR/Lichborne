@@ -208,9 +208,42 @@ function AppShell() {
         }
       }
     }
+    // v0.8.6 (Rakkor): the prompt marker `>` next to the active command
+    // bar dispatches this event when clicked, opening QuickSend with the
+    // currently-typed command (mirrors Ctrl+Shift+Enter exactly). Custom
+    // event avoids threading an onOpenQuickSend prop through to every
+    // GameWindow when AppShell already owns the modal state.
+    function onOpenQuickSend() {
+      if (sessions.length === 0) return
+      const srcInput = document.querySelector(
+        '.session-shell:not(.session-shell--hidden) .command-input'
+      ) as HTMLInputElement | null
+      setShowQuickSend({ initialCommand: srcInput?.value ?? '' })
+    }
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    document.addEventListener('lichborne:open-quick-send', onOpenQuickSend)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('lichborne:open-quick-send', onOpenQuickSend)
+    }
   }, [sessions, activeId, setActive])
+
+  // v0.8.6: refocus the active GameWindow's command bar whenever the active
+  // character changes — covers tab CLICKS in addition to the Ctrl+Tab /
+  // Ctrl+# keyboard paths that already refocus explicitly above. Requested
+  // by Rakkor (TheTargonian) — clicking a tab left focus wherever it was,
+  // forcing testers to click the bar again before they could type.
+  // requestAnimationFrame waits for the session-shell hidden-class flip
+  // before the input becomes focusable.
+  useEffect(() => {
+    if (!activeId) return
+    requestAnimationFrame(() => {
+      const el = document.querySelector(
+        '.session-shell:not(.session-shell--hidden) .command-input'
+      ) as HTMLInputElement | null
+      el?.focus()
+    })
+  }, [activeId])
 
   // First-run / cold-start path:
   //   1. Pull _shared.yaml into localStorage so loadAdvanced() returns whatever

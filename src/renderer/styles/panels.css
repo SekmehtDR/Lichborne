@@ -29,7 +29,7 @@
   overflow-y: auto;
   padding: 6px 8px;
   box-sizing: border-box;
-  font-size: var(--game-font-size);
+  font-size: var(--panel-font-size, var(--game-font-size));
   line-height: var(--game-line-height);
 }
 
@@ -67,7 +67,7 @@
 
 .injuries-panel {
   padding: 8px;
-  font-size: var(--game-font-size);
+  font-size: var(--panel-font-size, var(--game-font-size));
   overflow-y: auto;
   height: 100%;
 }
@@ -120,7 +120,7 @@
   overflow-y: auto;
   padding: 8px 10px;
   box-sizing: border-box;
-  font-size: var(--game-font-size);
+  font-size: var(--panel-font-size, var(--game-font-size));
   line-height: var(--game-line-height);
 }
 
@@ -197,7 +197,7 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
-  font-size: var(--game-font-size);
+  font-size: var(--panel-font-size, var(--game-font-size));
 }
 
 .exp-ctrl-bar {

@@ -1,3 +1,78 @@
+## What's new in v0.8.6
+
+A command-bar UX pass, contact stats, and a new built-in light theme — half polish, half new features.
+
+### New "Classic" light theme
+
+Requested by Rakkor. There's a new **Classic** entry in the theme picker with a paper-white background — sits right next to the dark Classic, distinguished by the swatch dot (black vs white). Same indigo accent as the Ivory family, but with hand-tuned room / experience / map colors for stronger contrast on a true white canvas.
+
+### Contact stats — Encounters and Time Encountered
+
+Sekmeht's idea, extending the existing last-seen tracking. Open any contact in the **Contacts** panel and you'll now see two new rows below "Last seen":
+
+- **Encounters** — how many times this contact has been in your room. A 10-minute cooldown prevents an alt cycling in and out from inflating the count, and a 90-second "they actually left" gate prevents a long visit from re-counting when other players come and go from the room.
+- **Time Encountered** — how long total you've stood in the same room. Polled every minute, so the granularity is minute-level. Renders as `42m`, `2h 13m`, `3d 5h`, etc.
+
+Same two counters appear in the click-popover when you click a contact's name in game text — always visible, even at zero, so you can tell at a glance whether you've encountered someone before without having to open the full Contacts panel. The popover itself is also a bit wider and a bit taller now so the stats fit on one line each and mid-length notes don't force a scroll.
+
+Both stats are per-character and travel through profile YAML + Lichborne import/export automatically. A **Reset** button next to the stats lets you zero out a specific contact's counters if an import or partial session produced something unexpected.
+
+### Fixed: adding contact #12 silently dropped
+
+Reported by Rakkor with a clean reproduction — adding a 12th contact ("Ruik") didn't actually save. The bug was a race between the contacts panel's save and the in-game "last seen" tracking buffer, which was holding a stale snapshot of the previous 11 contacts and overwriting localStorage with that stale data two seconds later. Fixed.
+
+### Command-bar UX polish
+
+### Click the `>` to open Quick Send
+
+Requested by Rakkor. The `>` prompt marker next to the command bar is now a clickable button — click it and the **Quick Send** overlay opens with whatever you'd typed in the command bar already prefilled, exactly as it does with **Ctrl+Shift+Enter**. Tooltip on hover advertises the keyboard shortcut for testers who want to keep their hands on the keys.
+
+### Click a character tab → focus jumps to the command bar
+
+Requested by Rakkor. Switching between characters via the tabs at the top of the window no longer leaves focus floating somewhere harmless — the active character's command bar gets focus automatically so you can keep typing. The same behavior **Ctrl+Tab** / **Ctrl+1..9** have always had, now extended to mouse clicks.
+
+### Floating font-size controls clear the scrollbar
+
+Self-found while exercising the v0.8.5 per-panel font feature on a long stream panel. The **A−** / **A+** buttons in the panel's bottom-right corner used to sit right on top of the vertical scrollbar when content had scrolled past the panel height, making them awkward to grab. Moved them left so they sit just to the left of the scrollbar rail.
+
+---
+
+## What's new in v0.8.5
+
+A follow-through release tightening up v0.8.4 work plus three new conveniences testers requested.
+
+### Per-panel font size
+
+Requested by Rakkor — Frostbite lets you tune each panel's text size independently. Every panel now has small **A−** / **A+** buttons in its **bottom-right** corner, stacked vertically; they're nearly transparent at rest, peek into view when you hover the panel, and go fully opaque when you reach for them. Click to bump the size up or down by 1 px (range 8–24). The size is per-tab and saves with your character — so your tiny Conversations and oversized Thoughts travel with you between sessions.
+
+Scope for this release: the text-heavy panels — stream panels (Thoughts, Conversations, Arrivals, Deaths, Active Spells, Familiar, Inv, custom), Room, Experience, and Injuries — respect the override. Map / Debug / Lich Scripts panels don't yet (they have their own internal size rules); say the word and we'll wire them up.
+
+### Lichborne export now includes your panel layout
+
+Extension to the v0.8.4 Lichborne export. The exported YAML now also captures which panel zones you have enabled, what tabs live in each, the zone sizes, and the per-panel font overrides from above. On import, the wizard's confirm step shows an extra **"Apply imported panel layout"** checkbox when the file carries layout. Tick it and the importer overwrites your current layout; untick to keep your current arrangement. The new layout takes effect after you reconnect that character.
+
+Old (v1) export files still load fine in the new importer. New (v2) files won't load in an older Lichborne — it'll tell you to update.
+
+### Room panel: creatures now bold (monsterbold)
+
+Reported by Rakkor with a screenshot — `look` showed `an ice archon` in bold cyan in the main scroll but plain in the Room panel's Objects section. The parser was flattening DR's `<pushBold/>` markers to plain text when capturing the room components, so the bold info never reached the Room panel.
+
+Fixed at the parser layer; the Room panel now renders Objects / Players / Creatures / Extra with the same bold styling as the main scroll. Same fix automatically gives the Room panel cross-segment regex highlights (B115) and the priority-overlay rendering (B116) for contacts inside highlights.
+
+---
+
+### Regex highlights now actually render in the Thoughts stream
+
+Reported by Rakkor. The v0.8.4 fix for cross-segment regex matching was correct — the regex was finding the match against the joined line text, confirmed by **Debug → Fires** showing the rule firing. But the rendered Thoughts panel still showed no color.
+
+The bug was in the renderer's overlap-handling: when a contact name match started at the **same position** as the highlight (e.g. a contact for "You" matching the first three letters of `Your mind hears ...`), the old "first wins, drop overlapping" algorithm dropped the entire highlight — even though most of it wasn't actually inside the contact. Rewrote the algorithm so contacts win INSIDE their own span and the highlight covers everything outside any contact. So you now get the expected layered look: contact-blue inside the contact name, highlight-orange everywhere else the highlight matched.
+
+### RT / CT chips shorter
+
+Reported by Rakkor. The v0.8.4 chip-doubling looked great horizontally but the vertical height was a bit much. Trimmed the height by a third (12 → 8px), kept the width and gap. The strip still reads as countable seconds, just less intrusive on the command bar.
+
+---
+
 ## What's new in v0.8.4
 
 A small theme + Lich Map polish + Genie Map tracking + Room panel highlights + accessibility audit release.

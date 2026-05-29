@@ -6,7 +6,10 @@
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 240px;
+  /* v0.8.6 (Rakkor): bumped 240→290px so the two-column stats row
+     ("Encounters: N" + "Time Encountered: 2h 13m") fits on one line
+     each without wrapping into stacked columns. */
+  width: 290px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
@@ -75,6 +78,22 @@
   color: var(--text-dim);
 }
 
+/* F34 (v0.8.6): Encounters + Time Encountered counters surfaced in the
+   click-popover. Two-column layout so they read at a glance; bold the
+   numbers to draw the eye without adding a row of labels. */
+.cpop-stats {
+  padding: 0 12px 5px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.cpop-stats strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
 .cpop-divider {
   height: 1px;
   background: var(--border-faint);
@@ -87,7 +106,10 @@
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 100px;
+  /* v0.8.6 (Rakkor): bumped from 100px to 200px so multi-paragraph
+     notes are readable at a glance without forcing a scroll on a
+     mid-length entry. Anything longer still scrolls. */
+  max-height: 200px;
   overflow-y: auto;
 }
 

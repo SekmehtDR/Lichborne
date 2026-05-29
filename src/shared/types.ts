@@ -394,10 +394,16 @@ export interface TextLine {
 export interface RoomState {
   title: string
   desc: string
-  objects: string
-  players: string
-  creatures: string
-  extra: string
+  // v0.8.5 (B117): structured sections carry per-piece formatting so the
+  // Room panel can render DR's <pushBold/> creatures (and any future
+  // styled span) the same way the main scroll does. desc stays a string
+  // — room descriptions are long-form prose that benefits from the
+  // existing MapPanel `roomDesc: string` API; styled spans there are
+  // rare and we keep the cross-process payload small.
+  objects: TextSegment[]
+  players: TextSegment[]
+  creatures: TextSegment[]
+  extra: TextSegment[]
   exits: string[]
   roomId?: number
 }

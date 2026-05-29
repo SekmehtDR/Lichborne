@@ -31,6 +31,12 @@ export interface AppSettings {
   // the renderer's default; UI caps at ±0.6 (above ~0.5 the stroke looks
   // blurry rather than bold).
   textWeight: number
+  // v0.8.5 (F31): per-panel font-size overrides keyed by tab id. Tab ids
+  // are stable across zone moves, so this travels with the panel even
+  // if the user drags it from Main-Top to Top-Right. Unset (no entry)
+  // means "use the global --game-font-size." Bounds 8–24 enforced at
+  // the UI layer. Persists via the existing settings save pipeline.
+  panelFontSizes: Record<string, number>
   // NOTE: Session Log preferences are NOT here — they are app-wide, not
   // per-character. See sessionLogSettings.ts (stored in _shared.yaml).
 }
@@ -60,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webLinkSafety: true,
   mapAnimations: true,
   textWeight: 0,
+  panelFontSizes: {},
 }
 
 export const FONT_FAMILIES: Record<string, string> = {

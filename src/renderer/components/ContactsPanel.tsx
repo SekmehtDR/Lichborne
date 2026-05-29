@@ -6,7 +6,7 @@ import {
   loadContactTemplates, saveContactTemplates,
   newContact, newTemplate,
   DR_GUILDS,
-  formatLastSeen,
+  formatLastSeen, formatDuration,
 } from '../contacts'
 import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
@@ -261,6 +261,42 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                       {formatLastSeen(draft.lastSeen)}
                       {draft.lastRoom && <span className="cp-last-room"> — {draft.lastRoom}</span>}
                     </span>
+                  </div>
+
+                  {/* F34 (v0.8.6): per-client social stats. Encounters
+                      counts standing-next-to-each-other moments (with a
+                      10-min cooldown so cycling doesn't inflate the
+                      number). Time Logged Together accumulates one
+                      minute per polling tick while the contact is in the
+                      room. Both grow ONLY while Lichborne is open and
+                      connected — labels say so. Reset button per-contact
+                      because the per-client limitation makes counts
+                      occasionally non-representative (imports, partial
+                      sessions, etc.). */}
+                  <div className="cp-field cp-field--readonly cp-field--stats">
+                    <div className="cp-stat-row">
+                      <div className="cp-stat-item">
+                        <label className="cp-label">Encounters</label>
+                        <span className="cp-readonly-value">{draft.encounterCount ?? 0}</span>
+                      </div>
+                      <div className="cp-stat-item">
+                        <label className="cp-label">Time Encountered</label>
+                        <span className="cp-readonly-value">{formatDuration(draft.timeSpentMs ?? 0)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="cp-stat-reset"
+                        title="Reset Encounters + Time Logged Together for this contact"
+                        onClick={() => {
+                          const reset = { ...draft, encounterCount: 0, timeSpentMs: 0, lastEncounterAt: undefined }
+                          const updated = contacts.map(c => c.id === reset.id ? reset : c)
+                          setContacts(updated)
+                          saveContacts(character, updated)
+                          setDraft(reset)
+                          onSaved?.()
+                        }}
+                      >Reset</button>
+                    </div>
                   </div>
 
                   <div className="cp-field cp-field--grow">

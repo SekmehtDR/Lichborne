@@ -47,6 +47,28 @@ interface LichborneExportFile {
   modes?: unknown[]
   contacts?: unknown[]
   contactTemplates?: unknown[]
+  // v0.8.5: optional layout block. Absent in v1 exports, present in v2.
+  // The importer applies any keys that ARE present; missing keys mean
+  // "leave the importing character's existing value alone."
+  layout?: {
+    mainTopAdded?:    boolean
+    topAdded?:        boolean
+    midAdded?:        boolean
+    bottomAdded?:     boolean
+    mainTopTabs?:     unknown[]
+    topTabs?:         unknown[]
+    midTabs?:         unknown[]
+    bottomTabs?:      unknown[]
+    mainTopActiveId?: string
+    topActiveId?:     string
+    midActiveId?:     string
+    bottomActiveId?:  string
+    mainTopHeight?:   number
+    topHeight?:       number
+    midHeight?:       number
+    panelWidth?:      number
+    panelFontSizes?:  Record<string, number>
+  }
 }
 
 export function parseLichborneYaml(text: string): ImportResult {
@@ -63,7 +85,7 @@ export function parseLichborneYaml(text: string): ImportResult {
   if (typeof doc.formatVersion !== 'number') {
     return emptyResult('Missing formatVersion — is this a Lichborne export file?')
   }
-  if (doc.formatVersion > 1) {
+  if (doc.formatVersion > 2) {
     return emptyResult(`Export file format v${doc.formatVersion} is newer than this Lichborne supports — please update.`)
   }
 
@@ -125,6 +147,7 @@ export function parseLichborneYaml(text: string): ImportResult {
     nativeModes: doc.modes,
     nativeContacts: doc.contacts,
     nativeContactTemplates: doc.contactTemplates,
+    nativeLayout: doc.layout,
   }
 }
 

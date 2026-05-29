@@ -76,30 +76,61 @@ export function renderSegmentFull(
 
   if (ranges.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
 
-  // Sort by start; contacts beat highlights on ties
-  ranges.sort((a, b) => a.start !== b.start ? a.start - b.start : (a.kind === 'contact' ? -1 : 1))
+  // B116 (v0.8.5): priority-based overlay. The earlier algorithm sorted
+  // ranges by start position with contacts winning ties, then dropped any
+  // range overlapping a previously-selected one. That collapsed the
+  // common case where a contact match starts at the SAME position as a
+  // long highlight (e.g. contact "You" at the start of "Your mind hears
+  // Balistrade thinking," highlight) — contact won the tie, and the
+  // entire highlight was dropped, leaving the rest of the phrase plain
+  // when it should still have been highlighted. The new algorithm
+  // produces non-overlapping runs by collecting boundary positions and
+  // picking the highest-priority range covering each gap: contacts beat
+  // highlights, highlights beat plain text. Adjacent same-range pieces
+  // are merged into single runs so the rendered DOM stays compact.
+  const boundarySet = new Set<number>([0, text.length])
+  for (const r of ranges) { boundarySet.add(r.start); boundarySet.add(r.end) }
+  const boundaries = [...boundarySet].sort((a, b) => a - b)
 
-  // Remove overlaps — first match wins
-  const selected: MatchRange[] = []
-  let cursor = 0
-  for (const r of ranges) {
-    if (r.start >= cursor) {
-      selected.push(r)
-      cursor = r.end
+  type Run = { start: number; end: number; range: MatchRange | null }
+  const runs: Run[] = []
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const start = boundaries[i]
+    const end = boundaries[i + 1]
+    if (start === end) continue
+    // Find ranges that fully cover this gap. Contacts outrank highlights;
+    // within a kind, the first matching one wins (order they were pushed).
+    let topContact: MatchRange | null = null
+    let topHighlight: MatchRange | null = null
+    for (const r of ranges) {
+      if (r.start <= start && r.end >= end) {
+        if (r.kind === 'contact' && !topContact) topContact = r
+        else if (r.kind === 'highlight' && !topHighlight) topHighlight = r
+      }
+    }
+    const top = topContact ?? topHighlight ?? null
+    // Merge with previous run if same range identity.
+    const last = runs[runs.length - 1]
+    if (last && last.range === top) {
+      last.end = end
+    } else {
+      runs.push({ start, end, range: top })
     }
   }
 
   const parts: React.ReactNode[] = []
   let n = 0
   const k = () => segKey * 10000 + n++
-  let lastIndex = 0
 
-  for (const r of selected) {
-    if (r.start > lastIndex) {
-      parts.push(renderSegment({ ...seg, text: text.slice(lastIndex, r.start) }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
+  for (const run of runs) {
+    if (run.range === null) {
+      // No range covers this run — render via renderSegment so it picks
+      // up the segment's preset / fg / bg as plain text.
+      parts.push(renderSegment({ ...seg, text: text.slice(run.start, run.end) }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
+      continue
     }
-
-    const matchText = text.slice(r.start, r.end)
+    const r = run.range
+    const matchText = text.slice(run.start, run.end)
 
     if (r.kind === 'contact') {
       const { contact, template } = r
@@ -144,12 +175,6 @@ export function renderSegmentFull(
           : <span key={k()} className="hl-match" style={hlStyle}>{matchText}</span>
       )
     }
-
-    lastIndex = r.end
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(renderSegment({ ...seg, text: text.slice(lastIndex) }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
   }
 
   return <span key={segKey}>{parts}</span>

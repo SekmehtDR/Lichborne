@@ -21,6 +21,16 @@ export interface Contact {
   notes: string
   lastSeen: number | null
   lastRoom: string | null
+  // v0.8.6 (F34): per-client social stats. encounterCount increments by 1
+  // whenever the contact reappears in room.players AFTER an "encounter
+  // cooldown" (10 min) — so an alt cycling in and out of the room only
+  // counts once. timeSpentMs accumulates 60 seconds per polling tick
+  // while the contact is in the current room. Both stats are PER CLIENT
+  // (only grow while Lichborne is open and connected); UI labels say so.
+  // Both optional so existing pre-v0.8.6 contacts load with no migration.
+  encounterCount?: number
+  timeSpentMs?: number
+  lastEncounterAt?: number  // timestamp of the most recent counted encounter, for the cooldown gate
 }
 
 import { scopedKey } from './characterScope'
@@ -121,4 +131,19 @@ export function formatLastSeen(ts: number | null): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
+}
+
+// v0.8.6 (F34): format a cumulative duration for the Time Logged Together
+// stat. Sub-minute renders as a dash (the polling tick is 60s, so any
+// non-zero value should be at least a minute).
+export function formatDuration(ms: number): string {
+  if (!ms || ms < 60_000) return '—'
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  const remMins = mins % 60
+  if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`
+  const days = Math.floor(hrs / 24)
+  const remHrs = hrs % 24
+  return remHrs > 0 ? `${days}d ${remHrs}h` : `${days}d`
 }

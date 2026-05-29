@@ -226,7 +226,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const saveProfile = useProfileSaver()
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
-  const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
+  const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: [], players: [], creatures: [], extra: [], exits: [] })
   const [lichMapVersion, setLichMapVersion] = useState(0)
   const [expSkills, setExpSkills]       = useState<Record<string, string>>({})
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
@@ -463,7 +463,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [openContactId,  setOpenContactId]  = useState<string | null>(null)
 
   const contactsRef   = useRef(contacts)
-  const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: '', players: '', creatures: '', extra: '', exits: [] })
+  const roomStateRef  = useRef<RoomState>({ title: '', desc: '', objects: [], players: [], creatures: [], extra: [], exits: [] })
 
   // Append captured records to this character's session log on disk, filtered
   // by the Session Log config. That config is app-wide (sessionLogSettings.ts /
@@ -814,17 +814,76 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Keep contact refs in sync with state ─────────────────────────────────
 
-  useEffect(() => { contactsRef.current = contacts }, [contacts])
+  useEffect(() => {
+    contactsRef.current = contacts
+    // v0.8.6 (B119): when contacts change externally (ContactsPanel save,
+    // import, last-seen flush, etc.), drop any in-flight last-seen
+    // tracking buffer. The buffer was built against an OLDER snapshot of
+    // contacts, and its eventual flush would write that snapshot back —
+    // wiping anything the user added/edited in ContactsPanel during the
+    // buffer window. Reported by Rakkor: adding a 12th contact "Ruik"
+    // didn't persist because the room-tracking timer was about to
+    // overwrite localStorage with the stale 11-contact array.
+    pendingContactsRef.current = null
+    if (lastSeenTimerRef.current) {
+      clearTimeout(lastSeenTimerRef.current)
+      lastSeenTimerRef.current = null
+    }
+  }, [contacts])
   useEffect(() => { roomStateRef.current = roomState }, [roomState])
 
   useEffect(() => {
     return () => { if (lastSeenTimerRef.current) clearTimeout(lastSeenTimerRef.current) }
   }, [])
 
+  // F34 (v0.8.6): "Time Logged Together" — every 60s, scan room.players
+  // for each contact and add 60 seconds to their timeSpentMs. Polling
+  // (vs. entry/exit deltas) is simpler and gives minute-granularity which
+  // is plenty for a social metric. Stats only accumulate while Lichborne
+  // is open and connected — the UI labels them "via this client" so the
+  // limitation is honest. Writes are batched: only persists when at
+  // least one contact was detected; the saveContacts call goes through
+  // the same scheduleProfileSave debounce as everything else.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const playersText = roomStateRef.current.players.map(s => s.text).join('')
+      if (!playersText) return
+      // F34 bug-check: base the polling update on the LATEST contacts —
+      // if the last-seen tracker has a buffered update pending (its
+      // `pendingContactsRef`) we must use THAT instead of `contactsRef`
+      // (which still reflects pre-buffer state). Otherwise this tick's
+      // saveContacts would overwrite the buffered encounter+lastSeen
+      // updates with stale data when `setContacts` triggers the B119
+      // cleanup that clears the buffer.
+      const base = pendingContactsRef.current ?? contactsRef.current
+      if (base.length === 0) return
+
+      let changed = false
+      const updated = base.map(c => {
+        if (!c.name) return c
+        const re = new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        if (re.test(playersText)) {
+          changed = true
+          return { ...c, timeSpentMs: (c.timeSpentMs ?? 0) + 60_000 }
+        }
+        return c
+      })
+
+      if (changed) {
+        saveContacts(session.character, updated)
+        setContacts(updated)
+        scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+      }
+    }, 60_000)
+    return () => clearInterval(interval)
+  }, [session.character, session.account, session.game, session.useLich])
+
   // ── Last-seen tracking — fires when room players list ("Also here:") updates
 
   useEffect(() => {
-    const playersText = roomState.players
+    // B117: room.players is now TextSegment[] — join to text for the
+    // contact-name regex sweep. Bold info is irrelevant here.
+    const playersText = roomState.players.map(s => s.text).join('')
     if (!playersText) return
     const current = contactsRef.current
     if (current.length === 0) return
@@ -834,12 +893,40 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const base = pendingContactsRef.current ?? current
     let changed = false
 
+    // F34 (v0.8.6): "new encounter" requires BOTH a presence-transition
+    // gate AND a cooldown gate:
+    //   (a) ABSENCE_THRESHOLD_MS — contact's lastSeen must be stale, i.e.
+    //       they "left" since we saw them last. Without this, a long
+    //       visit (>10 min of standing together) would tick the counter
+    //       up whenever room.players changed for any reason — wrong.
+    //   (b) ENCOUNTER_COOLDOWN_MS — even if they did leave + return,
+    //       don't count again until the cooldown has elapsed. Rakkor's
+    //       use case: an alt cycling in/out of the room shouldn't inflate
+    //       the count.
+    // First-ever detection passes both gates (lastSeen and lastEncounterAt
+    // both undefined).
+    // ABSENCE_THRESHOLD is 90s, which is greater than the 60s polling
+    // interval — gives a margin so a polling miss doesn't fake a "left."
+    const ENCOUNTER_COOLDOWN_MS = 10 * 60_000
+    const ABSENCE_THRESHOLD_MS = 90_000
+
     const updated = base.map(c => {
       if (!c.name) return c
       const re = new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
       if (re.test(playersText)) {
         changed = true
-        return { ...c, lastSeen: now, lastRoom: room ?? c.lastRoom }
+        const wasAbsent       = !c.lastSeen        || (now - c.lastSeen)        > ABSENCE_THRESHOLD_MS
+        const beyondCooldown  = !c.lastEncounterAt || (now - c.lastEncounterAt) > ENCOUNTER_COOLDOWN_MS
+        const isNewEncounter  = wasAbsent && beyondCooldown
+        return {
+          ...c,
+          lastSeen: now,
+          lastRoom: room ?? c.lastRoom,
+          ...(isNewEncounter ? {
+            encounterCount: (c.encounterCount ?? 0) + 1,
+            lastEncounterAt: now,
+          } : {}),
+        }
       }
       return c
     })
@@ -970,13 +1057,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             } else if (stream === 'room') {
               roomUpdates.desc = lineText
             } else if (stream === 'room-objects') {
-              roomUpdates.objects = lineText
+              // B117: store segments so the Room panel can render
+              // <pushBold/> spans (monsterbold creatures) without
+              // re-bolding heuristically.
+              roomUpdates.objects = segments
             } else if (stream === 'room-players') {
-              roomUpdates.players = lineText
+              roomUpdates.players = segments
             } else if (stream === 'room-creatures') {
-              roomUpdates.creatures = lineText
+              roomUpdates.creatures = segments
             } else if (stream === 'room-extra') {
-              roomUpdates.extra = lineText
+              roomUpdates.extra = segments
             } else {
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
@@ -1060,10 +1150,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             break
           case 'clear-stream':
             if (evt.stream === 'room')           roomUpdates.desc      = ''
-            if (evt.stream === 'room-objects')   roomUpdates.objects   = ''
-            if (evt.stream === 'room-players')   roomUpdates.players   = ''
-            if (evt.stream === 'room-creatures') roomUpdates.creatures = ''
-            if (evt.stream === 'room-extra')     roomUpdates.extra     = ''
+            if (evt.stream === 'room-objects')   roomUpdates.objects   = []
+            if (evt.stream === 'room-players')   roomUpdates.players   = []
+            if (evt.stream === 'room-creatures') roomUpdates.creatures = []
+            if (evt.stream === 'room-extra')     roomUpdates.extra     = []
             if (evt.stream === 'room-exits')     roomUpdates.exits     = []
             if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
             break
@@ -1720,6 +1810,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     onLichResume:  resumeScript,
     onLichKill:    killScript,
     onLichRefresh: refreshScripts,
+    // F31: per-panel font-size overrides keyed by tab id. Read from
+    // settings.panelFontSizes; updates write the new map and save.
+    // Bounds 8..24 match the global font-size picker in Settings.
+    getPanelFontSize: (tabId: string) => settings.panelFontSizes?.[tabId],
+    onAdjustPanelFontSize: (tabId: string, delta: number) => {
+      const current = settings.panelFontSizes?.[tabId] ?? settings.fontSize
+      const next = Math.max(8, Math.min(24, current + delta))
+      const nextMap = { ...(settings.panelFontSizes ?? {}), [tabId]: next }
+      const nextSettings = { ...settings, panelFontSizes: nextMap }
+      setSettings(nextSettings)
+      saveSettings(session.character, nextSettings)
+      // Trigger the debounced YAML profile write so the new per-panel
+      // size lands on disk, not just in localStorage. Matches the
+      // pattern the Settings panel's onChange uses (line ~2113).
+      scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+    },
   }
 
   const handleContactClick = useCallback((contactId: string, x: number, y: number) => {
@@ -1927,7 +2033,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           </div>
           {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
           <form className="command-bar" onSubmit={handleCommand}>
-            <span className="prompt-marker">&gt;</span>
+            {/* v0.8.6 (Rakkor): prompt marker is a button that opens
+                QuickSend — same as Ctrl+Shift+Enter. AppShell listens
+                for the custom event since it owns the QuickSend modal. */}
+            <button
+              type="button"
+              className="prompt-marker"
+              title="Quick Send (Ctrl+Shift+Enter)"
+              onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-quick-send'))}
+            >&gt;</button>
             <div className="cmd-input-wrap">
               <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} timerStyle={settings.timerStyle} />
               <input ref={inputRef} type="text" autoFocus value={command}

@@ -276,6 +276,47 @@
   font-size: 0.8rem;
 }
 
+/* F34 (v0.8.6): contact stats row — Encounters + Time Logged Together
+   live side-by-side with a small Reset button on the right. Items grow
+   to share the available width so guild/circle's two-column rhythm is
+   preserved. Reset button uses the standard cp-btn quiet styling so it
+   doesn't look like a primary action. */
+.cp-field--stats {
+  margin-top: 2px;
+}
+
+.cp-stat-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.cp-stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.cp-stat-reset {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  margin-bottom: 1px;
+}
+
+.cp-stat-reset:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-hover);
+}
+
 .cp-textarea {
   flex: 1;
   background: var(--bg-input);

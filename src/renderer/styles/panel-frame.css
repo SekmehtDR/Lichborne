@@ -15,6 +15,56 @@
   position: relative;
 }
 
+/* F31 (v0.8.5): floating per-panel font controls. Sit in the bottom-right
+   of the panel body — top-right was conflicting with panel headers
+   (Exp Sort/Focus pickers, Room title strip, etc.). Vertical (stacked)
+   layout halves the horizontal footprint so the buttons cover less of
+   any content that happens to be in that corner. Resting opacity is
+   intentionally low (0.15) so the buttons stay out of the way until the
+   user reaches for them; the panel-hover bump to 0.6 makes them
+   discoverable, and direct hover takes them fully opaque. pointer-events
+   only kicks in on hover so clicks pass through to content beneath at
+   rest. */
+.panel-font-controls {
+  position: absolute;
+  bottom: 4px;
+  /* v0.8.6 (Rakkor): right offset clears the 12px scrollbar (global.css
+     `::-webkit-scrollbar { width: 12px }`) plus a 4px gap, so the buttons
+     sit just to the left of the scrollbar rail instead of overlapping
+     it when content has scrolled past the panel height. */
+  right: 18px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0.15;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.panel-frame-body:hover .panel-font-controls { opacity: 0.6; pointer-events: auto; }
+.panel-font-controls:hover { opacity: 1; pointer-events: auto; }
+
+.panel-font-btn {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: inherit;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.panel-font-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: var(--bg-hover);
+}
+
 /* ============================================================
    Tab bar — tabs at the bottom
    ============================================================ */

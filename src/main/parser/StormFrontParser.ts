@@ -127,6 +127,10 @@ export class StormFrontParser {
 
   private captureCtx: CaptureContext | null = null
   private captureBuf = ''
+  // v0.8.5 (B117): per-segment view of the captureBuf so component-emit
+  // can preserve <pushBold/> spans through the stream-text event. Tracks
+  // alongside captureBuf; reset together when a captureCtx closes.
+  private captureSegments: TextSegment[] = []
 
   // Game state for computing the prompt indicator string — matches Genie's prompt logic
   private rtExpires = 0                        // ms timestamp; 0 = no roundtime
@@ -156,6 +160,7 @@ export class StormFrontParser {
     this.events        = []
     this.captureCtx    = null
     this.captureBuf    = ''
+    this.captureSegments = []
     this.compassDirs       = []
     this.linkCmd           = undefined
     this.linkCmdIsText     = false
@@ -226,7 +231,17 @@ export class StormFrontParser {
 
   private text(value: string) {
     if (this.captureCtx) {
-      this.captureBuf += decodeEntities(value.replace(/\r/g, ''))
+      const cleaned = decodeEntities(value.replace(/\r/g, ''))
+      this.captureBuf += cleaned
+      // B117: also accumulate as segments with current bold state so the
+      // component-emit can carry per-piece styling. Empty strings would
+      // produce a useless empty segment — skip them.
+      if (cleaned) {
+        this.captureSegments.push({
+          text: cleaned,
+          ...(this.boldDepth > 0 ? { bold: true } : {}),
+        })
+      }
       return
     }
     const cleaned = decodeEntities(value.replace(/\r/g, '').replace(/\n$/, ''))
@@ -309,6 +324,7 @@ export class StormFrontParser {
           if (!this.captureCtx) {
             this.captureCtx = { tag: 'preset' }
             this.captureBuf = ''
+            this.captureSegments = []
           }
         }
         break
@@ -496,6 +512,7 @@ export class StormFrontParser {
         if (id.startsWith('exp ') || COMPONENT_STREAM[id]) {
           this.captureCtx = { tag: name, id }
           this.captureBuf = ''
+          this.captureSegments = []
         }
         break
       }
@@ -503,19 +520,19 @@ export class StormFrontParser {
       case 'inv':
         // <inv id='stow'>item name</inv> — container contents routed to a panel in
         // Stormfront. We have no container panel, so absorb and discard the text.
-        if (!selfClosing) { this.captureCtx = { tag: 'inv' }; this.captureBuf = '' }
+        if (!selfClosing) { this.captureCtx = { tag: 'inv' }; this.captureBuf = ''; this.captureSegments = [] }
         break
 
       case 'spell':
-        if (!selfClosing) { this.captureCtx = { tag: 'spell' }; this.captureBuf = '' }
+        if (!selfClosing) { this.captureCtx = { tag: 'spell' }; this.captureBuf = ''; this.captureSegments = [] }
         break
 
       case 'right':
-        if (!selfClosing) { this.captureCtx = { tag: 'right' }; this.captureBuf = '' }
+        if (!selfClosing) { this.captureCtx = { tag: 'right' }; this.captureBuf = ''; this.captureSegments = [] }
         break
 
       case 'left':
-        if (!selfClosing) { this.captureCtx = { tag: 'left' }; this.captureBuf = '' }
+        if (!selfClosing) { this.captureCtx = { tag: 'left' }; this.captureBuf = ''; this.captureSegments = [] }
         break
 
       case 'a':
@@ -558,6 +575,7 @@ export class StormFrontParser {
       case 'prompt':
         this.captureCtx = { tag: 'prompt' }
         this.captureBuf = ''
+        this.captureSegments = []
         break
 
       default:
@@ -642,8 +660,10 @@ export class StormFrontParser {
     const ctx    = this.captureCtx
     const rawBuf = this.captureBuf
     const text   = rawBuf.trim()
+    const capturedSegments = this.captureSegments
     this.captureCtx = null
     this.captureBuf = ''
+    this.captureSegments = []
 
     switch (ctx.tag) {
       case 'preset': {
@@ -679,10 +699,15 @@ export class StormFrontParser {
           if (stream) {
             this.events.push({ type: 'clear-stream', stream })
             if (text) {
+              // B117: prefer the per-segment view if anything was captured
+              // (preserves <pushBold/> spans for monsterbold creatures in
+              // the Room panel). Falls back to a single segment with the
+              // trimmed text when no captureSegments accumulated.
+              const segments = capturedSegments.length > 0 ? capturedSegments : [{ text }]
               this.events.push({
                 type: 'stream-text',
                 stream,
-                segments: [{ text }],
+                segments,
                 timestamp: Date.now(),
               })
             }

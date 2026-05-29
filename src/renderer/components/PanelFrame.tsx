@@ -96,6 +96,14 @@ interface Props {
   onLichResume?:     (name: string) => void
   onLichKill?:       (name: string) => void
   onLichRefresh?:    () => void
+  // v0.8.5 (F31): per-panel font size. `getPanelFontSize(tabId)` returns
+  // the override in px or undefined for "use the global game font size."
+  // `onAdjustPanelFontSize(tabId, delta)` bumps the size by `delta` px
+  // (clamped 8..24 in the caller). Floating A+/A- controls render in the
+  // panel-frame-body's top-right corner; the active panel's content
+  // inherits the override via a CSS var on its wrapper.
+  getPanelFontSize?:        (tabId: string) => number | undefined
+  onAdjustPanelFontSize?:   (tabId: string, delta: number) => void
 }
 
 export default function PanelFrame({
@@ -110,6 +118,7 @@ export default function PanelFrame({
   mapAnimations = true,
   lichScripts = [], lichLastUpdated = 0, lichPending = false,
   onLichPause, onLichResume, onLichKill, onLichRefresh,
+  getPanelFontSize, onAdjustPanelFontSize,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
@@ -178,9 +187,16 @@ export default function PanelFrame({
   const availableDiscovered = discoveredStreams.filter(id => !tabs.some(t => t.id === id))
   const activeTab = tabs.find(t => t.id === activeId)
 
+  // F31: active panel's font-size override + floating controls. The
+  // override sits as a CSS var on the body wrapper; panel CSS rules look
+  // it up via `var(--panel-font-size, var(--game-font-size))`, so a
+  // missing override falls through to the global game font size.
+  const activeFontSize = activeTab ? getPanelFontSize?.(activeTab.id) : undefined
+  const bodyStyle = activeFontSize ? ({ ['--panel-font-size' as string]: `${activeFontSize}px` } as React.CSSProperties) : undefined
+
   return (
     <div className="panel-frame">
-      <div className="panel-frame-body">
+      <div className="panel-frame-body" style={bodyStyle}>
         {activeTab && renderPanel(
           activeTab, streamLines, roomState, expSkills, rankUpSkills,
           expFocus, pinnedSkills ?? new Set(), onFocusChange ?? (() => {}), onTogglePin ?? (() => {}),
@@ -194,6 +210,22 @@ export default function PanelFrame({
           onLichPause ?? (() => {}), onLichResume ?? (() => {}),
           onLichKill ?? (() => {}), onLichRefresh ?? (() => {}),
           mapAnimations,
+        )}
+        {activeTab && onAdjustPanelFontSize && (
+          <div className="panel-font-controls" aria-label="Adjust panel font size">
+            <button
+              type="button"
+              className="panel-font-btn"
+              title="Smaller font for this panel"
+              onClick={() => onAdjustPanelFontSize(activeTab.id, -1)}
+            >A−</button>
+            <button
+              type="button"
+              className="panel-font-btn"
+              title="Larger font for this panel"
+              onClick={() => onAdjustPanelFontSize(activeTab.id, 1)}
+            >A+</button>
+          </div>
         )}
       </div>
 

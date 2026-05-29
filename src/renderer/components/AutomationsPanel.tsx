@@ -6,6 +6,8 @@ import { loadTriggers } from '../triggers'
 import { loadMacros, loadAliases } from '../macros'
 import { loadGroups, loadModes } from '../groups'
 import { loadContacts, loadContactTemplates } from '../contacts'
+import { loadSettings } from '../settings'
+import { scopedKey } from '../characterScope'
 import { useCharacter } from '../CharacterContext'
 import HighlightsPanel from './HighlightsPanel'
 import TriggersPanel from './TriggersPanel'
@@ -19,7 +21,62 @@ import '../styles/automations.css'
 // click so the export reflects the latest saved state regardless of any
 // in-progress edits elsewhere in the UI. Format version is incremented
 // when the shape changes; the importer rejects newer-than-known versions.
-const EXPORT_FORMAT_VERSION = 1
+// v0.8.5: bumped to 2 to add the optional `layout` block (panel zones,
+// sizes, tabs, per-panel font overrides). Older importers that only
+// understand v1 reject v2 files explicitly.
+const EXPORT_FORMAT_VERSION = 2
+
+// v0.8.5 (F29-layout): read every per-character layout key out of
+// localStorage so the export can carry it. We don't go through the
+// `state:` profile pipeline because the import path needs to write
+// these keys back BEFORE GameWindow next mounts — easier to keep the
+// shape explicit. Keys that are missing return `undefined` so YAML
+// omits them; the importer treats absent keys as "leave existing value
+// alone." panelFontSizes is pulled out of AppSettings since that's
+// where it lives at rest.
+function buildLayoutSnapshot(character: string) {
+  const k = (suffix: string) => scopedKey(character, suffix)
+  const readJSON = <T,>(suffix: string): T | undefined => {
+    try {
+      const raw = localStorage.getItem(k(suffix))
+      return raw ? JSON.parse(raw) as T : undefined
+    } catch { return undefined }
+  }
+  const readNum = (suffix: string): number | undefined => {
+    const raw = localStorage.getItem(k(suffix))
+    if (raw === null) return undefined
+    const n = parseInt(raw, 10)
+    return isFinite(n) ? n : undefined
+  }
+  const readStr = (suffix: string): string | undefined => {
+    return localStorage.getItem(k(suffix)) ?? undefined
+  }
+  const readBool = (suffix: string): boolean | undefined => {
+    const raw = localStorage.getItem(k(suffix))
+    if (raw === null) return undefined
+    return raw === '1' || raw === 'true'
+  }
+  const settings = loadSettings(character)
+  return {
+    mainTopAdded:    readBool('mainTopAdded'),
+    topAdded:        readBool('topAdded'),
+    midAdded:        readBool('midAdded'),
+    bottomAdded:     readBool('bottomAdded'),
+    mainTopTabs:     readJSON<unknown[]>('mainTopTabs'),
+    topTabs:         readJSON<unknown[]>('topTabs'),
+    midTabs:         readJSON<unknown[]>('midTabs'),
+    bottomTabs:      readJSON<unknown[]>('bottomTabs'),
+    mainTopActiveId: readStr('mainTopActiveId'),
+    topActiveId:     readStr('topActiveId'),
+    midActiveId:     readStr('midActiveId'),
+    bottomActiveId:  readStr('bottomActiveId'),
+    mainTopHeight:   readNum('mainTopHeight'),
+    topHeight:       readNum('topHeight'),
+    midHeight:       readNum('midHeight'),
+    panelWidth:      readNum('panelWidth'),
+    panelFontSizes:  settings.panelFontSizes,
+  }
+}
 
 function buildAutomationsExport(character: string): string {
   const payload = {
@@ -35,6 +92,7 @@ function buildAutomationsExport(character: string): string {
     modes: loadModes(character),
     contacts: loadContacts(character),
     contactTemplates: loadContactTemplates(character),
+    layout: buildLayoutSnapshot(character),
   }
   return yaml.dump(payload, { lineWidth: 100, noRefs: true })
 }

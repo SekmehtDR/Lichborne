@@ -344,7 +344,17 @@
   word-break: break-word;
   color: var(--text-primary);
   min-height: 1.4em;
-  font-size: var(--game-font-size);
+  /* F31 (v0.8.5): respect per-panel font override when set. .text-line
+     is rendered in TWO places — the main scroll (outside any
+     .panel-frame-body, so --panel-font-size is undefined and the var
+     falls through to --game-font-size, no change) and every stream
+     panel's TextLineRow (inside .panel-frame-body where PanelFrame may
+     set --panel-font-size as an inline style). Without this, the
+     stream-panel's font-size rule was being clobbered for each line
+     because .text-line's own explicit font-size wins via specificity.
+     This fixes Active Spells, Thoughts, Conversations, Arrivals,
+     Deaths, Familiar, etc. — every panel that uses TextLineRow. */
+  font-size: var(--panel-font-size, var(--game-font-size));
   line-height: var(--game-line-height);
   /* B113: text weight cascades from body (set in global.css) so panel text,
      room title, presets, etc. all follow the user's Settings → Text weight.
@@ -425,8 +435,8 @@
 .cmd-chip {
   width: 16px;
   flex-shrink: 0;
-  height: 12px;
-  border-radius: 3px;
+  height: 8px;
+  border-radius: 2px;
   animation: chip-pulse 1.1s ease-in-out infinite;
 }
 
@@ -450,7 +460,20 @@
   font-weight: var(--ui-bold-weight);
   font-size: 1rem;
   flex-shrink: 0;
+  /* v0.8.6 (Rakkor): marker is now a <button> that opens QuickSend on
+     click. Strip the browser button chrome so it still looks like the
+     plain `>` glyph; brighten on hover to advertise it's clickable. */
+  background: transparent;
+  border: none;
+  padding: 0 4px 0 0;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  transition: color 0.12s;
 }
+
+.prompt-marker:hover { color: var(--accent); }
+.prompt-marker:focus-visible { outline: 1px solid var(--accent-dim); outline-offset: 1px; }
 
 .command-input {
   display: block;

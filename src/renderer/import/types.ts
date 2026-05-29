@@ -106,4 +106,7 @@ export interface ImportResult {
   nativeModes?: unknown[]             // GameMode[]
   nativeContacts?: unknown[]          // Contact[]
   nativeContactTemplates?: unknown[]  // ContactTemplate[]
+  // v0.8.5 (F29-layout): panel layout snapshot when present in a v2+
+  // Lichborne export. Loose shape — typed at the apply site.
+  nativeLayout?: unknown
 }

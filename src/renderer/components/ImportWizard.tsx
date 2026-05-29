@@ -13,6 +13,8 @@ import { loadMyThemes, saveMyThemes, createCustomThemeFrom } from '../myThemes'
 import { THEMES } from '../themes'
 import { type Contact, type ContactTemplate, loadContacts, saveContacts, loadContactTemplates, saveContactTemplates } from '../contacts'
 import { type RuleGroup, type GameMode, loadGroups, saveGroups, loadModes, saveModes } from '../groups'
+import { loadSettings, saveSettings } from '../settings'
+import { scopedKey } from '../characterScope'
 import { useCharacter } from '../CharacterContext'
 import '../styles/import-wizard.css'
 
@@ -152,6 +154,10 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
   // and uncheck-all / select-all act on visible rows only.
   const [hideExisting, setHideExisting] = useState(false)
   const [selTheme, setSelTheme] = useState(false)
+  // F29-layout (v0.8.5): include the imported panel layout snapshot.
+  // The confirm screen surfaces a toggle so the user can opt out — the
+  // current layout would otherwise be overwritten on apply.
+  const [selLayout, setSelLayout] = useState(false)
 
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -241,6 +247,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     setSelC(allIndices(r.names.length))
     // Pre-select theme import if presets were found
     setSelTheme(!!(r.themeVars && Object.keys(r.themeVars).length > 0))
+    // Pre-select layout import if the file carries a layout block.
+    setSelLayout(!!r.nativeLayout)
     // Default preview tab to whichever type has content
     if (r.highlights.length > 0) setPreviewTab('highlights')
     else if (r.macros.length > 0) setPreviewTab('macros')
@@ -355,6 +363,45 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       }
     }
 
+    // F29-layout (v0.8.5): apply panel layout snapshot if the user opted
+    // in. Writes each present key back to localStorage; missing keys mean
+    // "leave the existing value alone." panelFontSizes goes onto the
+    // settings object (where it lives at rest). GameWindow reads layout
+    // from these keys on mount, so the changes take effect on the next
+    // reconnect / character re-mount (the done screen notes this).
+    if (selLayout && result.nativeLayout && typeof result.nativeLayout === 'object') {
+      const layout = result.nativeLayout as Record<string, unknown>
+      const k = (suffix: string) => scopedKey(character, suffix)
+      const writeBool = (suffix: string) => {
+        const v = layout[suffix]
+        if (typeof v === 'boolean') localStorage.setItem(k(suffix), v ? '1' : '0')
+      }
+      const writeStr = (suffix: string) => {
+        const v = layout[suffix]
+        if (typeof v === 'string') localStorage.setItem(k(suffix), v)
+      }
+      const writeNum = (suffix: string) => {
+        const v = layout[suffix]
+        if (typeof v === 'number' && isFinite(v)) localStorage.setItem(k(suffix), String(v))
+      }
+      const writeJSON = (suffix: string) => {
+        const v = layout[suffix]
+        if (Array.isArray(v)) localStorage.setItem(k(suffix), JSON.stringify(v))
+      }
+      writeBool('mainTopAdded'); writeBool('topAdded'); writeBool('midAdded'); writeBool('bottomAdded')
+      writeJSON('mainTopTabs');  writeJSON('topTabs');  writeJSON('midTabs');  writeJSON('bottomTabs')
+      writeStr('mainTopActiveId'); writeStr('topActiveId'); writeStr('midActiveId'); writeStr('bottomActiveId')
+      writeNum('mainTopHeight'); writeNum('topHeight'); writeNum('midHeight')
+      writeNum('panelWidth')
+      // panelFontSizes goes onto the settings object — read, merge, save.
+      const fontSizes = layout.panelFontSizes
+      if (fontSizes && typeof fontSizes === 'object' && !Array.isArray(fontSizes)) {
+        const settings = loadSettings(character)
+        const merged = { ...settings, panelFontSizes: { ...(settings.panelFontSizes ?? {}), ...(fontSizes as Record<string, number>) } }
+        saveSettings(character, merged)
+      }
+    }
+
     // Import name highlights as Contacts
     if (selC.size > 0) {
       const existingContacts = loadContacts(character)
@@ -402,6 +449,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     if (result.nativeContactTemplates?.length) parts.push(`${result.nativeContactTemplates.length} contact templates`)
     if (selTheme && result.themeVars && Object.keys(result.themeVars).length > 0)
       parts.push('1 theme')
+    if (selLayout && result.nativeLayout) parts.push('panel layout (reconnect to apply)')
 
     // F29 follow-up: report duplicates that were skipped so the user
     // knows nothing was silently dropped without a reason.
@@ -960,6 +1008,24 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             </div>
           </label>
         </div>
+
+        {/* F29-layout (v0.8.5): opt-in for the panel layout snapshot.
+            Only shown when the file actually carries one. Append-vs-replace
+            above is for RULES; layout is always overwritten when checked
+            (there's no append-mode for panel state), so the wording calls
+            that out. The user has to reconnect / re-mount the character
+            for the new layout to take effect, also noted. */}
+        {result?.nativeLayout && (
+          <label className="iw-select-bar-toggle" style={{ marginTop: 14 }}>
+            <input
+              type="checkbox"
+              checked={selLayout}
+              onChange={e => setSelLayout(e.target.checked)}
+              style={{ accentColor: 'var(--accent)', marginRight: 6 }}
+            />
+            Apply imported panel layout (zones, sizes, font overrides) — overwrites your current layout and takes effect after reconnect.
+          </label>
+        )}
       </>
     )
   }

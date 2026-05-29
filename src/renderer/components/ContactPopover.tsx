@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Contact, ContactTemplate } from '../contacts'
-import { formatLastSeen } from '../contacts'
+import { formatLastSeen, formatDuration } from '../contacts'
 import '../styles/contact-popover.css'
 
 interface Props {
@@ -79,6 +79,17 @@ export default function ContactPopover({ contact, template, x, y, onClose, onEdi
         {contact.lastSeen
           ? <>{formatLastSeen(contact.lastSeen)}{contact.lastRoom && <span className="cpop-room"> — {contact.lastRoom}</span>}</>
           : 'never'}
+      </div>
+
+      {/* F34 (v0.8.6): mirror the ContactsPanel stats here so a glance
+          at the in-game popover surfaces the same Encounters / Time
+          Encountered counters without the user having to open the full
+          Contacts panel. Always shown — even at zero — so the feature is
+          discoverable for fresh contacts. formatDuration renders 0ms as
+          a dash for visual quiet. */}
+      <div className="cpop-stats">
+        <span>Encounters: <strong>{contact.encounterCount ?? 0}</strong></span>
+        <span>Time Encountered: <strong>{formatDuration(contact.timeSpentMs ?? 0)}</strong></span>
       </div>
 
       {contact.notes && (
