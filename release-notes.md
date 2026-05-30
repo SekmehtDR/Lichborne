@@ -1,3 +1,33 @@
+## What's new in v0.8.7
+
+A small bug-fix release — five fixes across the command bar, the Room panel, the scroll behavior at large fonts, Lich script stream discovery, and the Lichborne import/export round-trip.
+
+### Fixed: Lichborne→Lichborne import silently dropped most rule fields
+
+Found by a proactive code review, not by a tester report — shipping since v0.8.4 when the Lichborne import/export feature first landed. If you exported your highlights/triggers/macros/aliases from one character and re-imported on another, a lot was silently lost: highlight bold and glow, trigger gates / oneShot / cooldown / WAV sound paths / action ordering, custom rule names, enabled/disabled state, and most importantly **the group memberships every rule type carries**. So "share my hunting setup" exported your rules cleanly but the recipient ended up with rules that weren't actually in any group — the "hunting" group came across, but no rules belonged to it.
+
+Fixed by routing Lichborne→Lichborne imports through a dedicated path that preserves the full native rule shape instead of translating through the legacy-client format. Legacy imports (Wrayth / Genie / Frostbite) still go through translation since those source formats genuinely need it. If you've imported a Lichborne setup in the past and the result looked sparse, re-importing on v0.8.7 will now bring in the full setup as intended.
+
+### Fixed: command history Down arrow stuck after over-pressing
+
+Reported by Binu with a clean reproduction. From a clear command box, pressing Down 3 times used to require 4 Up presses to get back to your last command — Down was decrementing past the empty state into negative territory and Up had to crawl back through it. Down now clamps at the empty state, so a single Up gets you back to your most recent command no matter how many times you over-pressed Down.
+
+### Fixed: Room panel sections showed stale data from the previous room
+
+Reported by Rakkor. The Players section (and Objects / Creatures / Extra / Exits) sometimes listed people or things from a room you'd already left, only clearing after a manual `LOOK`. Fixed at the parser level — whenever the room title changes, the Room panel's structured sections now clear immediately and re-populate with whatever the new room sends. Sections that don't get fresh data stay correctly empty.
+
+This may also help a long-standing intermittent bug where Genie Maps "forgets" your location and tracks the wrong room until you refresh the maps. The root fix for that symptom is still v0.8.4's escape valve, but cleaner room-description handling on every transition removes one path that could trick the map's disambiguation logic.
+
+### Fixed: bottom of the text window cut off at font size 13 or higher
+
+Reported by Rakkor — the bottom prompt was halfway clipped at fonts 13+, with a faint scrollbar twitch right before each new command snapped it back. A scroll-pin threshold from the v0.6.x performance pass was tuned for the row heights at font 12 (~17px) and didn't catch the slightly larger fractional shifts at font 13+ (~20px rows). Threshold tightened; the prompt now sticks to the bottom at every font size.
+
+### Fixed: a single Lich script created two identical rows in Panel Manager
+
+Reported by Sekmeht with `newkill-counter.lic` as the repro — running it produced two "Kill Counter" rows in Available Streams, and adding one of them to a panel hid both. Scripts that declare a stream and immediately push to it (using both `<streamWindow>` and `<pushStream>` for the same id) were being seen as two separate discoveries inside one event batch. Discovery now dedupes within a batch — one stream id, one row, regardless of how many tag flavors the script uses to surface it.
+
+---
+
 ## What's new in v0.8.6
 
 A command-bar UX pass, contact stats, and a new built-in light theme — half polish, half new features.

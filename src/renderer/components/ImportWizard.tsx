@@ -5,10 +5,10 @@ import { parseGenieFiles } from '../import/parsers/genie'
 import { parseWraythXml } from '../import/parsers/wrayth'
 import { parseFrostbiteFiles } from '../import/parsers/frostbite'
 import { parseLichborneYaml } from '../import/parsers/lichborne'
-import { mapImportResult, MergeStrategy } from '../import/mapper'
-import { loadHighlights, saveHighlights } from '../highlights'
-import { loadMacros, saveMacros, loadAliases, saveAliases } from '../macros'
-import { loadTriggers, saveTriggers } from '../triggers'
+import { mapImportResult, MergeStrategy, type MappedRules } from '../import/mapper'
+import { loadHighlights, saveHighlights, type HighlightRule } from '../highlights'
+import { loadMacros, saveMacros, loadAliases, saveAliases, type MacroRule, type AliasRule } from '../macros'
+import { loadTriggers, saveTriggers, type TriggerRule } from '../triggers'
 import { loadMyThemes, saveMyThemes, createCustomThemeFrom } from '../myThemes'
 import { THEMES } from '../themes'
 import { type Contact, type ContactTemplate, loadContacts, saveContacts, loadContactTemplates, saveContactTemplates } from '../contacts'
@@ -262,7 +262,25 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
 
   function doImport() {
     if (!result) return
-    const mapped = mapImportResult(result, selH, selM, selA, selT)
+    // B124 (v0.8.7): for Lichborne→Lichborne imports the parser emits
+    // `nativeRules` containing the full HighlightRule/TriggerRule/MacroRule/
+    // AliasRule objects (with fresh ids), index-aligned with the
+    // ImportCandidate arrays. Prefer those over the mapper output so we
+    // don't silently strip fields the ImportCandidate intermediate doesn't
+    // model (bold/glow, gates/oneShot/watchStream/cooldownSeconds/echo
+    // color/action ordering, groupIds/allGroups/name/enabled on every rule
+    // type). Other parsers leave nativeRules undefined → mapper path runs
+    // unchanged. Selection filtering uses the same indices since the
+    // parser builds both arrays in lockstep.
+    const native = result.nativeRules
+    const mapped: MappedRules = native
+      ? {
+          highlights: (native.highlights ?? []).filter((_, i) => selH.has(i)) as HighlightRule[],
+          triggers:   (native.triggers   ?? []).filter((_, i) => selT.has(i)) as TriggerRule[],
+          macros:     (native.macros     ?? []).filter((_, i) => selM.has(i)) as MacroRule[],
+          aliases:    (native.aliases    ?? []).filter((_, i) => selA.has(i)) as AliasRule[],
+        }
+      : mapImportResult(result, selH, selM, selA, selT)
 
     // F29 follow-up: dedup against existing entries on append merge so a
     // re-import (or an import into a profile that already has the seeded

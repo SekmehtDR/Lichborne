@@ -109,4 +109,19 @@ export interface ImportResult {
   // v0.8.5 (F29-layout): panel layout snapshot when present in a v2+
   // Lichborne export. Loose shape — typed at the apply site.
   nativeLayout?: unknown
+  // B124 (v0.8.7): for Lichborne→Lichborne imports, the full native rule
+  // objects with fresh ids — index-aligned with the highlights/triggers/
+  // macros/aliases ImportCandidate arrays above, so the wizard's selection
+  // indices apply to both. The wizard's apply step prefers these over
+  // ImportCandidate→mapper output to avoid silent loss of fields the
+  // intermediate doesn't model (bold/glow on highlights; gates/oneShot/
+  // watchStream/action ordering on triggers; groupIds/allGroups/name/
+  // enabled on every rule type). Other parsers leave this undefined and
+  // the wizard falls back to the legacy ImportCandidate path.
+  nativeRules?: {
+    highlights?: unknown[]  // HighlightRule[]
+    triggers?:   unknown[]  // TriggerRule[]
+    macros?:     unknown[]  // MacroRule[]
+    aliases?:    unknown[]  // AliasRule[]
+  }
 }

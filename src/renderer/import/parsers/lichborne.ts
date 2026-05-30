@@ -12,37 +12,31 @@
 // them directly via the existing save functions.
 
 import yaml from 'js-yaml'
+import { nanoid } from 'nanoid'
 import type {
   ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportResult,
 } from '../types'
+import type { HighlightRule } from '../../highlights'
+import type { TriggerRule, TriggerAction } from '../../triggers'
+import type { MacroRule, AliasRule } from '../../macros'
 
+// File shape declared loosely — the rules arrays carry the full native
+// HighlightRule / TriggerRule / MacroRule / AliasRule shape produced by
+// AutomationsPanel's `buildAutomationsExport` (which calls loadHighlights
+// etc., yielding the in-memory rule objects). The ImportCandidate
+// build below reads the subset of fields it needs for the wizard preview;
+// the nativeRules build (B124) carries the full objects through with
+// fresh ids so the apply step can save them without going through the
+// lossy ImportCandidate → mapper translation.
 interface LichborneExportFile {
   formatVersion: number
   exportedFrom?: string
   exportedBy?: string
   exportedAt?: string
-  highlights?: Array<{
-    pattern?: string
-    mode?: 'text' | 'phrase' | 'regex'
-    caseSensitive?: boolean
-    scope?: 'match' | 'line'
-    style?: {
-      textColor?: string | null
-      bgColor?: string | null
-      bold?: boolean
-      glow?: boolean
-      glowColor?: string
-    }
-    soundFile?: string
-  }>
-  triggers?: Array<{
-    pattern?: string
-    mode?: 'text' | 'phrase' | 'regex'
-    caseSensitive?: boolean
-    commands?: string[]
-  }>
-  macros?: Array<{ key?: string; commands?: string[] }>
-  aliases?: Array<{ input?: string; commands?: string[] }>
+  highlights?: Partial<HighlightRule>[]
+  triggers?:   Partial<TriggerRule>[]
+  macros?:     Partial<MacroRule>[]
+  aliases?:    Partial<AliasRule>[]
   groups?: unknown[]
   modes?: unknown[]
   contacts?: unknown[]
@@ -89,6 +83,9 @@ export function parseLichborneYaml(text: string): ImportResult {
     return emptyResult(`Export file format v${doc.formatVersion} is newer than this Lichborne supports — please update.`)
   }
 
+  // ImportCandidate build — drives the wizard preview UI. Only the fields
+  // the preview renders need to live here. Anything else round-trips via
+  // nativeRules below.
   const highlights: ImportHighlight[] = (doc.highlights ?? []).map(h => ({
     kind: 'highlight',
     source: 'lichborne',
@@ -135,6 +132,35 @@ export function parseLichborneYaml(text: string): ImportResult {
     commands: a.commands ?? [],
   }))
 
+  // B124 (v0.8.7): nativeRules build — full rule objects with fresh ids,
+  // index-aligned with the ImportCandidate arrays above. The apply step
+  // in ImportWizard prefers these so bold/glow/groupIds/allGroups/name/
+  // enabled/gates/oneShot/watchStream/cooldownSeconds/action ordering all
+  // survive Lichborne→Lichborne round-trips. Ids are regenerated to avoid
+  // collisions when the same export is imported twice or imported back
+  // into the source character; nested action ids on triggers regenerate
+  // too. Source-character ids are intentionally discarded.
+  const nativeHighlights: HighlightRule[] = (doc.highlights ?? []).map(h => ({
+    ...(h as HighlightRule),
+    id: nanoid(),
+  }))
+  const nativeTriggers: TriggerRule[] = (doc.triggers ?? []).map(t => ({
+    ...(t as TriggerRule),
+    id: nanoid(),
+    actions: ((t as TriggerRule).actions ?? []).map((a: TriggerAction) => ({
+      ...a,
+      id: nanoid(),
+    })),
+  }))
+  const nativeMacros: MacroRule[] = (doc.macros ?? []).map(m => ({
+    ...(m as MacroRule),
+    id: nanoid(),
+  }))
+  const nativeAliases: AliasRule[] = (doc.aliases ?? []).map(a => ({
+    ...(a as AliasRule),
+    id: nanoid(),
+  }))
+
   return {
     highlights,
     names: [],
@@ -148,6 +174,12 @@ export function parseLichborneYaml(text: string): ImportResult {
     nativeContacts: doc.contacts,
     nativeContactTemplates: doc.contactTemplates,
     nativeLayout: doc.layout,
+    nativeRules: {
+      highlights: nativeHighlights,
+      triggers:   nativeTriggers,
+      macros:     nativeMacros,
+      aliases:    nativeAliases,
+    },
   }
 }
 

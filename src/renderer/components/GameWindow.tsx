@@ -1242,11 +1242,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           // (combat, room, exp, etc.) — those have dedicated builtin entries
           // in Available Streams already; letting them double as a discovered
           // "custom" entry lets the user add the same stream twice.
+          // B123 (Sekmeht, v0.8.7): also dedupe WITHIN newDiscovered itself.
+          // A script that emits `<streamWindow id='X'/>` followed by
+          // `<pushStream id='X'/>` produces both a stream-declare and a
+          // stream-push for the same id in the same batch; both got
+          // appended unless we track what we've already added in this pass.
+          const seenInBatch = new Set<string>()
           const toAdd = newDiscovered.filter(id => {
             if (existing.has(id)) return false
+            if (seenInBatch.has(id)) return false
             const lower = id.toLowerCase()
             if (NEVER_DISCOVER.has(lower)) return false
             if (ALL_PANEL_TYPES.includes(lower as PanelType)) return false
+            seenInBatch.add(id)
             return true
           })
           return toAdd.length > 0 ? [...prev, ...toAdd] : prev
@@ -1748,7 +1756,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       setCommand(h[next] ?? '')
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
-      const next = historyIdxRef.current - 1
+      // B120 (Binu): clamp at -1 so pressing Down past the "current empty"
+      // state doesn't accumulate negative counts. Without the clamp,
+      // three Downs took the ref to -4 and the user had to press Up
+      // four times to climb back to history[0]. Matches Stormfront /
+      // Wrayth behavior where pressing Down at the bottom is a no-op.
+      const next = Math.max(-1, historyIdxRef.current - 1)
       historyIdxRef.current = next
       setCommand(next < 0 ? '' : (h[next] ?? ''))
     }
@@ -1994,7 +2007,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                   const el = scrollRef.current
                   if (!el) return
                   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-                  if (dist > 2) {
+                  // B122 (Rakkor, v0.8.7): threshold lowered 2 → 0.5px.
+                  // At font 13+ the residual gap was landing 1–2px short
+                  // of the bottom but visually clipped the last line
+                  // because rows are ~20px tall (vs ~17px at font 12).
+                  // 0.5 is immune to fractional-pixel rounding noise
+                  // (browser sub-pixel scroll) but still catches the
+                  // 1–2px misalignment that produced the half-line cutoff.
+                  if (dist > 0.5) {
                     // Fine-correction pass: followOutput landed slightly
                     // short. Instant snap to the true DOM bottom; arm
                     // suppress so this programmatic scroll doesn't unpin.

@@ -149,6 +149,11 @@ export class StormFrontParser {
   // server transaction (room updates, component clears, etc.)
   private lastMainText = ''
 
+  // B121 (v0.8.7): last seen streamWindow main subtitle's cleaned title.
+  // Used to gate clear-stream emission so a streamWindow re-emit with the
+  // same title doesn't wipe just-populated sub-stream data.
+  private lastRoomTitle = ''
+
   // Call when a new connection is established to clear carry-over state
   reset() {
     this.boldDepth     = 0
@@ -169,6 +174,7 @@ export class StormFrontParser {
     this.inInjuriesDialog  = false
     this.injuryBuf         = []
     this.lastMainText      = ''
+    this.lastRoomTitle     = ''
     this.rtExpires     = 0
     this.stance        = ''
     this.isHidden      = false
@@ -447,6 +453,28 @@ export class StormFrontParser {
               const cleanTitle = trailMatch
                 ? inner.slice(0, trailMatch.index).trim()
                 : inner.trim()
+              // B121 (Rakkor, v0.8.7): emit clear-streams for room
+              // sub-components BEFORE the room-title event whenever the
+              // subtitle CHANGES (new room). DR sends streamWindow
+              // before any `<component id='room ...'/>` for the new
+              // room, so the clears fire first; components with data
+              // then re-populate via their own clear+stream-text
+              // emission, while empty sections stay cleared. Without
+              // this, if DR omits <nav> AND the new room has no players
+              // / creatures / objects component, the previous room's
+              // section data carries over until LOOK (which forces
+              // every component to re-emit). Using lastRoomTitle as
+              // the gate so the clear only fires on actual changes,
+              // not every streamWindow repaint.
+              if (cleanTitle !== this.lastRoomTitle) {
+                this.lastRoomTitle = cleanTitle
+                this.events.push({ type: 'clear-stream', stream: 'room' })
+                this.events.push({ type: 'clear-stream', stream: 'room-objects' })
+                this.events.push({ type: 'clear-stream', stream: 'room-players' })
+                this.events.push({ type: 'clear-stream', stream: 'room-creatures' })
+                this.events.push({ type: 'clear-stream', stream: 'room-extra' })
+                this.events.push({ type: 'clear-stream', stream: 'room-exits' })
+              }
               this.events.push({
                 type: 'room-title',
                 title: cleanTitle,
