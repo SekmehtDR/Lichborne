@@ -525,6 +525,26 @@ export class StormFrontParser {
         this.events.push({ type: 'clear-stream', stream: 'room-objects' })
         this.events.push({ type: 'clear-stream', stream: 'room-players' })
         this.events.push({ type: 'clear-stream', stream: 'room-exits' })
+        // v0.8.8 (Rakkor): DR's <nav rm='X'/> carries the new room id on
+        // every transition (Lich's $room variable derives from this). For
+        // most transitions DR ALSO sends a fresh <streamWindow id='main'
+        // subtitle='[Title - rm]'/> right after which would update both
+        // title and roomId via the streamwindow handler above — but DR is
+        // occasionally silent about <streamWindow> for some transition
+        // shapes (teleports, NPC-induced moves, certain scripted moves),
+        // leaving roomState.title / .roomId stuck on the prior room until
+        // a manual LOOK forces DR to re-emit. By extracting attrs.rm
+        // here we at least keep roomId fresh on those silent transitions.
+        // The Lich Map's match path tries `lichDb.get(roomId)` BEFORE
+        // falling back to title lookup, so a fresh roomId is sufficient
+        // for the indicator to track correctly. Title / desc / sub-stream
+        // content still update only on real <streamWindow> + <component>
+        // emissions — Room panel will still show stale title in the
+        // silent-transition case, but the map snaps right.
+        if (attrs.rm) {
+          const rm = parseInt(attrs.rm, 10)
+          if (!isNaN(rm)) this.events.push({ type: 'room-id', roomId: rm })
+        }
         break
 
       case 'clearstream': {

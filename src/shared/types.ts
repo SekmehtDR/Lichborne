@@ -217,6 +217,7 @@ export type GameEvent =
   | SpellEvent
   | HandEvent
   | RoomTitleEvent
+  | RoomIdEvent
   | ExpComponentEvent
   | StreamPushEvent
   | StreamPopEvent
@@ -286,6 +287,23 @@ export interface RoomTitleEvent {
   type: 'room-title'
   title: string
   roomId?: number
+}
+
+// Room id only — from <nav rm='X'/> in DR. DR sends <nav rm> for room
+// transitions (Lich's $room derives from this). Sometimes DR sends <nav>
+// but NOT a fresh <streamWindow id='main' subtitle='...'> — for those
+// transitions, RoomTitleEvent never fires and the Lichborne front-end's
+// roomState.title / roomId stay stuck on the prior room (Rakkor v0.8.7
+// "Lich Map hangs in wrong room until LOOK"). Emitting RoomIdEvent on
+// <nav rm> separately lets us at least update roomId without forging a
+// title we don't have. Lich Map's findRoom path tries lichDb.get(roomId)
+// first, so updating just roomId is enough to track the player correctly
+// on the map even when title hasn't refreshed. Room panel title and
+// other title-driven UI (like Genie Map's title-based lookup) still
+// stay stale until a real <streamWindow> arrives.
+export interface RoomIdEvent {
+  type: 'room-id'
+  roomId: number
 }
 
 // Exp — from <component id='exp SkillName' text='Evasion: 3 (2%)'>

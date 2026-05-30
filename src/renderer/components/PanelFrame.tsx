@@ -283,24 +283,35 @@ export default function PanelFrame({
           {showAddMenu && createPortal(
             <div ref={menuRef} className="panel-add-menu" style={{ bottom: menuPos.bottom, right: menuPos.right }}>
               <div className="panel-add-scroll">
-                {availableToAdd.map(type => (
-                  <div
-                    key={type}
-                    className="panel-add-item"
-                    onClick={() => addTab(type)}
-                  >
-                    {PANEL_LABELS[type]}
-                  </div>
-                ))}
-                {availableDiscovered.map(id => {
-                  const raw   = streamTitles[id] ?? id
-                  const label = raw.charAt(0).toUpperCase() + raw.slice(1)
-                  return (
-                    <div key={id} className="panel-add-item" onClick={() => addDiscoveredTab(id)}>
-                      {label}
+                {/* Built-in types and discovered custom streams sorted together
+                    A-Z by visible label so the dropdown reads as one alphabetical
+                    list. Without the merge, a user scanning the list would see
+                    the alphabet "reset" at the boundary between built-ins and
+                    discovered streams (no visual divider between the two
+                    sections in this UI), which made finding a specific stream
+                    harder than necessary. Each entry carries its `kind` so the
+                    click handler routes to the right add path. */}
+                {[
+                  ...availableToAdd.map(type => ({
+                    key: `t:${type}`,
+                    label: PANEL_LABELS[type],
+                    onClick: () => addTab(type),
+                  })),
+                  ...availableDiscovered.map(id => {
+                    const raw = streamTitles[id] ?? id
+                    return {
+                      key: `d:${id}`,
+                      label: raw.charAt(0).toUpperCase() + raw.slice(1),
+                      onClick: () => addDiscoveredTab(id),
+                    }
+                  }),
+                ]
+                  .sort((a, b) => a.label.localeCompare(b.label))
+                  .map(item => (
+                    <div key={item.key} className="panel-add-item" onClick={item.onClick}>
+                      {item.label}
                     </div>
-                  )
-                })}
+                  ))}
               </div>
               <div className="panel-add-footer">
                 {showNameInput ? (
@@ -315,7 +326,7 @@ export default function PanelFrame({
                         if (e.key === 'Escape') { setShowNameInput(false); setNewPanelName('') }
                         e.stopPropagation()
                       }}
-                      placeholder="Panel name…"
+                      placeholder="Stream name…"
                       maxLength={32}
                     />
                     <button className="panel-add-name-ok" onClick={addCustomTab}>+</button>
@@ -325,7 +336,7 @@ export default function PanelFrame({
                     className="panel-add-item panel-add-item--custom"
                     onClick={() => setShowNameInput(true)}
                   >
-                    New panel…
+                    New stream…
                   </div>
                 )}
               </div>

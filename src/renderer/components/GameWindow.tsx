@@ -1134,6 +1134,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             processVariableChangeRef.current('room', evt.title)
             processVariableChangeRef.current('roomname', evt.title)
             break
+          case 'room-id':
+            // v0.8.8 (Rakkor): roomId from <nav rm='X'/> when no fresh
+            // <streamWindow subtitle='...'/> arrives for a transition.
+            // See RoomIdEvent comment in shared/types.ts and the parser's
+            // <nav> handler. Updates roomId only — leaves title, desc,
+            // and sub-streams alone so a forged "we moved" event doesn't
+            // wipe the only data we have. Lich Map's lichDb.get(roomId)
+            // path picks up the fresh id and the indicator tracks
+            // correctly even when title hasn't refreshed.
+            roomUpdates.roomId = evt.roomId
+            break
           case 'exp-component':
             expUpdates[evt.skill] = evt.text
             if (evt.rankUp) {
@@ -1378,6 +1389,29 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     inputRef.current?.focus()
   }
 
+  // B122 follow-up (v0.8.8): font / line-height / large-print changes
+  // reshape every row's height → Virtuoso's total scrollHeight grows
+  // (or shrinks) → if the user was pinned to the bottom before the
+  // change, the OLD scrollTop is now short of the NEW bottom and the
+  // last line clips into the footer slack (visually disappearing).
+  // Re-snap to bottom on font-shape changes, but **only if the user
+  // was already pinned** — scrolled-up readers must not be yanked back
+  // to the bottom on a font change (their position is intentional;
+  // surprising them would defeat the purpose of reading old text).
+  // requestAnimationFrame gives Virtuoso a frame to re-measure rows
+  // at the new dimensions before we issue the snap, so the scroll
+  // target accounts for the new row heights. Defensive re-check of
+  // pinnedRef inside the rAF in case the user wheel-scrolled away
+  // between effect-fire and rAF-fire.
+  useEffect(() => {
+    if (!pinnedRef.current) return
+    const r = requestAnimationFrame(() => {
+      if (!pinnedRef.current) return
+      suppressUntilRef.current = Date.now() + 200
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+    })
+    return () => cancelAnimationFrame(r)
+  }, [settings.fontSize, settings.lineHeight, settings.largePrint])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -2007,20 +2041,56 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                   const el = scrollRef.current
                   if (!el) return
                   const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-                  // B122 (Rakkor, v0.8.7): threshold lowered 2 → 0.5px.
-                  // At font 13+ the residual gap was landing 1–2px short
-                  // of the bottom but visually clipped the last line
-                  // because rows are ~20px tall (vs ~17px at font 12).
-                  // 0.5 is immune to fractional-pixel rounding noise
-                  // (browser sub-pixel scroll) but still catches the
-                  // 1–2px misalignment that produced the half-line cutoff.
+                  // B122 (Rakkor, v0.8.7 threshold lowering — DIDN'T FIX
+                  // IT). The half-row clip at font 13+ is NOT a scroll-math
+                  // problem; both raw `scrollHeight - clientHeight` and
+                  // Virtuoso's `scrollToIndex({ align: 'end' })` land at
+                  // the SAME position, but the actual scrollable bottom
+                  // extends ~half a row past that (confirmed by Rakkor's
+                  // diagnostic — he could manually scroll down ~10px at
+                  // font 13 to reveal the full prompt line). Working
+                  // theory: Virtuoso re-measures the just-rendered last
+                  // row via ResizeObserver AFTER our snap fires, growing
+                  // scrollHeight without re-triggering us at a moment
+                  // when we'd correct. Threshold left at 0.5 so the
+                  // correction stays responsive when it CAN help, but the
+                  // actual fix for the half-row clip is the Footer
+                  // component below — it adds ~1em of unscrolled
+                  // padding-equivalent at the bottom of the list so the
+                  // visible content above the (invisible) footer always
+                  // includes the full last row, regardless of how far
+                  // short the scroll snap lands. Cost: a constant 1em of
+                  // empty space at the bottom of the text window when
+                  // pinned. Matches what most chat/terminal UIs do.
                   if (dist > 0.5) {
-                    // Fine-correction pass: followOutput landed slightly
-                    // short. Instant snap to the true DOM bottom; arm
-                    // suppress so this programmatic scroll doesn't unpin.
                     suppressUntilRef.current = Date.now() + 200
                     el.scrollTop = el.scrollHeight - el.clientHeight
                   }
+                }}
+                components={{
+                  // B122 (Rakkor, v0.8.8): see the long comment in
+                  // totalListHeightChanged above. The footer is the
+                  // actual fix for the half-row clip at font 13+.
+                  // **Gated on fontSize >= 13** because at font 12
+                  // and below the row height (~19.8px) lands on clean
+                  // integer pixels and no clip occurs — the footer
+                  // would just be empty space below the last row that
+                  // Sekmeht (correctly) noticed as a visible gap
+                  // between the text window and the vitals strip.
+                  // **Fixed 14px (not 1em)** because scaling the footer
+                  // with font size meant the gap grew 1px per font step
+                  // (font 13 → 13px, 14 → 14px, …, 24 → 24px), which
+                  // Sekmeht flagged as inconsistent. The worst-case
+                  // clip is ~half a row (~10-12px at font 13 per
+                  // Rakkor's diagnostic); 14px is enough to absorb
+                  // that at fonts 13-19. At fonts 20+ the half-row
+                  // clip exceeds 16px — if a tester ever reports the
+                  // clip reappearing at very large fonts, bump this
+                  // to a `max(14px, calc(var(--game-font-size) * 0.825))`
+                  // formula that scales only when needed.
+                  Footer: settings.fontSize >= 13
+                    ? () => <div style={{ height: 14 }} />
+                    : undefined,
                 }}
                 computeItemKey={(_index, line) => line.id}
                 itemContent={(_index, line) => (

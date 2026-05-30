@@ -7,7 +7,11 @@
   border-radius: 4px;
   padding: 4px 10px;
   font-family: inherit;
-  font-size: 0.75rem;
+  /* v0.8.8: was 0.75rem — that anchors to the browser root (~16px) and
+     never scales with the user's Settings → Font Size. Switched to 1em
+     so the button inherits from .game-toolbar like every other toolbar
+     button (.btn-debug / .btn-theme / .btn-settings, etc. at game.css:45-64). */
+  font-size: 1em;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -35,6 +39,14 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 
+/* v0.8.8: the popover is portaled to document.body (see ModeSwitcher.tsx)
+   so it inherits font-size from body, NOT from the game toolbar. Sizes
+   reference var(--game-font-size) directly so the popover scales with
+   the user's Settings → Font Size choice (consistent with the toolbar
+   button above, which now also scales). Multipliers preserve the
+   original visual hierarchy (manage/dot/hotkey/modified slightly
+   smaller than the main items). */
+
 .ms-item {
   display: flex;
   align-items: center;
@@ -45,7 +57,7 @@
   color: var(--text-secondary);
   padding: 7px 14px;
   font-family: inherit;
-  font-size: 0.82rem;
+  font-size: var(--game-font-size);
   text-align: left;
   cursor: pointer;
   transition: background 0.1s;
@@ -59,11 +71,11 @@
 .ms-item--clear { color: var(--text-dim); }
 .ms-item--manage {
   color: var(--text-dim);
-  font-size: 0.78rem;
+  font-size: calc(var(--game-font-size) * 0.95);
 }
 
 .ms-dot {
-  font-size: 0.7rem;
+  font-size: calc(var(--game-font-size) * 0.85);
   width: 12px;
   flex-shrink: 0;
   color: inherit;
@@ -72,13 +84,13 @@
 .ms-name { flex: 1; }
 
 .ms-hotkey {
-  font-size: 0.7rem;
+  font-size: calc(var(--game-font-size) * 0.85);
   color: var(--text-faint);
   font-family: monospace;
 }
 
 .ms-modified {
-  font-size: 0.68rem;
+  font-size: calc(var(--game-font-size) * 0.82);
   color: var(--accent-dim);
   border: 1px solid var(--accent-bg);
   border-radius: 3px;
@@ -96,6 +108,6 @@
 .ms-empty {
   padding: 8px 14px;
   color: var(--text-faint);
-  font-size: 0.8rem;
+  font-size: calc(var(--game-font-size) * 0.95);
   font-style: italic;
 }

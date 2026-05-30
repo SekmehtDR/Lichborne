@@ -1,3 +1,31 @@
+## What's new in v0.8.8
+
+A small bug-fix release continuing the v0.8.7 follow-throughs and adding two UX improvements.
+
+### Fixed (actually this time): bottom prompt cut off at font 13+
+
+The v0.8.7 attempt at this didn't work — Rakkor confirmed the prompt was still half-clipped. Diagnostic: he could manually scroll down about half a row past where the snap landed to reveal the full prompt, proving the bug was in the layout (the scrollable content extended past where every scroll API thought the bottom was), not in scroll math. Real fix this time: a small invisible buffer below the last row, sized to absorb the worst-case clip, only present at font 13+ where the issue actually occurs. Font 12 and below stays flush against the vitals strip with no extra gap.
+
+Pair fix shipped in the same release: changing your font size while you were already pinned to the bottom now re-snaps you to the bottom (previously the row-height change left you a little above it, with the last line clipping). If you were scrolled up reading older text, your position is preserved — only bottom-anchored readers get re-snapped.
+
+### Highlights now apply in the Room panel's structured sections
+
+Requested by Rakkor — his treasure highlights painted blue in the main scroll's "You also see ..." line but the Room panel's Objects section showed the same items plain. The Room panel now applies line-mode highlights to each section (Objects, Players, Creatures, Extra) the same way the main scroll does, so the same content gets the same styling in both places. Each section is independent — a rule matching a player name paints only the Players section, not Objects or Creatures. Room descriptions (the multi-sentence prose block) deliberately stay out of line-mode scope so a single match doesn't paint a whole paragraph.
+
+### Fixed: Lich Map "hangs" on prior room sometimes
+
+Reported by Rakkor — sometimes after moving to a new room, the Lich Map's "you are here" indicator stays stuck on the room you just left, until you manually `LOOK` to force a refresh. Same shape as the Genie Map stale-tracking bug that v0.8.4 addressed via a different mechanism. Root cause: DR sends two separate XML tags for every room transition — one carries the new room title, the other carries the new room id. The front-end was reading the first one but silently dropping the second. For most transitions both arrive together so this didn't matter, but for some transition shapes (teleports, certain NPC- or script-induced moves) only the room id arrives — for those, the Lich Map never knew you'd moved.
+
+Fixed by reading the room id from the second tag too. Lich's own scripting already does this (which is why `;e $room` was right the whole time even when the map was wrong). The Lich Map will now track correctly in those silent-transition cases. The Room panel title still stays stale until DR re-emits it (or you LOOK), since that's the only place the title string comes from — but the map indicator following you correctly is the more important fix.
+
+Note: this is specific to the Lich Map. The Genie Map's stale-tracking is handled by a separate mechanism that already shipped in v0.8.4. If you see Genie Map stuck on the wrong room and LOOK fixes it, that's a different (related) issue and may need its own report.
+
+### Mode button now scales with your font size
+
+Spotted reviewing the toolbar — the Mode dropdown was using a fixed pixel size that ignored your Settings → Font Size choice. Every other toolbar button (Debug, Logs, Panels, etc.) scaled with your font; Mode stayed small. Fixed; the Mode button now matches every other toolbar button at every font size, and the dropdown menu items it opens also scale with your font.
+
+---
+
 ## What's new in v0.8.7
 
 A small bug-fix release — five fixes across the command bar, the Room panel, the scroll behavior at large fonts, Lich script stream discovery, and the Lichborne import/export round-trip.
