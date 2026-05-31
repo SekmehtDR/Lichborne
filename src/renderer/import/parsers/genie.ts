@@ -302,6 +302,19 @@ function parseActionParts(actionRaw: string): {
   let hasBeep         = false
   let hasLibrarySound = false
 
+  // B133 (Sekmeht, v0.8.9): aliases for the cleanly-mappable commands.
+  // Genie has multiple #commands that do the same thing (e.g. #put / #send
+  // / #q / #que / #queue all "send to game"; #var / #setvar / #setvariable
+  // / #tvar / #svar / #tempvar etc. all "set a variable"). Pre-v0.8.9 we
+  // only recognized one alias per family and silently dropped the rest.
+  // Lichborne doesn't distinguish var scope (temp/saved/string/server)
+  // at the action layer — they all set a variable — so the aliases all
+  // map to the same `variable` action. See the full Genie command list
+  // in CLAUDE.md pitfall #47.
+  const COMMAND_PREFIX_RE = /^#(?:send|put|q|que|queue)\s+/i
+  const VAR_PREFIX_RE     = /^#(?:var|variable|setvar|setvariable|tvar|tempvar|tempvariable|svar)\s+/i
+  const SOUND_PREFIX_RE   = /^#(?:play|playsound|playwave)\s+/i
+
   for (const part of parts) {
     if (!part.startsWith('#')) {
       // Plain game command
@@ -310,16 +323,50 @@ function parseActionParts(actionRaw: string): {
       continue
     }
 
+    // B133: `##text` is Genie's escape for a literal `#text` to send to
+    // the game (e.g. a player who actually wants to type `#5` would
+    // write `##5`). Strip the leading `#` and treat as plain command.
+    if (part.startsWith('##')) {
+      const cmd = stripSendMarker(part.slice(1).trim())
+      if (cmd) commands.push(cmd)
+      continue
+    }
+
     const lower = part.toLowerCase()
 
-    if (lower.startsWith('#send ') || lower.startsWith('#put ')) {
-      const cmd = stripSendMarker(part.replace(/^#(?:send|put)\s+/i, '').trim())
-      if (cmd) commands.push(cmd)
+    if (COMMAND_PREFIX_RE.test(part)) {
+      const cmd = stripSendMarker(part.replace(COMMAND_PREFIX_RE, '').trim())
+      if (cmd) {
+        // B130 (Jaded, v0.8.9): if the inner content itself starts with `#`,
+        // it's a Genie internal command, not a DR command. The common
+        // shape is `#send #flash` (Jaded's actual case — someone wrapped a
+        // Genie command in `#send`/`#put` thinking they needed to "execute"
+        // it; the intent was just `#flash`). Recursively process the inner
+        // part instead of pushing it as a literal DR command — DR would
+        // reject the unknown command (e.g. "Please rephrase that command")
+        // and the trigger would silently spam errors on every match. The
+        // recursion goes through THIS function which knows how to map
+        // `#flash` → hasFlash, `#beep` → hasBeep, etc.
+        if (cmd.startsWith('#')) {
+          const inner = parseActionParts(cmd)
+          commands.push(...inner.commands)
+          echoActions.push(...inner.echoActions)
+          varActions.push(...inner.varActions)
+          logActions.push(...inner.logActions)
+          soundFiles.push(...inner.soundFiles)
+          if (inner.hasFlash)        hasFlash = true
+          if (inner.hasBeep)         hasBeep = true
+          if (inner.hasLibrarySound) hasLibrarySound = true
+          dropped.push(...inner.dropped)
+        } else {
+          commands.push(cmd)
+        }
+      }
     } else if (lower.startsWith('#echo')) {
       const rest = part.slice(5).trim()  // everything after '#echo'
       echoActions.push(parseEchoAction(rest))
-    } else if (lower.startsWith('#var ')) {
-      const body  = part.slice(5).trim()
+    } else if (VAR_PREFIX_RE.test(part)) {
+      const body  = part.replace(VAR_PREFIX_RE, '').trim()
       const sp    = body.indexOf(' ')
       const name  = sp === -1 ? body : body.slice(0, sp)
       const value = sp === -1 ? '' : body.slice(sp + 1).trim()
@@ -332,8 +379,8 @@ function parseActionParts(actionRaw: string): {
       } else {
         logActions.push({ file: '', message: body })
       }
-    } else if (lower.startsWith('#play ')) {
-      const sound = part.slice(6).trim()
+    } else if (SOUND_PREFIX_RE.test(part)) {
+      const sound = part.replace(SOUND_PREFIX_RE, '').trim()
       if (sound && sound.toLowerCase() !== 'stop') {
         soundFiles.push(sound)
         // Genie library names have no path separator or audio extension
@@ -342,14 +389,34 @@ function parseActionParts(actionRaw: string): {
       }
     } else if (lower === '#flash') {
       hasFlash = true
-    } else if (lower === '#beep') {
+    } else if (lower === '#beep' || lower === '#bell') {
       hasBeep = true
-    } else if (
-      lower.startsWith('#if ')    || lower.startsWith('#event ') ||
-      lower.startsWith('#statusbar') || lower.startsWith('#class ') ||
-      lower.startsWith('#event')  || lower.startsWith('#parse') ||
-      lower.startsWith('#tvar ')  || lower.startsWith('#svar ')
-    ) {
+    } else if (lower === '#nop' || lower === '#comment' || lower.startsWith('#comment ')) {
+      // B133: explicit no-ops. Genie's `#nop` does nothing; `#comment` is
+      // a comment line in script files. Drop silently — flagging them as
+      // dropped would scare users with a useless "Unsupported: #nop"
+      // note in the preview when the user never wanted these to do
+      // anything in the first place.
+      continue
+    } else {
+      // B133 (Sekmeht, v0.8.9): catch-all for every other `#command` —
+      // surface as dropped so the user sees it in the import preview's
+      // "Unsupported actions skipped: #X, #Y" note. Pre-v0.8.9 the
+      // unrecognized #commands were silently dropped, so Jaded's
+      // `#send #flash` and other malformed shapes appeared to "import
+      // cleanly" but produced empty triggers. Now every action that
+      // doesn't map to a Lichborne action type leaves a paper trail.
+      // Common Genie commands that hit this branch and have no clean
+      // Lichborne equivalent: rule-modification (#trigger, #alias,
+      // #highlight, #class, etc. — they modify rules at runtime, which
+      // Lichborne's static rule model doesn't support), connection
+      // control (#connect, #disconnect, #exit, #reconnect), UI control
+      // (#statusbar, #window, #position), Genie's scripting flow (#if,
+      // #parse, #event, #goto, #do, #pause, #wait, #waitfor), math /
+      // random / eval (#math, #evalmath, #random, #eval — Lichborne
+      // variable actions only store, don't compute), and mapping /
+      // movement (#mapper, #map, #walk, #walkto, #go, #goto, #path).
+      // See CLAUDE.md pitfall #47 for the full reasoning.
       dropped.push(part)
     }
     // Everything else (##escaped, #put without body, etc.) is silently skipped

@@ -148,7 +148,11 @@ export function newTrigger(pattern = ''): TriggerRule {
     pattern,
     mode: 'text',
     caseSensitive: false,
-    watchStream: 'any',
+    // B128 (Jaded, v0.8.9): default to 'main' (was 'any'). 'any' caused
+    // speech triggers to double-fire because DR routes "Bob says X" into
+    // both `main` and `conversations` streams. 'main' is the right
+    // default — users who want a stream-specific trigger can change it.
+    watchStream: 'main',
     watchVariable: '',
     gates: [],
     cooldownSeconds: 0,

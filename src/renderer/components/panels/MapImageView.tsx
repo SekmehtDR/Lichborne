@@ -119,6 +119,12 @@ export default function MapImageView({
       setImageSize({ w: img.naturalWidth, h: img.naturalHeight })
       const svg = svgRef.current
       if (!svg) return
+      // B132 (Sekmeht, v0.8.9): bail when SVG measures 0×0 (inactive tab,
+      // display:none). Without this we'd write a garbage transform
+      // (x = -cx*scale because clientWidth/2 = 0/2 = 0) that strands the
+      // camera in a corner when the tab is shown again. The
+      // ResizeObserver below re-centers on the 0→size transition.
+      if (!svg.clientWidth || !svg.clientHeight) return
       if (currentRoom?.image_coords) {
         const [x1, y1, x2, y2] = currentRoom.image_coords
         const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2
@@ -136,6 +142,10 @@ export default function MapImageView({
     if (!currentRoom?.image_coords || !imageDataUrl) return
     const svg = svgRef.current
     if (!svg) return
+    // B132 (Sekmeht, v0.8.9): same 0×0 bail as the image-onload effect
+    // above. While the character's tab is inactive, every room change
+    // would otherwise write a garbage transform.
+    if (!svg.clientWidth || !svg.clientHeight) return
     const [x1, y1, x2, y2] = currentRoom.image_coords
     const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2
     setTransform(prev => ({
@@ -339,10 +349,39 @@ export default function MapImageView({
   const recenter = useCallback(() => {
     if (!currentRoom?.image_coords) return
     const svg = svgRef.current; if (!svg) return
+    // B132: bail when dimensions are 0 — same as the auto-centering
+    // effects above. The ◆ button uses this callback too; nothing to
+    // do if there's no viewport yet.
+    if (!svg.clientWidth || !svg.clientHeight) return
     const [x1, y1, x2, y2] = currentRoom.image_coords
     const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2
     setTransform(prev => ({ ...prev, x: svg.clientWidth / 2 - cx * prev.scale, y: svg.clientHeight / 2 - cy * prev.scale }))
   }, [currentRoom])
+
+  // B132 (Sekmeht, v0.8.9): direct port of GenieMapView's B88 fix
+  // (v0.7.0) — Lich Map had the same bug class but never got the
+  // fix. Recenter on the player when the SVG regains a layout box.
+  // While a character's tab is inactive its GameWindow is display:none,
+  // so svg.clientWidth/Height read 0. The auto-centering effects above
+  // now bail in that case instead of writing garbage, but they also
+  // never fire when the tab eventually shows again (currentRoom hasn't
+  // necessarily changed since the bail). This ResizeObserver catches
+  // the 0→size transition (tab becoming visible) and calls recenter()
+  // so the camera snaps to the player's current room.
+  // `recenterRef` mirrors the latest `recenter` callback so the
+  // ResizeObserver effect can stay `[]`-stable — re-attaching a fresh
+  // observer on every currentRoom change would churn unnecessarily.
+  const recenterRef = useRef(recenter)
+  useEffect(() => { recenterRef.current = recenter }, [recenter])
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const ro = new ResizeObserver(() => {
+      if (svg.clientWidth > 0 && svg.clientHeight > 0) recenterRef.current()
+    })
+    ro.observe(svg)
+    return () => ro.disconnect()
+  }, [])
 
   // ── Render ──────────────────────────────────────────────────────────────────
 

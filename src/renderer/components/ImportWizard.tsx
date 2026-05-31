@@ -297,6 +297,17 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     // overwrite, and we should honor that.
     let skipped = { highlights: 0, triggers: 0, macros: 0, aliases: 0 }
     let toSave = mapped
+    // B127 (Jaded, v0.8.9): EVERY save call below is now gated on
+    // `mapped[type].length > 0`. The bug: a Wrayth import (which produces
+    // zero triggers / zero aliases — Wrayth's XML format doesn't carry
+    // them) was wiping the user's previously-imported Genie triggers /
+    // aliases on Replace mode, because the save call ran with an empty
+    // array. Append mode was also implicated when the user deselected a
+    // category but the file had data for it. Per-type guards make
+    // BOTH modes safe: an import only touches categories where it has
+    // selected content. Replace mode now means "replace the categories
+    // I'm importing, not wipe everything else" — which is what every
+    // tester intuitively expected.
     if (merge === 'append') {
       const existingHl = loadHighlights(character)
       const existingTr = loadTriggers(character)
@@ -325,22 +336,37 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       }
       toSave = { highlights: keepHl, triggers: keepTr, macros: keepMa, aliases: keepAl }
 
-      saveHighlights(character, [...existingHl, ...keepHl])
-      saveMacros    (character, [...existingMa, ...keepMa])
-      saveAliases   (character, [...existingAl, ...keepAl])
-      saveTriggers  (character, [...existingTr, ...keepTr])
+      // Per-type guards (B127): skip the save entirely when the import has
+      // nothing in that category. Even though `[...existing, ...[]]` is
+      // a mathematical no-op, skipping the save call removes any chance
+      // of a defensive bug in load/save round-tripping wiping the data.
+      if (mapped.highlights.length > 0) saveHighlights(character, [...existingHl, ...keepHl])
+      if (mapped.macros.length     > 0) saveMacros    (character, [...existingMa, ...keepMa])
+      if (mapped.aliases.length    > 0) saveAliases   (character, [...existingAl, ...keepAl])
+      if (mapped.triggers.length   > 0) saveTriggers  (character, [...existingTr, ...keepTr])
     } else {
-      saveHighlights(character, mapped.highlights)
-      saveMacros    (character, mapped.macros)
-      saveAliases   (character, mapped.aliases)
-      saveTriggers  (character, mapped.triggers)
+      // Per-type guards (B127): Replace mode now only replaces categories
+      // that actually have incoming data. Wrayth → Replace no longer wipes
+      // your Genie triggers because Wrayth has zero triggers to import.
+      if (mapped.highlights.length > 0) saveHighlights(character, mapped.highlights)
+      if (mapped.macros.length     > 0) saveMacros    (character, mapped.macros)
+      if (mapped.aliases.length    > 0) saveAliases   (character, mapped.aliases)
+      if (mapped.triggers.length   > 0) saveTriggers  (character, mapped.triggers)
     }
 
     // F29: Lichborne-native data (groups / modes / contacts / contact
     // templates). Bulk apply, no per-item selection — the user can edit
     // individual items in their respective panels post-import. Append
     // merge de-dupes by id; replace merge overwrites the whole list.
-    if (result.nativeGroups && Array.isArray(result.nativeGroups)) {
+    // B127 (Jaded, v0.8.9): same per-type guard pattern as the rules
+    // block above — only save a category when the import actually has
+    // data for it. The outer `result.nativeX && Array.isArray(...)`
+    // check passes for an EMPTY array too (empty arrays are truthy and
+    // pass Array.isArray), so a Lichborne F29 export from a character
+    // with no groups would have hit Replace mode and wiped the
+    // recipient's groups. Adding `.length > 0` to each block stops
+    // that.
+    if (result.nativeGroups && Array.isArray(result.nativeGroups) && result.nativeGroups.length > 0) {
       const incoming = result.nativeGroups as RuleGroup[]
       if (merge === 'append') {
         const existing = loadGroups(character)
@@ -350,7 +376,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         saveGroups(character, incoming)
       }
     }
-    if (result.nativeModes && Array.isArray(result.nativeModes)) {
+    if (result.nativeModes && Array.isArray(result.nativeModes) && result.nativeModes.length > 0) {
       const incoming = result.nativeModes as GameMode[]
       if (merge === 'append') {
         const existing = loadModes(character)
@@ -360,7 +386,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         saveModes(character, incoming)
       }
     }
-    if (result.nativeContactTemplates && Array.isArray(result.nativeContactTemplates)) {
+    if (result.nativeContactTemplates && Array.isArray(result.nativeContactTemplates) && result.nativeContactTemplates.length > 0) {
       const incoming = result.nativeContactTemplates as ContactTemplate[]
       if (merge === 'append') {
         const existing = loadContactTemplates(character)
@@ -370,7 +396,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         saveContactTemplates(character, incoming)
       }
     }
-    if (result.nativeContacts && Array.isArray(result.nativeContacts)) {
+    if (result.nativeContacts && Array.isArray(result.nativeContacts) && result.nativeContacts.length > 0) {
       const incoming = result.nativeContacts as Contact[]
       if (merge === 'append') {
         const existing = loadContacts(character)
@@ -578,7 +604,15 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             <div
               key={c.id}
               className={`iw-source-card${source === c.id ? ' iw-source-card--selected' : ''}`}
-              onClick={() => { setSource(c.id); setFileTexts({}) }}
+              onClick={() => {
+                setSource(c.id)
+                setFileTexts({})
+                // B131 (v0.8.9): force merge to 'append' when switching
+                // to Lichborne source — Replace mode isn't offered for
+                // self-imports, but the wizard's `merge` state could
+                // carry over from a prior legacy-client selection.
+                if (c.id === 'lichborne') setMerge('append')
+              }}
             >
               <div className="iw-source-card-name">{c.name}</div>
               <div className="iw-source-card-desc">{c.desc}</div>
@@ -1015,16 +1049,33 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             <input type="radio" name="merge" value="append" checked={merge === 'append'} onChange={() => setMerge('append')} />
             <div>
               <div className="iw-merge-option-title">Append</div>
-              <div className="iw-merge-option-desc">Add imported rules alongside your existing ones</div>
+              <div className="iw-merge-option-desc">
+                {source === 'lichborne'
+                  ? 'Add imported rules alongside your existing ones; duplicates (same pattern + scope + case for highlights/triggers, same key for macros, same input for aliases) are skipped automatically.'
+                  : 'Add imported rules alongside your existing ones'}
+              </div>
             </div>
           </label>
-          <label className="iw-merge-option">
-            <input type="radio" name="merge" value="replace" checked={merge === 'replace'} onChange={() => setMerge('replace')} />
-            <div>
-              <div className="iw-merge-option-title">Replace all</div>
-              <div className="iw-merge-option-desc">Delete all existing rules of each type and replace with the import</div>
-            </div>
-          </label>
+          {/* B131 (Jaded → Sekmeht, v0.8.9): Replace mode is hidden for
+              Lichborne→Lichborne imports. Self-imports are "merge my
+              setup from another character" — Replace mode (wipe my
+              existing rules of each type the import has data for) is
+              never what users want for that workflow, and the surprise
+              factor when it does wipe is high. Users who genuinely want
+              to start fresh can delete their rules manually first, then
+              import via Append. Legacy clients (Wrayth/Genie/Frostbite)
+              still show Replace because "wipe my stuff and use the
+              clean import as my new baseline" is a legitimate workflow
+              when adopting a fresh config from another tool. */}
+          {source !== 'lichborne' && (
+            <label className="iw-merge-option">
+              <input type="radio" name="merge" value="replace" checked={merge === 'replace'} onChange={() => setMerge('replace')} />
+              <div>
+                <div className="iw-merge-option-title">Replace all</div>
+                <div className="iw-merge-option-desc">For each category the import has data for, delete your existing rules of that type and replace with the import. Categories the import doesn't touch are left alone.</div>
+              </div>
+            </label>
+          )}
         </div>
 
         {/* F29-layout (v0.8.5): opt-in for the panel layout snapshot.

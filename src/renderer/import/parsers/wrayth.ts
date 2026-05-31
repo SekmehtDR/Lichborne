@@ -5,10 +5,30 @@ import { normalizeWraythKey } from '../keyNormalizer'
 // ── XML helpers ───────────────────────────────────────────────────────────────
 // Minimal attribute extractor — avoids a full XML parser dependency.
 
+// B129 (Jaded, v0.8.9): decode the five standard XML entities. Wrayth's
+// settings.xml stores macro actions as attribute values, so any character
+// that would conflict with the attribute's quoting gets escaped — in
+// particular `'` becomes `&apos;` because attribute values are wrapped in
+// `'...'` quotes. Jaded's speech macro `'}` (which sends `'` to start a
+// quoted speech to whoever is targeted by `}`) was stored as `&apos;}`
+// and previously came through to the imported macro as the literal
+// 4-character string `&apos;}` — DR rejected it with "Please rephrase
+// that command." The five entities cover everything XML 1.0 strictly
+// requires; numeric entities (`&#39;` etc.) aren't currently used by
+// Wrayth's exporter but could be added if a tester hits one.
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g,   '<')
+    .replace(/&gt;/g,   '>')
+    .replace(/&amp;/g,  '&')  // must be LAST so we don't double-decode entities introduced by the other replacements
+}
+
 function getAttr(tag: string, attr: string): string {
   const re = new RegExp(`${attr}=['"]([^'"]*?)['"]`, 'i')
   const m  = tag.match(re)
-  return m ? m[1] : ''
+  return m ? decodeXmlEntities(m[1]) : ''
 }
 
 function* iterTags(xml: string, tagName: string): Generator<string> {

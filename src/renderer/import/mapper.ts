@@ -118,7 +118,14 @@ export function mapTrigger(t: ImportTrigger): TriggerRule {
     pattern:         t.pattern,
     mode:            t.matchType,
     caseSensitive:   t.caseSensitive,
-    watchStream:     'any',
+    // B128 (Jaded, v0.8.9): imported triggers default to 'main', not 'any'.
+    // 'any' caused double-fires for speech triggers — DR routes "Bob says X"
+    // into both `main` and `conversations` streams, so a watch-all trigger
+    // fired twice. Imported triggers from legacy clients (Wrayth/Genie/
+    // Frostbite) all originally watched the main game text stream, so
+    // 'main' matches the source semantics. Users who want a trigger that
+    // fires on a custom stream can change watchStream after import.
+    watchStream:     'main',
     gates:           [],
     cooldownSeconds: 0,
     oneShot:         false,

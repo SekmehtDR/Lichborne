@@ -1,3 +1,58 @@
+## What's new in v0.8.9
+
+A focused release driven by JadedSoul's import-stress-testing across Wrayth / Genie / Frostbite combinations and Sekmeht's observation that Lich Map tracking on inactive character tabs got stale. Seven fixes, all under the import-safety and map-tracking themes.
+
+> **⚠️ Upgrading note — broken imports from earlier versions**
+>
+> Two of the fixes below (the Wrayth speech-macro entity decode and the Genie `#send #flash`-style trigger handling) only apply to **fresh** imports from v0.8.9 onward. If you imported a Wrayth `settings.xml` or a Genie config in v0.8.4–v0.8.8 and noticed:
+>
+> - Speech / whisper macros that print errors like `>&apos;}` or "Please rephrase that command" — re-import that Wrayth `settings.xml` (or manually replace the `&apos;` text in the macro action with `'`)
+> - Triggers that fire silently with no visible action but cause DR errors — check the Automations panel for triggers with `command: '#flash'` (or any other `#word`) and either re-import the original Genie `triggers.cfg` or change them manually
+>
+> Existing rules saved before v0.8.9 are left alone — Lichborne doesn't auto-modify previously-imported data. Re-importing is the recovery path; the v0.8.9 import path correctly handles both cases now.
+
+### Fixed (the big one): imports no longer wipe categories they don't carry
+
+If you imported all your Genie configs and then imported Wrayth macros — even in Replace mode — Wrayth would wipe your Genie triggers and aliases because Wrayth doesn't carry those categories and the empty arrays overwrote your data. Same shape was possible on Append when you deselected a category in the second import. Fixed: every import now only touches the rule categories it actually has data for. Wrayth never touches your triggers or aliases (because Wrayth doesn't have them); Frostbite never touches your triggers, aliases, or contacts; Genie can touch everything; Lichborne self-imports touch whatever's in the export. Every combination of legacy clients now plays nicely.
+
+The merge descriptions are also clearer:
+- **Append** for Lichborne self-imports now says explicitly: "duplicates (same pattern + scope + case for highlights/triggers, same key for macros, same input for aliases) are skipped automatically."
+- **Replace** for legacy clients now says: "For each category the import has data for, delete your existing rules of that type and replace with the import. Categories the import doesn't touch are left alone."
+
+### Fixed: triggers no longer double-fire on speech
+
+Imported AND newly-created triggers now default to watching `main` instead of `any` stream. DR routes "Bob says X" into both the main stream and the conversations stream, so a watch-all trigger was firing twice on every speech line. Speech and other text-pattern triggers will now fire once.
+
+### Fixed: Wrayth speech macros (`'}`, `'} ask`, etc.) no longer broken on import
+
+If you imported Wrayth macros for speaking, every speech attempt was getting "Please rephrase that command" because Wrayth stores apostrophes in macro actions as `&apos;` (an XML entity) and the import wasn't decoding it back to `'`. Decoding the five standard XML entities now — `&apos;` `&quot;` `&amp;` `&lt;` `&gt;` — so the macro actions come through as the actual characters.
+
+### Fixed: Genie `#send #flash` style triggers no longer spam DR with unknown commands
+
+If your Genie config had triggers like `#trigger {pattern} {#send #flash}` (where someone wrapped a Genie command in `#send` thinking they needed to "execute" it), the import was treating `#flash` as a literal DR command and DR was responding "Please rephrase that command" on every trigger fire. Now Lichborne recognizes this shape and converts it correctly — `#send #flash` becomes a flash action; `#send #beep` becomes a beep action; etc.
+
+### Improved: Lichborne→Lichborne imports are append-only
+
+When you import a Lichborne export from another character, the Replace mode no longer appears as an option. Self-imports are conceptually "merge another character's setup with mine," and Replace mode (which wipes per category) is never what you want for that workflow. Duplicates are skipped automatically. If you genuinely want to start fresh from a backup, delete your rules manually in the UI first, then import via Append.
+
+### Fixed: Lich Map indicator stuck on inactive character tabs
+
+If you tabbed between characters, the Lich Map on an inactive tab could get stuck showing a stale location — the room tracking was working in the background, but the camera transform was being calculated against the tab's 0×0 hidden dimensions and stranding off-screen. Same bug class as the Genie Map fix that shipped in v0.7.0, just never ported to the Lich Map side. Now ported — when you switch back to an inactive character, the Lich Map snaps to their actual current room.
+
+### Genie command coverage expanded + import preview now warns about unsupported commands
+
+Sekmeht enumerated Genie's full `#command` list from the Genie source. New aliases now recognized correctly:
+- Game commands: `#q`, `#que`, `#queue` (aliases of `#put`/`#send`)
+- Variables: `#variable`, `#setvar`, `#setvariable`, `#tvar`, `#tempvar`, `#tempvariable`, `#svar` (all aliases of `#var` — Lichborne doesn't distinguish var scope)
+- Sounds: `#playsound`, `#playwave` (aliases of `#play`)
+- Beep: `#bell` (alias of `#beep`)
+
+Also: `##5` (Genie's escape syntax for a literal `#5` to send to the game) is now handled correctly.
+
+The bigger improvement: any unrecognized `#command` (rule manipulation like `#trigger`/`#alias`/`#highlight`, UI control like `#statusbar`/`#window`, connection control like `#disconnect`, Genie scripting like `#if`/`#parse`/`#event`, math like `#math`/`#random`, mapping like `#mapper`/`#walk`/`#go`) now shows up in the import preview as "Unsupported actions skipped: #X, #Y" so you know to manually replace those after import. Pre-v0.8.9 they were silently dropped and the trigger imported with empty actions thinking it'd work.
+
+---
+
 ## What's new in v0.8.8
 
 A small bug-fix release continuing the v0.8.7 follow-throughs and adding two UX improvements.
