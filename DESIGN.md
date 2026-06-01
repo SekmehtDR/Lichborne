@@ -3886,8 +3886,10 @@ A configurable button palette (per character profile) that sends upstream comman
 #### YAML Profile Viewer / Editor
 Browse and edit per-character Lich automation config files (`Sekmeht-setup.yaml`, `Sekmeht-back.yaml`, etc.) from within Lichborne. Read path via the known Lich script directory. Write with confirmation prompt. Future: schema-aware editing for well-known scripts (t2 `training_list`, setup `combat_teaching_skill`, etc.) with typed fields rather than raw YAML.
 
-#### Lich Variable Inspector
-Read-only view of `Vars` and `UserVars` for the connected character, sourced directly from Lich's SQLite database (`data/lich.db3`) via `better-sqlite3` in the main process. Helps users understand why a script behaves differently — "what is `$whisper` set to right now?" Surface as a collapsible panel or modal; no write access.
+#### Lich Variable Inspector / Editor
+View of `Vars`/`UserVars` for any character scope, sourced directly from Lich's SQLite database (`data/lich.db3`) via `better-sqlite3` in the main process (read path: `lich:get-vars` IPC + `marshalParser.ts` to deserialize the Ruby Marshal blob). Helps users understand why a script behaves differently — "what is `$whisper` set to right now?" — and now lets them change it. Surfaced as the Lich Dashboard → Variables tab.
+
+**Editable as of v0.9.0** (replacing the `;vars setup` GTK window, which crashes Lich — see BUGS.md B138). Editing is gated to the **connected character's own scope** (`session.useLich` AND `scope === ${game}:${character}`); other scopes stay read-only. **Writes go through Lich's runtime, not the DB**: a single atomic `;eq Vars['name'] = value; Vars.save` (ExecScript) mutates Lich's authoritative in-memory `@@vars` AND forces an immediate disk flush — a direct DB write would be unsafe because Lich's in-memory copy would clobber it on its next auto-save. Read remains SQLite (structured display of lists/hashes/times, cross-scope browse). The read/write asymmetry is intentional. Implementation details + the rationale for not reading via `;vars list` are in CLAUDE.md pitfall #53.
 
 #### DownstreamHook / UpstreamHook Registry
 Show which hooks are currently registered and which scripts own them. Helps diagnose conflicts — why `textsubs` isn't firing, why a stream is receiving unexpected data, which script is intercepting commands. Requires Lich to expose hook registry state, either via the `LichScripts` stream or a future TCP IPC channel.

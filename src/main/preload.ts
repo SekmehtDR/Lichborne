@@ -54,6 +54,12 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener(CH.GAME_EVENT, listener)
   },
 
+  onClientNotice: (cb: (notice: { sessionId: string; text: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, notice: { sessionId: string; text: string }) => cb(notice)
+    ipcRenderer.on('client-notice', listener)
+    return () => ipcRenderer.removeListener('client-notice', listener)
+  },
+
   onConnectionStatus: (cb: (status: ConnectionStatusPayload) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, status: ConnectionStatusPayload) => cb(status)
     ipcRenderer.on(CH.CONNECTION_STATUS, listener)

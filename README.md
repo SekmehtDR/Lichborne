@@ -92,7 +92,7 @@ Macro hotkeys (F1–F12, Ctrl/Alt combos) are set up in the Automations panel.
 - Windows only (x64) for now
 - No code signing yet — the SmartScreen warning on first install is expected and safe to dismiss
 - Multiple characters require opening the app once per character
-- Lich scripts that draw their own desktop windows via Ruby GTK (e.g. the original `kill-counter.lic`) won't render under Lichborne — Lich's GTK main loop isn't started in the launch mode Lichborne uses. The script's logic still runs; only the floating window is missing. Script authors can use the `<streamWindow>` / `<pushStream>` XML approach instead (see `newkill-counter.lic` for a minimal version) — that renders as a regular Lichborne panel and also works in every other front-end
+- Lich scripts that draw their own desktop windows via Ruby GTK (e.g. `kill-counter.lic`, `;vars setup`) are unreliable under Lichborne — the window may not appear, may appear only intermittently, or may appear and then crash Lich (disconnecting you) when you interact with it. This is a GTK-runtime timing/threading issue under the launch mode Lichborne uses (the same mode StormFront uses), not a Lichborne bug, and a window showing up doesn't mean it's safe. The script's non-window logic still runs fine. **As of v0.9.0 Lichborne warns you** when you start such a script. Script authors should use the `<streamWindow>` / `<pushStream>` XML approach instead (see `newkill-counter.lic` for a minimal version) — that renders as a regular Lichborne panel and works in every front-end. For `;vars setup` specifically, use the **Lich Dashboard → Variables** editor, which can add/edit/delete variables without the GTK window
 
 ---
 

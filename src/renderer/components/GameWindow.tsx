@@ -1373,9 +1373,24 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (showDebugRef.current) setRawXmlLines([...rawXmlBufRef.current])
     })
 
+    // Client-authored advisory lines (e.g. the GTK-script warning) — injected
+    // into the stream like the "Connection closed." line, styled internal-system.
+    const unsubNotice = window.api.onClientNotice((notice) => {
+      if (notice.sessionId !== sessionIdRef.current) return
+      // `bold: true` with no preset → renders as monsterbold (data-preset="bold",
+      // i.e. var(--preset-bold), yellow in most themes) so the advisory stands out
+      // like the game's own bold/monster text. See renderSegment.tsx preset fallback.
+      // Blank lines above and below so it doesn't look squished between game lines.
+      setLines(prev => [...prev.slice(-MAX_LINES),
+        { id: lineId++, segments: [{ text: '' }],                    timestamp: Date.now() },
+        { id: lineId++, segments: [{ text: notice.text, bold: true }], timestamp: Date.now() },
+        { id: lineId++, segments: [{ text: '' }],                    timestamp: Date.now() },
+      ])
+    })
+
     inputRef.current?.focus()
     return () => {
-      unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current()
+      unsubEvents(); unsubStatus(); unsubRawXml(); unsubNotice(); cancelPendingRef.current()
       if (roomPumpRafRef.current != null) {
         cancelAnimationFrame(roomPumpRafRef.current)
         roomPumpRafRef.current = null
@@ -2431,6 +2446,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           initialTab={lichDashTab}
           onClose={() => setShowLichDash(false)}
           onSendCommand={cmd => { setCommand(cmd); inputRef.current?.focus() }}
+          onRunCommand={cmd => window.api.sendCommand(session.sessionId, cmd)}
         />
       )}
 

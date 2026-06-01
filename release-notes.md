@@ -1,3 +1,41 @@
+## What's new in v0.9.0
+
+The Lich **Variables** view is now editable — add, change, and delete your Lich variables right from Lichborne, no `;vars setup` window required. This is the in-app replacement for the `;vars setup` script, which (as several testers found) disconnects Lich when you interact with its pop-up.
+
+### Edit Lich variables in-app
+
+Open **Lich Dashboard → Variables** while connected via Lich and viewing your own character. You can now:
+
+- **Add a variable** — the row at the top takes a name and a value. (Names can't contain spaces; a value of `true` or `false` is stored as a real boolean, matching Lich.)
+- **Edit a value** — click the **✎** on any text variable for an inline editor (Enter saves, Esc cancels).
+- **Delete a variable** — click the **✕**, then **Delete?** to confirm (two-click so you can't remove a var by accident).
+
+Edits go through Lich's own variable system and are saved to disk immediately, so the change sticks right away — reflected on the next refresh and after reopening. The toolbar now shows a **"refreshed HH:MM:SS"** stamp so you know how current the view is, and the footer explains the persistence model (your edits save immediately; Lich's own auto-save for changes made by scripts runs every ~5 minutes).
+
+A few guardrails, by design:
+- Editing is only available for the **connected character's own variables**. You can still *view* any character's variables via the scope dropdown, but those stay read-only (Lich only lets us safely change the variables of the session we're attached to).
+- Complex variables (lists, hashes, timestamps) keep their structured, expandable display and can be deleted, but aren't inline-editable — same scope as the old `;vars setup` window.
+
+### Why `;vars setup` disconnects Lich (and what to do instead)
+
+If you ran `;vars setup`, saw the window open, and then got disconnected the moment you tried to add a variable — that's a bug in the Lich `vars.lic` script, not in Lichborne. The script spawns a background thread that touches its GTK window from off the main thread, which is unsafe and crashes Lich under our launch (and any Stormfront-mode launch). Lichborne sees Lich's process exit and reports a disconnect.
+
+Use the in-app **Variables** editor above instead — it does everything `;vars setup` does without the GTK window. The script's non-window commands (`;vars set NAME=VALUE`, `;vars delete NAME`, `;vars list`) also work fine if you prefer the command line.
+
+### Heads-up when a Lich script uses a GTK window
+
+GTK-window scripts (like `kill-counter` or `vars setup`) are unreliable in any Stormfront-mode front-end — some never paint their window, some crash Lich when you interact with it. To save you a confusing silent failure or disconnect, Lichborne now checks scripts as you start them: if a script's source uses GTK, you'll see a one-time bold advisory in the game window —
+
+> **--- Lichborne: GTK code detected in script "kill-counter". GTK windows are not fully supported in this client and may cause Lich to disconnect.**
+
+It's just a heads-up — the command still runs. It fires once per script per session and reports the real script name even if you typed an abbreviation (e.g. `;kill-cou`). The script's non-GTK functions are unaffected; only the GTK window is the problem.
+
+### Fixed: Lichborne→Lichborne import preview showed triggers with no commands
+
+When importing an automations export from another character, the preview list showed your imported triggers as having no commands — even though they did. This was a display-only bug in the preview (the actual import always brought the triggers in correctly), now fixed so the preview shows each trigger's commands.
+
+---
+
 ## What's new in v0.8.10
 
 A focused release fixing two related speech-panel issues — a duplicate "Conversation" entry in Available Streams that several testers noticed, and a speech double-echo that surfaced during the fix's testing. Plus a new feature for macro authors / importers: support for the "type and wait" macro convention from Genie / Wrayth / Stormfront.

@@ -43,6 +43,14 @@ interface Session {
   cleanDisconnect: boolean
   connected: boolean
   debugPanelOpen: boolean
+  // Set at login from creds — needed to resolve the Lich scripts dir for the
+  // GTK-script advisory (only meaningful for Lich sessions).
+  useLich: boolean
+  lichPath: string | null
+  // Per-session cache of typed-script-name (lowercased) → does the resolved
+  // `.lic` use GTK. `true` also means "already warned" (we warn on the first
+  // undefined→true transition); `false` short-circuits re-scanning a clean script.
+  gtkChecked: Map<string, boolean>
 }
 
 const sessions = new Map<SessionId, Session>()
@@ -61,6 +69,7 @@ function createSession(): Session {
     id, connection, parser, lichBridge,
     eventQueue: [], flushScheduled: false,
     cleanDisconnect: false, connected: false, debugPanelOpen: false,
+    useLich: false, lichPath: null, gtkChecked: new Map(),
   }
   wireSession(s)
   sessions.set(id, s)
@@ -232,6 +241,8 @@ function createWindow() {
 
 ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials): Promise<LoginResult> => {
   const s = createSession()
+  s.useLich = creds.useLich
+  s.lichPath = creds.lichPath || null
   try {
     if (creds.useLich) {
       await s.connection.connectViaLich(creds)
@@ -253,6 +264,7 @@ ipcMain.on(CH.SEND_COMMAND, (_event, sessionId: SessionId, command: string) => {
   const trimmed = command.trim().toLowerCase()
   if (trimmed === 'quit' || trimmed === 'exit') s.cleanDisconnect = true
   s.connection.send(command)
+  maybeWarnGtkScript(s, command)
 })
 
 ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
@@ -457,6 +469,121 @@ ipcMain.handle('genie-cache:save', (_e, dir: string, zones: unknown[]): boolean 
 
 function lichDirFrom(lichPath: string): string {
   return path.dirname(lichPath)
+}
+
+// ── GTK-script advisory ───────────────────────────────────────────────────────
+// Lich scripts that build their own GTK window are unreliable under Lichborne's
+// `--stormfront` launch — some never paint (kill-counter shape), some crash Lich
+// on interaction (`;vars setup` shape, BUGS.md B138). When the user starts such a
+// script we surface a one-time `--- Lichborne:` advisory in the game stream. This
+// is the first consumer of a future generalized "client notice" facility (see
+// Tracker.md). Detection is a heuristic source scan — its job is to turn a
+// confusing silent-fail / disconnect into a clear message in the common case, not
+// to be a perfect static analyzer.
+
+// Lich `;` commands that are NOT script-starts (builtins handled in do_client).
+// We also require the resolved `.lic` to exist before warning, so this set is a
+// fast-path skip, not the sole guard. `force` is special-cased (script is arg 2).
+const LICH_BUILTIN_CMDS = new Set([
+  'k', 'kill', 'stop', 'ka', 'killall', 'stopall',
+  'p', 'pause', 'pa', 'pauseall', 'u', 'unpause', 'ua', 'unpauseall',
+  'l', 'la', 'list', 'listall', 's', 'send', 'e', 'eq', 'exec', 'en', 'execname',
+  'trust', 'untrust', 'distrust',
+])
+
+// Any GTK class reference (`Gtk::Window`, `Gtk::Dialog`, `Gtk::Box`, …) or the
+// `Gtk.queue` marshalling wrapper signals the script does GTK work. `\bGtk[.:]`
+// avoids matching the bare word "Gtk" in prose comments.
+const GTK_CODE_RE = /\bGtk::\w|\bGtk\.queue\b/
+
+// Extract the script name a `;`/`,`-prefixed command would start, or null if the
+// command is a Lich builtin (not a script-start).
+function scriptNameFromCommand(command: string): string | null {
+  const m = command.trim().match(/^[;,]+\s*(.+)$/)
+  if (!m) return null
+  const tokens = m[1].trim().split(/\s+/)
+  if (tokens.length === 0 || !tokens[0]) return null
+  let name = tokens[0]
+  if (name.toLowerCase() === 'force') {
+    if (!tokens[1]) return null
+    name = tokens[1]
+  } else if (LICH_BUILTIN_CMDS.has(name.toLowerCase())) {
+    return null
+  }
+  return name
+}
+
+// Resolve the script file the way Lich's `Script.start` does (script.rb:65-84):
+// build a file list of custom/ (root + subdirs) then scripts/ root, each sorted
+// by basename, then match EXACT first (`name.ext`), then PREFIX (`name…ext`) —
+// so a typed abbreviation like `kill-count` resolves to `kill-counter.lic`.
+// Returns the first matching absolute path, mirroring Lich's first-match order
+// (custom wins over root). null if nothing matches.
+function resolveLichScriptFile(lichPath: string, name: string): string | null {
+  const scriptDir = path.join(lichDirFrom(lichPath), 'scripts')
+  const customBase = path.join(scriptDir, 'custom')
+
+  const dirs: string[] = []
+  try {
+    if (fs.statSync(customBase).isDirectory()) {
+      dirs.push(customBase)
+      for (const child of fs.readdirSync(customBase, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        if (child.isDirectory()) dirs.push(path.join(customBase, child.name))
+      }
+    }
+  } catch { /* no custom dir */ }
+  dirs.push(scriptDir)
+
+  const SCRIPT_EXT = /\.(?:lic|rb|cmd|wiz)(?:\.(?:gz|Z))?$/i
+  const files: string[] = []
+  for (const dir of dirs) {
+    try {
+      const names = fs.readdirSync(dir, { withFileTypes: true })
+        .filter(e => e.isFile() && SCRIPT_EXT.test(e.name))
+        .map(e => e.name)
+        .sort((a, b) => a.replace(/\.[^.]+$/, '').localeCompare(b.replace(/\.[^.]+$/, '')))
+      for (const n of names) files.push(path.join(dir, n))
+    } catch { /* unreadable dir */ }
+  }
+
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const exactRe  = new RegExp(`^${esc}\\.(?:lic|rb|cmd|wiz)(?:\\.gz|\\.Z)?$`, 'i')
+  const prefixRe = new RegExp(`^${esc}[^.]+\\.(?:lic|rb|cmd|wiz)(?:\\.gz|\\.Z)?$`, 'i')
+  for (const re of [exactRe, prefixRe]) {
+    const hit = files.find(f => re.test(path.basename(f)))
+    if (hit) return hit
+  }
+  return null
+}
+
+// Resolve + read the script Lich would run and test for GTK code. Returns the
+// resolved script's display name (basename without extension — so an abbreviated
+// command like `kill-cou` reports the real `kill-counter`) when it uses GTK, or
+// null otherwise. Gzipped scripts are skipped (rare; GTK scripts ship plain).
+function gtkScriptName(lichPath: string, name: string): string | null {
+  const file = resolveLichScriptFile(lichPath, name)
+  if (!file || /\.(?:gz|Z)$/i.test(file)) return null
+  try {
+    if (!GTK_CODE_RE.test(fs.readFileSync(file, 'utf-8'))) return null
+    return path.basename(file).replace(/\.[^.]+$/, '')
+  } catch { return null }
+}
+
+function maybeWarnGtkScript(s: Session, command: string): void {
+  if (!s.useLich || !s.lichPath) return
+  const name = scriptNameFromCommand(command)
+  if (!name) return
+  const key = name.toLowerCase()
+  const cached = s.gtkChecked.get(key)
+  if (cached !== undefined) return  // already scanned (and warned if it was GTK)
+  let resolved: string | null = null
+  try { resolved = gtkScriptName(s.lichPath, name) } catch { /* leave null */ }
+  s.gtkChecked.set(key, resolved !== null)
+  if (!resolved) return
+  mainWindow?.webContents.send('client-notice', {
+    sessionId: s.id,
+    text: `--- Lichborne: GTK code detected in script "${resolved}". GTK windows are not fully supported in this client and may cause Lich to disconnect.`,
+  })
 }
 
 ipcMain.handle('find-lich-map-file', (_e, lichPath: string): { jsonPath: string; mapsDir: string } | null => {

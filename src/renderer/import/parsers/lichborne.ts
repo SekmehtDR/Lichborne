@@ -107,7 +107,13 @@ export function parseLichborneYaml(text: string): ImportResult {
     pattern: t.pattern ?? '',
     matchType: t.mode ?? 'text',
     caseSensitive: !!t.caseSensitive,
-    commands: t.commands ?? [],
+    // ImportTrigger.commands is preview-only (the actual F29 import applies via
+    // nativeRules, pitfall #42). A TriggerRule has no top-level `commands` field —
+    // its commands live in `actions[]` as command-type actions — so derive them.
+    commands: (t.actions ?? [])
+      .filter(a => a.type === 'command')
+      .map(a => a.command ?? '')
+      .filter(c => c.length > 0),
     echoActions: [],
     varActions: [],
     logActions: [],

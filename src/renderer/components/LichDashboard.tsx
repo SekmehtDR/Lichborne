@@ -19,6 +19,14 @@ function fmtDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' })
 }
 
+// Render a string as a Ruby single-quoted literal for safe injection into a
+// `;eq` command. In a Ruby single-quoted string only backslash and the quote
+// itself are special, so escaping just those two is sufficient — this keeps var
+// names/values with quotes, spaces, or backslashes intact.
+function rubyLit(s: string): string {
+  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+}
+
 function isLiveSession(s: { state: string; last_heartbeat_at: number | null }): boolean {
   if (s.state === 'exited') return false
   if (!s.last_heartbeat_at) return false
@@ -34,7 +42,14 @@ interface Props {
   session: SessionInfo
   initialTab?: DashTab
   onClose: () => void
+  // Fill the command bar for the user to review/send (ScriptsTab: click a script
+  // → bar pre-filled with `;script`, user presses Enter).
   onSendCommand: (cmd: string) => void
+  // Execute immediately and SILENTLY (no `>cmd` echo in the game window).
+  // VarsTab writes run a behind-the-scenes `;eq Vars[...] = ...; Vars.save` —
+  // the optimistic UI is the user-facing feedback, so echoing the raw Ruby
+  // would just be noise. Must actually run, not sit in the command bar.
+  onRunCommand: (cmd: string) => void
 }
 
 // ── Session pill ──────────────────────────────────────────────────────────────
@@ -171,14 +186,120 @@ function VarValue({ val, depth = 0 }: { val: MarshalVal; depth?: number }) {
   )
 }
 
-function VarsTab({ lichPath, session }: { lichPath: string; session: SessionInfo }) {
+// Row for the "add a new variable" affordance. Var name must be non-empty and
+// contain no whitespace — `;vars set` parses `/^set\s+(\S+)\s*=\s*(.+)/`, so a
+// name with a space would be misparsed. Value may contain spaces and '='.
+function AddVarRow({ onAdd }: { onAdd: (name: string, value: string) => void }) {
+  const [name,  setName]  = useState('')
+  const [value, setValue] = useState('')
+  const trimmedName = name.trim()
+  const nameValid   = trimmedName.length > 0 && !/\s/.test(trimmedName)
+  const boolHint    = value.trim().toLowerCase() === 'true' || value.trim().toLowerCase() === 'false'
+
+  const submit = () => {
+    if (!nameValid) return
+    onAdd(trimmedName, value)
+    setName(''); setValue('')
+  }
+
+  return (
+    <div className="ld-var-add">
+      <input className="ld-var-input ld-var-add-name" placeholder="new variable name" value={name}
+        onChange={e => setName(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit() }} />
+      <span className="ld-var-eq">=</span>
+      <input className="ld-var-input" placeholder="value" value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit() }} />
+      <button className="ld-var-btn ld-var-btn--save" disabled={!nameValid} onClick={submit} title="Add variable (;vars set)">Add</button>
+      {name && !nameValid && <span className="ld-var-hint ld-var-hint--warn">no spaces in name</span>}
+      {boolHint && <span className="ld-var-hint">stored as boolean</span>}
+    </div>
+  )
+}
+
+// One variable row. When `canEdit`, string values get an inline editor and any
+// value gets a two-click delete. Non-string values (arrays/hashes/times) are
+// display-only for editing — matching `;vars setup`, which makes them read-only
+// too — but can still be deleted.
+function EditableVarRow({ name, val, canEdit, onSave, onDelete }: {
+  name: string; val: MarshalVal; canEdit: boolean
+  onSave: (value: string) => void; onDelete: () => void
+}) {
+  const [editing,    setEditing]    = useState(false)
+  const [draft,      setDraft]      = useState('')
+  const [confirmDel, setConfirmDel] = useState(false)
+  const isString = typeof val === 'string'
+
+  const startEdit = () => { setDraft(isString ? (val as string) : ''); setEditing(true) }
+  const commit    = () => { onSave(draft); setEditing(false) }
+
+  return (
+    <div className="ld-var-row">
+      <span className="ld-var-key" title={name}>{name}</span>
+      <div className="ld-var-val">
+        {editing
+          ? (
+            <span className="ld-var-edit">
+              <input className="ld-var-input" value={draft} autoFocus
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setEditing(false) }} />
+              <button className="ld-var-btn ld-var-btn--save" onClick={commit} title="Save (;vars set)">✓</button>
+              <button className="ld-var-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
+            </span>
+          )
+          : <VarValue val={val} depth={0} />}
+      </div>
+      {canEdit && !editing && (
+        <span className="ld-var-actions">
+          {isString && <button className="ld-var-btn" onClick={startEdit} title="Edit value">✎</button>}
+          {confirmDel
+            ? (
+              <>
+                <button className="ld-var-btn ld-var-btn--del" onClick={() => { onDelete(); setConfirmDel(false) }} title="Confirm delete">Delete?</button>
+                <button className="ld-var-btn" onClick={() => setConfirmDel(false)} title="Cancel">✕</button>
+              </>
+            )
+            : <button className="ld-var-btn ld-var-btn--del-trigger" onClick={() => setConfirmDel(true)} title="Delete variable">✕</button>}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function VarsTab({ lichPath, session, onRunCommand }: { lichPath: string; session: SessionInfo; onRunCommand: (cmd: string) => void }) {
   const defaultScope = `${session.game}:${session.character}`
   const [allScopes, setAllScopes] = useState<string[]>([])
   const [scope,     setScope]     = useState(defaultScope)
   const [vars,      setVars]      = useState<{ [k: string]: MarshalVal } | null>(null)
-  const [loading,   setLoading]   = useState(false)
-  const [error,     setError]     = useState<string | null>(null)
-  const [search,    setSearch]    = useState('')
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState<string | null>(null)
+  const [search,      setSearch]      = useState('')
+  const [lastRefresh, setLastRefresh] = useState<number | null>(null)
+
+  // Optimistic edits, keyed scope → name → change. Our writes force an immediate
+  // `Vars.save`, so the DB is fresh almost at once — but the overlay still bridges
+  // the brief gap so the ↺ button (or a quick reopen) never flickers an edit back
+  // to its old value. See pitfall on why we write THROUGH Lich's Vars API + save
+  // rather than into the DB directly.
+  const pendingRef = useRef<Record<string, Record<string, { val: MarshalVal } | { del: true }>>>({})
+
+  // Editing is only safe for the CONNECTED character's own scope: `;vars set`
+  // mutates Lich's in-memory vars for the session we're attached to, regardless
+  // of which scope the dropdown is viewing. Other scopes are view-only.
+  const isOwnScope = scope === defaultScope
+  const canEdit    = session.useLich && isOwnScope
+
+  const applyPending = useCallback((base: { [k: string]: MarshalVal }, sc: string): { [k: string]: MarshalVal } => {
+    const pend = pendingRef.current[sc]
+    if (!pend) return base
+    const out = { ...base }
+    for (const [k, change] of Object.entries(pend)) {
+      if ('del' in change) delete out[k]
+      else out[k] = change.val
+    }
+    return out
+  }, [])
 
   // Load scope list once
   useEffect(() => {
@@ -188,25 +309,55 @@ function VarsTab({ lichPath, session }: { lichPath: string; session: SessionInfo
     }).catch(() => {})
   }, [lichPath])
 
-  // Load vars for selected scope
+  // Load vars for selected scope, then overlay any pending optimistic edits.
   const loadScope = useCallback((s: string) => {
     if (!lichPath || !s) return
     setLoading(true); setError(null); setVars(null)
     window.api.lichGetVars(lichPath, s).then(rows => {
+      setLastRefresh(Date.now())
       const row = rows[0]
-      if (!row) { setVars({}); return }
+      if (!row) { setVars(applyPending({}, s)); return }
       const v = row.vars as MarshalVal
       if (v && typeof v === 'object' && !Array.isArray(v) && '_parseError' in v) {
         setError(String((v as Record<string, MarshalVal>)._parseError))
       } else {
-        setVars((typeof v === 'object' && v !== null && !Array.isArray(v))
+        const base = (typeof v === 'object' && v !== null && !Array.isArray(v))
           ? v as { [k: string]: MarshalVal }
-          : {})
+          : {}
+        setVars(applyPending(base, s))
       }
     }).catch(e => setError(String(e))).finally(() => setLoading(false))
-  }, [lichPath])
+  }, [lichPath, applyPending])
 
   useEffect(() => { loadScope(scope) }, [scope, loadScope])
+
+  // Write through Lich's public Vars API AND force an immediate persist, in one
+  // atomic `;eq` (ExecScript) call: `Vars[name] = value; Vars.save`.
+  //
+  // Why not `;vars set`/`;vars delete`? Those mutate Lich's in-memory @@vars but
+  // DON'T flush to lich.db3 until Lich's 5-min auto-save — so the SQLite read
+  // view (and a modal reopen) keeps showing the old value. `Vars.save` rewrites
+  // the whole blob immediately (mutex-guarded, vars.rb:78), so a delete actually
+  // removes the key from storage and the read view is correct right away. Doing
+  // the mutation + save in ONE `;eq` avoids a race between two separate commands
+  // (a standalone save could run before a separate `;vars delete` finished).
+  // `Vars[]=` / `Vars.save` are Lich's documented public API — as stable as the
+  // command, and what `;vars` itself calls internally. Lich coerces literal
+  // true/false to booleans (vars.lic:45-48); mirror that here.
+  const setVar = useCallback((name: string, rawValue: string) => {
+    const lower = rawValue.trim().toLowerCase()
+    const stored: MarshalVal = lower === 'true' ? true : lower === 'false' ? false : rawValue
+    const valueLit = lower === 'true' ? 'true' : lower === 'false' ? 'false' : rubyLit(rawValue)
+    onRunCommand(`;eq Vars[${rubyLit(name)}] = ${valueLit}; Vars.save`)
+    pendingRef.current[scope] = { ...(pendingRef.current[scope] ?? {}), [name]: { val: stored } }
+    setVars(v => ({ ...(v ?? {}), [name]: stored }))
+  }, [scope, onRunCommand])
+
+  const deleteVar = useCallback((name: string) => {
+    onRunCommand(`;eq Vars[${rubyLit(name)}] = nil; Vars.save`)
+    pendingRef.current[scope] = { ...(pendingRef.current[scope] ?? {}), [name]: { del: true } }
+    setVars(v => { if (!v) return v; const nv = { ...v }; delete nv[name]; return nv })
+  }, [scope, onRunCommand])
 
   const filteredKeys = useMemo(() => {
     if (!vars) return []
@@ -225,27 +376,44 @@ function VarsTab({ lichPath, session }: { lichPath: string; session: SessionInfo
         </select>
         <input className="lp-search" placeholder="Filter keys…" value={search} onChange={e => setSearch(e.target.value)} />
         <button className="ld-refresh-btn" onClick={() => loadScope(scope)} title="Refresh">↺</button>
+        {lastRefresh && (
+          <span className="ld-refresh-time" title="Last read from lich.db3">
+            refreshed {new Date(lastRefresh).toLocaleTimeString()}
+          </span>
+        )}
       </div>
+
+      {session.useLich && !isOwnScope && (
+        <div className="ld-var-note">Viewing another character's variables — editing is only available for {defaultScope} (the connected session).</div>
+      )}
 
       {error   && <div className="ld-error">{error}</div>}
       {loading && <div className="ld-empty">Loading…</div>}
 
       {vars && !loading && (
         <div className="lp-body ld-vars-body">
+          {canEdit && <AddVarRow onAdd={setVar} />}
           {filteredKeys.length === 0
             ? <div className="ld-empty">{search ? 'No keys match.' : 'No variables stored for this scope.'}</div>
             : filteredKeys.map(k => (
-              <div key={k} className="ld-var-row">
-                <span className="ld-var-key">{k}</span>
-                <div className="ld-var-val">
-                  <VarValue val={vars[k]} depth={0} />
-                </div>
-              </div>
+              <EditableVarRow key={k} name={k} val={vars[k]} canEdit={canEdit}
+                onSave={value => setVar(k, value)} onDelete={() => deleteVar(k)} />
             ))
           }
         </div>
       )}
-      <div className="lp-footer">{filteredKeys.length} keys · read-only · saved by Lich every 5 min</div>
+      <div className="lp-footer">
+        <span>
+          {filteredKeys.length} keys · {canEdit
+            ? 'edits save to Lich immediately'
+            : isOwnScope ? 'read-only (connect via Lich to edit)' : 'read-only'}
+        </span>
+        <span className="ld-footer-note">
+          {canEdit
+            ? 'Edits update Lich’s memory instantly and force an immediate save to lich.db3. (Lich’s own auto-save runs every ~5 min — that’s when changes made by scripts get written.)'
+            : 'Variables live in Lich’s memory; Lich saves them to lich.db3 every ~5 min, so this view may be up to ~5 min behind Lich’s live state.'}
+        </span>
+      </div>
     </>
   )
 }
@@ -851,7 +1019,7 @@ const TABS: { id: DashTab; label: string }[] = [
   { id: 'profiles',  label: 'Profiles'  },
 ]
 
-export default function LichDashboard({ session, initialTab = 'scripts', onClose, onSendCommand }: Props) {
+export default function LichDashboard({ session, initialTab = 'scripts', onClose, onSendCommand, onRunCommand }: Props) {
   const lichPath = getLichPath()
   const [tab, setTab] = useState<DashTab>(initialTab)
 
@@ -875,7 +1043,7 @@ export default function LichDashboard({ session, initialTab = 'scripts', onClose
         {/* Body — each tab manages its own scroll */}
         <div className="ld-body">
           {tab === 'scripts'   && <ScriptsTab  lichPath={lichPath} onSendCommand={onSendCommand} />}
-          {tab === 'variables' && <VarsTab     lichPath={lichPath} session={session} />}
+          {tab === 'variables' && <VarsTab     lichPath={lichPath} session={session} onRunCommand={onRunCommand} />}
           {tab === 'settings'  && <SettingsTab lichPath={lichPath} />}
           {tab === 'profiles'  && <ProfilesTab lichPath={lichPath} />}
         </div>

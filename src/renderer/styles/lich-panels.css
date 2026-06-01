@@ -154,6 +154,14 @@
   flex-shrink: 0;
 }
 
+.ld-footer-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  line-height: 1.35;
+}
+
 .lp-footer code {
   font-family: monospace;
   background: rgba(255,255,255,0.07);
@@ -610,6 +618,13 @@
 }
 .ld-refresh-btn:hover { color: var(--text-primary); border-color: var(--accent-dim); }
 
+.ld-refresh-time {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .ld-vars-body { padding: 0; }
 
 .ld-var-row {
@@ -634,6 +649,64 @@
 }
 
 .ld-var-val { flex: 1; overflow: hidden; }
+
+/* ── Var editing (add / inline edit / delete) ─────────────────────────────── */
+.ld-var-note {
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--accent-dim) 12%, transparent);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.ld-var-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
+}
+.ld-var-eq { color: var(--text-faint); font-family: monospace; }
+
+.ld-var-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  min-width: 0;
+}
+.ld-var-input:focus { outline: none; border-color: var(--accent-dim); }
+.ld-var-add-name { max-width: 200px; }
+.ld-var-add .ld-var-input:not(.ld-var-add-name) { flex: 1; }
+
+.ld-var-edit { display: flex; align-items: center; gap: 6px; }
+.ld-var-edit .ld-var-input { flex: 1; }
+
+.ld-var-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+.ld-var-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ld-var-btn:hover { color: var(--text-primary); border-color: var(--accent-dim); }
+.ld-var-btn:disabled { opacity: 0.4; cursor: default; }
+.ld-var-btn--save:not(:disabled) { color: var(--vital-health-ok-start, #7ec699); }
+.ld-var-btn--del,
+.ld-var-btn--del-trigger:hover { color: #e06c75; border-color: color-mix(in srgb, #e06c75 50%, transparent); }
+
+.ld-var-hint { font-size: 0.72rem; color: var(--text-faint); }
+.ld-var-hint--warn { color: #e0a96c; }
 
 /* Recursive value tree */
 .ld-val--null   { color: var(--text-faint); }
