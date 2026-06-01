@@ -283,7 +283,7 @@ Releases ship via `node publish.mjs` (needs `$env:GH_TOKEN`). Cleans `release/`,
 | **Tracker.md** | Version history. Brief why/how per release. | When a release ships. Reverse-chronological. |
 | **README.md** | User-facing. | When behavior visible to users changes. |
 | **BUGS.md** | Tester-reported bug ledger (B-numbers). | Open / Resolved tables, with full root-cause notes on resolution. |
-| **release-notes.md** | GitHub release body. User-readable changelog. | Separate from Tracker.md (dev-facing). |
+| **release-notes.md** | GitHub release body. User-readable changelog. | Separate from Tracker.md (dev-facing). **Keep only the last 1–2 releases** — prepend the new version's section, then trim so the file holds just the current release plus (optionally) the immediately prior one for context. Do NOT keep a running trail of every release here; the full version history lives in Tracker.md and git. When cutting a new version, add the new section at the top and delete everything older than the prior release. |
 
 ---
 
