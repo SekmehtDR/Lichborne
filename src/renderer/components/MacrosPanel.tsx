@@ -131,6 +131,18 @@ function CommandList({ commands, onChange, vars, tokens }: CommandListProps) {
               onChange={e => update(i, e.target.value)}
               placeholder="Command to send…"
               spellCheck={false}
+              // B137 (v0.8.10): include `@` in a command to make it
+              // "type and wait" — the macro types the text into the
+              // command bar, places the cursor where the `@` was, and
+              // waits for you to finish typing and press Enter
+              // yourself. Use `\@` for a literal `@` character. Matches
+              // Genie / Wrayth / Stormfront convention.
+              title={
+                'Include `@` to mark where the cursor should land — Lichborne will\n'
+                + 'type the text and wait for you to finish typing instead of sending.\n'
+                + 'Example: `arrange @` types "arrange " and waits for the target.\n'
+                + 'Use `\\@` for a literal `@` character.'
+              }
             />
             <MaVarPicker inputRef={iRef} value={cmd} onChange={v => update(i, v)} vars={vars} tokens={tokens} />
             {commands.length > 1 && (

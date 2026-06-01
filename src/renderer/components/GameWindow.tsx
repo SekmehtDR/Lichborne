@@ -1,6 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
+import { normalizeStreamId } from '../../shared/streamAliases'
 import { TextLineRow } from './TextLineRow'
 import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
@@ -9,7 +10,7 @@ import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
-import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, type AliasRule, type MacroRule } from '../macros'
+import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import MapPanel from './panels/MapPanel'
 import DebugPanel from './DebugPanel'
@@ -91,7 +92,9 @@ const NEVER_DISCOVER = new Set([
   'thought',    // → thoughts
   'death',      // → deaths
   'logons',     // → arrivals
-  'talk',       // → conversations
+  'talk',       // → conversation (v0.8.10: renamed from plural)
+  'whispers',   // → conversation (v0.8.10: also routes to the combined Conversation feed)
+  'conversations', // → conversation (v0.8.10 backward alias; legacy plural)
   'percwindow', // → spells
   'assess',
   'inventory',  // → inv
@@ -106,7 +109,17 @@ const NEVER_DISCOVER = new Set([
 // closing the Active Spells panel just drops the updates until the user
 // opens it again.
 const STREAM_FALLBACK: Record<string, string> = {
-  conversations: 'main',
+  // B136 (Sekmeht, v0.8.10): NO conversation fallback. DR natively duplicates
+  // speech to main — every `<pushStream id="talk"/>"You say, Hi."<popStream/>`
+  // is followed by a second `"You say, Hi."` OUTSIDE the stream block that goes
+  // to main directly. If we also fell `conversation` back to main when no
+  // panel watches it, speech appeared TWICE in the main scroll (once via the
+  // outside-pushStream copy, once via our fallback). Removing the fallback
+  // means: with no Conversation panel open, speech still shows once in main
+  // (DR's native duplicate); content inside the talk pushStream block just
+  // gets dropped if no panel watches it. Other streams (thoughts/arrivals/
+  // deaths/etc.) DO need the fallback because DR doesn't duplicate those —
+  // speech is the only exception.
   thoughts:      'main',
   arrivals:      'main',
   deaths:        'main',
@@ -347,8 +360,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [mainTopHeight, setMainTopHeight] = useState(() => loadInt(scopedKey(session.character, 'mainTopHeight'), DEFAULT_MAIN_TOP_HEIGHT, MIN_MAIN_TOP_HEIGHT, MAX_MAIN_TOP_HEIGHT))
 
   // Panel tabs — 3 right-column zones + 1 main-top zone, persisted to localStorage (per-character)
-  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'topTabs'),    [makeTab('conversations')]))
-  const [topActiveId, setTopActiveId]   = useState(() => loadStr(scopedKey(session.character, 'topActiveId'),    'conversations'))
+  const [topTabs, setTopTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'topTabs'),    [makeTab('conversation')]))
+  const [topActiveId, setTopActiveId]   = useState(() => loadStr(scopedKey(session.character, 'topActiveId'),    'conversation'))
   const [midTabs, setMidTabs]       = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'midTabs'),    [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]))
   const [midActiveId, setMidActiveId]   = useState(() => loadStr(scopedKey(session.character, 'midActiveId'),    'thoughts'))
   const [bottomTabs, setBottomTabs] = useState<TabDef[]>(() => loadTabs(scopedKey(session.character, 'bottomTabs'), [makeTab('exp'), makeTab('log')]))
@@ -535,7 +548,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // ── Trigger engine ────────────────────────────────────────────────────────
 
   const echoToStream = useCallback((stream: string, text: string, color?: string | null) => {
-    const key  = stream
+    // v0.8.10 (B135): normalize legacy / cross-client stream aliases (e.g.
+    // 'talk' / 'conversations' / 'whispers' all → 'conversation') so an
+    // imported Genie trigger with `#echo >talk` or a legacy Lichborne F29
+    // trigger with echoStream='conversations' lands in the right panel.
+    const key  = normalizeStreamId(stream)
     const fg   = color ? color.replace(/^#/, '') : undefined
     const line = { id: lineId++, segments: [{ text, preset: 'echo' as const, ...(fg ? { fg } : {}) }], timestamp: Date.now() }
     setStreamLines(prev => ({
@@ -1477,7 +1494,35 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             const fn = dispatchUserTextRef.current
             if (fn) fn(text, { pushToHistory, clearInput })
           }
+          // B137 (Jaded, v0.8.10): cursor-marker handling. A macro command
+          // containing an unescaped `@` is "type-and-wait" mode — type into
+          // the command bar, position cursor at the `@`, don't send. The
+          // macro stops at the first wait-command (any remaining commands
+          // are skipped; if the user wants them, they have to manually fire
+          // the macro again after sending). Matches Genie's behavior at
+          // FormMain.cs:1140.
+          let stoppedForCursor = false
           for (const cmd of resolved.commands) {
+            const cursor = parseCursorMarker(cmd)
+            if (cursor) {
+              // Send any pending plain commands first, then deposit text
+              // into the bar + position cursor + focus. Stop iteration.
+              flushPlain()
+              setCommand(cursor.text)
+              commandRef.current = cursor.text
+              historyIdxRef.current = -1
+              // Wait one frame so React commits the new input value before
+              // we set the selection — setSelectionRange on the previous
+              // value's length wouldn't match the new value's positions.
+              requestAnimationFrame(() => {
+                const input = inputRef.current
+                if (!input) return
+                input.focus()
+                input.setSelectionRange(cursor.cursorPos, cursor.cursorPos)
+              })
+              stoppedForCursor = true
+              break
+            }
             const tok = getMacroToken(cmd)
             if (!tok) { plain.push(cmd); continue }
             flushPlain()
@@ -1496,7 +1541,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               }
             }
           }
-          flushPlain()
+          if (!stoppedForCursor) flushPlain()
         }
       }
     }
@@ -1611,11 +1656,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // v0.8.1 (F24): Room moved from right-column top into the new main-top
     // zone; right-column top default is just Conversations now.
     const defaultMainTop = [makeTab('room'), makeTab('combat')]
-    const defaultTop = [makeTab('conversations')]
+    const defaultTop = [makeTab('conversation')]
     const defaultMid = [makeTab('thoughts'), makeTab('arrivals'), makeTab('deaths'), makeTab('spells')]
     const defaultBot = [makeTab('exp'), makeTab('log')]
     setMainTopTabs(defaultMainTop); setMainTopActiveId('room')
-    setTopTabs(defaultTop);         setTopActiveId('conversations')
+    setTopTabs(defaultTop);         setTopActiveId('conversation')
     setMidTabs(defaultMid);         setMidActiveId('thoughts')
     setBottomTabs(defaultBot);      setBottomActiveId('exp')
     setMainTopAdded(true); setTopAdded(true); setMidAdded(true); setBottomAdded(true)

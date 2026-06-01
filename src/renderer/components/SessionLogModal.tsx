@@ -53,7 +53,7 @@ const JUMP_RADIUS = 120 // lines either side when jumping to a search hit
 const PRESETS: { label: string; keep: string[] | 'all' }[] = [
   { label: 'Everything', keep: 'all' },
   { label: 'Combat', keep: ['main', 'combat', 'group', 'thoughts', 'cmd'] },
-  { label: 'Social', keep: ['thoughts', 'conversations', 'arrivals', 'deaths'] },
+  { label: 'Social', keep: ['thoughts', 'conversation', 'arrivals', 'deaths'] },
   { label: 'Quiet',  keep: ['main', 'sys'] },
 ]
 

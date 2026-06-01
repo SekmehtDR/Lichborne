@@ -161,25 +161,53 @@ function parseWraythAction(raw: string): { commands: string[]; hadBuiltin: boole
   const commands: string[] = []
   let hadBuiltin = false
 
-  // Replace \r with a separator then split
-  const parts = raw
-    .replace(/\\r/g, '\r')
+  // B137 (Jaded, v0.8.10): Wrayth's `\r` is the explicit "send / Enter"
+  // marker. A macro WITHOUT a trailing `\r` is intentionally "type and
+  // wait" — type into the input box and don't auto-send (matches
+  // Wrayth's runtime behavior). To translate to Lichborne's universal
+  // `@` cursor-marker convention, we append `@` to the final command
+  // when the raw action didn't end with `\r` AND doesn't already have
+  // an `@` somewhere. So `'}` → `'}@`, `first` → `first@`, but
+  // `close my @` stays as `close my @`. Lichborne's macro engine then
+  // sees the `@` and triggers type-and-wait mode (parseCursorMarker
+  // in macros.ts).
+  const normalized = raw.replace(/\\r/g, '\r')
+  const actionEndsWithEnter = normalized.endsWith('\r')
+  const parts = normalized
     .split('\r')
     .map(s => s.trim())
     .filter(Boolean)
 
-  for (const part of parts) {
+  for (let i = 0; i < parts.length; i++) {
+    const isLast = i === parts.length - 1
     // Strip \x direction prefix before builtin check — some client commands use it too
-    const cmd = part.replace(/^\\x/, '').trim()
+    const cmd = parts[i].replace(/^\\x/, '').trim()
     if (!cmd) continue
     if (isBuiltinAction(cmd)) {
       hadBuiltin = true
       continue
     }
-    commands.push(cmd)
+    // Wait-mode if this is the last command AND the action didn't end
+    // with \r. Append `@` (the cursor marker, end of text) only if the
+    // command doesn't already contain an unescaped `@`.
+    if (isLast && !actionEndsWithEnter && !hasUnescapedAt(cmd)) {
+      commands.push(cmd + '@')
+    } else {
+      commands.push(cmd)
+    }
   }
 
   return { commands, hadBuiltin }
+}
+
+// Check if the string has an `@` that isn't escaped as `\@`. Used to decide
+// whether to append a trailing `@` cursor marker on Wrayth wait-mode commands.
+function hasUnescapedAt(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && s[i + 1] === '@') { i++; continue }
+    if (s[i] === '@') return true
+  }
+  return false
 }
 
 function parseMacros(xml: string): ImportMacro[] {

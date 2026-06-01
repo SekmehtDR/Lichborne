@@ -1,4 +1,5 @@
 import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportEchoAction, ImportVarAction, ImportLogAction } from '../types'
+import { normalizeStreamId } from '../../../shared/streamAliases'
 import { parseGenieColor } from '../colorUtils'
 import { normalizeGenieKey } from '../keyNormalizer'
 
@@ -6,15 +7,45 @@ import { normalizeGenieKey } from '../keyNormalizer'
 // Genie uses {curly brace} delimited arguments, possibly quoted with "..."
 // e.g. #highlight {regexp} {#FF0000} {some pattern} {class} {Sound.wav}
 
+// B137 follow-up (Sekmeht, v0.8.10): walk character-by-character so we can
+// handle Genie's escape sequences inside arguments. Pre-v0.8.10 the parser
+// used `line.indexOf('}', i)` which always found the FIRST `}` after `{`,
+// even if that `}` was escaped as `\}`. That broke any Genie macro using
+// the `\}` escape (e.g. `{\\x;'\}sekmeht @}` — the literal `}` after `'\`
+// would terminate the argument prematurely and the rest got dropped).
+//
+// Resolves Level-1 escapes during extraction:
+//   `\\` → `\`   (literal backslash)
+//   `\}` → `}`   (literal close-brace, would otherwise terminate the arg)
+//   `\{` → `{`   (literal open-brace, less common but standard)
+// Other backslash sequences (like `\x` for "clear input" or `\@` for
+// "literal @") are LEFT AS-IS — they're runtime escapes, not Level-1
+// argument-delimiter escapes. So `\x` and `\@` pass through unchanged
+// for downstream handling (`\x` gets stripped by splitAction; `\@` gets
+// resolved by Lichborne's `parseCursorMarker` at runtime).
 function parseArgs(line: string): string[] {
   const args: string[] = []
   let i = 0
   while (i < line.length) {
     if (line[i] === '{') {
-      const end = line.indexOf('}', i)
-      if (end === -1) break
-      args.push(line.slice(i + 1, end))
-      i = end + 1
+      let j = i + 1
+      let buf = ''
+      while (j < line.length) {
+        if (line[j] === '\\' && j + 1 < line.length) {
+          const next = line[j + 1]
+          if (next === '\\' || next === '}' || next === '{') {
+            buf += next
+            j += 2
+            continue
+          }
+        }
+        if (line[j] === '}') break
+        buf += line[j]
+        j++
+      }
+      if (j === line.length) break  // no closing brace — malformed, bail
+      args.push(buf)
+      i = j + 1
     } else {
       i++
     }
@@ -30,7 +61,32 @@ function isGenieInternal(cmd: string): boolean {
   return cmd.startsWith('#') && !cmd.startsWith('##')
 }
 
+// Check if the string has an `@` that isn't escaped as `\@`. Used by Genie
+// and Wrayth importers to decide whether the macro is already in wait-mode
+// (has a cursor marker) or whether a trailing `@` should be appended to
+// translate the source client's implicit wait-mode signal.
+function hasUnescapedAt(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && s[i + 1] === '@') { i++; continue }
+    if (s[i] === '@') return true
+  }
+  return false
+}
+
 // Split a Genie action string on ; into individual commands, filtering internals.
+//
+// B137 follow-up (Sekmeht, v0.8.10): Genie's `\x` is its "clear input box"
+// command. Lichborne always replaces the command-bar contents when a macro
+// types into it (no separate clear step needed), so `\x` is purely import-
+// time noise — we strip it from each part and let the part-filter drop the
+// resulting empty entries. **`\x` does NOT trigger wait-mode in Lichborne**
+// (per Sekmeht 2026-06-01) — only `@` does. So `\\x;hide` (hypothetical)
+// imports as just `hide` and auto-sends; `\\x;send $think @` imports as
+// `send $think @` and waits (because of `@`, not because of `\x`). This is
+// a deliberate simplification from Genie's two-mode behavior; users who
+// genuinely want "insert at cursor without clearing first" can edit their
+// macros after import to remove the `\\x;` and we'd treat them as wait-mode
+// only if they have `@`.
 function splitAction(action: string): { commands: string[]; hadInternal: boolean } {
   const parts = action.split(';').map(s => s.trim()).filter(Boolean)
   const commands: string[] = []
@@ -39,11 +95,12 @@ function splitAction(action: string): { commands: string[]; hadInternal: boolean
     if (isGenieInternal(p)) {
       hadInternal = true
     } else {
-      // Strip leading \x (Wrayth-style direction prefix used in some Genie macros)
+      // Strip leading \x (Genie's "clear input" command — see comment block above).
       commands.push(p.replace(/^\\x/, '').trim())
     }
   }
-  return { commands, hadInternal }
+  // After splitting, filter out empties that resulted from `\x`-only parts.
+  return { commands: commands.filter(Boolean), hadInternal }
 }
 
 // Strip trailing \r (Genie's "send with enter" marker — Frostborne does this automatically)
@@ -263,7 +320,11 @@ function parseEchoAction(raw: string): ImportEchoAction {
     const token = next[1]
     const after = next[2]
     if (token.startsWith('>')) {
-      stream = token.slice(1) || 'log'
+      // v0.8.10 (B135): normalize legacy / cross-client stream names —
+      // a Genie config with `#echo >talk` or `#echo >whispers` becomes
+      // `>conversation`, so the imported trigger echoes to the panel
+      // that actually exists in Lichborne instead of a silent dead end.
+      stream = normalizeStreamId(token.slice(1) || 'log')
       rest = after
     } else {
       const c = resolveEchoColor(token)

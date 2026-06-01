@@ -14,7 +14,16 @@ import ScriptListPanel from './ScriptListPanel'
 import type { ScriptRecord } from '../../shared/types'
 import '../styles/panel-frame.css'
 
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversations' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'combat' | 'custom'
+// v0.8.10 (B134-follow-up): `conversation` (singular) — matches the
+// Stormfront / Wrayth / Genie / Frostbite convention. Earlier versions
+// used 'conversations' (plural); a one-time localStorage migration in
+// [renderer/migrations.ts](src/renderer/migrations.ts) renames any
+// saved tabs / activeIds / panelFontSizes / trigger watchStream values
+// from 'conversations' → 'conversation' on first load. STREAM_MAP in
+// [parser](src/main/parser/StormFrontParser.ts) also keeps a
+// 'conversations' → 'conversation' backward alias so any in-flight
+// XML or legacy F29 export with the plural still routes correctly.
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversation' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'combat' | 'custom'
 
 export interface TabDef {
   id: string
@@ -26,7 +35,7 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   room:          'Room',
   thoughts:      'Thoughts',
   arrivals:      'Arrivals',
-  conversations: 'Conversations',
+  conversation:  'Conversation',
   deaths:        'Deaths',
   spells:        'Active Spells',
   exp:           'Experience',
@@ -42,7 +51,7 @@ export const PANEL_LABELS: Record<PanelType, string> = {
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
-  'room', 'thoughts', 'arrivals', 'conversations', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map', 'lichScripts', 'combat',
+  'room', 'thoughts', 'arrivals', 'conversation', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map', 'lichScripts', 'combat',
 ]
 
 export function makeTab(type: PanelType): TabDef {
@@ -394,7 +403,7 @@ function renderPanel(
     case 'room':          return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
     case 'thoughts':      return sp('thoughts',      streamLines.thoughts      ?? [])
     case 'arrivals':      return sp('arrivals',      streamLines.arrivals      ?? [])
-    case 'conversations': return sp('conversations', streamLines.conversations ?? [])
+    case 'conversation':  return sp('conversation',  streamLines.conversation  ?? [])
     case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
     case 'spells':        return sp('spells',        streamLines.spells        ?? [])
     case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} focus={expFocus} pinnedSkills={pinnedSkills} onFocusChange={onFocusChange} onTogglePin={onTogglePin} />

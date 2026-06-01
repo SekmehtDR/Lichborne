@@ -221,7 +221,7 @@ export const WATCH_STREAM_OPTIONS = [
   { value: 'main',          label: 'Main' },
   { value: 'thoughts',      label: 'Thoughts' },
   { value: 'arrivals',      label: 'Arrivals' },
-  { value: 'conversations', label: 'Conversations' },
+  { value: 'conversation',  label: 'Conversation'  },
   { value: 'deaths',        label: 'Deaths' },
   { value: 'spells',        label: 'Active Spells' },
   { value: 'familiar',      label: 'Familiar' },

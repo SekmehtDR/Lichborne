@@ -128,6 +128,57 @@ export function interpolate(template: string, vars: Record<string, string>): str
   return template.replace(/\$(\w+)/g, (_, key) => vars[key] ?? `$${key}`)
 }
 
+// ── Cursor marker (B137, v0.8.10) ─────────────────────────────────────────────
+// `@` in a macro command is the cursor-position marker (matches Genie's
+// FormMain.cs:1140 behavior and Wrayth's convention — both Stormfront-family
+// clients use `@` for the same purpose). When a macro command contains an
+// unescaped `@`:
+//   1. The macro fires "type-and-wait" mode instead of "send" mode
+//   2. The text is typed into the command bar (without sending)
+//   3. The cursor lands where the first `@` was, ready for the user to finish
+//      typing and press Enter manually
+//
+// Escape: `\@` represents a literal `@` character — the backslash is stripped
+// and the `@` becomes part of the typed text without acting as a marker. So a
+// macro like `email me\@example.com` types `email me@example.com` AND sends
+// (no unescaped @ remains, so it's send-mode).
+//
+// Multiple `@` characters: the FIRST unescaped `@` is the cursor position; any
+// additional unescaped `@` chars are stripped from the text (matches Genie's
+// `sText.Replace("@", "")` followed by `sText.IndexOf("@")` for cursor pos —
+// only the first @ matters for positioning, all are removed from the result).
+//
+// Returns null when the command has no unescaped `@` — caller treats as a
+// normal send-mode command (escape handling for `\@` in send-mode is
+// intentionally NOT applied; users who want a literal `@` in a sent command
+// don't need to escape it).
+export interface CursorMarker {
+  text: string       // command text with all @ stripped and \@ resolved to literal @
+  cursorPos: number  // index where the first unescaped @ was in the original
+}
+
+export function parseCursorMarker(command: string): CursorMarker | null {
+  let text = ''
+  let cursorPos = -1
+  let i = 0
+  while (i < command.length) {
+    if (command[i] === '\\' && command[i + 1] === '@') {
+      // Escaped: literal @ in output (no cursor marker)
+      text += '@'
+      i += 2
+    } else if (command[i] === '@') {
+      // Unescaped @: cursor marker. First one wins; all are stripped.
+      if (cursorPos === -1) cursorPos = text.length
+      i += 1
+    } else {
+      text += command[i]
+      i += 1
+    }
+  }
+  if (cursorPos === -1) return null
+  return { text, cursorPos }
+}
+
 // ── Alias resolution ──────────────────────────────────────────────────────────
 // Returns expanded commands + timing config, or null if no alias matched.
 

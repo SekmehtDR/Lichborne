@@ -19,6 +19,7 @@ import type {
 import type { HighlightRule } from '../../highlights'
 import type { TriggerRule, TriggerAction } from '../../triggers'
 import type { MacroRule, AliasRule } from '../../macros'
+import { normalizeStreamId } from '../../../shared/streamAliases'
 
 // File shape declared loosely — the rules arrays carry the full native
 // HighlightRule / TriggerRule / MacroRule / AliasRule shape produced by
@@ -144,14 +145,25 @@ export function parseLichborneYaml(text: string): ImportResult {
     ...(h as HighlightRule),
     id: nanoid(),
   }))
-  const nativeTriggers: TriggerRule[] = (doc.triggers ?? []).map(t => ({
-    ...(t as TriggerRule),
-    id: nanoid(),
-    actions: ((t as TriggerRule).actions ?? []).map((a: TriggerAction) => ({
-      ...a,
+  const nativeTriggers: TriggerRule[] = (doc.triggers ?? []).map(t => {
+    const tr = t as TriggerRule
+    // v0.8.10 (B135): a pre-v0.8.10 Lichborne export could carry
+    // watchStream='conversations' (now plural-deprecated) or echo
+    // actions with echoStream='conversations'/'talk'/'whispers'.
+    // Normalize on import so the recipient's saved trigger references
+    // the canonical 'conversation' id (or whatever the alias maps to)
+    // instead of a panel id that no longer exists post-rename.
+    return {
+      ...tr,
       id: nanoid(),
-    })),
-  }))
+      ...(tr.watchStream ? { watchStream: normalizeStreamId(tr.watchStream) as TriggerRule['watchStream'] } : {}),
+      actions: (tr.actions ?? []).map((a: TriggerAction) => ({
+        ...a,
+        id: nanoid(),
+        ...(a.echoStream ? { echoStream: normalizeStreamId(a.echoStream) } : {}),
+      })),
+    }
+  })
   const nativeMacros: MacroRule[] = (doc.macros ?? []).map(m => ({
     ...(m as MacroRule),
     id: nanoid(),

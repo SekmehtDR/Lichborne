@@ -1,4 +1,5 @@
 import type { GameEvent, StreamTarget, TextSegment } from '../../shared/types'
+import { STREAM_ID_ALIASES, normalizeStreamId } from '../../shared/streamAliases'
 
 function decodeEntities(text: string): string {
   return text
@@ -22,24 +23,11 @@ function parseExits(text: string): string[] {
   return EXIT_DIR_MAP.filter(([re]) => re.test(text)).map(([, abbr]) => abbr)
 }
 
-const STREAM_MAP: Record<string, StreamTarget> = {
-  thoughts:     'thoughts',
-  death:        'deaths',        // server sends "death" (singular)
-  deaths:       'deaths',        // keep alias
-  logons:       'arrivals',      // server sends "logons" for arrivals/departures
-  arrivals:     'arrivals',      // keep alias
-  spells:       'spells',
-  familiar:     'familiar',
-  inv:          'inv',
-  room:         'room',
-  moonWindow:   'moonWindow',
-  LichScripts:  'LichScripts',   // script-watch: live list of running Lich scripts
-  talk:         'conversations', // in-game speech/yell/whisper channel
-  combat:       'combat',        // combat messages
-  atmospherics: 'atmospherics',  // ambient/weather text
-  group:        'group',         // group channel
-  percWindow:   'spells',        // active spells (alias)
-}
+// v0.8.10 (B135): stream id aliases moved to [shared/streamAliases.ts](src/shared/streamAliases.ts)
+// so the renderer's echoToStream and the import parsers can apply the same
+// normalization. Identity-mapping entries (thoughts → thoughts, etc.) were
+// dropped because normalizeStreamId returns the input unchanged when it
+// isn't in STREAM_ID_ALIASES — same effect, less duplication.
 
 // Default preset to apply to unstyled segments when emitted on these streams.
 // Needed because the protocol sends thoughts/arrivals/deaths as raw text with
@@ -294,7 +282,7 @@ export class StormFrontParser {
       case 'pushstream': {
         this.flushSegments()
         const id = attrs.id ?? ''
-        const target = STREAM_MAP[id] ?? id
+        const target = normalizeStreamId(id)
         this.streamStack.push(this.activeStream)
         this.activeStream = target
         // Always emit stream-push so the renderer can discover new streams
@@ -485,7 +473,7 @@ export class StormFrontParser {
         } else if (id) {
           // Any other streamWindow is a stream declaration — translate the ID
           // the same way pushStream does so that declare and push use the same target.
-          const target = STREAM_MAP[id] ?? id
+          const target = normalizeStreamId(id)
           this.events.push({
             type: 'stream-declare',
             stream: target,
@@ -549,7 +537,11 @@ export class StormFrontParser {
 
       case 'clearstream': {
         const id = attrs.id ?? ''
-        const stream = STREAM_MAP[id] ?? COMPONENT_STREAM[id] ?? (id || null)
+        // v0.8.10: use STREAM_ID_ALIASES directly (not normalizeStreamId) so an
+        // id that isn't an alias falls through to COMPONENT_STREAM lookup —
+        // normalizeStreamId always returns a string (never undefined) which
+        // would short-circuit the COMPONENT_STREAM fallback.
+        const stream = STREAM_ID_ALIASES[id] ?? COMPONENT_STREAM[id] ?? (id || null)
         if (stream) this.events.push({ type: 'clear-stream', stream })
         break
       }
