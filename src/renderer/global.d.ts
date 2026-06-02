@@ -17,7 +17,6 @@ declare global {
 
       // ── Per-session push channels ────────────────────────────────────────────
       onGameEvent: (cb: (batch: GameEventBatch) => void) => () => void
-      onClientNotice: (cb: (notice: { sessionId: string; text: string }) => void) => () => void
       onConnectionStatus: (cb: (status: ConnectionStatusPayload) => void) => () => void
       onError: (cb: (payload: ErrorPayload) => void) => () => void
       onRawXml: (cb: (payload: RawXmlPayload) => void) => () => void

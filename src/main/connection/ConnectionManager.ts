@@ -57,7 +57,8 @@ export class ConnectionManager extends EventEmitter {
         const loginKey = await loginKeyPromise
 
         this.emit('status', 'Launching Lich...')
-        await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.lichArguments)
+        // creds.character names the per-session launch log file (Logs/lich-launch/).
+        await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.lichArguments, creds.character)
 
         this.emit('status', `Waiting for Lich on localhost:${creds.lichPort}...`)
         await this.lich.connectWithRetry(loginKey, creds.lichPort, {

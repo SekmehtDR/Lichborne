@@ -1,5 +1,8 @@
 import * as net from 'net'
 import * as cp from 'child_process'
+import * as fs from 'fs'
+import * as path from 'path'
+import { app } from 'electron'
 import { EventEmitter } from 'events'
 
 // Client ID string — Lich with --genie flag expects this format
@@ -17,6 +20,10 @@ const DEFAULT_MAX_WAIT_MS = 30_000
 const SPAWN_FALLBACK_MS  = 1500
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+// Sanitize a character name into a safe per-session log filename (mirrors the
+// safeName used by sessionLog.ts). Empty → 'lich'.
+const safeName = (name: string) => (name || '').replace(/[^a-zA-Z0-9_-]/g, '') || 'lich'
 
 interface ExitInfo {
   code: number | null
@@ -38,9 +45,10 @@ export class LichConnection extends EventEmitter {
   // Set if the spawned Lich process errors or exits — connectWithRetry checks
   // this so a dead Lich fails fast instead of retrying the port for 30s.
   private exitInfo: ExitInfo | null = null
-  // Tail of Lich's stderr (hidden-window mode only) — surfaced in the error
-  // message when Lich crashes on startup.
-  private stderrTail = ''
+  // Path of the per-session launch log (Lich's stdout+stderr is redirected here
+  // instead of a pipe — see launch()). describeExit() reads its tail when Lich
+  // crashes on startup.
+  private logPath = ''
 
   // Spawn the Lich ruby process. Resolves once the process has spawned (or
   // rejects if the spawn itself fails — e.g. a bad ruby path). Does NOT wait
@@ -51,32 +59,72 @@ export class LichConnection extends EventEmitter {
   // '--fallen'. Until v0.8.0 this was hardcoded to '--dragonrealms', which
   // silently routed DRT / DRX / DRF characters to DR.
   //
-  // v0.8.0 also dropped the `hideWindow` parameter — Lich now always launches
-  // hidden (the shell-spawn-via-cmd.exe path was the only thing the visible
-  // window enabled, and stderr is piped so startup crashes still surface via
-  // describeExit()). One spawn shape, every time.
-  async launch(rubyPath: string, lichPath: string, mode = '--stormfront', lichArguments = '--dragonrealms'): Promise<void> {
+  // SPAWN SHAPE (v0.9.x — GTK-friendly launch). Lich runs as a normal Windows
+  // GUI-subsystem process so Ruby/GTK scripts (`;vars setup`, kill-counter, …)
+  // get a proper process/desktop context and their windows render + pump
+  // reliably. This is the community-standard shape (matches how Frostbite /
+  // Genie launch Lich). Three things make it work:
+  //   1. We run `rubyw.exe` (GUI subsystem), not `ruby.exe` (console). Derived
+  //      from the configured ruby path via resolveRubyw(); falls back to the
+  //      given path if rubyw.exe isn't present.
+  //   2. No `windowsHide` — rubyw is windowless by nature, so there's no stray
+  //      console to hide, and we don't impose a hidden-window context on GTK.
+  //   3. No stderr PIPE. The previous shape piped stderr for crash diagnostics,
+  //      but a redirected console pipe is exactly the kind of non-GUI process
+  //      context that made GTK flaky. Instead Lich's stdout+stderr go to a
+  //      per-session log file ({userData}/Logs/lich-launch/{Character}.log);
+  //      describeExit() reads its tail when a launch fails.
+  // `detached` + `unref()` are kept (Lich is the proxy and must outlive us),
+  // as is the child handle (so a Lich that dies on startup fails fast via
+  // exitInfo rather than waiting out the 30s connect-retry).
+  async launch(
+    rubyPath: string,
+    lichPath: string,
+    mode = '--stormfront',
+    lichArguments = '--dragonrealms',
+    character = 'lich',
+  ): Promise<void> {
     this.exitInfo = null
-    this.stderrTail = ''
     this.buffer = ''
     this.connected = false
+
+    const rubywPath = this.resolveRubyw(rubyPath)
+
+    // Open the per-session launch log (truncate per launch → bounded size,
+    // holds only the latest session). Per-character filename so concurrent
+    // sessions never interleave into one file. Best-effort: if we can't open
+    // it, fall back to discarding output rather than failing the launch.
+    let logFd: number | null = null
+    try {
+      const logDir = path.join(app.getPath('userData'), 'Logs', 'lich-launch')
+      fs.mkdirSync(logDir, { recursive: true })
+      this.logPath = path.join(logDir, `${safeName(character)}.log`)
+      logFd = fs.openSync(this.logPath, 'w')
+    } catch {
+      this.logPath = ''
+      logFd = null
+    }
 
     return new Promise((resolve, reject) => {
       let settled = false
       const args = [lichPath, mode, ...lichArguments.trim().split(/\s+/)]
 
       try {
-        // Direct spawn, no console window. stderr is piped so a Ruby/Lich
-        // startup crash can be surfaced in the error message.
-        this.lichProcess = cp.spawn(rubyPath, args, {
+        // GUI-subsystem spawn: rubyw, no hidden-window flag, stdout+stderr to a
+        // log file (not a pipe). See the SPAWN SHAPE note above.
+        this.lichProcess = cp.spawn(rubywPath, args, {
           detached: true,
-          stdio: ['ignore', 'ignore', 'pipe'],
-          windowsHide: true,
+          stdio: logFd === null ? 'ignore' : ['ignore', logFd, logFd],
         })
       } catch (err) {
+        if (logFd !== null) { try { fs.closeSync(logFd) } catch { /* ignore */ } }
         reject(err as Error)
         return
       }
+
+      // The child has its own dup of the fd now; close our copy so we don't
+      // leak it (the file stays open in the child for the session's lifetime).
+      if (logFd !== null) { try { fs.closeSync(logFd) } catch { /* ignore */ } }
 
       const proc = this.lichProcess
 
@@ -96,11 +144,6 @@ export class LichConnection extends EventEmitter {
         if (!settled) { settled = true; resolve() }
       })
 
-      proc.stderr?.on('data', (chunk: Buffer) => {
-        // Keep only the tail — enough to show the actual error, bounded.
-        this.stderrTail = (this.stderrTail + chunk.toString()).slice(-800)
-      })
-
       // Don't let Lich keep our process alive — it's meant to outlive us.
       proc.unref()
 
@@ -108,6 +151,15 @@ export class LichConnection extends EventEmitter {
       // is the real readiness check.
       setTimeout(() => { if (!settled) { settled = true; resolve() } }, SPAWN_FALLBACK_MS)
     })
+  }
+
+  // Derive the GUI-subsystem interpreter (rubyw.exe) from the configured
+  // console interpreter path (ruby.exe). Falls back to the given path if the
+  // derived rubyw.exe doesn't exist — or if the path is already rubyw.exe (the
+  // /ruby\.exe$/ anchor won't match "...rubyw.exe", so it's used verbatim).
+  private resolveRubyw(rubyPath: string): string {
+    const derived = rubyPath.replace(/ruby\.exe$/i, 'rubyw.exe')
+    return (derived !== rubyPath && fs.existsSync(derived)) ? derived : rubyPath
   }
 
   // Connect to Lich's front-end port, retrying until it accepts. The first
@@ -196,9 +248,21 @@ export class LichConnection extends EventEmitter {
     if (info.error) {
       return `Could not start Lich: ${info.error.message}. Check the Ruby and Lich paths.`
     }
-    const tail = this.stderrTail.trim()
+    // Lich's stdout+stderr is redirected to the launch log (see launch()), so
+    // pull the tail from there for the error banner instead of an in-memory pipe.
+    const tail = this.readLogTail().trim()
     return `Lich exited during startup (code ${info.code ?? '?'}).` +
-           (tail ? ` Output: ${tail.slice(-300)}` : ' Check the Ruby and Lich paths.')
+           (tail ? ` Output: ${tail}` : ' Check the Ruby and Lich paths.')
+  }
+
+  // Best-effort read of the last ~300 chars of the launch log, for describeExit.
+  private readLogTail(): string {
+    if (!this.logPath) return ''
+    try {
+      return fs.readFileSync(this.logPath, 'utf8').slice(-300)
+    } catch {
+      return ''
+    }
   }
 
   // Best-effort kill of the spawned Lich. Used when the connection FAILED so a
