@@ -8,6 +8,7 @@ release/
 
 # Runtime / user data
 profiles/
+Exports/
 Logs/
 
 # Logs

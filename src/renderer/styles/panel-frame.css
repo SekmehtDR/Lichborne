@@ -114,7 +114,7 @@
 
 .panel-tab:hover {
   color: var(--text-secondary);
-  background: #161616;
+  background: var(--bg-hover);
 }
 
 .panel-tab--active {
@@ -174,7 +174,7 @@
 
 .panel-tab-add:hover {
   color: var(--text-muted);
-  background: #161616;
+  background: var(--bg-hover);
 }
 
 .panel-add-menu {

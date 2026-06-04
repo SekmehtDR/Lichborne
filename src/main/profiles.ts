@@ -73,6 +73,23 @@ export function ensureProfilesDir(): string {
   return dir
 }
 
+// ── Exports folder (Profile Transfer feature) ────────────────────────────────
+// Sibling of `profiles/` in userData ({userData}/Exports packaged,
+// {appPath}/Exports in dev). Holds `.lb.yaml` profile-transfer bundles the
+// user produces via Launcher → Transfer → Export, and is the default location
+// the import file picker opens into. Mirrors the profiles-dir base-dir logic
+// so the two folders live side by side. No legacy migration — this is new.
+export function getExportsDir(): string {
+  if (app.isPackaged) return path.join(app.getPath('userData'), 'Exports')
+  return path.join(app.getAppPath(), 'Exports')
+}
+
+export function ensureExportsDir(): string {
+  const dir = getExportsDir()
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 // Atomic write: write the payload to {target}.tmp, then rename in place. On
 // Windows fs.rename of an existing file fails — use fs.renameSync after fs.rmSync
 // of the destination. The window where a crash can corrupt the file is tiny

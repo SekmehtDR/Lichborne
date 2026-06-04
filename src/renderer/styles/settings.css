@@ -12,7 +12,7 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 460px;
+  width: 580px;
   max-width: 95vw;
   max-height: 85vh;
   display: flex;
@@ -173,6 +173,32 @@
 .sp-sublist {
   margin-left: 16px;
   border-left: 2px solid var(--border-subtle);
+}
+
+/* ── Disclosure row (collapsible sub-options header) ─────────────── */
+
+.sp-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 6px 16px;
+  text-align: left;
+}
+
+.sp-disclosure:hover { background: var(--bg-hover); color: var(--accent); }
+
+.sp-disclosure-arrow {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  width: 12px;
+  display: inline-block;
 }
 
 /* ── Inline button (Open Logs Folder, etc.) ──────────────────────── */

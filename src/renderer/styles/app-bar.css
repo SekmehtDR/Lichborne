@@ -1,0 +1,133 @@
+/* Unified top app-bar (top-chrome redesign, Phase 2c). One app-level row:
+   brand + status dot | character tabs (flex middle) | action buttons. The
+   button styles (.btn-debug, .btn-disconnect, …) and the .toolbar-title-*
+   brand colors are shared from game.css — globally available in the bundle. */
+
+.app-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  background: linear-gradient(180deg, var(--bg-raised), var(--bg-sunken));
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  font-size: var(--game-font-size);
+}
+
+/* The tabs fill the middle and scroll horizontally when crowded. The app-bar
+   provides the row background + border, so neutralize CharacterTabBar's
+   standalone chrome (it ships its own bg/border/padding for the old layout). */
+.app-bar .character-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border-bottom: none;
+  padding: 0;
+  min-height: 0;
+}
+
+.app-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  font-size: 1.1em;
+  padding-right: 2px;
+}
+
+.app-bar-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-danger, #c0392b);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-danger) 55%, transparent);
+}
+.app-bar-status-dot--on {
+  background: var(--color-success, #4caf7d);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-success) 55%, transparent);
+}
+
+.app-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+/* Active-state glow for the app-bar buttons that didn't already have one in
+   game.css (Maps/Lich/Debug/Logs do). Matches the accent style of
+   .btn-map--active so every toggle button glows consistently when its panel is
+   open on the active session. */
+.btn-panel-manager--active,
+.btn-automations--active,
+.btn-settings--active {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* "More ⋯" overflow dropdown (the less-used buttons live here). */
+.app-bar-more {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.btn-app-bar-more {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 1.0em;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-app-bar-more:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.btn-app-bar-more--active {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.app-bar-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.app-bar-more-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.app-bar-more-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.app-bar-more-item--active {
+  color: var(--accent);
+}

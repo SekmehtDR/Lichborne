@@ -115,6 +115,15 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('updater-log', listener)
   },
 
+  // Native application menu → renderer. Carries a MenuAction string; App routes
+  // session actions to the active GameWindow and handles app actions directly.
+  // (Top-chrome redesign Phase 2a — see src/shared/menuActions.ts.)
+  onMenuAction: (cb: (payload: { action: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: { action: string }) => cb(payload)
+    ipcRenderer.on('menu-action', listener)
+    return () => ipcRenderer.removeListener('menu-action', listener)
+  },
+
   debugPanelToggle: (sessionId: SessionId, open: boolean) =>
     ipcRenderer.send('debug-panel-toggle', sessionId, open),
 
@@ -193,6 +202,13 @@ contextBridge.exposeInMainWorld('api', {
   writeCharacterProfile:(character: string, data: unknown):       Promise<void>           => ipcRenderer.invoke('profile:write-character', character, data),
   listCharacterProfiles:():                                        Promise<string[]>       => ipcRenderer.invoke('profile:list'),
   deleteCharacterProfile:(character: string):                      Promise<void>           => ipcRenderer.invoke('profile:delete-character', character),
+
+  // ── Profile Transfer (platform-wide .lb.yaml export/import → Exports/ folder) ──
+  profileTransferExport:           (filename: string, yamlText: string):  Promise<string>                                 => ipcRenderer.invoke('profile-transfer:export', filename, yamlText),
+  profileTransferListExports:      ():                                     Promise<{ name: string; mtimeMs: number }[]>    => ipcRenderer.invoke('profile-transfer:list-exports'),
+  profileTransferReadExport:       (filename: string):                    Promise<string | null>                          => ipcRenderer.invoke('profile-transfer:read-export', filename),
+  profileTransferOpenImportDialog: ():                                     Promise<{ name: string; text: string } | null>  => ipcRenderer.invoke('profile-transfer:open-import-dialog'),
+  profileTransferOpenExportsFolder:():                                     Promise<void>                                   => ipcRenderer.invoke('profile-transfer:open-exports-folder'),
 
   // ── Session Log ─────────────────────────────────────────────────────────────
   sessionLogAppend:   (payload: SessionLogAppendPayload): void => ipcRenderer.send('session-log:append', payload),

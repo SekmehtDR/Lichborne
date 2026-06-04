@@ -79,7 +79,10 @@ function streamClass(stream: string): string {
 // selection in the Export view stay transient (contextual to each export).
 
 export default function SessionLogModal({ character, initialSearch, onClose }: Props) {
-  const [view, setView] = useState<'tail' | 'search' | 'export'>(initialSearch ? 'search' : 'tail')
+  // `!= null` (not truthiness) so an empty-string initialSearch — the "Find in
+  // Log" entry point — opens the Search view with a blank query, while `null`
+  // (the plain Logs button) opens Recent.
+  const [view, setView] = useState<'tail' | 'search' | 'export'>(initialSearch != null ? 'search' : 'tail')
 
   // ── Recent Tail state ──────────────────────────────────────────────────────
   const [days, setDays]           = useState<SessionLogDay[]>([])

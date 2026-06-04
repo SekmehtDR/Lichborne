@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
-import Launcher, { type LauncherCharacter } from './components/Launcher'
+import Launcher, { loadCharacterCards, type LauncherCharacter } from './components/Launcher'
 import AddCharacterWizard from './components/AddCharacterWizard'
 import LichSetupDialog from './components/LichSetupDialog'
+import ProfileTransferModal from './components/ProfileTransferModal'
 import GameWindow from './components/GameWindow'
-import CharacterTabBar from './components/CharacterTabBar'
+import AppBar from './components/AppBar'
 import QuickSend from './components/QuickSend'
 import BulkConnectPicker from './components/BulkConnectPicker'
 import { GroupsProvider } from './components/GroupsContext'
@@ -13,6 +14,7 @@ import { CharacterProvider } from './CharacterContext'
 import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile } from './profile'
 import { loadAdvanced, saveAdvanced, gameOptionByCode } from './lichSettings'
 import type { LoginCredentials, SessionId } from '../shared/types'
+import { isSessionAction } from '../shared/menuActions'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -54,6 +56,17 @@ function AppShell() {
   const [bulkSummary, setBulkSummary] = useState<{ ok: string[]; failed: { name: string; error: string }[] } | null>(null)
   const [showLichSetup, setShowLichSetup] = useState(false)
   const [showQuickSend, setShowQuickSend] = useState<{ initialCommand: string } | null>(null)
+  // Profile Transfer (Launcher → Transfer). AppShell hosts the modal because it
+  // owns `sessions` (to tell active targets apart) and the per-session reload
+  // nonces (to remount a session after a live import). Opened via the
+  // `lichborne:open-profile-transfer` custom event the Launcher dispatches.
+  const [showProfileTransfer, setShowProfileTransfer] = useState(false)
+  // Per-session remount key suffix. Bumping a character's nonce changes its
+  // GameWindow `key`, forcing a full remount that re-reads all per-character
+  // state from localStorage — used to commit a live profile import into a
+  // running (focused OR backgrounded) session. The socket lives in main, so the
+  // remount doesn't drop the connection.
+  const [reloadNonces, setReloadNonces] = useState<Record<string, number>>({})
   // Visible "Closing…" overlay shown while main is shutting down (v0.8.0,
   // B99). Without it, the up-to-5s gracefulDisconnect wait looks like a
   // frozen window — OS animations stall and the user sees nothing happen.
@@ -227,6 +240,60 @@ function AppShell() {
       document.removeEventListener('lichborne:open-quick-send', onOpenQuickSend)
     }
   }, [sessions, activeId, setActive])
+
+  // Profile Transfer open hook — the Launcher's "Transfer" button dispatches
+  // this. Empty deps: opening just flips the boolean; the modal reads live
+  // `sessions` via props at render time.
+  useEffect(() => {
+    const open = () => setShowProfileTransfer(true)
+    document.addEventListener('lichborne:open-profile-transfer', open)
+    return () => document.removeEventListener('lichborne:open-profile-transfer', open)
+  }, [])
+
+  // Native-menu (and future app-bar) action bridge — Phase 2a/2b. Session
+  // actions are re-dispatched as a DOM event that only the ACTIVE GameWindow
+  // handles (guarded on its isActiveRef); app-level actions run here via a
+  // latest-closure ref so they see live sessions/activeId. Subscriber is
+  // registered once (empty deps).
+  const runAppActionRef = useRef<(action: string) => void>(() => {})
+  useEffect(() => {
+    runAppActionRef.current = (action: string) => {
+      switch (action) {
+        case 'quick-send':      document.dispatchEvent(new CustomEvent('lichborne:open-quick-send')); break
+        case 'profile-export':
+        case 'profile-import':  setShowProfileTransfer(true); break
+        case 'login-character': setShowAdd(true); break  // same as the "+" tab — character picker + add-account button
+        case 'bulk-connect':    void loadCharacterCards().then(cards => { if (cards.length) setBulkPickerSource(cards) }); break
+        case 'close-character': if (activeId) handleCloseTab(activeId); break
+        case 'next-character':
+        case 'prev-character': {
+          if (sessions.length < 2) break
+          const idx = activeId ? sessions.findIndex(s => s.characterId === activeId) : 0
+          const delta = action === 'next-character' ? 1 : -1
+          const ni = (idx + delta + sessions.length) % sessions.length
+          setActive(sessions[ni].characterId)
+          break
+        }
+        case 'check-updates':   handleCheckForUpdates(); break
+      }
+    }
+  })
+  useEffect(() => {
+    const off = window.api.onMenuAction?.(({ action }) => {
+      if (isSessionAction(action)) {
+        document.dispatchEvent(new CustomEvent('lichborne:session-action', { detail: { action } }))
+      } else {
+        runAppActionRef.current?.(action)
+      }
+    })
+    return () => off?.()
+  }, [])
+
+  // Remount a single session's GameWindow (by characterId) so it re-reads its
+  // per-character state from localStorage after a live profile import.
+  const reloadSession = useCallback((characterId: string) => {
+    setReloadNonces(prev => ({ ...prev, [characterId]: (prev[characterId] ?? 0) + 1 }))
+  }, [])
 
   // v0.8.6: refocus the active GameWindow's command bar whenever the active
   // character changes — covers tab CLICKS in addition to the Ctrl+Tab /
@@ -562,6 +629,18 @@ function AppShell() {
     removeSession(id)
   }
 
+  // App-bar "Login" button (shown when the active character is disconnected):
+  // tear down the dead session and open the character picker so the player can
+  // re-login. Mirrors the GameWindow onDisconnect login path, scoped to the
+  // active tab.
+  function handleLoginActive() {
+    const s = sessions.find(x => x.characterId === activeId)
+    if (!s) return
+    window.api.destroySession(s.sessionId)
+    removeSession(s.characterId)
+    setShowAdd(true)
+  }
+
   const isEmpty       = sessions.length === 0
   const showFullLogin = isEmpty
   const showModalLogin = !isEmpty && showAdd
@@ -608,7 +687,13 @@ function AppShell() {
         </div>
       )}
 
-      {!isEmpty && <CharacterTabBar onAdd={() => setShowAdd(true)} onClose={handleCloseTab} />}
+      {!isEmpty && (
+        <AppBar
+          onAdd={() => setShowAdd(true)}
+          onClose={handleCloseTab}
+          onLoginActive={handleLoginActive}
+        />
+      )}
 
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {showFullLogin ? (
@@ -629,7 +714,10 @@ function AppShell() {
         ) : (
           sessions.map(s => (
             <div
-              key={s.characterId}
+              // Reload nonce suffix: bumping it (via reloadSession) forces this
+              // GameWindow to remount and re-read per-character state from
+              // localStorage — used to commit a live profile import.
+              key={`${s.characterId}:${reloadNonces[s.characterId] ?? 0}`}
               className={`session-shell${s.characterId === activeId ? '' : ' session-shell--hidden'}`}
             >
               <CharacterProvider character={s.character}>
@@ -709,6 +797,14 @@ function AppShell() {
       )}
 
       {showLichSetup && <LichSetupDialog onClose={() => setShowLichSetup(false)} />}
+
+      {showProfileTransfer && (
+        <ProfileTransferModal
+          sessions={sessions.map(s => ({ character: s.character, characterId: s.characterId }))}
+          reloadSession={reloadSession}
+          onClose={() => setShowProfileTransfer(false)}
+        />
+      )}
 
       {pendingConnect && (
         <div className="launcher-connecting">

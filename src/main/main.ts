@@ -9,12 +9,13 @@ import { StormFrontParser } from './parser/StormFrontParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
 import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
-import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir } from './profiles'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir, ensureExportsDir, getExportsDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
 } from '../shared/types'
+import type { MenuAction } from '../shared/menuActions'
 
 const CH = {
   LOGIN:             'login',
@@ -64,6 +65,7 @@ function createSession(): Session {
   }
   wireSession(s)
   sessions.set(id, s)
+  refreshMenuState()
   return s
 }
 
@@ -121,6 +123,7 @@ function sendStatus(s: Session, connected: boolean, message: string, clean?: boo
   const payload: ConnectionStatusPayload = { sessionId: s.id, connected, message }
   if (clean !== undefined) payload.clean = clean
   mainWindow?.webContents.send(CH.CONNECTION_STATUS, payload)
+  refreshMenuState()
 }
 
 function destroySession(id: SessionId) {
@@ -131,6 +134,7 @@ function destroySession(id: SessionId) {
   s.connection.removeAllListeners()
   s.connection.forceDisconnect()
   sessions.delete(id)
+  refreshMenuState()
 }
 
 // Register read-only lich.db3 IPC handlers (vars, settings, sessions) — these
@@ -555,6 +559,69 @@ ipcMain.handle('profile:write-character',           (_e, character: string, data
 ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
 ipcMain.handle('profile:delete-character',          (_e, character: string)          => deleteCharacterProfile(character))
 
+// ── Profile Transfer IPC (platform-wide .lb.yaml export/import) ────────────────
+// Exports live in a dedicated `Exports/` folder next to `profiles/` (see
+// profiles.ts). The renderer hands main a filename + YAML text; main writes it
+// into that folder. Imports default to the same folder. The browser
+// download/<input type=file> path is NOT used for this feature so the files land
+// in a predictable, app-managed location the user can re-import from.
+const LB_EXPORT_EXT = /\.lb\.ya?ml$/i
+
+ipcMain.handle('profile-transfer:export', (_e, filename: string, yamlText: string): string => {
+  const dir = ensureExportsDir()
+  // Sanitize the filename to a bare basename so a malicious/odd name can't
+  // escape the Exports folder.
+  const safe = path.basename(String(filename)).replace(/[^\w.\-]+/g, '_')
+  const target = path.join(dir, safe)
+  fs.writeFileSync(target, yamlText, 'utf8')
+  return target
+})
+
+ipcMain.handle('profile-transfer:list-exports', (): { name: string; mtimeMs: number }[] => {
+  const dir = getExportsDir()
+  try {
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir)
+      .filter(f => LB_EXPORT_EXT.test(f))
+      .map(f => {
+        let mtimeMs = 0
+        try { mtimeMs = fs.statSync(path.join(dir, f)).mtimeMs } catch {}
+        return { name: f, mtimeMs }
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  } catch { return [] }
+})
+
+ipcMain.handle('profile-transfer:read-export', (_e, filename: string): string | null => {
+  const dir = getExportsDir()
+  const safe = path.basename(String(filename))
+  const target = path.join(dir, safe)
+  try {
+    if (!fs.existsSync(target)) return null
+    return fs.readFileSync(target, 'utf8')
+  } catch { return null }
+})
+
+ipcMain.handle('profile-transfer:open-import-dialog', async (): Promise<{ name: string; text: string } | null> => {
+  const res = await dialog.showOpenDialog({
+    title: 'Import Lichborne Profile',
+    defaultPath: ensureExportsDir(),
+    properties: ['openFile'],
+    filters: [
+      { name: 'Lichborne Profile', extensions: ['yaml', 'yml'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+  if (res.canceled || res.filePaths.length === 0) return null
+  const file = res.filePaths[0]
+  try { return { name: path.basename(file), text: fs.readFileSync(file, 'utf8') } }
+  catch { return null }
+})
+
+ipcMain.handle('profile-transfer:open-exports-folder', (): void => {
+  shell.openPath(ensureExportsDir())
+})
+
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 
@@ -598,11 +665,39 @@ function setupAutoUpdater() {
   setTimeout(() => autoUpdater.checkForUpdates(), 3000)
 }
 
+// Top-chrome redesign Phase 2a: native menu items dispatch a MenuAction to the
+// renderer. App routes session actions to the active GameWindow; app actions
+// are handled in App directly. See src/shared/menuActions.ts.
+function sendMenuAction(action: MenuAction) {
+  mainWindow?.webContents.send('menu-action', { action })
+}
+
+// Keep the Window menu's character items in sync with session state: Next/
+// Previous need 2+ connected characters to be meaningful; Close needs at least
+// one open character. Called on every connect/disconnect/tab add/remove.
+function refreshMenuState() {
+  const m = Menu.getApplicationMenu()
+  if (!m) return
+  const connectedCount = Array.from(sessions.values()).filter(s => s.connected).length
+  const next  = m.getMenuItemById('menu-next-character')
+  const prev  = m.getMenuItemById('menu-prev-character')
+  const close = m.getMenuItemById('menu-close-character')
+  if (next)  next.enabled  = connectedCount >= 2
+  if (prev)  prev.enabled  = connectedCount >= 2
+  if (close) close.enabled = sessions.size >= 1
+}
+
 function setupMenu() {
   const menu = Menu.buildFromTemplate([
     {
       label: 'File',
       submenu: [
+        { label: 'Login with Character…', click: () => sendMenuAction('login-character') },
+        { label: 'Bulk Connect…',         click: () => sendMenuAction('bulk-connect') },
+        { type: 'separator' },
+        { label: 'Export Profile…', click: () => sendMenuAction('profile-export') },
+        { label: 'Import Profile…', click: () => sendMenuAction('profile-import') },
+        { type: 'separator' },
         {
           label: 'Open Profiles Folder',
           click: () => shell.openPath(ensureProfilesDir()),
@@ -620,6 +715,8 @@ function setupMenu() {
           ),
         },
         { type: 'separator' },
+        { label: 'Disconnect', click: () => sendMenuAction('disconnect') },
+        { type: 'separator' },
         { role: 'quit' },
       ],
     },
@@ -635,11 +732,27 @@ function setupMenu() {
         { role: 'delete' },
         { type: 'separator' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        { label: 'Find in Log…', click: () => sendMenuAction('find-in-log') },
       ],
     },
     {
       label: 'View',
       submenu: [
+        // Lichborne items are click-only (no accelerator) per the native-menu
+        // hotkey policy in CLAUDE.md. The Electron role items below keep their
+        // own built-in accelerators. "Game Font" = settings.fontSize (game
+        // text), NOT Electron's UI zoom (the zoom roles stay below, untouched).
+        { label: 'Font', submenu: [
+          { label: 'Increase Font Size', click: () => sendMenuAction('font-increase') },
+          { label: 'Decrease Font Size', click: () => sendMenuAction('font-decrease') },
+          { label: 'Reset Font Size',    click: () => sendMenuAction('font-reset') },
+        ] },
+        { type: 'separator' },
+        { label: 'Panel Manager', click: () => sendMenuAction('toggle-panels') },
+        { label: 'Show Map',      click: () => sendMenuAction('toggle-maps') },
+        { label: 'Theme…',        click: () => sendMenuAction('toggle-theme') },
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
@@ -652,10 +765,64 @@ function setupMenu() {
       ],
     },
     {
+      label: 'Tools',
+      submenu: [
+        // Existing in-app chord (App.tsx) — displayed only (registerAccelerator
+        // false), NOT rebound, so App.tsx stays the single handler (no double
+        // fire). Per CLAUDE.md native-menu hotkey policy.
+        { label: 'Quick Send…', accelerator: 'CmdOrCtrl+Shift+Enter', registerAccelerator: false, click: () => sendMenuAction('quick-send') },
+        { type: 'separator' },
+        { label: 'Automations…', click: () => sendMenuAction('toggle-automations') },
+        { label: 'Contacts…',    click: () => sendMenuAction('toggle-contacts') },
+        { type: 'separator' },
+        { label: 'Session Log…', click: () => sendMenuAction('toggle-logs') },
+        { label: 'Debug…',       click: () => sendMenuAction('toggle-debug') },
+        { type: 'separator' },
+        { label: 'Settings…',    click: () => sendMenuAction('toggle-settings') },
+      ],
+    },
+    {
+      label: 'Lich',
+      submenu: [
+        { label: 'Lich Dashboard…', click: () => sendMenuAction('toggle-lich') },
+      ],
+    },
+    {
       label: 'Window',
       submenu: [
+        // Next/Previous are greyed unless 2+ characters are CONNECTED; Close is
+        // greyed when there's no open character. State is kept current by
+        // refreshMenuState() (called on every connect/disconnect/tab change).
+        // Next Character shows the existing Ctrl+Tab chord (App.tsx) but does
+        // not rebind it (registerAccelerator false).
+        { id: 'menu-next-character',  label: 'Next Character',     enabled: false, accelerator: 'CmdOrCtrl+Tab', registerAccelerator: false, click: () => sendMenuAction('next-character') },
+        { id: 'menu-prev-character',  label: 'Previous Character', enabled: false, click: () => sendMenuAction('prev-character') },
+        { id: 'menu-close-character', label: 'Close Character',    enabled: false, click: () => sendMenuAction('close-character') },
+        { type: 'separator' },
         { role: 'minimize' },
         { role: 'close' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'User Guide (TBA)', enabled: false },
+        { label: 'Discord', click: () => { void shell.openExternal('https://discord.gg/ZDkXCeR72J') } },
+        { type: 'separator' },
+        { label: 'GitHub Repository', click: () => { void shell.openExternal('https://github.com/SekmehtDR/Lichborne') } },
+        { label: 'Report a Bug…',     click: () => { void shell.openExternal('https://github.com/SekmehtDR/Lichborne/issues') } },
+        { type: 'separator' },
+        { label: 'Check for Updates…', click: () => sendMenuAction('check-updates') },
+        { type: 'separator' },
+        {
+          label: 'About Lichborne',
+          click: () => { void dialog.showMessageBox({
+            type: 'info',
+            title: 'About Lichborne',
+            message: 'Lichborne',
+            detail: `Version ${app.getVersion()}`,
+          }) },
+        },
       ],
     },
   ])

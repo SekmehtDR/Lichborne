@@ -140,8 +140,12 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
           {lichOk === false && <span className="path-status-icon path-status-icon--invalid">✕</span>}
         </div>
       </label>
+      {/* "Frontend" is Lich's own term for these flags — each (--stormfront,
+          --wizard, --avalon, --frostbite, --genie) sets Lich's $frontend
+          (lib/main/argv_options.rb: determine_frontend / $frontend). Labeled to
+          match so the value lines up with Lich docs / support requests. */}
       <label>
-        XML Stream Mode
+        Lich Frontend
         <div className="port-input-row">
           <select
             value={lichMode}

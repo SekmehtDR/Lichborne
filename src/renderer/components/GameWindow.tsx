@@ -30,7 +30,7 @@ import ModeSwitcher from './ModeSwitcher'
 import { useGroups } from './GroupsContext'
 import { isRuleActive } from '../groups'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from '../myThemes'
-import { loadSettings, saveSettings, applySettingsToDOM, type AppSettings } from '../settings'
+import { loadSettings, saveSettings, applySettingsToDOM, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import { loadSessionLogSettings } from '../sessionLogSettings'
 import { THEMES, applyTheme, applyCustomTheme, registerThemeAppliedHook } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
@@ -40,7 +40,6 @@ import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
 import { useLichBridge } from '../hooks/useLichBridge'
 import { useProfileSaver } from '../hooks/useProfileSaver'
-import type { ScriptPaletteEntry } from '../../shared/types'
 import '../styles/game.css'
 import '../styles/panels.css'
 import '../styles/map-panel.css'
@@ -280,7 +279,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => { commandRef.current = command }, [command])
   const historyRef    = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
-  const [status, setStatus]           = useState('Connected')
   const [disconnecting, setDisconnecting] = useState(false)
   const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
@@ -342,11 +340,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const { scripts: lichScripts, lastUpdated: lichLastUpdated, pending: lichPending,
           pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(session.sessionId, !dropped)
 
-  // Script Palette — user-configured quick-launch buttons
-  const [scriptPalette, setScriptPalette] = useState<ScriptPaletteEntry[]>(() => {
-    try { return JSON.parse(localStorage.getItem(scopedKey(session.character, 'scriptPalette')) ?? '[]') } catch { return [] }
-  })
-  void setScriptPalette  // exposed via settings in a later release; suppress lint for now
   void lichPath
 
   // Layout sizes
@@ -724,6 +717,79 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       showSettings || showContacts || showAutomations || showMapOverlay ||
       showLichDash || showSessionLog
   }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showSessionLog])
+
+  // Surface open-overlay state so the app-level app-bar can glow the matching
+  // button for the ACTIVE session (the old per-session toolbar showed this via
+  // btn-*--active; removed in 2c). Only the four buttons that had an active
+  // state: Debug, Logs, Maps, Lich. Per-session via SessionsContext, so tab
+  // switching reflects the right character automatically.
+  useEffect(() => {
+    updateStatus(characterId, {
+      panelDebug:       showDebug,
+      panelLogs:        showSessionLog,
+      panelMap:         showMapOverlay,
+      panelLich:        showLichDash,
+      panelManager:     showPanelManager,
+      panelAutomations: showAutomations,
+      panelSettings:    showSettings,
+      panelContacts:    showContacts,
+      panelTheme:       showThemePicker,
+    })
+  }, [characterId, updateStatus, showDebug, showSessionLog, showMapOverlay, showLichDash, showPanelManager, showAutomations, showSettings, showContacts, showThemePicker])
+
+  // Native-menu / app-bar action bridge (Phase 2a/2b). App re-dispatches
+  // session actions as 'lichborne:session-action'; every mounted GameWindow
+  // hears it but only the ACTIVE one acts (isActiveRef). The DOM listener is
+  // registered ONCE (empty deps) and dispatches through a latest-closure ref
+  // (pitfall #31 pattern) so each case sees current state/handlers — needed
+  // because e.g. the Logs case branches on the live `showSessionLog`. Every
+  // case mirrors exactly what the corresponding toolbar button does.
+  const runSessionActionRef = useRef<(action: string) => void>(() => {})
+  useEffect(() => {
+    runSessionActionRef.current = (action: string) => {
+      switch (action) {
+        case 'toggle-debug':       setShowDebug(d => !d); break
+        case 'toggle-logs':
+          if (showSessionLog) setShowSessionLog(false)
+          else { setSessionLogSearch(null); setSessionLogKey(k => k + 1); setShowSessionLog(true) }
+          break
+        case 'find-in-log':
+          // Open the log straight into Quick Search (empty query). '' is
+          // non-null so SessionLogModal opens the search view, not Recent.
+          setSessionLogSearch(''); setSessionLogKey(k => k + 1); setShowSessionLog(true); break
+        case 'toggle-panels':      setShowPanelManager(v => !v); break
+        case 'toggle-maps':        setShowMapOverlay(v => !v); break
+        case 'toggle-contacts':    setOpenContactId(null); setShowContacts(v => !v); break
+        case 'toggle-automations': setShowAutomations(v => !v); break
+        case 'toggle-lich':        setLichDashTab('scripts'); setShowLichDash(v => !v); break
+        case 'toggle-theme':       setShowThemePicker(v => !v); break
+        case 'toggle-settings':    setShowSettings(v => !v); break
+        case 'disconnect':         if (!dropped && !disconnecting) handleDisconnect(); break
+        case 'font-increase':
+        case 'font-decrease':
+        case 'font-reset': {
+          // Game text size (settings.fontSize) — NOT Electron UI zoom. Mirrors
+          // the Settings panel's onChange (setSettings + saveSettings + save).
+          const size = action === 'font-reset'
+            ? DEFAULT_SETTINGS.fontSize
+            : Math.max(8, Math.min(24, settings.fontSize + (action === 'font-increase' ? 1 : -1)))
+          const next = { ...settings, fontSize: size }
+          setSettings(next)
+          saveSettings(session.character, next)
+          scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+          break
+        }
+      }
+    }
+  })
+  useEffect(() => {
+    function onSessionAction(e: Event) {
+      if (!isActiveRef.current) return
+      runSessionActionRef.current?.((e as CustomEvent<{ action: string }>).detail?.action ?? '')
+    }
+    document.addEventListener('lichborne:session-action', onSessionAction)
+    return () => document.removeEventListener('lichborne:session-action', onSessionAction)
+  }, [])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
   const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
@@ -1340,7 +1406,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
       if (s.sessionId !== sessionIdRef.current) return
-      setStatus(s.message)
       if (s.connected && s.message === 'Connected') {
         logToSession([{ ts: Date.now(), stream: 'sys', text: 'Connected' }])
       }
@@ -1349,7 +1414,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       }
       if (!s.connected && s.message === 'Disconnected') {
         setDropped(true)
-        setStatus(s.clean ? 'Disconnected' : 'Connection lost')
         logToSession([{ ts: Date.now(), stream: 'sys', text: s.clean ? 'Disconnected' : 'Connection lost' }])
         // We deliberately do NOT auto-open the debug panel on dirty
         // disconnect. The previous behaviour opened it on any non-clean
@@ -1987,44 +2051,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
     <ContactsContext.Provider value={{ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }}>
     <div className="game-layout">
-      <div className="game-toolbar">
-        <span className="toolbar-title"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
-        <span className={`toolbar-status${dropped ? ' toolbar-status--disconnected' : ''}`}>{status}</span>
-        <button className={`btn-debug ${showDebug ? 'btn-debug--active' : ''}`} onClick={() => setShowDebug(d => !d)}>Debug</button>
-        <button className={`btn-session-log${showSessionLog ? ' btn-session-log--active' : ''}`} onClick={() => { if (showSessionLog) { setShowSessionLog(false) } else { setSessionLogSearch(null); setSessionLogKey(k => k + 1); setShowSessionLog(true) } }}>Logs</button>
-        <button className="btn-panel-manager" onClick={() => setShowPanelManager(v => !v)}>Panels</button>
-        <button className={`btn-map${showMapOverlay ? ' btn-map--active' : ''}`} onClick={() => setShowMapOverlay(v => !v)}>Maps</button>
-        <button className="btn-contacts" onClick={() => { setOpenContactId(null); setShowContacts(v => !v) }}>Contacts</button>
-        <button className="btn-automations" onClick={() => setShowAutomations(v => !v)}>Automations</button>
-        <button className={`btn-lich-dash${showLichDash ? ' btn-lich-dash--active' : ''}`} onClick={() => { setLichDashTab('scripts'); setShowLichDash(v => !v) }}>Lich</button>
-        <ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />
-        {scriptPalette.length > 0 && (
-          <div className="script-palette">
-            {scriptPalette.map((entry, i) => (
-              <button
-                key={i}
-                className="script-palette-btn"
-                onClick={() => sendCommand(entry.command)}
-                title={entry.command}
-              >{entry.label}</button>
-            ))}
-          </div>
-        )}
-        <button className="btn-theme" onClick={() => setShowThemePicker(v => !v)}>Theme</button>
-        <button className="btn-settings" onClick={() => setShowSettings(v => !v)}>Settings</button>
-        <button
-          className={`btn-disconnect${dropped ? ' btn-disconnect--login' : ''}`}
-          onClick={dropped ? () => { playerTitleRef.current = ''; window.api.destroySession(session.sessionId); onDisconnect() } : handleDisconnect}
-          disabled={disconnecting && !dropped}
-        >
-          {dropped ? 'Login' : disconnecting ? 'Disconnecting…' : 'Disconnect'}
-        </button>
-      </div>
+      {/* The per-session toolbar row was folded into the app-level app-bar
+          (AppBar.tsx) in the top-chrome redesign (Phase 2c) — its buttons now
+          act on the active session via the menu-action / session-action
+          bridge, reclaiming this row of vertical space. ModeSwitcher moved to
+          the Icon Bar (it needs per-session GroupsContext). */}
 
-      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
+      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
       {settings.iconBarPosition === 'top' && (
         <IconBar stance={stance} spell={spell}
-                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} />
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand}
+                 trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
       )}
 
       <div className="game-main">
@@ -2166,7 +2203,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             )}
             <FloatingCompass exits={exits} />
           </div>
-          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} />}
+          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
           <form className="command-bar" onSubmit={handleCommand}>
             {/* v0.8.6 (Rakkor): prompt marker is a button that opens
                 QuickSend — same as Ctrl+Shift+Enter. AppShell listens
@@ -2270,7 +2307,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       {settings.iconBarPosition === 'bottom' && (
         <IconBar stance={stance} spell={spell}
-                 indicators={indicators} rightHand={rightHand} leftHand={leftHand} />
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand}
+                 trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
       )}
 
       {mainCtxMenu && (() => {

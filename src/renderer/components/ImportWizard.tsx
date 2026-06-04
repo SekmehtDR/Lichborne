@@ -4,7 +4,6 @@ import { ImportResult, ImportSource } from '../import/types'
 import { parseGenieFiles } from '../import/parsers/genie'
 import { parseWraythXml } from '../import/parsers/wrayth'
 import { parseFrostbiteFiles } from '../import/parsers/frostbite'
-import { parseLichborneYaml } from '../import/parsers/lichborne'
 import { mapImportResult, MergeStrategy, type MappedRules } from '../import/mapper'
 import { loadHighlights, saveHighlights, type HighlightRule } from '../highlights'
 import { loadMacros, saveMacros, loadAliases, saveAliases, type MacroRule, type AliasRule } from '../macros'
@@ -198,11 +197,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         general:     fileTexts['general'],
       })
     }
-    if (source === 'lichborne') {
-      const yamlText = fileTexts['yaml']
-      if (!yamlText) return null
-      return parseLichborneYaml(yamlText)
-    }
+    // Lichborne→Lichborne import moved to the platform-wide Transfer feature
+    // (Launcher → Transfer) in v0.10.0. This wizard is legacy-client only.
     return null
   }
 
@@ -583,14 +579,12 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       { id: 'wrayth',    name: 'Wrayth',    desc: 'Single XML settings file' },
       { id: 'genie',     name: 'Genie',     desc: 'Config folder (.cfg files)' },
       { id: 'frostbite', name: 'Frostbite', desc: 'Profile folder (.ini files)' },
-      { id: 'lichborne', name: 'Lichborne', desc: 'YAML export from another Lichborne character' },
     ]
 
     const slots: FileSlot[] =
       source === 'genie'     ? GENIE_SLOTS :
       source === 'frostbite' ? FROSTBITE_SLOTS :
       source === 'wrayth'    ? [{ key: 'xml', label: 'settings.xml', hint: 'Wrayth XML export' }] :
-      source === 'lichborne' ? [{ key: 'yaml', label: 'automations.yaml', hint: 'Lichborne export file (.yaml)' }] :
       []
 
     return (

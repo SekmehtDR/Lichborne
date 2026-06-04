@@ -10,7 +10,7 @@ interface Props {
 export default function ModeSwitcher({ onManage }: Props) {
   const { modes, activeModeId, isModified, applyMode, clearMode } = useGroups()
   const [open, setOpen] = useState(false)
-  const [pos,  setPos]  = useState({ top: 0, left: 0 })
+  const [pos,  setPos]  = useState<{ left: number; top?: number; bottom?: number }>({ left: 0, top: 0 })
   const btnRef  = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -37,7 +37,21 @@ export default function ModeSwitcher({ onManage }: Props) {
 
   function handleOpen() {
     const rect = btnRef.current?.getBoundingClientRect()
-    if (rect) setPos({ top: rect.bottom + 4, left: rect.left })
+    if (rect) {
+      // The Mode button now lives at the right end of the Icon Bar (which can
+      // sit at the bottom of the window), so the menu must right-align under
+      // the button, stay clamped to the viewport, and flip upward when the
+      // button is in the lower half — otherwise it clips off-screen.
+      const MENU_W = 200  // approx .ms-menu min-width; just for clamping
+      let left = rect.left
+      if (rect.left > window.innerWidth / 2) left = rect.right - MENU_W  // right-align right-side buttons
+      left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8))
+      if (rect.bottom > window.innerHeight / 2) {
+        setPos({ left, bottom: window.innerHeight - rect.top + 4 })   // flip up
+      } else {
+        setPos({ left, top: rect.bottom + 4 })                        // open down
+      }
+    }
     setOpen(v => !v)
   }
 
@@ -80,7 +94,7 @@ export default function ModeSwitcher({ onManage }: Props) {
         <div
           ref={menuRef}
           className="ms-menu"
-          style={{ top: pos.top, left: pos.left }}
+          style={{ top: pos.top, bottom: pos.bottom, left: pos.left }}
         >
           {modes.length === 0 && (
             <div className="ms-empty">No modes defined yet.</div>

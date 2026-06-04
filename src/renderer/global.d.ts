@@ -49,6 +49,7 @@ declare global {
       installUpdate: () => void
       checkForUpdates: () => void
       onUpdaterLog: (cb: (msg: string) => void) => () => void
+      onMenuAction: (cb: (payload: { action: string }) => void) => () => void
       openUrl: (url: string) => void
       writeClipboard: (text: string) => void
       flashWindow: () => void
@@ -79,6 +80,12 @@ declare global {
       writeCharacterProfile: (character: string, data: unknown) => Promise<void>
       listCharacterProfiles: () => Promise<string[]>
       deleteCharacterProfile: (character: string) => Promise<void>
+      // Profile Transfer (platform-wide .lb.yaml export/import → Exports/ folder)
+      profileTransferExport: (filename: string, yamlText: string) => Promise<string>
+      profileTransferListExports: () => Promise<{ name: string; mtimeMs: number }[]>
+      profileTransferReadExport: (filename: string) => Promise<string | null>
+      profileTransferOpenImportDialog: () => Promise<{ name: string; text: string } | null>
+      profileTransferOpenExportsFolder: () => Promise<void>
       // Session Log
       sessionLogAppend: (payload: SessionLogAppendPayload) => void
       sessionLogFlush: (character: string) => void

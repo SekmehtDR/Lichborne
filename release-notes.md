@@ -1,47 +1,82 @@
-## What's new in v0.9.1
+## What's new in v0.10.0
 
-This release reworks how Lichborne launches Lich so that **Ruby/GTK script windows now work** — scripts like `kill-counter` and `;vars setup` that pop up their own window. Lichborne previously launched Lich in a way that made those windows unreliable (some never painted, some crashed Lich on interaction), and v0.9.0 added a warning about them. The real fix was the launch itself.
+Copy a character's entire setup to your other characters in one go.
 
-### GTK script windows should now work
+### Transfer — move a whole setup between characters
 
-Lichborne now starts Lich as a normal Windows GUI process (using `rubyw.exe`, the windowless Ruby interpreter, the same way Frostbite and Genie launch Lich) instead of as a hidden console process. That gives Ruby/GTK the process context their windows need to paint and stay interactive.
+There's a new **Transfer** button on the launcher's top bar (next to Lich Setup). It opens a window with two tabs:
 
-- Nothing to configure — Lichborne automatically uses `rubyw.exe` from your existing Ruby folder (it falls back to your configured `ruby.exe` if `rubyw.exe` isn't there). Your Lich/Ruby paths in Settings don't need to change.
-- The connection itself is unchanged — same port, same login, same multi-character and bulk-connect behavior.
-- **Please test your GTK scripts** (`;vars setup`, `kill-counter`, etc.) and report anything that still misbehaves — with this launch change it's now a real bug worth looking into, not an expected limitation.
+- **Export** — pick any character (it doesn't need to be connected) and choose what to include: **Display & Accessibility** (font, size, line height, high-contrast/color-blind options, bar positions, etc.), **Panel Layout** (which panel zones are showing, the streams/tabs in each, panel sizes, per-panel font overrides), **Panel View Preferences** (map view mode & zoom, exp panel options, …), **Theme**, and your **Highlights / Triggers / Macros / Aliases / Groups & Modes / Contacts**. Tick what you want and export — the file is saved to a new **Exports** folder that sits next to your profiles.
+- **Import** — pick a file (your Exports folder is the default), choose which categories to bring in, choose **Append** (add alongside what's there, skipping duplicates) or **Replace**, and then **tick every character you want to apply it to**. One import can update a dozen characters at once.
 
-If a launch ever fails, Lich's startup output is now saved to a log file at `…\lichborne\Logs\lich-launch\<Character>.log`, which makes diagnosing a bad Ruby/Lich path easier.
+This is the quick way to set one character up exactly how you like it and then roll that look-and-feel out to all your alts.
 
-### Removed: the GTK-script warning
+A few things by design:
 
-The one-time "GTK code detected in script…" advisory added in v0.9.0 is gone — it existed only because GTK windows didn't work, and now that they should, the warning is no longer needed. (The in-app **Lich Dashboard → Variables** editor remains the recommended replacement for `;vars setup` regardless.)
+- **It never changes a character's identity.** Account, character name, guild, circle, notes, favorite status, and which game/shard a character is on are left completely alone — Transfer only touches settings, layout, theme, and automations.
+- **Connected characters update live.** If you import into a character that's currently open in a tab (even a background tab), its window refreshes on the spot so the new layout/settings take effect immediately — no need to log out and back in, and the change is saved properly.
+- **Theme note:** Lichborne's current theme is app-wide, so an imported theme applies to each character the next time it connects (its custom colors are added to your theme list right away).
+
+### Tidied up: one place to move a Lichborne setup
+
+Now that Transfer handles everything, the older, overlapping options were folded into it:
+
+- The Automations panel's **Export** button is gone — use **Transfer → Export** (it includes your automations *and* settings, layout, theme, and view preferences).
+- The import wizard no longer has a **"Lichborne"** option; its button is now **"Import from another client…"** and covers exactly what it's for — bringing settings in from **Wrayth, Genie, or Frostbite**.
+
+Sharing a single custom **theme** file (in the theme picker) and exporting **session logs** are unchanged — those do different jobs.
+
+### Compact vitals — a slimmer health/mana strip
+
+There's a new **Compact Vitals** toggle in **Settings → Layout** (off by default). Turn it on and the vitals bar shrinks to about half its height with shortened labels — `H: 100%`, `M: 100%`, `C: 100%`, `F: 100%`, `S: 100%` — which frees up roughly half a line of extra game text. It's a per-character setting, so you can have it on for some characters and off for others (and it travels with the **Display & Accessibility** category in Transfer).
+
+The short labels adapt to your guild: a Barbarian's "Inner Fire" mana shows as `IF: 100%`, and any other guild-specific vital name is abbreviated to its initials automatically.
+
+*This is the first step of a wider pass to tighten up the top and bottom bars and give the main text window more room — more to come.*
+
+### A single top bar — more room for game text
+
+The toolbar and the character-tab row have been **merged into one bar** across the top: the **Lichborne** badge (with a green/red connection dot) on the left, your character tabs in the middle, and the action buttons (Panels, Maps, Automations, Lich, Settings, Disconnect, …) on the right. That's a **full row of vertical space given back to the game window** — combined with Compact Vitals, you can see several more lines of text at the same window size.
+
+The **Mode** switcher moved down into the hands/spell/stance strip (the Icon Bar), and its menu now stays on-screen no matter where that strip sits.
+
+The action buttons now **light up when their panel is open**, so you can tell at a glance what's showing for the current character. To keep the bar tidy, the less-used buttons (Debug, Logs, Contacts, Theme) live under a **"⋯ More"** dropdown — handy on narrower windows.
+
+**Font size reaches more of the UI.** The hands/spell/stance bar, the **Mode** button, the **vitals bar** (regular and compact), and the built-in **Lich Scripts** panel now grow and shrink with **Settings → Font Size** — previously they stayed a fixed size. (The Lich *Dashboard* window keeps its own sizing, like the other pop-up windows. And remember: a panel you've sized with its own **A−/A+** buttons stays at that size — it's pinned on purpose.)
+
+### A proper application menu
+
+There's now a complete **menu bar** — **File · Edit · View · Tools · Lich · Window · Help** — for anyone who prefers menus to buttons (Genie/Frostbite players will feel at home):
+
+- **File** — Login with Character, Bulk Connect, Export/Import Profile, open data folders, Disconnect, Exit.
+- **Edit** — the usual copy/paste/select-all, plus **Find in Log**.
+- **View** — **Font ▸** (increase/decrease/reset game text size), Panel Manager, Show Map, Theme, plus the standard window controls.
+- **Tools** — Quick Send, Automations, Contacts, Session Log, Debug, Settings.
+- **Lich** — the Lich Dashboard.
+- **Window** — switch between / close characters.
+- **Help** — Discord, GitHub, Report a Bug, Check for Updates, About (User Guide is coming).
+
+Your existing keyboard shortcuts are unchanged (`Ctrl+Tab` / `Ctrl+1–9` to switch characters, `Ctrl+Shift+Enter` for Quick Send), and the standard Windows shortcuts (copy/paste, etc.) work as always.
+
+### Light-theme fixes
+
+A couple of glitches on the light themes (Classic Light, Ivory, etc.) are fixed: hovering a panel's stream tab no longer turns it dark, and the rest-XP bar values (Stored / Usable) render crisp instead of washed-out.
 
 ---
 
-## What's new in v0.9.0
+## What's new in v0.9.2
 
-The Lich **Variables** view is now editable — add, change, and delete your Lich variables right from Lichborne, no `;vars setup` window required. This is the in-app replacement for the `;vars setup` script, which (as several testers found) disconnects Lich when you interact with its pop-up.
+A polish pass on the Settings window and the Lich Setup screen, mostly from Rakkor's feedback.
 
-### Edit Lich variables in-app
+### Settings menu, tidied up
 
-Open **Lich Dashboard → Variables** while connected via Lich and viewing your own character. You can now:
+- The settings are now grouped into clearer sections — **Accessibility**, a new **Layout** section (vitals bar / icon bar position and the RT/CT timer style, which used to be buried under Accessibility), and a new **Behavior** section (link handling and map animations).
+- **Session Log** options are collapsed by default behind a **"Logging options"** toggle — you can see logging is on at a glance without scrolling past every sub-setting, and expand it when you want to tune things.
+- **Lich Setup** is now a single **"Open Lich Setup…"** button that opens the same Lich configuration dialog used elsewhere, instead of embedding a second copy inline.
+- The Settings window is a bit **wider** so longer labels and descriptions have room.
 
-- **Add a variable** — the row at the top takes a name and a value. (Names can't contain spaces; a value of `true` or `false` is stored as a real boolean, matching Lich.)
-- **Edit a value** — click the **✎** on any text variable for an inline editor (Enter saves, Esc cancels).
-- **Delete a variable** — click the **✕**, then **Delete?** to confirm (two-click so you can't remove a var by accident).
+### Lich Setup now follows your theme
 
-Edits go through Lich's own variable system and are saved to disk immediately, so the change sticks right away — reflected on the next refresh and after reopening. The toolbar now shows a **"refreshed HH:MM:SS"** stamp so you know how current the view is, and the footer explains the persistence model (your edits save immediately; Lich's own auto-save for changes made by scripts runs every ~5 minutes).
+The Lich Setup screen previously kept dark, hardcoded colors no matter which theme you used — on light themes (like Classic Light) the input text was hard to read, the panel background stayed black, and the title bar had no color. It's now fully theme-aware: backgrounds, text, buttons, and the "Auto Detect" status messages all match your selected theme, and the title bar gets the same colored band as the Settings window.
 
-A few guardrails, by design:
-- Editing is only available for the **connected character's own variables**. You can still *view* any character's variables via the scope dropdown, but those stay read-only (Lich only lets us safely change the variables of the session we're attached to).
-- Complex variables (lists, hashes, timestamps) keep their structured, expandable display and can be deleted, but aren't inline-editable — same scope as the old `;vars setup` window.
-
-### Why `;vars setup` disconnects Lich (and what to do instead)
-
-If you ran `;vars setup`, saw the window open, and then got disconnected the moment you tried to add a variable — that's a bug in the Lich `vars.lic` script, not in Lichborne. The script spawns a background thread that touches its GTK window from off the main thread, which is unsafe and crashes Lich under our launch (and any Stormfront-mode launch). Lichborne sees Lich's process exit and reports a disconnect.
-
-Use the in-app **Variables** editor above instead — it does everything `;vars setup` does without the GTK window. The script's non-window commands (`;vars set NAME=VALUE`, `;vars delete NAME`, `;vars list`) also work fine if you prefer the command line.
-
-### Fixed: Lichborne→Lichborne import preview showed triggers with no commands
-
-When importing an automations export from another character, the preview list showed your imported triggers as having no commands — even though they did. This was a display-only bug in the preview (the actual import always brought the triggers in correctly), now fixed so the preview shows each trigger's commands.
+The **"XML Stream Mode"** dropdown is now labeled **"Lich Frontend"** — that's the term Lich itself uses for these options (`--stormfront`, `--wizard`, etc.), so it lines up with Lich documentation if you ever need help.

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import '../styles/iconbar.css'
 
 interface Props {
@@ -6,6 +7,10 @@ interface Props {
   rightHand: string
   leftHand: string
   spell: string
+  // Trailing slot at the end of the row — hosts the per-session ModeSwitcher
+  // (which needs GroupsContext, only available inside GameWindow) now that the
+  // toolbar row was folded into the app-level app-bar (top-chrome redesign 2c).
+  trailing?: ReactNode
 }
 
 const STANCE_CLASS: Record<string, string> = {
@@ -15,7 +20,7 @@ const STANCE_CLASS: Record<string, string> = {
   sitting:  'stance-sitting',
 }
 
-export default function IconBar({ stance, indicators, rightHand, leftHand, spell }: Props) {
+export default function IconBar({ stance, indicators, rightHand, leftHand, spell, trailing }: Props) {
   const stanceKey = (stance || 'standing').toLowerCase()
   const stanceCls = STANCE_CLASS[stanceKey] ?? 'stance-standing'
 
@@ -89,6 +94,13 @@ export default function IconBar({ stance, indicators, rightHand, leftHand, spell
             {bar.text || ' '}
           </div>
         ))}
+
+        {trailing && (
+          <>
+            <div className="row-sep" />
+            <span className="icon-row-trailing">{trailing}</span>
+          </>
+        )}
 
       </div>
     </div>

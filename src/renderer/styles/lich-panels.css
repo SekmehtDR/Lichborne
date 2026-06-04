@@ -277,7 +277,12 @@
   flex-direction: column;
   height: 100%;
   background: var(--bg-base);
-  font-size: 0.82rem;
+  /* This is a PANEL (rendered in a zone), not the Lich Dashboard modal — so it
+     follows the game font / per-panel size like other panels. Anchor here and
+     size the .sl-* children in `em` (px/rem → em via *16/12, the default
+     --game-font-size, to preserve the default look). Pitfall #45 / Principle
+     #9. The .ld-* Dashboard MODAL deliberately stays rem (modal exception). */
+  font-size: var(--panel-font-size, var(--game-font-size));
 }
 
 .sl-header {
@@ -292,7 +297,7 @@
 
 .sl-header-title {
   font-weight: 700;
-  font-size: 0.78rem;
+  font-size: 1.04em;
   letter-spacing: 0.8px;
   color: var(--accent);
   text-transform: uppercase;
@@ -304,7 +309,7 @@
   border: none;
   color: var(--text-dim);
   cursor: pointer;
-  font-size: 1rem;
+  font-size: 1.33em;
   padding: 2px 5px;
   border-radius: 3px;
   line-height: 1;
@@ -325,7 +330,7 @@
   color: var(--text-faint);
   font-style: italic;
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 1.07em;
 }
 .sl-empty code {
   font-family: monospace;
@@ -347,7 +352,7 @@
 .sl-row--killing { opacity: 0.5; }
 
 .sl-badge {
-  font-size: 0.65rem;
+  font-size: 0.87em;
   font-weight: 700;
   width: 18px;
   text-align: center;
@@ -376,7 +381,7 @@
 }
 
 .sl-status {
-  font-size: 0.7rem;
+  font-size: 0.93em;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.4px;
@@ -399,7 +404,7 @@
 
 .sl-uptime {
   font-family: monospace;
-  font-size: 0.72rem;
+  font-size: 0.96em;
   color: var(--text-faint);
   flex-shrink: 0;
   width: 52px;
@@ -419,7 +424,7 @@
   color: var(--text-dim);
   border-radius: 3px;
   padding: 1px 6px;
-  font-size: 0.72rem;
+  font-size: 0.96em;
   cursor: pointer;
   font-family: inherit;
   transition: all 0.1s;
@@ -435,7 +440,7 @@
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 0.72rem;
+  font-size: 0.96em;
   color: var(--color-danger);
 }
 .sl-btn--kill-yes {
@@ -443,14 +448,14 @@
   border-color: var(--color-danger);
   color: #fff;
   padding: 1px 6px;
-  font-size: 0.7rem;
+  font-size: 0.93em;
 }
 .sl-btn--kill-yes:hover { opacity: 0.85; color: #fff; }
 .sl-btn--kill-no { }
 
 .sl-footer {
   padding: 5px 12px;
-  font-size: 0.72rem;
+  font-size: 0.96em;
   color: var(--text-dim);
   border-top: 1px solid var(--border-faint);
   background: var(--bg-hover);

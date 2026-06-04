@@ -10,6 +10,12 @@ export interface AppSettings {
   epilepsySafe: boolean
   vitalsBarPosition: 'top' | 'bottom'
   iconBarPosition: 'top' | 'bottom'
+  // v0.10.0 (Rakkor): dense vitals strip — ~half-height bars with
+  // first-letter labels ("H: 100%") instead of the full "Health 100%".
+  // Reclaims ~half a text line. Default OFF so no existing user's look
+  // changes unexpectedly. Per-character; rides the Display & Accessibility
+  // Transfer category automatically (it's a field on `settings`).
+  compactVitals: boolean
   timerStyle: 'bar' | 'chips'
   autoLinkUrls: boolean
   // v0.8.1 (F23): when true, external URL clicks route through Simu's
@@ -61,6 +67,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   epilepsySafe: false,
   vitalsBarPosition: 'bottom',
   iconBarPosition: 'top',
+  compactVitals: false,
   timerStyle: 'chips',
   autoLinkUrls: true,
   webLinkSafety: true,

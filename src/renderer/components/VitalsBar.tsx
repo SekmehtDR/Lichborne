@@ -8,6 +8,7 @@ interface VitalState {
 interface Props {
   vitals: Record<string, VitalState>
   labels?: Record<string, string>
+  compact?: boolean
 }
 
 const VITAL_ORDER = ['health', 'mana', 'concentration', 'stamina', 'spirit'] as const
@@ -25,21 +26,31 @@ function vitalFillClass(id: string, pct: number): string {
   return `vital-fill vital-fill--${id}`
 }
 
-export default function VitalsBar({ vitals, labels }: Props) {
+export default function VitalsBar({ vitals, labels, compact = false }: Props) {
   return (
-    <div className="vitals-strip">
+    <div className={`vitals-strip${compact ? ' vitals-strip--compact' : ''}`}>
       <div className="vitals-row">
         {VITAL_ORDER.filter(id => vitals[id] !== undefined).map(id => {
           const v = vitals[id]
           const pct = v.max > 0 ? (v.current / v.max) * 100 : 0
-          const label = labels?.[id] ?? VITAL_LABELS[id]
+          const fullLabel = labels?.[id] ?? VITAL_LABELS[id]
+          // Compact derives an acronym from the live label — first letter of
+          // each word: Health→H, Mana→M, Concentration→C, Fatigue→F, Spirit→S.
+          // Building it from the label (not a fixed map) means guild renames
+          // sent via customText='t' come through correctly — a Barbarian's
+          // "Inner Fire" mana becomes IF, not just I. (StormFrontParser sends
+          // the full label; see the progressbar customText handler.)
+          const label = compact
+            ? fullLabel.split(/\s+/).filter(Boolean).map(w => w.charAt(0).toUpperCase()).join('')
+            : fullLabel
+          const sep = compact ? ': ' : ' '
           return (
             <div key={id} className="vital-bar">
               <div className="vital-track">
                 <div className={vitalFillClass(id, pct)} style={{ width: `${pct}%` }} />
               </div>
               <span className="vital-text">
-                {label}{v.max > 0 ? ` ${v.current}%` : ''}
+                {label}{v.max > 0 ? `${sep}${v.current}%` : ''}
               </span>
             </div>
           )

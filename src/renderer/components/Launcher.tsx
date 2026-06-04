@@ -85,6 +85,13 @@ function LauncherTopBar({
           + Add account
         </button>
       )}
+      <button
+        className="launcher-topbar-btn"
+        onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-profile-transfer'))}
+        title="Export or import a character's full setup (settings, layout, theme, automations)"
+      >
+        ⇄ Transfer
+      </button>
       <button className="launcher-topbar-btn" onClick={onOpenLichSetup} title="Lich Setup">
         ⚙ Lich Setup
       </button>
@@ -92,7 +99,7 @@ function LauncherTopBar({
   )
 }
 
-async function loadCharacterCards(): Promise<LauncherCharacter[]> {
+export async function loadCharacterCards(): Promise<LauncherCharacter[]> {
   const names = await window.api.listCharacterProfiles()
   const profiles = await Promise.all(names.map(async name => {
     const raw = await window.api.readCharacterProfile(name)

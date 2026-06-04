@@ -457,6 +457,8 @@ Bar color shifts automatically at thresholds (e.g. health goes yellow at 50%, re
 
 Some guilds use a custom name for their mana bar. When the server sends `customText='t'` on the `<progressBar>` element, the client uses the label embedded in the `text` attribute (e.g. `text='inner fire 59%'` → displays as "Inner Fire") instead of the default "Mana" label. Other vitals are unaffected.
 
+**Compact vitals** (opt-in, `settings.compactVitals`, default off). A denser strip that reclaims ~half a line of game text: roughly half-height bars (12px vs 22px) with tighter padding, and the label shortened to an acronym — first letter of each word, so "Health" → `H: 100%`, "Concentration" → `C: 100%`, and a Barbarian's "Inner Fire" mana → `IF: 100%`. The acronym is derived from the live label at render time (not a lookup table), so any guild rename via `customText='t'` is covered automatically. Per-character setting; transfers with the Display & Accessibility category. First phase of a broader top-chrome space-optimization pass (see the toolbar/app-bar work).
+
 ### 5.2 Indicators
 
 Displayed alongside or below the vitals. All state comes from `<indicator>` XML elements and `<roundTime>` / `<castTime>` timestamps — no text parsing.
@@ -706,7 +708,7 @@ Font settings work at two levels: **global defaults** and **per-panel overrides*
 - Default font: **Cascadia Code (key: `cascadia`), 12px, Compact (1.2) line height** (v0.7.1, B93). Cascadia Code ships with weights 200/300/350/400/500/600/700 — critically, real `500` and `600` faces — so the codebase's intermediate-weight emphasis (hands HUD, status bars, panel tabs, character tabs, vitals, game `<bold>`) actually renders at its intended weight instead of falling back to full bold 700 on a two-weight font like Consolas. The previous default (`'Consolas'` literal name) collapsed every `font-weight: 600` declaration to 700 and read as "everything is too bold." Players who explicitly chose Consolas (or any other font) keep their choice through profile load — only fresh installs / unset characters get the new default.
 - **Player-facing weight emphasis** (v0.7.1, B93): game `<bold>` and `<roomname>` use `font-weight: 600` (real semibold on Cascadia, falls back to 700 on Consolas — no regression for opt-in Consolas users). Hand-held / spell-active items use color-only emphasis — no weight bump — so picking something up doesn't snap the HUD from 400 straight to 700. Other 600/700 chrome (status bars, vitals labels, toolbar title, panel tabs, character tabs) was inventoried but left as-is; can be dialled back further if testers find it heavy now that the font default changed.
 - Font family propagates globally via `body { font-family: var(--game-font-family) }` — all panels inherit it automatically.
-- Font size and line height propagate to all game content panels via CSS vars `--game-font-size` and `--game-line-height` anchored on each content container: main text window (`.text-line`), stream panels, room panel, exp panel, injuries panel, panel tab labels, and the toolbar (buttons, title, status). Child elements within structured panels (room, exp) use `em` units so they scale proportionally with the container font size.
+- Font size and line height propagate to all game content panels via CSS vars `--game-font-size` and `--game-line-height` anchored on each content container: main text window (`.text-line`), stream panels, room panel, exp panel, injuries panel, panel tab labels, the **icon bar** (hands/spell/stance + the Mode button), the **vitals bar** (regular + compact), and the built-in **Lich Scripts panel** (`.sl-panel`). Child elements use `em` units so they scale proportionally with the container font size. **The anchor is per-container, not inherited from a single wrapper** — `.panel-frame-tabs` anchors only the tab labels and `.panel-frame-body` has no font anchor, so each panel-type root must set `var(--panel-font-size, var(--game-font-size))` itself (v0.10.0 brought the icon/vitals bars + Lich Scripts panel into this; the Lich **Dashboard modal** deliberately stays fixed-size like other modals). See CLAUDE.md Principle #9 + pitfall #58, incl. the `em`-is-relative-to-own-font-size trap.
 
 **Per-panel overrides:**
 Every panel can have its own font family, size, and line height set independently. Right-click a panel header → Panel Settings → Font. Common uses:
@@ -1312,6 +1314,8 @@ Character tabs live in the **main toolbar row** — inline with the existing Deb
 ```
 
 Tabs anchor to the left. Toolbar buttons anchor to the right. The `+` button sits between the last tab and the toolbar buttons. When tabs exceed available width they scroll horizontally.
+
+> **Realized in v0.10.0 (top-chrome redesign, Phase 2c).** This single-row design — which the implementation had drifted away from (a separate character-tab row *plus* a per-session toolbar row) — is now the app-level [AppBar.tsx](src/renderer/components/AppBar.tsx): **brand + connection dot · character tabs · action buttons · Disconnect/Login**, the layout sketched above. The per-session `game-toolbar` was removed (reclaiming a full row of game text). Because the bar is app-level, its buttons act on the **active** session through the `menu-action` / `lichborne:session-action` dispatch bridge, and the **Mode switcher moved to the Icon Bar** (it needs the per-session GroupsContext). The less-used buttons (Debug/Logs/Contacts/Theme) are tucked under a static **"More ⋯"** dropdown so the bar survives narrow windows without width-measurement; every button whose panel is open glows `--active`, driven by the active session's open-panel snapshot surfaced through `SessionStatus` (a `panel*` flag per toggle button). See CLAUDE.md "Top chrome: app-bar, native menu & the menu-action bridge" + pitfall #57.
 
 **Tab anatomy (left to right):**
 
@@ -5076,4 +5080,56 @@ For a category the user has opted out of, the capture check is a single boolean 
 ### 28.12 Done when
 
 A tester logs in, plays for an hour, opens the modal, sees their session, scrolls back, switches stream filters, hits a preset, searches for "tendcuts," exports a slice to a text file, opens the raw log file in Notepad, and right-clicks a line in the game window to jump straight to it in the log — all without surprises.
+
+---
+
+## 29. Profile Transfer — Platform-wide Export/Import (F38, v0.10.0)
+
+### 29.1 Why
+
+The Automations Export/Import (F29, in the Automations panel) only carried rules + a layout snapshot and imported into the *current* character. JadedSoul runs a couple dozen characters and wanted to configure one nicely — panel sizes/placements, which streams are added, fonts, theme, accessibility — and propagate that whole setup to the rest. Profile Transfer is the platform-wide superset: capture (selectively) **everything in a character's profile** and fan an import out to **many already-added characters at once**.
+
+**Consolidation (v0.10.0):** because Transfer is a strict superset of the Lichborne→Lichborne Automations export, that export was removed and the ImportWizard's "Lichborne" source card was removed — Transfer is now the single Lichborne↔Lichborne path. The Automations panel keeps only the **"Import from another client…"** button (Wrayth/Genie/Frostbite legacy migration, which Transfer does not cover). The single-theme share (ThemePicker) and Session-Log export are unaffected — different granularity / domain.
+
+### 29.2 Surface
+
+- Entry: Launcher top-bar **"Transfer"** button → dispatches `lichborne:open-profile-transfer`; AppShell hosts the modal (it owns `sessions` + the per-session reload nonces).
+- One modal, **Export / Import tabs** ([ProfileTransferModal.tsx](src/renderer/components/ProfileTransferModal.tsx)). Canonical chrome (pitfall #55): `--bg-base` body, `--bg-hover` header, `--accent` title.
+- Files: `.lb.yaml` (LB = branding abbreviation) in a new **`Exports/`** folder, sibling of `profiles/` in userData. Main accessors `getExportsDir`/`ensureExportsDir` ([profiles.ts](src/main/profiles.ts)); IPC `profile-transfer:export|list-exports|read-export|open-import-dialog|open-exports-folder` ([main.ts](src/main/main.ts)). The import dialog's `defaultPath` is the Exports folder.
+
+### 29.3 The model — categories are an allowlist of `state` suffixes
+
+Core logic in [profileTransfer.ts](src/renderer/profileTransfer.ts). Each per-character setting is a `lichborne.{char}.{suffix}` key mirrored 1:1 into the YAML `state` map. `TRANSFER_CATEGORIES` is the single registry mapping a category to its exact suffixes:
+
+| Category | Suffixes |
+|---|---|
+| Display & Accessibility | `settings` (minus `panelFontSizes`) |
+| Panel Layout | zone added-flags, `*Tabs`, `*ActiveId`, `mainTopHeight`/`topPanelHeight`/`midPanelHeight`, `panelWidth`, `panelFontSizes` |
+| Panel View Preferences | `mapViewMode`, `lichMapScale`, `streamTimestamps`, `scriptPalette`, `focus`, `expPins`, `expSort`, `expSortDesc`, `expFocusMode`, `rxpCapMin` |
+| Theme | top-level `theme` + shared custom-theme def |
+| Highlights / Triggers / Macros / Aliases | `highlights` / `triggers` / `macros` / `aliases` |
+| Groups & Modes | `groups`, `modes` (+ `activeGroupStates`/`activeModeId` on Replace) |
+| Contacts | `contacts`, `contact-templates` |
+
+**Excluded:** `seededRepeatMacros`/`mainTopMigrated` (internal), `discoveredStreams` (ephemeral). An allowlist is the safe default: a new key is omitted until explicitly registered, so it can never silently break a target. Adding a new per-character setting ⇒ register it here.
+
+### 29.4 Build (export)
+
+`buildProfileExport(source, selected)` reads the source's persisted `state` from its YAML (works disconnected; for an active source the modal `flushPendingProfileSaves()` first), then slices the selected categories. Output: `{ kind:'lichborne-profile', formatVersion:1, exportedBy, exportedAt, categories }` — only selected categories present; absent ⇒ "don't touch on import." Serialized with js-yaml.
+
+### 29.5 Apply (import) — two write paths
+
+`applyProfileImport(target, isActive, file, { merge, selected })`, unified over a `TargetStore` abstraction (read/write a suffix):
+
+- **Inactive target** → staged YAML store: read `{Character}.yaml`, merge selected categories into a copy of `state` (+ `theme`), one atomic `writeCharacterProfile`. Never `buildCharacterProfile` (would rebuild `state` from empty localStorage and wipe the char).
+- **Active target** → live localStorage store (`scopedKey`, same string/JSON representation as `importCharacterProfile`), then the modal calls `reloadSession(characterId)` → App bumps the session's reload nonce in the GameWindow `key` → full remount re-reads the imported state. Applies to **focused AND backgrounded** sessions. Writing only the YAML would be overwritten on logout by stale live state — writing the working copy + remount commits it.
+
+**Merge:** rules (highlights/triggers/macros/aliases/groups/modes/contacts) honor **Append** (dedup by the same content/id/name keys as ImportWizard; highlights/triggers/macros/aliases get regenerated ids) vs **Replace**. Config categories (Display/Layout/View/Theme) always overwrite when selected. `settings`/`panelFontSizes` split: Display preserves the target's `panelFontSizes`; Layout merges its own; Display runs before Layout.
+
+### 29.6 Safety invariants
+
+1. **Non-destructive:** writes only `state` (per-key) + top-level `theme`. Identity/launcher fields (`account`, `character`, `game`, `useLich`, `hidden`, `favorite`, `guild`, `circle`, `notes`, `profileVersion`) are top-level, never in `state`, structurally unreachable.
+2. **Theme is app-wide** (single global `lichborne.theme`; `exportCharacterProfile` rewrites an active char's YAML theme from it). So theme pins cleanly only on *inactive* targets (applied on next connect); for active targets it can't be pinned and is flagged "app-wide — pick it from the theme menu" (the custom theme def is still added so it's available). Custom theme defs always land in shared `myThemes` and `_shared.yaml` is flushed after import.
+
+See CLAUDE.md pitfall #56.
 

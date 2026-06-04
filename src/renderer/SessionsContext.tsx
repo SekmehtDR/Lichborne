@@ -25,6 +25,19 @@ export interface SessionStatus {
   bleeding: boolean
   stunned: boolean
   dead: boolean
+  // Which app-bar overlay panels are open for THIS session, so the app-level
+  // app-bar can light up the matching button for the ACTIVE session (the
+  // per-session toolbar that used to show this was removed in 2c). Only the
+  // four buttons that had an active state before: Debug, Logs, Maps, Lich.
+  panelDebug: boolean
+  panelLogs: boolean
+  panelMap: boolean
+  panelLich: boolean
+  panelManager: boolean
+  panelAutomations: boolean
+  panelSettings: boolean
+  panelContacts: boolean
+  panelTheme: boolean
 }
 
 const DEFAULT_STATUS: SessionStatus = {
@@ -34,6 +47,15 @@ const DEFAULT_STATUS: SessionStatus = {
   bleeding: false,
   stunned: false,
   dead: false,
+  panelDebug: false,
+  panelLogs: false,
+  panelMap: false,
+  panelLich: false,
+  panelManager: false,
+  panelAutomations: false,
+  panelSettings: false,
+  panelContacts: false,
+  panelTheme: false,
 }
 
 export interface SessionRecord {
@@ -142,7 +164,16 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
           && next.rtExpires === curr.rtExpires
           && next.bleeding === curr.bleeding
           && next.stunned  === curr.stunned
-          && next.dead === curr.dead) return prev
+          && next.dead === curr.dead
+          && next.panelDebug === curr.panelDebug
+          && next.panelLogs === curr.panelLogs
+          && next.panelMap === curr.panelMap
+          && next.panelLich === curr.panelLich
+          && next.panelManager === curr.panelManager
+          && next.panelAutomations === curr.panelAutomations
+          && next.panelSettings === curr.panelSettings
+          && next.panelContacts === curr.panelContacts
+          && next.panelTheme === curr.panelTheme) return prev
       const arr = prev.slice()
       arr[idx] = { ...prev[idx], status: next }
       return arr

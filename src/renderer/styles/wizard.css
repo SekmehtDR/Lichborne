@@ -14,7 +14,12 @@
 .wiz-modal {
   width: 460px;
   max-height: 92vh;
-  background: var(--bg-raised);
+  /* Match the Settings modal chrome (.sp-modal / .sp-header) so themed dialogs
+     read consistently: white body on light themes via --bg-base, with the
+     header band on --bg-hover below. (Was --bg-raised + a --bg-sunken header,
+     which on light themes like Classic Light collapsed both to near-white —
+     no visible title bar and a greyed body.) */
+  background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
@@ -30,6 +35,7 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px 10px;
+  background: var(--bg-hover);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -38,7 +44,7 @@
   font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: 1px;
-  color: var(--text-primary);
+  color: var(--accent);
 }
 
 .wiz-step {
@@ -60,7 +66,10 @@
 }
 
 .wiz-close:hover {
-  background: var(--bg-hover);
+  /* Translucent overlay, not var(--bg-hover): the header band is now
+     var(--bg-hover), so a --bg-hover fill here would be invisible. A text-tinted
+     overlay darkens on light themes / lightens on dark ones — always visible. */
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
   color: var(--text-primary);
 }
 
@@ -149,7 +158,10 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  background: var(--bg-base);
+  /* --bg-raised so the tiles sit ABOVE the modal body (now var(--bg-base)).
+     Were var(--bg-base) back when .wiz-modal was --bg-raised; that inversion
+     flipped in v0.9.2 when the modal body was aligned to the Settings chrome. */
+  background: var(--bg-raised);
   border: 1px solid var(--border-subtle);
   border-radius: 5px;
   cursor: pointer;
@@ -166,7 +178,7 @@
 .wiz-game--active,
 .wiz-char--active {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--bg-base));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
 }
 
 .wiz-radio input[type="radio"],

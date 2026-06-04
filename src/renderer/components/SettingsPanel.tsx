@@ -2,10 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage } from '../../shared/types'
 import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
-import { type AdvancedSettings, loadAdvanced, saveAdvanced } from '../lichSettings'
 import { type SessionLogSettings, loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
 import { exportSharedProfile } from '../profile'
-import LichSetupFields from './LichSetupFields'
+import LichSetupDialog from './LichSetupDialog'
 import '../styles/settings.css'
 import '../styles/login.css'
 
@@ -103,24 +102,24 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
   const [fontFilter,  setFontFilter]  = useState<'all' | 'mono'>('all')
   const fontListRef = useRef<HTMLDivElement>(null)
 
-  // ── Lich Setup (mirrors LoginScreen's adv flow) ─────────────────────────
-  // Read fresh from localStorage each mount so changes made on the LoginScreen
-  // since this dialog was last opened are reflected. saveAdvanced + a debounced
-  // exportSharedProfile keep the YAML in sync for concurrent windows.
-  const [adv, setAdv] = useState<AdvancedSettings>(loadAdvanced)
-  useEffect(() => {
-    saveAdvanced(adv)
-    const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
-    return () => clearTimeout(t)
-  }, [adv])
+  // ── Lich Setup ──────────────────────────────────────────────────────────
+  // The full path/port/mode editor lives in the shared LichSetupDialog (the
+  // same one the Launcher's "⚙ Lich Setup" button opens); this panel just
+  // launches it so the two surfaces stay identical and we don't embed a second
+  // copy of the fields here. The dialog (z-index 600) stacks above Settings.
+  const [showLichSetup, setShowLichSetup] = useState(false)
+
+  // Session Log sub-options are collapsed by default so the section is short —
+  // the user sees the master toggle plus a disclosure hinting more is there.
+  const [logExpanded, setLogExpanded] = useState(false)
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
   }
 
   // ── Session Log settings (app-wide — _shared.yaml, not per-character) ────
-  // Same flow as the `adv` block above: working copy in localStorage, debounced
-  // exportSharedProfile keeps _shared.yaml current. The save is a read-modify-
+  // Working copy in localStorage, debounced exportSharedProfile keeps
+  // _shared.yaml current (same pattern LichSetupDialog uses for adv). The save is a read-modify-
   // write of only the capture/retention fields this panel owns, so it can't
   // clobber the filter / export prefs the Logs modal owns (relevant only if
   // both modals are open at once).
@@ -362,27 +361,6 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
           />
 
           <Toggle
-            label="Auto-link URLs"
-            description="Detect http/https URLs in game text and make them clickable"
-            checked={settings.autoLinkUrls}
-            onChange={v => set('autoLinkUrls', v)}
-          />
-
-          <Toggle
-            label="Web Link Safety"
-            description="Route external URL clicks through Simu's bounce page (play.net/bounce/redirect.asp) — shows a 'you are leaving Play.net' warning before opening any link from game text or a script. Matches Genie's behavior."
-            checked={settings.webLinkSafety}
-            onChange={v => set('webLinkSafety', v)}
-          />
-
-          <Toggle
-            label="Genie Map Animations"
-            description="Genie Maps motion — per-room effects (shop glints, water ripples, sparkles) and the camera glide as it follows you. Turn off if the map feels sluggish; the map then snaps instantly with no effects."
-            checked={settings.mapAnimations}
-            onChange={v => set('mapAnimations', v)}
-          />
-
-          <Toggle
             label="Epilepsy Safe Mode"
             description="Disables all pulsing animations (RT bar, status indicators)"
             checked={settings.epilepsySafe}
@@ -401,6 +379,11 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
             ]}
           />
 
+          <div className="sp-divider" />
+
+          {/* ── Layout ───────────────────────────────────────────── */}
+          <div className="sp-section-label">Layout</div>
+
           <RadioGroup
             label="Vitals Bar Position"
             value={settings.vitalsBarPosition}
@@ -409,6 +392,13 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
               { value: 'top',    label: 'Top',    description: 'Vitals below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Vitals above the command bar' },
             ]}
+          />
+
+          <Toggle
+            label="Compact Vitals"
+            description="Slimmer half-height bars with short labels (H: 100%) — frees up ~half a line of game text"
+            checked={settings.compactVitals}
+            onChange={v => set('compactVitals', v)}
           />
 
           <RadioGroup
@@ -433,6 +423,32 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
 
           <div className="sp-divider" />
 
+          {/* ── Behavior ─────────────────────────────────────────── */}
+          <div className="sp-section-label">Behavior</div>
+
+          <Toggle
+            label="Auto-link URLs"
+            description="Detect http/https URLs in game text and make them clickable"
+            checked={settings.autoLinkUrls}
+            onChange={v => set('autoLinkUrls', v)}
+          />
+
+          <Toggle
+            label="Web Link Safety"
+            description="Route external URL clicks through Simu's bounce page (play.net/bounce/redirect.asp) — shows a 'you are leaving Play.net' warning before opening any link from game text or a script. Matches Genie's behavior."
+            checked={settings.webLinkSafety}
+            onChange={v => set('webLinkSafety', v)}
+          />
+
+          <Toggle
+            label="Genie Map Animations"
+            description="Genie Maps motion — per-room effects (shop glints, water ripples, sparkles) and the camera glide as it follows you. Turn off if the map feels sluggish; the map then snaps instantly with no effects."
+            checked={settings.mapAnimations}
+            onChange={v => set('mapAnimations', v)}
+          />
+
+          <div className="sp-divider" />
+
           {/* ── Session Log ─────────────────────────────────────── */}
           {/* App-wide settings — shared across all characters (_shared.yaml). */}
           <div className="sp-section-label">Session Log</div>
@@ -445,6 +461,17 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
           />
 
           {logCfg.enabled && (
+            <>
+              <button
+                type="button"
+                className="sp-disclosure"
+                onClick={() => setLogExpanded(e => !e)}
+                aria-expanded={logExpanded}
+              >
+                <span className="sp-disclosure-arrow">{logExpanded ? '▾' : '▸'}</span>
+                Logging options
+              </button>
+              {logExpanded && (
             <div className="sp-sublist">
               <Toggle
                 label="Game text"
@@ -550,6 +577,8 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
                 </button>
               </div>
             </div>
+              )}
+            </>
           )}
 
           <div className="sp-divider" />
@@ -557,15 +586,20 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
           {/* ── Lich Setup ──────────────────────────────────────── */}
           <div className="sp-section-label">Lich Setup</div>
 
-          {/* login-form supplies the input/select/label styling that LichSetupFields
-              relies on (background, border, label uppercase). Same reason as in
-              LichSetupDialog — without it the dialog inputs fall back to browser defaults. */}
-          <div className="sp-lich-setup login-form advanced-panel">
-            <LichSetupFields adv={adv} setAdv={setAdv} alwaysShowFields />
+          <div className="sp-field-row">
+            <span className="sp-field-label">
+              Lich path, port &amp; mode
+              <span className="sp-field-hint"> · how Lichborne launches and connects to Lich</span>
+            </span>
+            <button className="sp-button" onClick={() => setShowLichSetup(true)}>
+              Open Lich Setup…
+            </button>
           </div>
 
         </div>
       </div>
+
+      {showLichSetup && <LichSetupDialog onClose={() => setShowLichSetup(false)} />}
     </div>,
     document.body,
   )
