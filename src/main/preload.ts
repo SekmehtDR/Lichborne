@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
-  LichScriptsUpdatePayload, LoginResult, SessionId,
+  LichScriptsUpdatePayload, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
 } from '../shared/types'
@@ -14,7 +14,8 @@ const CH = {
   GAME_EVENT:        'game-event',
   RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
-  ERROR:             'error'
+  ERROR:             'error',
+  SESSION_ROSTER:    'session-roster',
 } as const
 
 contextBridge.exposeInMainWorld('api', {
@@ -44,6 +45,48 @@ contextBridge.exposeInMainWorld('api', {
   // silently no-ops if the session has already been removed.
   destroySession: (sessionId: SessionId) =>
     ipcRenderer.send(CH.SESSION_DESTROY, sessionId),
+
+  // ── Session roster (multi-window, v0.11.0) ────────────────────────────────────
+  // The roster is main's authoritative list of every session across all windows.
+  // getWindowInfo returns this window's stable id + whether it's primary, so the
+  // renderer can tell which roster entries it owns and pick its empty-state.
+  // setSessionName reports the server-canonical character name up.
+  onSessionRoster: (cb: (payload: SessionRosterPayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: SessionRosterPayload) => cb(payload)
+    ipcRenderer.on(CH.SESSION_ROSTER, listener)
+    return () => ipcRenderer.removeListener(CH.SESSION_ROSTER, listener)
+  },
+  getWindowInfo: (): Promise<{ windowId: number; isPrimary: boolean }> =>
+    ipcRenderer.invoke('get-window-info'),
+  setSessionName: (sessionId: SessionId, character: string) =>
+    ipcRenderer.send('session:set-name', sessionId, character),
+
+  // ── Decouple (move a character to its own / another window) ───────────────────
+  moveSessionToWindow: (sessionId: SessionId, target: 'new' | 'main' | number): Promise<void> =>
+    ipcRenderer.invoke('session:move-window', sessionId, target),
+  getOwnedSessions: (): Promise<RosterEntry[]> => ipcRenderer.invoke('get-owned-sessions'),
+  onSessionAcquire: (cb: (entry: RosterEntry) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, entry: RosterEntry) => cb(entry)
+    ipcRenderer.on('session-acquire', listener)
+    return () => ipcRenderer.removeListener('session-acquire', listener)
+  },
+  onSessionRelease: (cb: (sessionId: SessionId) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, sessionId: SessionId) => cb(sessionId)
+    ipcRenderer.on('session-release', listener)
+    return () => ipcRenderer.removeListener('session-release', listener)
+  },
+  // Ask main to replay this session's recent history (render-only) so a window
+  // that just took over the session paints scrollback + room/vitals immediately.
+  requestReplay: (sessionId: SessionId) => ipcRenderer.send('session:request-replay', sessionId),
+
+  // Profile Transfer: ask the session's OWNER window (which may be a different
+  // window) to remount its GameWindow so it re-reads the imported state.
+  requestSessionReload: (characterId: string) => ipcRenderer.send('session:reload', characterId),
+  onSessionReload: (cb: (characterId: string) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId)
+    ipcRenderer.on('session-reload', listener)
+    return () => ipcRenderer.removeListener('session-reload', listener)
+  },
 
   // ── Per-session push channels ───────────────────────────────────────────────
   // All four carry sessionId in their payload. The renderer's SessionsContext

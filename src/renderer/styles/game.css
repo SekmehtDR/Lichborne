@@ -143,9 +143,15 @@
   cursor: pointer;
 }
 
-.ctx-menu-item:hover {
+.ctx-menu-item:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.ctx-menu-item:disabled {
+  color: var(--text-dim);
+  opacity: 0.5;
+  cursor: default;
 }
 
 .ctx-menu-sep {

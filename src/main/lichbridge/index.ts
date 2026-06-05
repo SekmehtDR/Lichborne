@@ -6,7 +6,16 @@ import type { LichScriptsUpdatePayload, SessionId } from '../../shared/types'
 // Accepts "no active scripts" OR a comma-separated list of script names with optional
 // " (paused)" suffixes.  Free-form Lich messages ("no scripts to kill", etc.) do NOT
 // match and are intentionally left to pass through to the main game window.
-const SCRIPT_LIST_RE = /^--- Lich: (?:no active scripts|((?:[a-zA-Z0-9_-]+(?:\s+\(paused\))?)(?:,\s*[a-zA-Z0-9_-]+(?:\s+\(paused\))?)*))\s*[\r\n]*$/
+//
+// A script name is "any run of non-space, non-comma, non-paren characters" — NOT
+// just [a-zA-Z0-9_-]. v0.11.0: the old strict class meant ONE script whose name
+// contained any other character (e.g. a dot) made the WHOLE line fail to match,
+// so the panel silently stopped updating and a running script (per `;listall`)
+// never appeared (Sekmeht). Widened so one odd name can't blank the list. The
+// no-space/no-comma rule still excludes Lich's space-containing free-form
+// messages; parens are reserved for the " (paused)" suffix.
+const NAME = String.raw`[^\s,()]+(?:\s+\(paused\))?`
+const SCRIPT_LIST_RE = new RegExp(String.raw`^--- Lich: (?:no active scripts|(${NAME}(?:,\s*${NAME})*))\s*[\r\n]*$`)
 
 // One LichBridge instance per active session. Each owns a CommandInjector
 // bound to that session's ConnectionManager.send so ;listall / ;pause / ;kill

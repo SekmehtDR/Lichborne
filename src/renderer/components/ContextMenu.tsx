@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 
 type Item =
-  | { label: string; onClick: () => void }
+  | { label: string; onClick: () => void; disabled?: boolean }
   | { label: null }
 
 interface Props {
@@ -36,7 +36,8 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
         item.label === null
           ? <hr key={i} className="ctx-menu-sep" />
           : <button key={item.label} className="ctx-menu-item"
-              onClick={() => { item.onClick(); onClose() }}>
+              disabled={item.disabled}
+              onClick={() => { if (item.disabled) return; item.onClick(); onClose() }}>
               {item.label}
             </button>
       )}

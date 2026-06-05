@@ -13,9 +13,12 @@ interface Props {
   // v0.8.2: open the source rule for edit in the Automations panel.
   // Wired to GameWindow.gotoFireRule.
   onGotoFireRule?: (kind: 'highlight' | 'trigger', ruleId: string) => void
+  // v0.10.1: close the panel from its own toolbar (X) so the user doesn't
+  // have to find the Debug button again to dismiss it.
+  onClose?: () => void
 }
 
-export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule }: Props) {
+export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule, onClose }: Props) {
   const [tab, setTab] = useState<'fires' | 'events' | 'rawxml'>('fires')
 
   const eventsBottomRef = useRef<HTMLDivElement>(null)
@@ -119,6 +122,9 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
         </div>
         <button className="debug-copy" onClick={handleCopy}>Copy All</button>
         <button className="debug-clear" onClick={activeOnClear}>Clear</button>
+        {onClose && (
+          <button className="debug-close" onClick={onClose} title="Close debug panel" aria-label="Close debug panel">✕</button>
+        )}
       </div>
 
       {tab === 'fires' && (

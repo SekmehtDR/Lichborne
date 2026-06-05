@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSessions, type CharacterId, type SessionRecord } from '../SessionsContext'
+import ContextMenu from './ContextMenu'
 import '../styles/character-tabs.css'
 
 interface Props {
@@ -26,6 +27,9 @@ export default function CharacterTabBar({ onAdd, onClose }: Props) {
     return () => clearInterval(i)
   }, [])
 
+  // Right-click a tab → decouple the character into its own window (v0.11.0).
+  const [ctx, setCtx] = useState<{ x: number; y: number; sessionId: string; character: string } | null>(null)
+
   return (
     <div className="character-tabs" role="tablist">
       {sessions.map(s => (
@@ -36,11 +40,25 @@ export default function CharacterTabBar({ onAdd, onClose }: Props) {
           now={now}
           onSelect={setActive}
           onClose={onClose}
+          onContextMenu={(x, y) => setCtx({ x, y, sessionId: s.sessionId, character: s.character })}
         />
       ))}
       <button type="button" className="character-tab-add" onClick={onAdd} title="Add character">
         +
       </button>
+      {ctx && (
+        <ContextMenu x={ctx.x} y={ctx.y} onClose={() => setCtx(null)}
+          items={[
+            {
+              label: `Open ${ctx.character} in new window`,
+              // Greyed when this is the only character in the window — moving it
+              // would just leave this window empty.
+              disabled: sessions.length <= 1,
+              onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'new'),
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -62,13 +80,14 @@ function resolveIcon(s: SessionRecord, now: number): { glyph: string; title: str
 }
 
 function CharacterTab({
-  session, isActive, now, onSelect, onClose,
+  session, isActive, now, onSelect, onClose, onContextMenu,
 }: {
   session: SessionRecord
   isActive: boolean
   now: number
   onSelect: (id: CharacterId) => void
   onClose: (id: CharacterId) => void
+  onContextMenu: (x: number, y: number) => void
 }) {
   const { connected, healthPct } = session.status
   const icon = resolveIcon(session, now)
@@ -89,6 +108,7 @@ function CharacterTab({
       role="tab"
       aria-selected={isActive}
       onClick={() => onSelect(session.characterId)}
+      onContextMenu={e => { e.preventDefault(); onContextMenu(e.clientX, e.clientY) }}
     >
       {/* Name + L/D + Game cluster rendered tight in a sub-container so the
           parent tab's `gap: 6px` doesn't separate them. The pill's color and

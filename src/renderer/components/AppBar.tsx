@@ -87,6 +87,10 @@ export default function AppBar({ onAdd, onClose, onLoginActive }: Props) {
           )}
         </div>
 
+        {/* Separator so Disconnect reads as its own zone — guards against a
+            mis-click on it when reaching for the adjacent ⋯ More button (Binu). */}
+        <span className="app-bar-divider" aria-hidden="true" />
+
         {connected
           ? <button className="btn-disconnect" onClick={() => dispatchSessionAction('disconnect')}>Disconnect</button>
           : <button className="btn-disconnect btn-disconnect--login" onClick={onLoginActive}>Login</button>}

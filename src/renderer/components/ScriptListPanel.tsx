@@ -80,8 +80,13 @@ export default function ScriptListPanel({ scripts, lastUpdated, pending, onPause
         )}
         {scripts.map(s => (
           <div key={s.name} className={`sl-row${s.paused ? ' sl-row--paused' : ''}${s.killing ? ' sl-row--killing' : ''}`}>
-            <span className={`sl-badge${s.custom ? ' sl-badge--custom' : ' sl-badge--core'}`}>
-              {s.custom ? 'C' : '▶'}
+            {/* Badge mirrors Lich's folder layout: everything is a Script (S);
+                a script in the `custom/` folder is a Custom script (C). */}
+            <span
+              className={`sl-badge${s.custom ? ' sl-badge--custom' : ' sl-badge--core'}`}
+              title={s.custom ? 'Custom script (custom/ folder)' : 'Script'}
+            >
+              {s.custom ? 'C' : 'S'}
             </span>
             <span className="sl-name">{s.name}</span>
             <span className={`sl-status${s.killing ? ' sl-status--killing' : s.paused ? ' sl-status--paused' : ' sl-status--running'}`}>

@@ -44,6 +44,7 @@ export function buildSharedProfile(): SharedProfile {
     games:       DEFAULT_GAMES,
     myThemes:  loadMyThemes(),
     sessionLog: loadSessionLogSettings(),
+    bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
   }
 }
 
@@ -173,6 +174,10 @@ export async function importSharedProfile(): Promise<void> {
   // absent block (older _shared.yaml) still yields a complete settings object.
   if (data.sessionLog) {
     saveSessionLogSettings({ ...DEFAULT_SESSION_LOG_SETTINGS, ...data.sessionLog })
+  }
+
+  if (data.bulkConnectSeparateWindows !== undefined) {
+    localStorage.setItem('lichborne.bulkConnectSeparateWindows', String(data.bulkConnectSeparateWindows))
   }
 }
 

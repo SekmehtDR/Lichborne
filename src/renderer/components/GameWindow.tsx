@@ -476,7 +476,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // _shared.yaml), so it's read fresh per batch — no stale-closure ref needed,
   // and a change in Settings takes effect immediately for every open character.
   // session.character is stable for this GameWindow's life.
+  // True only while applying a replay batch — main re-sending this session's
+  // recent history to this window because it just took over rendering the
+  // session (decouple / re-home / remount). Gates EVERY side effect so a replay
+  // rebuilds display + game state without re-firing triggers (which would re-send
+  // commands), re-logging, or re-counting fires. See GameEventBatch.replay.
+  const replayingRef = useRef(false)
+
   function logToSession(records: SessionLogRecord[]) {
+    if (replayingRef.current) return
     if (records.length === 0) return
     const s = loadSessionLogSettings()
     if (!s.enabled) return
@@ -587,10 +595,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   }), [echoToStream])
 
   const { processLine, processVariableChange, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
+  // Gate trigger firing on replayingRef so a replayed history batch rebuilds
+  // game state WITHOUT re-firing triggers (which would re-send commands). The
+  // wrapper is the single choke point — every loop call goes through these refs.
   const processLineRef = useRef(processLine)
-  useEffect(() => { processLineRef.current = processLine }, [processLine])
+  useEffect(() => { processLineRef.current = (stream, text) => { if (!replayingRef.current) processLine(stream, text) } }, [processLine])
   const processVariableChangeRef = useRef(processVariableChange)
-  useEffect(() => { processVariableChangeRef.current = processVariableChange }, [processVariableChange])
+  useEffect(() => { processVariableChangeRef.current = (name, value) => { if (!replayingRef.current) processVariableChange(name, value) } }, [processVariableChange])
   const cancelPendingRef = useRef(cancelPending)
   useEffect(() => { cancelPendingRef.current = cancelPending }, [cancelPending])
 
@@ -619,6 +630,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   }, [matchRules, lineRules])
 
   const logHighlightFiresRef = useRef((text: string, stream: string) => {
+    if (replayingRef.current) return
     if (!showDebugRef.current) return
     const lower = text.toLowerCase()
     for (const cr of allHighlightRulesRef.current) {
@@ -765,6 +777,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         case 'toggle-theme':       setShowThemePicker(v => !v); break
         case 'toggle-settings':    setShowSettings(v => !v); break
         case 'disconnect':         if (!dropped && !disconnecting) handleDisconnect(); break
+        case 'move-to-new-window': window.api.moveSessionToWindow(session.sessionId, 'new'); break
+        case 'move-to-main-window': window.api.moveSessionToWindow(session.sessionId, 'main'); break
         case 'font-increase':
         case 'font-decrease':
         case 'font-reset': {
@@ -1101,6 +1115,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => {
     const unsubEvents = window.api.onGameEvent((batch) => {
       if (batch.sessionId !== sessionIdRef.current) return
+      // Replay batch (history rebuild for a window that just took over this
+      // session): process for display + state, but the gated choke points
+      // (logToSession, processLine/processVariableChange, logHighlightFires)
+      // skip all side effects while this flag is set. Synchronous loop, so
+      // setting it per-batch is sufficient; reset after for the next live batch.
+      replayingRef.current = batch.replay === true
       const events: GameEvent[] = batch.events
       const newMain: TextLine[] = []
       const newStream: Record<string, TextLine[]> = {}
@@ -1272,6 +1292,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             // "Sekmeht"). The tab bar reads SessionRecord.character so this
             // re-casts the tab label. AppShell owns document.title.
             updateCharacterName(characterId, evt.char)
+            // Multi-window (v0.11.0): also report the canonical name up to
+            // main so the roster (and other windows' Quick Send) show it too.
+            window.api.setSessionName(session.sessionId, evt.char)
             break
           case 'game-exit':
             break
@@ -1402,6 +1425,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
       // One session-log append per event batch — keeps IPC chatter low.
       logToSession(logRecords)
+
+      // Clear the replay flag so it can't leak into later non-loop callers of
+      // the gated functions (e.g. handleCommand → logToSession on the next send).
+      replayingRef.current = false
     })
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
@@ -1438,6 +1465,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     })
 
     inputRef.current?.focus()
+
+    // Multi-window (v0.11.0): ask main to replay this session's recent history
+    // now that our event listener is live, so a decoupled / re-homed / remounted
+    // window paints scrollback + room/map/vitals instead of starting blank. A
+    // fresh session has an empty buffer → harmless no-op on a first connect.
+    window.api.requestReplay(session.sessionId)
+
     return () => {
       unsubEvents(); unsubStatus(); unsubRawXml(); cancelPendingRef.current()
       if (roomPumpRafRef.current != null) {
@@ -2332,7 +2366,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} />}
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} />}
 
       {showMapOverlay && (
         <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>

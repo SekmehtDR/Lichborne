@@ -68,6 +68,17 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* Vertical separator before Disconnect/Login — extra breathing room plus a
+   hairline so the destructive button isn't flush against the ⋯ More button
+   (prevents accidental Disconnect clicks). */
+.app-bar-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 2px 3px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
 /* "More ⋯" overflow dropdown (the less-used buttons live here). */
 .app-bar-more {
   position: relative;

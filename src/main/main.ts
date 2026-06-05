@@ -14,6 +14,7 @@ import { savePassword, loadPassword, deletePassword } from './passwords'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
+  RosterEntry, SessionRosterPayload,
 } from '../shared/types'
 import type { MenuAction } from '../shared/menuActions'
 
@@ -26,6 +27,7 @@ const CH = {
   RAW_XML:           'raw-xml',
   CONNECTION_STATUS: 'connection-status',
   ERROR:             'error',
+  SESSION_ROSTER:    'session-roster',
 } as const
 
 // ── Session model ─────────────────────────────────────────────────────────────
@@ -44,10 +46,88 @@ interface Session {
   cleanDisconnect: boolean
   connected: boolean
   debugPanelOpen: boolean
+  // Multi-window (v0.11.0): the webContents id of the window that currently
+  // renders this session's GameWindow, and the character identity captured at
+  // login. Both feed the roster broadcast (buildRoster). `meta` is null until
+  // the LOGIN handler attaches credentials.
+  ownerWindowId: number
+  meta: { characterId: string; account: string; character: string; game: string; useLich: boolean } | null
+  // Replay state for a window that takes over rendering this session (decouple /
+  // re-home / remount): the LATEST value of each sticky state (vitals, RT/CT,
+  // indicators, stance, spell, hands, room title/id, exp, injuries, exits, …),
+  // keyed so it's always current REGARDLESS of how long ago it last changed —
+  // plus a bounded ring buffer of scrollback history (stream text). A plain ring
+  // buffer alone dropped vitals that hadn't changed recently (they fell off the
+  // end), so static bars (health at 100% etc.) restored blank — only the ones
+  // actively changing survived. The snapshot guarantees every bar comes back.
+  stateSnapshot: Map<string, GameEvent>
+  historyBuffer: GameEvent[]
+  // The window id a replay is owed to, set ONLY when the session is MOVED to a
+  // new owner (decouple / re-home). A fresh connect never sets it, so the first
+  // window to render a session does NOT get a replay — otherwise the replay
+  // (being filled by the same live login stream the GameWindow is already
+  // showing) would double every connect line. One-shot: cleared on delivery.
+  replayTarget?: number
+  // True from the moment of a move until the replay is delivered. While set, live
+  // event batches are NOT sent to the window (only recorded into the buffer), so
+  // a session still streaming during the handoff can't show events live AND again
+  // in the replay (the bulk-connect login double). Live resumes after the replay.
+  holdingForReplay?: boolean
+}
+
+const HISTORY_BUFFER_MAX = 600
+
+// Key for the per-session state snapshot: sticky "current state" events return a
+// stable key (newer replaces older); history events (stream text, clears) return
+// null and go to the scrollback ring buffer instead.
+function snapshotKey(evt: GameEvent): string | null {
+  switch (evt.type) {
+    case 'vital-update':  return `vital:${evt.id}`
+    case 'roundtime':     return 'roundtime'
+    case 'casttime':      return 'casttime'
+    case 'indicator':     return `indicator:${evt.id}`
+    case 'stance':        return 'stance'
+    case 'spell':         return 'spell'
+    case 'hand':          return `hand:${evt.hand}`
+    case 'room-title':    return 'room-title'
+    case 'room-id':       return 'room-id'
+    case 'exp-component': return `exp:${evt.skill}`
+    case 'injury-update': return 'injury'
+    case 'exits':         return 'exits'
+    case 'player-info':   return 'player-info'
+    default:              return null
+  }
 }
 
 const sessions = new Map<SessionId, Session>()
-let mainWindow: BrowserWindow | null = null
+
+// ── Windows (multi-window, v0.11.0) ──────────────────────────────────────────
+// All open windows keyed by their webContents id. The PRIMARY window is the
+// launcher window (first created); SECONDARY windows host decoupled characters.
+// Per-session output (game events, status, raw XML, errors, script list) routes
+// to a session's OWNER window via ownerWindow(); app-global output (auto-update
+// banners, menu actions) goes to the primary or focused window.
+const windows = new Map<number, BrowserWindow>()
+let primaryWindowId = 0
+let appClosing = false
+
+function primaryWindow(): BrowserWindow | undefined {
+  const w = windows.get(primaryWindowId)
+  return w && !w.isDestroyed() ? w : undefined
+}
+function windowById(id: number): BrowserWindow | undefined {
+  const w = windows.get(id)
+  return w && !w.isDestroyed() ? w : undefined
+}
+// The window that should render a session's output. Falls back to the primary
+// window if the owner is gone (e.g. a secondary window was closed before its
+// sessions were re-homed) so output is never silently dropped.
+function ownerWindow(s: Session): BrowserWindow | undefined {
+  return windowById(s.ownerWindowId) ?? primaryWindow()
+}
+function broadcastAll(channel: string, payload?: unknown) {
+  for (const w of windows.values()) if (!w.isDestroyed()) w.webContents.send(channel, payload)
+}
 
 function getSession(id: SessionId): Session | undefined {
   return sessions.get(id)
@@ -62,11 +142,51 @@ function createSession(): Session {
     id, connection, parser, lichBridge,
     eventQueue: [], flushScheduled: false,
     cleanDisconnect: false, connected: false, debugPanelOpen: false,
+    ownerWindowId: 0, meta: null, stateSnapshot: new Map(), historyBuffer: [],
   }
   wireSession(s)
   sessions.set(id, s)
   refreshMenuState()
   return s
+}
+
+// ── Session roster (multi-window, v0.11.0) ───────────────────────────────────
+// Main is the source of truth for the list of all sessions across all windows.
+// Every window mirrors this; a window renders a GameWindow only for sessions it
+// owns (ownerWindowId === its webContents id), but knows about all of them so
+// cross-window Quick Send can target a character living in another window.
+
+function rosterEntryFor(s: Session): RosterEntry | null {
+  if (!s.meta) return null  // minted but login credentials not yet attached
+  return {
+    sessionId: s.id,
+    characterId: s.meta.characterId,
+    account: s.meta.account,
+    character: s.meta.character,
+    game: s.meta.game,
+    useLich: s.meta.useLich,
+    connected: s.connected,
+    ownerWindowId: s.ownerWindowId,
+  }
+}
+
+function buildRoster(): RosterEntry[] {
+  const out: RosterEntry[] = []
+  for (const s of sessions.values()) {
+    const e = rosterEntryFor(s)
+    if (e) out.push(e)
+  }
+  return out
+}
+
+function broadcastRoster() {
+  broadcastAll(CH.SESSION_ROSTER, { roster: buildRoster() } as SessionRosterPayload)
+}
+
+// characterId formula MUST match makeCharacterId() in the renderer's
+// SessionsContext — account::character::game, all lowercased.
+function makeCharacterId(account: string, character: string, game: string): string {
+  return `${account.toLowerCase()}::${character.toLowerCase()}::${game.toLowerCase()}`
 }
 
 function wireSession(s: Session) {
@@ -77,9 +197,9 @@ function wireSession(s: Session) {
   s.connection.on('line', (line: string) => {
     if (s.debugPanelOpen) {
       const payload: RawXmlPayload = { sessionId: s.id, line }
-      mainWindow?.webContents.send(CH.RAW_XML, payload)
+      ownerWindow(s)?.webContents.send(CH.RAW_XML, payload)
     }
-    if (!s.lichBridge.interceptLine(line, s.id, mainWindow)) return
+    if (!s.lichBridge.interceptLine(line, s.id, ownerWindow(s) ?? null)) return
 
     const events = s.parser.parse(line)
     for (const evt of events) {
@@ -102,7 +222,7 @@ function wireSession(s: Session) {
 
   s.connection.on('error', (err: Error) => {
     const payload: ErrorPayload = { sessionId: s.id, message: err.message }
-    mainWindow?.webContents.send(CH.ERROR, payload)
+    ownerWindow(s)?.webContents.send(CH.ERROR, payload)
   })
 }
 
@@ -112,7 +232,21 @@ function scheduleFlush(s: Session) {
   setImmediate(() => {
     if (s.eventQueue.length > 0 && sessions.has(s.id)) {
       const batch: GameEventBatch = { sessionId: s.id, events: s.eventQueue }
-      mainWindow?.webContents.send(CH.GAME_EVENT, batch)
+      // While holding for a replay (a move is in flight), DON'T send live — the
+      // new window will get these via the replay. Sending now would double them
+      // (live + replay) for a session still streaming during the handoff.
+      if (!s.holdingForReplay) ownerWindow(s)?.webContents.send(CH.GAME_EVENT, batch)
+      // Record for later replay (kept disjoint from the pending eventQueue so a
+      // replay during a window handoff can't double up): sticky state into the
+      // snapshot (latest wins), scrollback into the ring buffer.
+      for (const evt of s.eventQueue) {
+        const key = snapshotKey(evt)
+        if (key) s.stateSnapshot.set(key, evt)
+        else s.historyBuffer.push(evt)
+      }
+      if (s.historyBuffer.length > HISTORY_BUFFER_MAX) {
+        s.historyBuffer.splice(0, s.historyBuffer.length - HISTORY_BUFFER_MAX)
+      }
       s.eventQueue = []
     }
     s.flushScheduled = false
@@ -122,8 +256,9 @@ function scheduleFlush(s: Session) {
 function sendStatus(s: Session, connected: boolean, message: string, clean?: boolean) {
   const payload: ConnectionStatusPayload = { sessionId: s.id, connected, message }
   if (clean !== undefined) payload.clean = clean
-  mainWindow?.webContents.send(CH.CONNECTION_STATUS, payload)
+  ownerWindow(s)?.webContents.send(CH.CONNECTION_STATUS, payload)
   refreshMenuState()
+  broadcastRoster()  // roster `connected` mirrors s.connected — keep windows in sync
 }
 
 function destroySession(id: SessionId) {
@@ -135,6 +270,7 @@ function destroySession(id: SessionId) {
   s.connection.forceDisconnect()
   sessions.delete(id)
   refreshMenuState()
+  broadcastRoster()
 }
 
 // Register read-only lich.db3 IPC handlers (vars, settings, sessions) — these
@@ -147,8 +283,8 @@ registerSessionLogHandlers()
 
 // ── Window ────────────────────────────────────────────────────────────────────
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
+function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 900,
@@ -161,81 +297,152 @@ function createWindow() {
       nodeIntegration: false
     }
   })
+  const id = win.webContents.id
+  windows.set(id, win)
+  if (!opts?.secondary) primaryWindowId = id
 
   const rendererPath = path.join(__dirname, '../renderer/index.html')
 
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
+    win.loadURL('http://localhost:5173')
   } else {
-    mainWindow.loadFile(rendererPath)
+    win.loadFile(rendererPath)
   }
 
-  if (!app.isPackaged) mainWindow.webContents.openDevTools()
+  if (!app.isPackaged) win.webContents.openDevTools()
 
-  let closing = false
-  mainWindow.on('close', (e) => {
-    if (closing) return  // already in shutdown sequence; let destroy() proceed
-    closing = true
+  // Push the current roster once the window's renderer is live so it starts
+  // synced (also covers a dev hot-reload, which keeps the same webContents id).
+  win.webContents.on('did-finish-load', () => broadcastRoster())
+
+  // The "Move Character to New Window" menu item depends on the FOCUSED window's
+  // character count, so re-evaluate menu state whenever focus changes.
+  win.on('focus', () => refreshMenuState())
+
+  win.on('close', (e) => {
+    const isPrimary = id === primaryWindowId
+    if (!isPrimary) {
+      // Secondary (decoupled) window closing LOGS OUT its character(s) — a
+      // graceful disconnect, like closing a tab. To keep a character running,
+      // use Window → "Move Character to Main Window" first (re-home), which
+      // empties + auto-closes this window without disconnecting.
+      if (closingWindows.has(id)) return  // already draining; let destroy() proceed
+      closingWindows.add(id)
+      e.preventDefault()
+      runSecondaryWindowClose(win)
+      return
+    }
+    // Primary window close == app shutdown. Run the graceful drain + flush once
+    // across ALL windows, then destroy everything.
+    if (appClosing) return  // already in shutdown sequence; let destroy() proceed
+    appClosing = true
     e.preventDefault()
-
-    const active = Array.from(sessions.values()).filter(s => s.connected)
-    active.forEach(s => { s.connected = false; s.cleanDisconnect = true })
-
-    // Tell the renderer the shutdown is starting so it can paint a "Closing…"
-    // overlay (v0.8.0, B99). Without this the window appears frozen for up to
-    // 5s while gracefulDisconnect waits for the server-side QUIT ack — the
-    // OS animation stalls and the user has no idea anything is happening.
-    // Send before the flush+drain Promise.all kicks off so the overlay is
-    // visible from the moment the close starts.
-    try {
-      mainWindow?.webContents.send('shutdown-starting', { activeCount: active.length })
-    } catch { /* renderer may already be unresponsive — overlay is best-effort */ }
-
-    // Timing instrumentation — surfaces where shutdown time actually goes
-    // so we can diagnose if testers report it feeling slow. console.time
-    // pairs are caught by Electron's main-process log. v0.8.0 (B99 followup).
-    const t0 = Date.now()
-    const stamp = (label: string) => console.log(`[shutdown] ${label} +${Date.now() - t0}ms`)
-    stamp('start')
-
-    // 1) Ask the renderer to fire every pending debounced profile save so the
-    //    latest in-memory state reaches disk before we back up.
-    // 2) Back up each live YAML to {name}.yaml.bak so a corrupted live file
-    //    can be recovered from the last clean shutdown.
-    // 3) Drain active TCP sessions with QUIT (quickClose — see below).
-    // (1+2) and (3) run in parallel — backup is local file I/O and finishes
-    //    well before the network drain.
-    const flushAndBackup = mainWindow?.webContents
-      .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
-      .catch((err: unknown) => console.error('[shutdown] flush failed', err))
-      .finally(() => { backupAllProfiles(); flushAllSessionLogs(); stamp('flushAndBackup done') })
-
-    // v0.8.0 (B99 followup): quickClose=true skips the 5s server-ack wait.
-    // We fire QUIT, give it ~300ms to flush over the local Lich socket, then
-    // force-close. The character is still logged out (either via clean QUIT
-    // or via Simu's socket-drop timeout), and the user doesn't sit watching
-    // a 5s-per-session "Closing…" overlay just so we can be polite to the
-    // server. In-tab Disconnect and the conflict-modal auto-disconnect keep
-    // the full 5s wait — they need the slot release to be confirmed before
-    // the next action.
-    const drain = active.length > 0
-      ? Promise.all(active.map(s => s.connection.gracefulDisconnect({ quickClose: true })))
-          .then(() => stamp('drain done'))
-      : Promise.resolve()
-
-    Promise.all([flushAndBackup, drain]).finally(() => { stamp('destroy'); mainWindow?.destroy() })
+    runAppShutdown()
   })
 
-  mainWindow.on('closed', () => {
-    for (const id of Array.from(sessions.keys())) destroySession(id)
-    mainWindow = null
+  win.on('closed', () => {
+    windows.delete(id)
+    closingWindows.delete(id)
+    // Tear down the sessions that lived in this window — every session for the
+    // primary (app quit), or just this window's owned sessions for a secondary.
+    if (id === primaryWindowId) {
+      for (const sid of Array.from(sessions.keys())) destroySession(sid)
+    } else {
+      for (const s of Array.from(sessions.values())) if (s.ownerWindowId === id) destroySession(s.id)
+    }
+  })
+
+  return win
+}
+
+// Secondary (decoupled) windows mid-close: guards the async graceful-disconnect
+// so a second close event (or the final destroy) doesn't re-enter.
+const closingWindows = new Set<number>()
+
+// Closing a secondary window LOGS OUT its character(s): graceful quickClose
+// disconnect + log flush, then destroy the window (whose 'closed' handler tears
+// the sessions down). To keep a character running, re-home it first via
+// "Move Character to Main Window" (which empties + auto-closes the window with
+// no sessions left to disconnect).
+function runSecondaryWindowClose(win: BrowserWindow) {
+  const id = win.webContents.id
+  const owned = Array.from(sessions.values()).filter(s => s.ownerWindowId === id && s.connected)
+  owned.forEach(s => { s.connected = false; s.cleanDisconnect = true })
+  try { win.webContents.send('shutdown-starting', { activeCount: owned.length }) } catch {}
+
+  const flush = win.isDestroyed()
+    ? Promise.resolve(undefined)
+    : win.webContents
+        .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
+        .catch(() => {})
+  const drain = owned.length > 0
+    ? Promise.all(owned.map(s => s.connection.gracefulDisconnect({ quickClose: true })))
+    : Promise.resolve()
+
+  Promise.all([flush, drain]).finally(() => {
+    flushAllSessionLogs()
+    if (!win.isDestroyed()) win.destroy()
+  })
+}
+
+// App-quit sequence (fired by the PRIMARY window's close). Flushes every
+// window's debounced profile saves, backs up YAML + session logs, drains active
+// TCP sessions, then destroys all windows. Mirrors the v0.8.0 (B99) single-
+// window shutdown but fans the flush across all windows so a decoupled window's
+// unsaved settings reach disk too.
+function runAppShutdown() {
+  const active = Array.from(sessions.values()).filter(s => s.connected)
+  active.forEach(s => { s.connected = false; s.cleanDisconnect = true })
+
+  // Tell every window to paint its "Closing…" overlay before the drain begins.
+  try { broadcastAll('shutdown-starting', { activeCount: active.length }) }
+  catch { /* a renderer may already be unresponsive — overlay is best-effort */ }
+
+  const t0 = Date.now()
+  const stamp = (label: string) => console.log(`[shutdown] ${label} +${Date.now() - t0}ms`)
+  stamp('start')
+
+  // Flush pending debounced profile saves in EVERY window (each window's
+  // GameWindows hold their own), then back up YAML + flush session logs once.
+  const flushAll = Promise.all(
+    Array.from(windows.values()).map(w =>
+      w.isDestroyed()
+        ? Promise.resolve(undefined)
+        : w.webContents
+            .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
+            .catch((err: unknown) => console.error('[shutdown] flush failed', err))
+    )
+  ).finally(() => { backupAllProfiles(); flushAllSessionLogs(); stamp('flushAndBackup done') })
+
+  // quickClose=true skips the 5s server-ack wait (B99 followup): fire QUIT, give
+  // it ~300ms over the local socket, then force-close.
+  const drain = active.length > 0
+    ? Promise.all(active.map(s => s.connection.gracefulDisconnect({ quickClose: true })))
+        .then(() => stamp('drain done'))
+    : Promise.resolve()
+
+  Promise.all([flushAll, drain]).finally(() => {
+    stamp('destroy')
+    for (const w of Array.from(windows.values())) if (!w.isDestroyed()) w.destroy()
   })
 }
 
 // ── IPC: session lifecycle ────────────────────────────────────────────────────
 
-ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials): Promise<LoginResult> => {
+ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginResult> => {
   const s = createSession()
+  // Attach identity + owning window (the window that initiated the connect) so
+  // the session appears in the roster broadcast. event.sender.id is the calling
+  // window's webContents id — stable for the window's lifetime.
+  s.ownerWindowId = event.sender.id
+  s.meta = {
+    characterId: makeCharacterId(creds.account, creds.character, creds.game),
+    account: creds.account,
+    character: creds.character,
+    game: creds.game,
+    useLich: creds.useLich,
+  }
+  broadcastRoster()
   try {
     if (creds.useLich) {
       await s.connection.connectViaLich(creds)
@@ -249,6 +456,140 @@ ipcMain.handle(CH.LOGIN, async (_event, creds: LoginCredentials): Promise<LoginR
     destroySession(s.id)
     return { ok: false, error: String(err) }
   }
+})
+
+// Returns this window's stable id + whether it's the primary (launcher) window.
+// The renderer uses the id to filter the roster to sessions it owns, and
+// isPrimary to choose its empty-state (primary → Launcher; secondary → a small
+// "opening…" placeholder until its decoupled session mounts).
+ipcMain.handle('get-window-info', (event) => ({
+  windowId: event.sender.id,
+  isPrimary: event.sender.id === primaryWindowId,
+}))
+
+// The owner window's GameWindow reports the server-canonical character name
+// (from player-info XML) so the roster — and thus other windows' Quick Send —
+// shows the right casing.
+ipcMain.on('session:set-name', (_event, sessionId: SessionId, character: string) => {
+  const s = getSession(sessionId)
+  if (s?.meta && s.meta.character !== character) {
+    s.meta.character = character
+    broadcastRoster()
+  }
+})
+
+// Safety net for the replay hold: if a moved session's new window never requests
+// its replay (e.g. its GameWindow failed to mount), don't hold its live events
+// forever. After a few seconds, deliver the buffered history once and resume
+// live. Guarded on the same replayTarget so a newer move isn't clobbered.
+function scheduleReplayHoldRelease(s: Session) {
+  const target = s.replayTarget
+  setTimeout(() => {
+    if (!s.holdingForReplay || s.replayTarget !== target || !sessions.has(s.id)) return
+    s.holdingForReplay = false
+    s.replayTarget = undefined
+    const win = ownerWindow(s)
+    const events = [...s.stateSnapshot.values(), ...s.historyBuffer]
+    if (win && events.length > 0) {
+      win.webContents.send(CH.GAME_EVENT, { sessionId: s.id, events, replay: true } as GameEventBatch)
+    }
+  }, 5000)
+}
+
+// ── IPC: multi-window decouple (v0.11.0) ─────────────────────────────────────
+// Move which window renders a session. 'new' opens a fresh secondary window; a
+// numeric id moves the session to an existing window (e.g. re-home to primary).
+// The socket/parser/LichBridge are NEVER touched — only ownerWindowId changes,
+// so owner-targeted event routing follows the session to its new window.
+ipcMain.handle('session:move-window', (_event, sessionId: SessionId, target: 'new' | 'main' | number) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  const sourceWindowId = s.ownerWindowId
+
+  if (target === 'new') {
+    // Don't decouple the only character in a window — it'd just leave the source
+    // window empty for no benefit. The UI greys this out too; this is the
+    // authoritative backstop covering every entry point.
+    const ownedCount = Array.from(sessions.values()).filter(x => x.ownerWindowId === sourceWindowId).length
+    if (ownedCount <= 1) return
+    const win = createWindow({ secondary: true })
+    s.ownerWindowId = win.webContents.id
+    s.replayTarget = win.webContents.id  // this window earned a history replay
+    s.holdingForReplay = true            // hold live until the replay is delivered
+    scheduleReplayHoldRelease(s)
+    // The new window pulls its owned sessions on mount (get-owned-sessions), so
+    // no acquire push is needed for it. Tell the source window to drop the tab
+    // now. A second of game text may be missed during the window-open handoff
+    // (acceptable, like a brief reconnect; the on-disk session log is intact).
+    windowById(sourceWindowId)?.webContents.send('session-release', sessionId)
+    broadcastRoster()
+    refreshMenuState()
+    return
+  }
+
+  // Move to an already-open window ('main' → primary, or a specific id): push an
+  // acquire to it (its renderer is live with a listener), release from source.
+  const targetId = target === 'main' ? primaryWindowId : target
+  const targetWin = windowById(targetId)
+  if (!targetWin || targetId === sourceWindowId) return
+  s.ownerWindowId = targetId
+  s.replayTarget = targetId  // the receiving window earned a history replay
+  s.holdingForReplay = true  // hold live until the replay is delivered
+  scheduleReplayHoldRelease(s)
+  const entry = rosterEntryFor(s)
+  if (entry) targetWin.webContents.send('session-acquire', entry)
+  windowById(sourceWindowId)?.webContents.send('session-release', sessionId)
+  broadcastRoster()
+  refreshMenuState()
+
+  // Auto-close a now-empty SECONDARY source window (its character just left).
+  // destroy() skips the 'close' (logout) path — correct, since there's nothing
+  // left to disconnect.
+  if (sourceWindowId !== primaryWindowId) {
+    const stillOwned = Array.from(sessions.values()).some(x => x.ownerWindowId === sourceWindowId)
+    if (!stillOwned) windowById(sourceWindowId)?.destroy()
+  }
+})
+
+// A freshly-loaded window pulls the sessions main has assigned to it (used by a
+// new decoupled window on mount, and to recover tabs after a dev hot-reload).
+ipcMain.handle('get-owned-sessions', (event): RosterEntry[] =>
+  buildRoster().filter(r => r.ownerWindowId === event.sender.id))
+
+// Cross-window remount (Profile Transfer): the modal can run in any window but a
+// target character may live in ANOTHER window. After writing the imported
+// localStorage working copy (shared across windows), route a reload to the
+// session's OWNER window so its GameWindow remounts and re-reads the new state —
+// otherwise the owner window's stale in-memory state would overwrite the import
+// on its next save (pitfall #56, cross-window).
+ipcMain.on('session:reload', (_e, characterId: string) => {
+  const s = Array.from(sessions.values()).find(x => x.meta?.characterId === characterId)
+  if (s) windowById(s.ownerWindowId)?.webContents.send('session-reload', characterId)
+})
+
+// A GameWindow requests a replay of its session's recent history on mount, so a
+// decoupled / re-homed / remounted window paints scrollback + room/map/vitals
+// instead of starting blank. Delivered as a normal game-event batch flagged
+// replay:true to the requesting window only — the renderer rebuilds display +
+// state but runs no side effects (no triggers, no logging). Fresh sessions have
+// an empty buffer, so this is a harmless no-op on a first connect.
+ipcMain.on('session:request-replay', (event, sessionId: SessionId) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  // Only replay to a window the session was MOVED into (replayTarget). A fresh
+  // connect never set it, so its first window gets NO replay — preventing the
+  // login stream from being doubled (live + replay). One-shot: clear on deliver.
+  if (s.replayTarget !== event.sender.id) return
+  s.replayTarget = undefined
+  s.holdingForReplay = false  // replay delivered — resume live delivery
+  // Snapshot FIRST (restore current vitals / room / RT / indicators / … — these
+  // are always current regardless of age), THEN the scrollback history. This is
+  // why static bars (a vital sitting at 100%) come back: their latest value is
+  // in the snapshot even if it last changed thousands of events ago.
+  const events = [...s.stateSnapshot.values(), ...s.historyBuffer]
+  if (events.length === 0) return
+  const batch: GameEventBatch = { sessionId: s.id, events, replay: true }
+  event.sender.send(CH.GAME_EVENT, batch)
 })
 
 ipcMain.on(CH.SEND_COMMAND, (_event, sessionId: SessionId, command: string) => {
@@ -625,8 +966,9 @@ ipcMain.handle('profile-transfer:open-exports-folder', (): void => {
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 
-ipcMain.on('flash-window', () => {
-  mainWindow?.flashFrame(true)
+ipcMain.on('flash-window', (e) => {
+  // Flash the window that asked for attention (the one whose tab wants notice).
+  BrowserWindow.fromWebContents(e.sender)?.flashFrame(true)
 })
 
 ipcMain.on('write-log', (_e, filename: string, content: string) => {
@@ -645,22 +987,23 @@ ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())
 
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false
+  // Auto-update UI lives in the primary (launcher) window.
   autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-available', info.version)
+    primaryWindow()?.webContents.send('update-available', info.version)
   })
   autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update-downloaded')
+    primaryWindow()?.webContents.send('update-downloaded')
   })
   autoUpdater.on('error', (err) => {
     const msg = err?.message ?? String(err)
     console.error('[auto-updater] error:', msg)
-    mainWindow?.webContents.send('updater-log', `ERROR: ${msg}`)
+    primaryWindow()?.webContents.send('updater-log', `ERROR: ${msg}`)
   })
   autoUpdater.on('update-not-available', () => {
-    mainWindow?.webContents.send('updater-log', 'No update available')
+    primaryWindow()?.webContents.send('updater-log', 'No update available')
   })
   autoUpdater.on('checking-for-update', () => {
-    mainWindow?.webContents.send('updater-log', 'Checking for update...')
+    primaryWindow()?.webContents.send('updater-log', 'Checking for update...')
   })
   setTimeout(() => autoUpdater.checkForUpdates(), 3000)
 }
@@ -669,7 +1012,8 @@ function setupAutoUpdater() {
 // renderer. App routes session actions to the active GameWindow; app actions
 // are handled in App directly. See src/shared/menuActions.ts.
 function sendMenuAction(action: MenuAction) {
-  mainWindow?.webContents.send('menu-action', { action })
+  // The native menu acts on the focused window; fall back to the primary.
+  ;(BrowserWindow.getFocusedWindow() ?? primaryWindow())?.webContents.send('menu-action', { action })
 }
 
 // Keep the Window menu's character items in sync with session state: Next/
@@ -678,13 +1022,29 @@ function sendMenuAction(action: MenuAction) {
 function refreshMenuState() {
   const m = Menu.getApplicationMenu()
   if (!m) return
-  const connectedCount = Array.from(sessions.values()).filter(s => s.connected).length
-  const next  = m.getMenuItemById('menu-next-character')
-  const prev  = m.getMenuItemById('menu-prev-character')
-  const close = m.getMenuItemById('menu-close-character')
-  if (next)  next.enabled  = connectedCount >= 2
-  if (prev)  prev.enabled  = connectedCount >= 2
-  if (close) close.enabled = sessions.size >= 1
+  // Every Window-menu item acts on the FOCUSED window's tabs, so scope the
+  // enabled state to that window's session count — NOT a global count. In
+  // separate-window mode a one-character window would otherwise show
+  // Next/Prev/Close enabled even though those actions no-op there.
+  const focused = BrowserWindow.getFocusedWindow()
+  const focusedOwned = focused
+    ? Array.from(sessions.values()).filter(s => s.ownerWindowId === focused.webContents.id).length
+    : 0
+  const focusedIsSecondary = !!focused && focused.webContents.id !== primaryWindowId
+
+  const next     = m.getMenuItemById('menu-next-character')
+  const prev     = m.getMenuItemById('menu-prev-character')
+  const close    = m.getMenuItemById('menu-close-character')
+  const move     = m.getMenuItemById('menu-move-window')
+  const moveMain = m.getMenuItemById('menu-move-main')
+  if (next)  next.enabled  = focusedOwned >= 2  // cycle needs 2+ tabs in THIS window
+  if (prev)  prev.enabled  = focusedOwned >= 2
+  if (close) close.enabled = focusedOwned >= 1  // a tab to close in THIS window
+  // Move-to-new-window: pointless when the window holds only one character (it'd
+  // just leave the source window empty).
+  if (move)  move.enabled  = focusedOwned >= 2
+  // Move-to-main: re-home — only meaningful in a SECONDARY (decoupled) window.
+  if (moveMain) moveMain.enabled = focusedIsSecondary && focusedOwned >= 1
 }
 
 function setupMenu() {
@@ -790,14 +1150,20 @@ function setupMenu() {
     {
       label: 'Window',
       submenu: [
-        // Next/Previous are greyed unless 2+ characters are CONNECTED; Close is
-        // greyed when there's no open character. State is kept current by
-        // refreshMenuState() (called on every connect/disconnect/tab change).
+        // Enabled-state is scoped to the FOCUSED window's tab count by
+        // refreshMenuState() (re-run on connect/disconnect/tab change AND on
+        // window focus): Next/Prev need 2+ tabs in that window, Close needs 1+.
         // Next Character shows the existing Ctrl+Tab chord (App.tsx) but does
         // not rebind it (registerAccelerator false).
         { id: 'menu-next-character',  label: 'Next Character',     enabled: false, accelerator: 'CmdOrCtrl+Tab', registerAccelerator: false, click: () => sendMenuAction('next-character') },
         { id: 'menu-prev-character',  label: 'Previous Character', enabled: false, click: () => sendMenuAction('prev-character') },
         { id: 'menu-close-character', label: 'Close Character',    enabled: false, click: () => sendMenuAction('close-character') },
+        { type: 'separator' },
+        // Decouple the focused window's active character into its own window…
+        { id: 'menu-move-window',     label: 'Move Character to New Window', enabled: false, click: () => sendMenuAction('move-to-new-window') },
+        // …or re-home a decoupled window's character back to the main window
+        // (only meaningful when the focused window is a decoupled one).
+        { id: 'menu-move-main',       label: 'Move Character to Main Window', enabled: false, click: () => sendMenuAction('move-to-main-window') },
         { type: 'separator' },
         { role: 'minimize' },
         { role: 'close' },

@@ -31,6 +31,8 @@ export const SESSION_ACTIONS = [
   'font-decrease',
   'font-reset',
   'disconnect',
+  'move-to-new-window',
+  'move-to-main-window',
 ] as const
 
 export const APP_ACTIONS = [

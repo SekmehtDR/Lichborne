@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { LauncherCharacter } from './Launcher'
+import { exportSharedProfile } from '../profile'
 import '../styles/character-notes-editor.css'
+
+// App-wide preference persisted in _shared.yaml (via buildSharedProfile /
+// importSharedProfile). Default false (disabled).
+const SEPARATE_WINDOWS_KEY = 'lichborne.bulkConnectSeparateWindows'
 
 // Bulk Connect Picker (v0.8.0, F21) — one-shot modal that lets the user
 // log in one character per account in a single click sequence. DR enforces
@@ -25,7 +30,7 @@ interface AccountGroup {
 interface Props {
   groups: AccountGroup[]
   onCancel: () => void
-  onConfirm: (picks: LauncherCharacter[]) => void
+  onConfirm: (picks: LauncherCharacter[], separateWindows: boolean) => void
 }
 
 export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props) {
@@ -41,6 +46,16 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
     }
     return m
   })
+
+  // v0.11.0: optionally open each connected character in its own window (the
+  // first stays in this window; the rest are decoupled into new windows).
+  // Persisted app-wide in _shared.yaml; defaults off.
+  const [separateWindows, setSeparateWindows] = useState(() => localStorage.getItem(SEPARATE_WINDOWS_KEY) === 'true')
+  function toggleSeparateWindows(next: boolean) {
+    setSeparateWindows(next)
+    localStorage.setItem(SEPARATE_WINDOWS_KEY, String(next))
+    exportSharedProfile().catch(console.error)
+  }
 
   // Esc to cancel — matches the other modals.
   useEffect(() => {
@@ -67,7 +82,7 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
       const c = g.candidates.find(x => x.name === pickedName)
       if (c) chosen.push(c)
     }
-    onConfirm(chosen)
+    onConfirm(chosen, separateWindows)
   }
 
   const pickableCount = [...picks.values()].length
@@ -114,6 +129,13 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
             </div>
           ))}
         </div>
+
+        {pickableCount >= 2 && (
+          <label className="cne-row" style={{ alignItems: 'center', gap: 8, padding: '0 16px 4px', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <input type="checkbox" checked={separateWindows} onChange={e => toggleSeparateWindows(e.target.checked)} />
+            Open each character in its own window
+          </label>
+        )}
 
         <div className="cne-footer">
           <button className="cne-btn cne-btn-cancel" onClick={onCancel}>

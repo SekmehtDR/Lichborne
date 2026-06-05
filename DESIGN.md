@@ -1289,7 +1289,7 @@ Any panel type can be floated. "Create floating panel" spawns a new panel immedi
 
 ## 13. Multi-Character Support
 
-> Status: ✅ Implemented in v0.6.0 (Release E1 — "Sessions"). One running app instance manages all characters; each character is a tab in the main toolbar row. Pop-out windows (§13.9) deferred — single-window-with-tabs ships first.
+> Status: ✅ Implemented in v0.6.0 (Release E1 — "Sessions"); **decoupled character windows added in v0.11.0 (§13.9).** One running app instance manages all characters as tabs; any character can also be moved into its own OS window while staying in the same process.
 
 ### 13.1 Concept
 
@@ -1478,11 +1478,19 @@ Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends 
 
 **Broadcast target (v0.7.1).** A "Send to all connected" option appears at the bottom of the target dropdown when ≥2 characters are connected. Implemented as an `ALL_TARGET` sentinel value living in `target` state alongside real `CharacterId`s — keeps the single-`<select>` model intact rather than adding a separate broadcast checkbox. The send handler branches on the sentinel and iterates `sessions.filter(s => s.status.connected)`, calling `window.api.sendCommand` per session. Sends to *every* connected character including the active one (literal "all"); disconnected sessions are skipped silently. Placed last in the dropdown so single-target stays visually primary — fat-fingering a broadcast from the default target shouldn't be a one-click mistake.
 
-### 13.9 Pop-Out Windows
+### 13.9 Decoupled Character Windows (Multi-Window)
 
-> Status: Deferred. Not in the v0.6.0 ship. Requires a second `BrowserWindow` per pop-out and IPC routing per window — non-trivial additional refactor. Single-window-with-tabs is sufficient for v1 multi-character.
+> Status: ✅ Implemented in v0.11.0. A tabbed character can be moved into its own OS window while everything still runs in ONE process. (The original "drag a tab off the bar" interaction was not built; the entry points are explicit menu/context actions — drag-out is a possible future nicety.)
 
-Any character tab can be dragged off the tab bar to become an independent OS window — useful for multi-monitor setups. Each popped window is a full session with its own toolbar and layout. A `⬛ Dock` button in the popped window's toolbar returns it to the tab bar.
+**Why one process.** Running the exe twice would lose every cross-character feature (Quick Send can only reach sockets in the same main process), make the two instances race a single `userData` (profiles, `_shared.yaml`, `passwords.json`, localStorage) with no coordination, and collide on Lich's force-mode launch port (each process has its own `serializeLichLaunch`). So decoupled windows are served by the single main process; separate exe instances remain *possible* (deliberately ungated) for users who want fully isolated character sets, but they don't cross-coordinate.
+
+**Roster model (main is authoritative).** Each `Session` (main) carries `meta` + `ownerWindowId`. `broadcastRoster()` pushes a `RosterEntry[]` to every window on any change (`session-roster`). The renderer mirrors it (`RosterContext` → `useRoster()`); a window renders GameWindows only for sessions it owns, but knows about all of them (so cross-window Quick Send can target any character). `SessionsContext` still owns this window's tabs + rich `SessionStatus`; an AppShell decouple-sync effect keeps it aligned via pull-on-mount (`get-owned-sessions`) + `session-acquire`/`session-release` pushes.
+
+**Move = ownership only.** `session:move-window(sessionId, 'new' | 'main' | windowId)` reassigns `ownerWindowId`; per-session events re-route via `ownerWindow(s)`. The socket/parser/LichBridge are never touched (the source GameWindow merely unmounts; see CLAUDE.md pitfall #59). Entry points: right-click tab, Window menu → "Move Character to New Window", Bulk Connect "Open each character in its own window" (persisted in `_shared.yaml`, default off). The only-character-in-a-window case is guarded (greyed) at three levels.
+
+**Seamless takeover (replay).** A window taking over a session reseeds from a render-only replay: main keeps a per-session **snapshot of the latest sticky state** (every vital/indicator/RT/CT/stance/spell/hand/room/exp — so static bars restore regardless of age) plus a bounded scrollback buffer. The replay is gated so it rebuilds display + state WITHOUT re-firing triggers / re-logging, only goes to a window the session was *moved into* (`replayTarget`), and live delivery is held during the handoff (`holdingForReplay`) so the stream can't double. See CLAUDE.md pitfall #60.
+
+**Lifecycle.** Closing a decoupled window gracefully **logs out** its character (like closing a tab); re-home is explicit via Window → "Move Character to Main Window" (auto-closes the emptied window). Closing the primary window quits the app (flushing every window's profile saves first).
 
 ### 13.10 Per-Character Memory
 

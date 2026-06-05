@@ -1,5 +1,5 @@
 import type {
-  LoginCredentials, LoginResult, SessionId,
+  LoginCredentials, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
@@ -14,6 +14,18 @@ declare global {
       disconnect: (sessionId: SessionId) => void
       disconnectAwait: (sessionId: SessionId) => Promise<void>
       destroySession: (sessionId: SessionId) => void
+
+      // ── Session roster (multi-window) ─────────────────────────────────────────
+      onSessionRoster: (cb: (payload: SessionRosterPayload) => void) => () => void
+      getWindowInfo: () => Promise<{ windowId: number; isPrimary: boolean }>
+      setSessionName: (sessionId: SessionId, character: string) => void
+      moveSessionToWindow: (sessionId: SessionId, target: 'new' | 'main' | number) => Promise<void>
+      getOwnedSessions: () => Promise<RosterEntry[]>
+      onSessionAcquire: (cb: (entry: RosterEntry) => void) => () => void
+      onSessionRelease: (cb: (sessionId: SessionId) => void) => () => void
+      requestReplay: (sessionId: SessionId) => void
+      requestSessionReload: (characterId: string) => void
+      onSessionReload: (cb: (characterId: string) => void) => () => void
 
       // ── Per-session push channels ────────────────────────────────────────────
       onGameEvent: (cb: (batch: GameEventBatch) => void) => () => void

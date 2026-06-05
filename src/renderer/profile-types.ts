@@ -33,6 +33,9 @@ export interface SharedProfile {
   // Session Log preferences — app-wide, not per-character. Optional so a
   // pre-v0.7.0 _shared.yaml without it still imports (defaults fill in).
   sessionLog?: SessionLogSettings
+  // Bulk Connect "open each character in its own window" preference (v0.11.0).
+  // App-wide, persisted here. Optional → older files default it to false.
+  bulkConnectSeparateWindows?: boolean
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

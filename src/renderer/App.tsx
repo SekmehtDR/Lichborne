@@ -10,10 +10,12 @@ import QuickSend from './components/QuickSend'
 import BulkConnectPicker from './components/BulkConnectPicker'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
+import { RosterProvider, useRoster } from './RosterContext'
 import { CharacterProvider } from './CharacterContext'
 import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile } from './profile'
 import { loadAdvanced, saveAdvanced, gameOptionByCode } from './lichSettings'
-import type { LoginCredentials, SessionId } from '../shared/types'
+import { initTheme } from './themes'
+import type { LoginCredentials, SessionId, RosterEntry } from '../shared/types'
 import { isSessionAction } from '../shared/menuActions'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
@@ -29,14 +31,44 @@ type UpdateState = 'idle' | 'available' | 'downloading' | 'ready'
 
 export default function App() {
   return (
-    <SessionsProvider>
-      <AppShell />
-    </SessionsProvider>
+    <RosterProvider>
+      <SessionsProvider>
+        <AppShell />
+      </SessionsProvider>
+    </RosterProvider>
   )
 }
 
 function AppShell() {
-  const { sessions, activeId, addSession, removeSession, setActive } = useSessions()
+  const { sessions, activeId, addSession, removeSession, setActive, updateStatus } = useSessions()
+  const { isPrimary, roster } = useRoster()
+
+  // ── Multi-window decouple sync (v0.11.0) ──────────────────────────────────────
+  // Keep this window's tab set aligned with the sessions main has assigned to it.
+  // On mount we PULL the sessions main owns for this window (a new decoupled
+  // window mounts with its session already assigned; also recovers tabs after a
+  // dev hot-reload). Thereafter main PUSHES acquire/release as characters move
+  // between windows. addSession/removeSession are window-local — the socket lives
+  // in main and is NOT touched by a move (a GameWindow unmount doesn't disconnect).
+  const sessionsRef = useRef(sessions)
+  useEffect(() => { sessionsRef.current = sessions }, [sessions])
+  useEffect(() => {
+    const addOwned = (e: RosterEntry) => {
+      if (sessionsRef.current.some(s => s.sessionId === e.sessionId)) return
+      const cid = addSession({
+        sessionId: e.sessionId, account: e.account,
+        character: e.character, game: e.game, useLich: e.useLich,
+      })
+      updateStatus(cid, { connected: e.connected })
+    }
+    window.api.getOwnedSessions().then(owned => owned.forEach(addOwned)).catch(() => {})
+    const unsubAcquire = window.api.onSessionAcquire(addOwned)
+    const unsubRelease = window.api.onSessionRelease(sessionId => {
+      const rec = sessionsRef.current.find(s => s.sessionId === sessionId)
+      if (rec) removeSession(rec.characterId)
+    })
+    return () => { unsubAcquire(); unsubRelease() }
+  }, [addSession, removeSession, updateStatus])
   const [showAdd, setShowAdd] = useState(false)
   // The Add modal renders the Launcher (cards) so the user can pick a saved
   // character. Clicking "+ Add account" inside the Launcher opens the wizard
@@ -295,6 +327,29 @@ function AppShell() {
     setReloadNonces(prev => ({ ...prev, [characterId]: (prev[characterId] ?? 0) + 1 }))
   }, [])
 
+  // Cross-window remount (Profile Transfer): main routes a reload request to the
+  // window that OWNS the session, so a target character living in another window
+  // re-reads its imported localStorage working copy live. Fires only in the
+  // owner window (only it gets the message).
+  useEffect(() => window.api.onSessionReload(reloadSession), [reloadSession])
+
+  // Cross-window THEME sync (v0.11.0). The theme is a single global localStorage
+  // key applied to each window's own document; without this, changing the theme
+  // (or editing the active custom theme) in one window leaves OTHER windows on
+  // the old look until they remount. The DOM `storage` event fires in every
+  // OTHER same-origin window when localStorage changes, so we re-apply the saved
+  // theme there. (The window that made the change applied it directly and does
+  // not get its own storage event — no double-apply.) initTheme re-runs the
+  // accessibility-overlay hook too, so this window's active character keeps its
+  // overlays (pitfall #33).
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'lichborne.theme' || e.key === 'lichborne.myThemes') initTheme()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   // v0.8.6: refocus the active GameWindow's command bar whenever the active
   // character changes — covers tab CLICKS in addition to the Ctrl+Tab /
   // Ctrl+# keyboard paths that already refocus explicitly above. Requested
@@ -540,7 +595,7 @@ function AppShell() {
   // gets the same connect flow as a single-tile click (login IPC, profile
   // import/export, session.add). Per-character errors don't abort the
   // sequence — we accumulate them and show a summary at the end. v0.8.0 (F21).
-  async function runBulkConnect(picks: LauncherCharacter[]) {
+  async function runBulkConnect(picks: LauncherCharacter[], separateWindows = false) {
     setBulkPickerSource(null)
     const ok: string[] = []
     const failed: { name: string; error: string }[] = []
@@ -580,6 +635,11 @@ function AppShell() {
           game: c.game,
           useLich: c.useLich,
         })
+        // "Open each in its own window": the first connected character stays in
+        // this window; each subsequent one is decoupled into its own new window.
+        if (separateWindows && i > 0) {
+          await window.api.moveSessionToWindow(result.sessionId, 'new')
+        }
         ok.push(c.name)
       } catch (err) {
         failed.push({ name: c.name, error: String(err) })
@@ -642,7 +702,11 @@ function AppShell() {
   }
 
   const isEmpty       = sessions.length === 0
-  const showFullLogin = isEmpty
+  // A secondary (decoupled) window must NOT show the full Launcher when empty —
+  // it briefly has no sessions before its moved-in character mounts, and shows a
+  // small placeholder instead. Unknown (isPrimary === null) is treated as primary
+  // so the launcher window's cold start isn't delayed.
+  const showFullLogin = isEmpty && isPrimary !== false
   const showModalLogin = !isEmpty && showAdd
 
   function openAddNew() {
@@ -711,6 +775,15 @@ function AppShell() {
             connectError={connectError}
             onDismissError={() => setConnectError('')}
           />
+        ) : isEmpty ? (
+          // Secondary window with no character (just opened and awaiting its
+          // moved-in session, or its character was closed / re-homed away).
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text-muted)', fontStyle: 'italic', background: 'var(--bg-app)',
+          }}>
+            No character in this window.
+          </div>
         ) : (
           sessions.map(s => (
             <div
@@ -800,8 +873,13 @@ function AppShell() {
 
       {showProfileTransfer && (
         <ProfileTransferModal
-          sessions={sessions.map(s => ({ character: s.character, characterId: s.characterId }))}
-          reloadSession={reloadSession}
+          // Active targets come from the ROSTER (every window's connected
+          // characters), not just this window — so a character open in another
+          // window is correctly treated as active (localStorage working-copy
+          // write + cross-window remount), not as an inactive YAML merge that
+          // its owner window would overwrite on save.
+          sessions={roster.filter(r => r.connected).map(r => ({ character: r.character, characterId: r.characterId }))}
+          reloadSession={(cid) => window.api.requestSessionReload(cid)}
           onClose={() => setShowProfileTransfer(false)}
         />
       )}

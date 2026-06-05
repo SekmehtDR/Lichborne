@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSessions, type CharacterId } from '../SessionsContext'
+import { useRoster } from '../RosterContext'
 import '../styles/quick-send.css'
 
 interface Props {
@@ -21,14 +22,21 @@ const ALL_TARGET = '__all__'
 // §13.8 — floating command input that targets any connected character without
 // requiring a tab switch. Triggered by Ctrl+Shift+Enter from the App-level
 // keydown handler. Cancels on Esc, closes after Send.
+//
+// Multi-window (v0.11.0): targets come from the cross-window ROSTER, not this
+// window's local SessionsContext — so a command typed in one window can be sent
+// to a character living in a DIFFERENT window (the whole reason decoupled
+// windows stay in one process). Sending routes by sessionId through main, which
+// owns every socket regardless of which window renders the character.
 export default function QuickSend({ onClose, initialCommand = '' }: Props) {
-  const { sessions, activeId } = useSessions()
+  const { roster, windowId } = useRoster()
+  const { activeId } = useSessions()
 
-  // Default target: the next *connected* character after the active one. Skip
-  // disconnected sessions — sending to them would silently fail (main's IPC
-  // handler no-ops when the SessionId is gone from the SessionStore).
+  // Default target: the next *connected* character after this window's active
+  // one (in roster order). Skip disconnected sessions — main's send handler
+  // no-ops when the SessionId is gone.
   const initialTarget = (() => {
-    const connected = sessions.filter(s => s.status.connected)
+    const connected = roster.filter(s => s.connected)
     if (connected.length === 0) return null
     if (!activeId) return connected[0].characterId
     const idx = connected.findIndex(s => s.characterId === activeId)
@@ -52,17 +60,17 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
     const cmd = command.trim()
     if (!target || !cmd) return
     if (target === ALL_TARGET) {
-      // Broadcast — fire-and-forget to every connected character (including
-      // the active one). Disconnected sessions are skipped silently.
-      for (const s of sessions) {
-        if (s.status.connected) window.api.sendCommand(s.sessionId, cmd)
+      // Broadcast — fire-and-forget to every connected character across all
+      // windows (including the active one). Disconnected sessions are skipped.
+      for (const s of roster) {
+        if (s.connected) window.api.sendCommand(s.sessionId, cmd)
       }
       onClose()
       return
     }
-    const session = sessions.find(s => s.characterId === target)
-    if (!session) return
-    window.api.sendCommand(session.sessionId, cmd)
+    const entry = roster.find(s => s.characterId === target)
+    if (!entry) return
+    window.api.sendCommand(entry.sessionId, cmd)
     onClose()
   }
 
@@ -70,10 +78,10 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
     if (e.key === 'Escape') { e.preventDefault(); onClose() }
   }
 
-  if (sessions.length === 0) return null
+  if (roster.length === 0) return null
 
-  const noConnected = !sessions.some(s => s.status.connected)
-  const connectedCount = sessions.filter(s => s.status.connected).length
+  const noConnected = !roster.some(s => s.connected)
+  const connectedCount = roster.filter(s => s.connected).length
 
   return (
     <div className="quick-send-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -90,9 +98,13 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
             disabled={noConnected}
           >
             {noConnected && <option value="">No connected characters</option>}
-            {sessions.map(s => (
-              <option key={s.characterId} value={s.characterId} disabled={!s.status.connected}>
-                {s.character} · {s.game}{!s.status.connected ? ' (disconnected)' : ''}
+            {roster.map(s => (
+              <option key={s.characterId} value={s.characterId} disabled={!s.connected}>
+                {s.character} · {s.game}
+                {!s.connected ? ' (disconnected)' : ''}
+                {/* Mark characters that live in another window so the user knows
+                    the send crosses windows (still one process — it just works). */}
+                {windowId != null && s.connected && s.ownerWindowId !== windowId ? ' · other window' : ''}
               </option>
             ))}
             {/* Broadcast option lives at the bottom so single-target play stays

@@ -54,6 +54,29 @@ export interface CharacterEntry {
   name: string
 }
 
+// --- Session roster (multi-window, v0.11.0) ---
+// Main owns the authoritative list of every session across ALL windows and
+// broadcasts it to each window, so cross-window features (Quick Send) can see
+// characters that live in other windows. `ownerWindowId` is the webContents id
+// of the window currently rendering that session's GameWindow — a session is
+// shown only by its owner window; all windows know it exists. `connected`
+// mirrors main's per-session connected flag (the renderer's rich SessionStatus
+// — health/RT/indicators — stays local to the owner window and is NOT here).
+export interface RosterEntry {
+  sessionId: SessionId
+  characterId: string
+  account: string
+  character: string
+  game: string
+  useLich: boolean
+  connected: boolean
+  ownerWindowId: number
+}
+
+export interface SessionRosterPayload {
+  roster: RosterEntry[]
+}
+
 // IPC channel names
 export const IPC = {
   LOGIN:             'login',
@@ -80,6 +103,12 @@ export type LoginResult =
 export interface GameEventBatch {
   sessionId: SessionId
   events: GameEvent[]
+  // Multi-window (v0.11.0): true when main is replaying a session's recent
+  // event history to a window that just took ownership of it (decouple / re-home
+  // / remount). The renderer rebuilds display + game state from these but skips
+  // all side effects — no trigger firing (no re-sent commands), no session-log
+  // append, no fires-log. See requestReplay in main + replayingRef in GameWindow.
+  replay?: boolean
 }
 
 export interface ConnectionStatusPayload {
