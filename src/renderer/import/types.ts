@@ -21,6 +21,12 @@ export interface ImportHighlight {
   bgColor: string | null
   sourceClass?: string        // Genie class tag, Frostbite group — informational only
   soundFile?: string          // if present stored directly on the HighlightRule; no companion trigger
+  // Wrayth <names> import: the auto-generated contact-template name this entry
+  // belongs to (one per unique palette color, e.g. "color41"). The wizard's
+  // contacts apply step groups names by this and find-or-creates a
+  // ContactTemplate, assigning each new Contact's templateId. Only set on the
+  // `names` array for Wrayth; undefined elsewhere.
+  templateName?: string
 }
 
 export interface ImportMacro {
@@ -96,8 +102,6 @@ export interface ImportResult {
   gagsCount?: number            // Genie gags.cfg rule count
   variablesCount?: number       // Genie variables.cfg entry count
   scriptsCount?: number         // Wrayth <scripts> block entry count
-  stringsCount?: number         // Wrayth <strings> substitution rule count
-  skippedMacroSetsCount?: number // Wrayth non-empty macro sets 1–9
   // v0.8.4 (F29): Lichborne-native data carried straight through — these
   // are already in our own format so the parser doesn't need to convert
   // them to ImportCandidate shape. The Lichborne import path applies

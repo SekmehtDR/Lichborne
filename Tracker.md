@@ -83,6 +83,21 @@
 
 **B89 — Inactive character tab too dark ✅: the base `.character-tab` text color was `--text-dim` (the de-emphasized variable), so a connected-but-inactive tab read as dim and drifted toward looking like the disconnected state. Changed to `--text-secondary` (near-full strength) — three brightness tiers now: active (full + bold + bg + border), inactive-connected (near-full), disconnected (opacity 0.55 + italic). One-line CSS. Reported by the developer ✅**
 
+**v0.11.1 — Wrayth import completion (highlights, color templates, presets→theme, all macro sets) ✅**
+
+A tester (Thanator) brought a real `Wrayth.xml` export, which surfaced that the Wrayth importer was missing its single most important section and under-served several others. Fixed in [wrayth.ts](src/renderer/import/parsers/wrayth.ts) / [ImportWizard.tsx](src/renderer/components/ImportWizard.tsx) / [types.ts](src/renderer/import/types.ts):
+
+- **Highlights from `<strings>` (the big fix).** Wrayth stores text highlights in a `<strings>` block; the old parser looked for a nonexistent `<highlights>` block and merely *counted* `<strings>`, so **every highlight was silently dropped**. New `parseStrings` imports them as match-scope text highlights, colored via the `<palette>` (`@NN` → hex). Deduped by **full visual identity** (pattern + color + bg), NOT pattern alone, so the same word with two different colors (e.g. `shirt` @54 and @26) both survive — Lichborne supports multiple same-pattern highlights.
+- **Names → contacts + per-color templates.** `<names>` already imported as Contacts; now each unique palette color also becomes a reusable contact template named `colorNN` (by Wrayth palette index), and each contact is assigned to its template. Rename `color41` → "Friends" in the Contacts panel and every contact using it recolors. Templates are find-or-created by name (re-import reuses, doesn't duplicate).
+- **`<presets>` → custom theme.** New `parsePresets` maps Wrayth preset ids (bold/speech/whisper/thought/roomName/command/link, with backgrounds) to CSS theme vars and creates an "Imported from Wrayth" custom theme — same path as Genie's preset.cfg. `watching`/`selectedLink` skipped (no equivalent); `"skin"`/empty backgrounds treated as none.
+- **All macro sets (0–9), collisions flagged.** Was set 0 only; now imports every non-empty set (the custom game macros live in 1–9). Lichborne has one flat keybinding set, so cross-set key collisions are flagged `partial` (the first binding wins) and the wizard de-dupes by key at apply time so two checked rows for one key never both persist. Each macro is tagged with its source set.
+- **`<ignores>` (gags) + `<vars>`** surfaced as count-only notes on the confirm screen (native gag support planned; vars live in Lich). `<scripts>` stays count-only/unsupported; `<stream>`/`<panels>` are auto-discovered, not imported.
+- **Bugs found during the post-feature bug check (both fixed):** (1) the preview's Color column was scrolling off-screen because `.iw-pattern`'s `max-width`/ellipsis was a no-op on an inline `<span>` — Wrayth's full-sentence patterns expanded the cell ([import-wizard.css](src/renderer/styles/import-wizard.css), now `display: inline-block`); (2) the self-introduced pattern-only dedup (copied from `parseNames`) was dropping color-variant highlights — fixed to dedup on full visual identity.
+
+No `CharacterProfile`/`SharedProfile` shape change (`templateName` is a transient import-intermediate field; contacts/templates/themes write through existing save funcs) — no migration.
+
+---
+
 **v0.11.0 — Multi-window: decoupled character windows (one process) ✅**
 
 Headline feature (Sekmeht/Binu/Rakkor/JadedSoul testing): a tabbed character can be **decoupled into its own OS window** while everything still runs in ONE Lichborne process — so cross-character features (Quick Send) keep working, Lich-launch stays coordinated on port 11024, and profiles/localStorage aren't raced by a second exe. Built in phases, each verified live by the developer.

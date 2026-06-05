@@ -1,3 +1,31 @@
+## What's new in v0.11.1
+
+A big upgrade to **importing from Wrayth**. If you're coming from the Wrayth client, your setup now carries over far more completely.
+
+### Your highlights now import
+
+Wrayth's text highlights (the colored strings you set up to make important messages stand out) were previously being skipped entirely. They now import — **with their colors** — so the words and phrases you'd colored in Wrayth light up the same way in Lichborne.
+
+### Names become contacts *with their colors*
+
+Your Wrayth name list still imports as **Contacts**, but now each color you used becomes a reusable **contact template** (named `color41`, `color28`, and so on, after the Wrayth color). Open the Contacts panel, rename a template to something meaningful like "Friends" or "Watch List," and every contact using that color updates at once.
+
+### Your color presets become a theme
+
+Wrayth's preset colors (speech, whispers, thoughts, room names, bold text, commands, and links) now import as an **"Imported from Wrayth" theme** you can pick from the theme menu — the same way the Genie importer works.
+
+### All your macros, not just the defaults
+
+Wrayth lets you keep up to ten macro sets; the importer used to read only the default set. It now imports **every set**, which is where most people keep their real game macros. Because Lichborne uses a single set of key bindings, if the same key is used in more than one set the import flags it and keeps one — you choose which in the preview.
+
+### Clearer preview
+
+The import preview now shows each highlight's **color swatch** right next to its text (long phrases no longer push the color off-screen), and notes how many gag and variable entries were found (gags aren't imported yet — that's coming).
+
+*(Thanks, Thanator.)*
+
+---
+
 ## What's new in v0.11.0
 
 Run your characters in **separate windows** — without running Lichborne twice.
@@ -21,25 +49,3 @@ The moved window is a complete client: its own tabs, panels, map, vitals, Quick 
 ### Why one Lichborne instead of two
 
 Everything stays in one process on purpose: it's why Quick Send and other cross-character tools reach every window, and it means your characters share one Lich coordinator (no fighting over the connection). If you'd rather keep two completely separate sets of characters (say, different teams), you can still launch Lichborne more than once — those instances simply stay independent of each other.
-
----
-
-## What's new in v0.10.1
-
-A small follow-up to v0.10.0 with a few interface fixes.
-
-### Easier to close the Debug panel
-
-The Debug panel now has an **✕ button** in its top-right corner, so you can close it directly instead of going back to the Debug button to toggle it off.
-
-### Debug "Fires" list no longer hides the jump button
-
-In the Debug panel's **Fires** tab, a long matched pattern used to stretch the row off the right edge of the screen and hide the **→** "go to rule" button so you couldn't click it. Long text now **wraps** neatly within its column, and the **→** button always stays visible and reachable.
-
-### A safety gap before Disconnect
-
-There's now a small **divider** between the **⋯ More** menu button and the **Disconnect** button at the top of the window, so it's harder to hit Disconnect by accident when you're aiming for the More menu. *(Thanks, Binu.)*
-
-### Clearer Active Scripts badges — S and C
-
-In the **Active Scripts** panel, normal scripts now show an **`S`** badge (for "Script") instead of a plain arrow, matching the **`C`** badge already used for **Custom** scripts. So at a glance: **S** = a regular script, **C** = a script from your Lich `custom/` folder — the same way Lich organizes them. *(Thanks, Rakkor, Sekmeht, and Binu.)*

@@ -393,6 +393,11 @@
 .iw-pattern {
   font-family: monospace;
   font-size: 0.78rem;
+  /* inline-block so max-width / ellipsis actually apply — a plain inline span
+     ignores max-width, which let Wrayth's full-sentence <strings> patterns
+     expand the cell and push the Color/Status columns off-screen. */
+  display: inline-block;
+  vertical-align: middle;
   max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;

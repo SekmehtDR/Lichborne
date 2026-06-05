@@ -27,6 +27,10 @@ const THEME_VAR_LABELS: Record<string, string> = {
   '--text-primary':            'Default text color',
   '--bg-app':                  'Window background',
   '--preset-bold':             'Bold / Monster text',
+  '--preset-bold-bg':          'Bold / Monster background',
+  '--preset-cmd':              'Command echo text',
+  '--preset-cmd-bg':           'Command echo background',
+  '--link-color':              'Link text',
   '--preset-speech':           'Speech text',
   '--preset-speech-bg':        'Speech background',
   '--preset-whisper':          'Whisper text',
@@ -278,6 +282,24 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         }
       : mapImportResult(result, selH, selM, selA, selT)
 
+    // v0.11.1 (Wrayth all-sets): de-dupe the incoming macros by key binding,
+    // first-wins. Wrayth's 10 macro sets can bind the same key (e.g. F1 in
+    // set 1 and set 2); the parser flags later ones `partial`, but if the
+    // user leaves both checked we must still persist only ONE binding per key
+    // (Lichborne has a single keybinding set). This guards both merge modes —
+    // the existing dedup below only compares against the EXISTING profile, not
+    // within the batch.
+    {
+      const seenKeys = new Set<string>()
+      mapped.macros = mapped.macros.filter(m => {
+        const k = m.key.toLowerCase()
+        if (!k) return true
+        if (seenKeys.has(k)) return false
+        seenKeys.add(k)
+        return true
+      })
+    }
+
     // F29 follow-up: dedup against existing entries on append merge so a
     // re-import (or an import into a profile that already has the seeded
     // defaults like Ctrl+Enter → {RepeatLast}) doesn't pile up duplicates.
@@ -442,24 +464,61 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       }
     }
 
-    // Import name highlights as Contacts
+    // Import name highlights as Contacts. v0.11.1 (Wrayth): each unique name
+    // color becomes a reusable contact template named `colorNN` (the parser
+    // stamps `templateName` per name). Group selected names by templateName,
+    // find-or-create the template (by name, reusing an existing same-named
+    // one so re-imports don't pile up duplicates), and assign each new
+    // contact's templateId. Templates go through saveContactTemplates here,
+    // NOT the nativeContactTemplates path (which id-dedups — wrong for these
+    // freshly-generated ids).
     if (selC.size > 0) {
       const existingContacts = loadContacts(character)
       const existingNames = new Set(existingContacts.map(c => c.name.toLowerCase()))
+
+      const existingTemplates = loadContactTemplates(character)
+      const templatesByName = new Map(existingTemplates.map(t => [t.name.toLowerCase(), t]))
+      const newTemplates: ContactTemplate[] = []
+
+      const ensureTemplate = (name: string, textColor: string | null): string | null => {
+        const key = name.toLowerCase()
+        const found = templatesByName.get(key)
+        if (found) return found.id
+        const tpl: ContactTemplate = {
+          id:         crypto.randomUUID(),
+          name,
+          textColor:  textColor || '#C8C8C8',
+          bgColor:    'transparent',
+          bold:       false,
+          tagText:    '',
+          tagColor:   textColor || '#C8C8C8',
+          tagBgColor: 'transparent',
+          groupIds:   [],
+          allGroups:  true,
+        }
+        templatesByName.set(key, tpl)
+        newTemplates.push(tpl)
+        return tpl.id
+      }
+
       const newContacts: Contact[] = []
       for (const i of selC) {
         const n = result.names[i]
         if (!n || existingNames.has(n.pattern.toLowerCase())) continue
+        const templateId = n.templateName ? ensureTemplate(n.templateName, n.textColor) : null
         newContacts.push({
           id:         crypto.randomUUID(),
           name:       n.pattern,
-          templateId: null,
+          templateId,
           guild:      'Unknown',
           circle:     '',
           notes:      '',
           lastSeen:   null,
           lastRoom:   null,
         })
+      }
+      if (newTemplates.length > 0) {
+        saveContactTemplates(character, [...existingTemplates, ...newTemplates])
       }
       if (newContacts.length > 0) {
         saveContacts(character, [...existingContacts, ...newContacts])
@@ -877,14 +936,16 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             ? <div className="iw-empty">No name highlights found</div>
             : <>
                 <div className="iw-sub-notice" style={{ marginBottom: 8 }}>
-                  Selected names will be added to Contacts with no template assigned.
-                  You can assign templates in the Contacts panel after importing.
+                  Selected names are added to Contacts. Each unique color becomes a
+                  reusable contact template named <code>colorNN</code> — rename it in the
+                  Contacts panel (e.g. "Friends") and every contact using it updates.
                 </div>
                 <table className="iw-table">
                   <thead>
                     <tr>
                       <th style={{ width: 28 }}></th>
                       <th>Name</th>
+                      <th>Template</th>
                       <th>Text Color</th>
                       <th>BG Color</th>
                     </tr>
@@ -900,6 +961,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                           />
                         </td>
                         <td>{n.pattern}</td>
+                        <td>{n.templateName ?? <span className="iw-color-none">—</span>}</td>
                         <td>
                           {n.textColor
                             ? <span className="iw-color-swatch" style={{ background: n.textColor }} title={n.textColor} />
@@ -963,7 +1025,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
         {(result.gagsCount ?? 0) > 0 && (
           <div className="iw-sub-notice">
             {result.gagsCount} gag rule{result.gagsCount !== 1 ? 's' : ''} found —
-            use <code>textsubs.lic</code>. Gag rules suppress text that Lich has already transformed.
+            not imported yet. Native gag support is planned; for now use <code>textsubs.lic</code>.
           </div>
         )}
         {(result.variablesCount ?? 0) > 0 && (
@@ -993,7 +1055,9 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                 <td>Theme</td>
                 <td>
                   <span className="iw-summary-count">
-                    {selTheme ? `"Imported from Genie" (${Object.keys(result.themeVars).length} vars)` : 'skipped'}
+                    {selTheme
+                      ? `"Imported from ${source ? source.charAt(0).toUpperCase() + source.slice(1) : 'Import'}" (${Object.keys(result.themeVars).length} vars)`
+                      : 'skipped'}
                   </span>
                 </td>
               </tr>
@@ -1005,18 +1069,14 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
           const lichRows: Array<{ label: string; count: number; note: string }> = []
           if ((result?.substitutionCount ?? 0) > 0)
             lichRows.push({ label: 'Substitution rules', count: result!.substitutionCount, note: 'Use textsubs.lic — Lich rewrites text before Lichborne sees it' })
-          if ((result?.stringsCount ?? 0) > 0)
-            lichRows.push({ label: 'Wrayth strings', count: result!.stringsCount!, note: 'Use textsubs.lic' })
           if ((result?.gagsCount ?? 0) > 0)
-            lichRows.push({ label: 'Gag rules', count: result!.gagsCount!, note: 'Use textsubs.lic' })
+            lichRows.push({ label: 'Gag rules', count: result!.gagsCount!, note: 'Native gag support is planned; for now use textsubs.lic' })
           if ((result?.variablesCount ?? 0) > 0)
             lichRows.push({ label: 'Variables', count: result!.variablesCount!, note: 'These live in Lich\'s Vars system' })
           if ((result?.scriptsCount ?? 0) > 0)
             lichRows.push({ label: 'Lich scripts', count: result!.scriptsCount!, note: 'Run in Lich, not the client' })
           if ((result?.alertHighlightCount ?? 0) > 0)
             lichRows.push({ label: 'Alert highlights', count: result!.alertHighlightCount!, note: 'Health/stun thresholds — no Lichborne equivalent yet' })
-          if ((result?.skippedMacroSetsCount ?? 0) > 0)
-            lichRows.push({ label: 'Macro sets 1–9 entries', count: result!.skippedMacroSetsCount!, note: 'Only the default set (0) is imported' })
 
           if (lichRows.length === 0) return null
           return (
