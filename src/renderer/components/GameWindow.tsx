@@ -1514,6 +1514,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // final index itself at call time. This is why the End key appeared
     // to "do nothing."
     virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+    // B153: scrollToIndex aligns the last ITEM to the viewport bottom and leaves
+    // the invisible Footer slack below the fold — so on its own it lands the last
+    // line right at the clipped edge (under the vitals bar at font ≥ 13). Follow
+    // up with the raw, footer-INCLUSIVE bottom scroll so the slack is taken up and
+    // the last line clears the bar. rAF so Virtuoso has rendered the bottom rows
+    // (it has, we're pinned) before we read scrollHeight.
+    requestAnimationFrame(() => {
+      const el = scrollRef.current
+      if (!el || !pinnedRef.current) return
+      suppressUntilRef.current = Date.now() + 200
+      el.scrollTop = el.scrollHeight - el.clientHeight
+    })
     inputRef.current?.focus()
   }
 
@@ -1533,10 +1545,32 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // between effect-fire and rAF-fire.
   useEffect(() => {
     if (!pinnedRef.current) return
+    // B153: SUPPRESS un-pin synchronously BEFORE the relayout, not just inside
+    // the rAF. A font/line-height change grows every row AND the command bar
+    // (which now scales with --game-font-size, pitfall #45), so scrollHeight
+    // balloons while scrollTop holds — `dist` jumps past the 40px deadband and
+    // handleVirtuosoScroll flips pinnedRef=false BEFORE the rAF runs. The rAF
+    // then bailed on the pinnedRef recheck, so the re-snap never fired: the user
+    // saw the "N new lines" badge and the view stranded ~1 line up on every font
+    // change. Arming suppression here (covering the relayout + the rAF) keeps the
+    // relayout-induced scroll events from un-pinning. The inner recheck stays —
+    // a genuine wheel-up (onWheel sets pinnedRef=false directly, NOT gated by
+    // suppressUntilRef) still cancels the snap.
+    suppressUntilRef.current = Date.now() + 250
     const r = requestAnimationFrame(() => {
       if (!pinnedRef.current) return
       suppressUntilRef.current = Date.now() + 200
       virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+      // B153: footer-inclusive raw correction (see scrollToBottom) — the font
+      // change reshapes every row AND the footer slack, so the scrollToIndex
+      // snap alone leaves the last line clipped. A second rAF lets Virtuoso
+      // re-measure at the new dimensions before we read scrollHeight.
+      requestAnimationFrame(() => {
+        const el = scrollRef.current
+        if (!el || !pinnedRef.current) return
+        suppressUntilRef.current = Date.now() + 200
+        el.scrollTop = el.scrollHeight - el.clientHeight
+      })
     })
     return () => cancelAnimationFrame(r)
   }, [settings.fontSize, settings.lineHeight, settings.largePrint])
@@ -2195,60 +2229,43 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 followOutput={() => pinnedRef.current ? 'auto' : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return
-                  const el = scrollRef.current
-                  if (!el) return
-                  const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-                  // B122 (Rakkor, v0.8.7 threshold lowering — DIDN'T FIX
-                  // IT). The half-row clip at font 13+ is NOT a scroll-math
-                  // problem; both raw `scrollHeight - clientHeight` and
-                  // Virtuoso's `scrollToIndex({ align: 'end' })` land at
-                  // the SAME position, but the actual scrollable bottom
-                  // extends ~half a row past that (confirmed by Rakkor's
-                  // diagnostic — he could manually scroll down ~10px at
-                  // font 13 to reveal the full prompt line). Working
-                  // theory: Virtuoso re-measures the just-rendered last
-                  // row via ResizeObserver AFTER our snap fires, growing
-                  // scrollHeight without re-triggering us at a moment
-                  // when we'd correct. Threshold left at 0.5 so the
-                  // correction stays responsive when it CAN help, but the
-                  // actual fix for the half-row clip is the Footer
-                  // component below — it adds ~1em of unscrolled
-                  // padding-equivalent at the bottom of the list so the
-                  // visible content above the (invisible) footer always
-                  // includes the full last row, regardless of how far
-                  // short the scroll snap lands. Cost: a constant 1em of
-                  // empty space at the bottom of the text window when
-                  // pinned. Matches what most chat/terminal UIs do.
-                  if (dist > 0.5) {
-                    suppressUntilRef.current = Date.now() + 200
-                    el.scrollTop = el.scrollHeight - el.clientHeight
-                  }
+                  // B153 (Rakkor): at font ≥ 13 the pinned view rests ONE LINE
+                  // short of the true bottom — the user can always wheel down one
+                  // notch to reveal the clipped prompt line. Cause: Virtuoso's
+                  // `followOutput` auto-scroll lands at "last item at viewport
+                  // bottom" but under-measures the row at fractional heights, so
+                  // the last line clips; and crucially it runs AFTER a synchronous
+                  // correction here, overriding it. So we DEFER the raw, footer-
+                  // INCLUSIVE bottom scroll into a rAF — it then runs after
+                  // followOutput's scroll and wins, landing at the genuine DOM
+                  // bottom (scrollHeight counts the Footer slack, so the last real
+                  // line clears the vitals bar). Re-check pinnedRef inside the rAF
+                  // (a wheel-up in the gap un-pins via onWheel, which is not
+                  // suppress-gated).
+                  requestAnimationFrame(() => {
+                    const el = scrollRef.current
+                    if (!el || !pinnedRef.current) return
+                    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+                    if (dist > 0.5) {
+                      suppressUntilRef.current = Date.now() + 200
+                      el.scrollTop = el.scrollHeight - el.clientHeight
+                    }
+                  })
                 }}
-                components={{
-                  // B122 (Rakkor, v0.8.8): see the long comment in
-                  // totalListHeightChanged above. The footer is the
-                  // actual fix for the half-row clip at font 13+.
-                  // **Gated on fontSize >= 13** because at font 12
-                  // and below the row height (~19.8px) lands on clean
-                  // integer pixels and no clip occurs — the footer
-                  // would just be empty space below the last row that
-                  // Sekmeht (correctly) noticed as a visible gap
-                  // between the text window and the vitals strip.
-                  // **Fixed 14px (not 1em)** because scaling the footer
-                  // with font size meant the gap grew 1px per font step
-                  // (font 13 → 13px, 14 → 14px, …, 24 → 24px), which
-                  // Sekmeht flagged as inconsistent. The worst-case
-                  // clip is ~half a row (~10-12px at font 13 per
-                  // Rakkor's diagnostic); 14px is enough to absorb
-                  // that at fonts 13-19. At fonts 20+ the half-row
-                  // clip exceeds 16px — if a tester ever reports the
-                  // clip reappearing at very large fonts, bump this
-                  // to a `max(14px, calc(var(--game-font-size) * 0.825))`
-                  // formula that scales only when needed.
-                  Footer: settings.fontSize >= 13
-                    ? () => <div style={{ height: 14 }} />
-                    : undefined,
-                }}
+                // B153 (Rakkor): NO Footer component. The whole B122/B153 saga
+                // was the pinned view resting one line short of the bottom at
+                // font ≥ 13 — Virtuoso's `followOutput` under-measures the last
+                // row at fractional heights and lands it clipped. v0.8.8 added a
+                // fixed-14px footer as bottom SLACK to scroll into, but (a) it
+                // was overridden by followOutput, and (b) once the rAF-deferred
+                // raw correction in `totalListHeightChanged` started reaching the
+                // TRUE DOM bottom (`scrollHeight - clientHeight`, immune to
+                // Virtuoso's under-measurement), any footer just became a one-line
+                // GAP — the last line sat a row ABOVE the vitals bar instead of
+                // flush against it. With the rAF correction landing at the real
+                // bottom, the last line is flush with no slack needed. (An interim
+                // attempt — integer per-row px — also didn't fix it; the lever is
+                // the deferred raw scroll winning over followOutput, not row math.)
                 computeItemKey={(_index, line) => line.id}
                 itemContent={(_index, line) => (
                   <div className="text-line-wrap">
