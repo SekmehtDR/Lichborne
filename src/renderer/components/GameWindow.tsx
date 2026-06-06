@@ -2424,7 +2424,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} />}
+      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} resizable character={session.character} />}
 
       {showMapOverlay && (
         <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>

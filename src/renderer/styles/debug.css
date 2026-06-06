@@ -3,11 +3,49 @@
   flex-direction: column;
   background: var(--bg-app);
   border-top: 1px solid var(--border);
-  height: 220px;
+  /* height is driven by an inline style from DebugPanel (drag-resizable,
+     persisted per-character). Fallback here for the first paint. */
+  height: 300px;
+  min-height: 0;
   font-family: var(--game-font-family);
   font-size: 0.79rem;
   flex-shrink: 0;
 }
+
+/* When rendered inside a panel zone (PanelFrame) the panel fills the zone
+   instead of imposing a fixed/resizable height. Declared after .debug-panel so
+   it wins the height/flex overrides. */
+.debug-panel--fill {
+  height: 100%;
+  flex: 1;
+  flex-shrink: 1;
+  min-height: 0;
+  border-top: none;
+}
+
+/* Drag handle at the very top edge — grab to resize the panel taller/shorter.
+   The panel is docked to the bottom of the game column, so dragging UP grows it. */
+.debug-resize-handle {
+  height: 6px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.debug-resize-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 38px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.debug-resize-handle:hover { background: var(--bg-sunken); }
+.debug-resize-handle:hover::after { background: var(--accent-dim); }
 
 .debug-toolbar {
   display: flex;
@@ -85,33 +123,57 @@
 
 .debug-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  /* Reserve the scrollbar gutter at all times so the sticky header and the
+     rows share the SAME content width — without this, columns shift by the
+     scrollbar width the moment the list overflows and the header stops
+     lining up with the rows below it. */
+  scrollbar-gutter: stable;
+}
+
+/* ── Events panel ───────────────────────────────────────────────────────────── */
+/* Grid (not flex) so the header's Type column lines up exactly with the rows. */
+.debug-event-header,
+.debug-event {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 8px;
+  padding: 1px 8px;
+  line-height: 1.4;
 }
 
 .debug-event {
-  display: flex;
-  gap: 8px;
-  padding: 1px 8px;
   border-bottom: 1px solid var(--bg-sunken);
-  line-height: 1.4;
+}
+.debug-event:nth-child(even) {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.debug-type {
+  color: var(--syntax-literal);
+  font-weight: bold;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.debug-body {
+  color: var(--text-secondary);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hover expands a row so the full (long JSON) payload is readable. */
 .debug-event:hover {
   background: var(--bg-base);
+}
+.debug-event:hover .debug-body {
   white-space: normal;
   overflow: visible;
   word-break: break-all;
-}
-
-.debug-type {
-  flex-shrink: 0;
-  min-width: 140px;
-  color: var(--syntax-literal);
-  font-weight: bold;
 }
 
 .debug-event--stream-text    .debug-type { color: var(--syntax-key); }
@@ -127,13 +189,37 @@
 .debug-event--clear-stream   .debug-type { color: var(--color-danger); }
 .debug-event--unknown        .debug-type { color: var(--text-muted); }
 
-.debug-body {
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* v0.8.2: header row above the events log. Same grid as .debug-event. */
+.debug-event-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.debug-event-header .debug-type,
+.debug-event-header .debug-body { color: var(--text-muted); }
+
+/* ── Raw XML panel ──────────────────────────────────────────────────────────── */
+.rawxml-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
 }
 
-/* RAW XML panel */
 .rawxml-line {
   padding: 1px 8px;
   border-bottom: 1px solid var(--bg-sunken);
@@ -141,6 +227,9 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.rawxml-line:nth-child(even) {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .rawxml-line:hover {
@@ -163,30 +252,31 @@
   font-style: italic;
 }
 
+/* Header + rows share ONE column template so they line up. Each text cell is
+   single-line ellipsis (full text in the title tooltip), so every row is the
+   same height and the columns stay aligned no matter how long a match is.
+   The trailing goto column is fixed-width and last, so the Edit button is
+   always visible at the right edge and can never be pushed off-screen. */
+.fire-log-header,
 .fire-log-entry {
   display: grid;
-  /* v0.8.2: added trailing 28px column for the → GOTO button. Columns:
-     time / kind / stream / name / matched / detail / goto.
-     v0.10.1: matched/detail use minmax(0, …) so they can shrink below their
-     content size and WRAP instead of overflowing — a long pattern used to push
-     the goto column off the right edge and make it unclickable (Binu/Sekmeht).
-     detail is capped at 180px so it can't crowd out matched. */
-  grid-template-columns: 72px 64px 60px minmax(80px, 160px) minmax(0, 1fr) minmax(0, 180px) 28px;
-  gap: 6px;
-  align-items: start;
+  grid-template-columns: 76px 64px 70px minmax(90px, 1.1fr) minmax(120px, 2fr) minmax(90px, 1.3fr) 60px;
+  gap: 8px;
+  align-items: center;
   padding: 2px 8px;
-  border-bottom: 1px solid var(--bg-sunken);
   line-height: 1.4;
 }
 
-/* v0.8.2: header row above the fire log. Same grid template so the column
-   labels sit directly above the column data. Sticky so it stays in view
-   while the user scrolls fire history. */
+.fire-log-entry {
+  border-bottom: 1px solid var(--bg-sunken);
+}
+.fire-log-entry:nth-child(even) {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+/* v0.8.2: header row above the fire log. Sticky so it stays in view while the
+   user scrolls fire history. */
 .fire-log-header {
-  display: grid;
-  grid-template-columns: 72px 64px 60px minmax(80px, 160px) minmax(0, 1fr) minmax(0, 180px) 28px;
-  gap: 6px;
-  padding: 4px 8px;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -198,43 +288,6 @@
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
-
-/* v0.8.2: → GOTO button on each fire row. Compact (28px column) so it
-   doesn't dominate the row; the row hover bg makes it find-able without
-   needing its own visual weight. */
-.fire-log-goto {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  border-radius: 3px;
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 0.85rem;
-  line-height: 1.2;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.fire-log-goto:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--accent); }
-.fire-log-goto:disabled { opacity: 0.3; cursor: default; }
-
-/* v0.8.2: header row above the events log. Flex layout matching .debug-event. */
-.debug-event-header {
-  display: flex;
-  gap: 8px;
-  padding: 4px 8px;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--bg-sunken);
-  border-bottom: 1px solid var(--border);
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-}
-.debug-event-header .debug-type { color: var(--text-muted); }
-.debug-event-header .debug-body { color: var(--text-muted); }
 
 .fire-log-entry:hover {
   background: var(--bg-base);
@@ -242,18 +295,23 @@
 
 .fire-log-time {
   color: var(--text-muted);
-  flex-shrink: 0;
   font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fire-log-kind {
-  flex-shrink: 0;
   font-size: 0.72rem;
   font-weight: bold;
   padding: 0 4px;
   border-radius: 3px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fire-log-kind--highlight {
@@ -266,35 +324,57 @@
   color: var(--syntax-number);
 }
 
-/* v0.10.1: name/matched/detail WRAP (min-width:0 + overflow-wrap:anywhere) so a
-   long rule name, matched string, or detail breaks onto multiple lines within
-   its column instead of overflowing the row and shoving the goto button
-   off-screen. `anywhere` breaks unbroken strings (e.g. a regex with no spaces). */
+/* All three text columns: single-line, ellipsis, tooltip on hover for the
+   full value. min-width:0 lets them shrink inside their grid track. */
+.fire-log-name,
+.fire-log-matched,
+.fire-log-detail,
+.fire-log-stream {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .fire-log-name {
   color: var(--text-primary);
-  min-width: 0;
-  overflow-wrap: anywhere;
 }
 
 .fire-log-matched {
   color: var(--text-secondary);
-  min-width: 0;
-  overflow-wrap: anywhere;
   font-style: italic;
 }
 
 .fire-log-detail {
   color: var(--syntax-type);
-  min-width: 0;
   font-size: 0.75rem;
-  overflow-wrap: anywhere;
 }
 
 .fire-log-stream {
   color: var(--text-muted);
-  flex-shrink: 0;
   font-size: 0.75rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
+
+/* v0.11.5: → GOTO is now a readable "Edit →" button — filled (no longer a bare
+   transparent glyph), vertically centred in its own fixed last column so it's
+   always visible and clickable. Opens the source rule in Automations. */
+.fire-log-goto {
+  background: var(--bg-btn);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fire-log-goto:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-btn));
+}
+.fire-log-goto:disabled { opacity: 0.35; cursor: default; }

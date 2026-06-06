@@ -3577,6 +3577,15 @@ watch: $health = "75" | if health > 50 | set $lastHealth = "75"
 
 Both highlights and triggers fall back to `rule.pattern` when `rule.name` is blank. This is important because the import wizard intentionally leaves `name: ''` on all imported items — the pattern is the only meaningful identifier until the user labels their rules. Variable triggers additionally fall back to `rule.watchVariable` before the pattern.
 
+### Layout & presentation (v0.11.5)
+
+The Debug panel (Fires / Events / Raw XML) is a header-over-rows table inside a single scroll container (`.debug-scroll`, `overflow-y: auto`):
+
+- **Column alignment** — the sticky header and the rows share one `grid-template-columns`, and `.debug-scroll` sets `scrollbar-gutter: stable` so the reserved scrollbar gutter keeps the header and rows on the same content width once the list overflows. Fire-log rows are uniform-height (`align-items: center` + single-line ellipsis per cell, full value in a `title` tooltip) so columns read as a real table; long matches truncate rather than wrapping into ragged rows. Events uses a 2-column grid (`Type` fixed, `Payload` flexible) and expands a row on hover to reveal full JSON.
+- **Theming** — all surfaces use theme vars with `:nth-child(even)` zebra striping via `color-mix(... var(--text-primary) 5%, transparent)`; verified on light themes (no transparent/washed-out rows).
+- **Goto** — each fire row has an **"Edit →"** button (fixed last column, always visible) wired to `onGotoFireRule(kind, ruleId)`, which opens the source highlight/trigger in the Automations panel.
+- **Resizable, two render modes** — as the docked bottom strip (GameWindow, `resizable` prop) the panel has a top drag-handle and persists its height per-character via `scopedKey(character, 'debugPanelHeight')` (default 300px, clamped 150 → 70vh; round-trips into YAML `state.*` per the dynamic profile pipeline, no schema change). Rendered inside a panel zone (PanelFrame) it's non-resizable and fills the zone (`.debug-panel--fill`).
+
 ---
 
 ## 23. Virtual Scrolling — Main Window

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GameEvent, FireLogEntry } from '../../shared/types'
+import { scopedKey } from '../characterScope'
 import '../styles/debug.css'
 import ContextMenu from './ContextMenu'
 
@@ -16,10 +17,50 @@ interface Props {
   // v0.10.1: close the panel from its own toolbar (X) so the user doesn't
   // have to find the Debug button again to dismiss it.
   onClose?: () => void
+  // v0.11.5: when docked as the bottom strip (GameWindow), the panel is
+  // drag-resizable and its height persists per-character. When rendered inside
+  // a panel zone (PanelFrame) it fills the zone instead — `resizable` is false
+  // and `character` is unused.
+  resizable?: boolean
+  character?: string
 }
 
-export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule, onClose }: Props) {
+const MIN_HEIGHT = 150
+const DEFAULT_HEIGHT = 300
+const maxHeight = () => Math.round(window.innerHeight * 0.7)
+
+export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule, onClose, resizable = false, character = '' }: Props) {
   const [tab, setTab] = useState<'fires' | 'events' | 'rawxml'>('fires')
+
+  // v0.11.5: drag-resizable height, persisted per-character. A scopedKey write
+  // round-trips into the YAML state.* pipeline automatically (Principle #1), so
+  // no profile-shape change is needed.
+  const heightKey = scopedKey(character, 'debugPanelHeight')
+  const [height, setHeight] = useState<number>(() => {
+    const raw = localStorage.getItem(heightKey)
+    const n = raw ? parseInt(raw, 10) : NaN
+    return Number.isFinite(n) ? Math.min(Math.max(n, MIN_HEIGHT), maxHeight()) : DEFAULT_HEIGHT
+  })
+
+  function handleResizeStart(e: React.MouseEvent) {
+    e.preventDefault()
+    const startY = e.clientY
+    const startHeight = height
+    const onMove = (ev: MouseEvent) => {
+      // Panel is docked to the bottom of the game column, so dragging the top
+      // handle UP (clientY decreases) grows the panel.
+      const next = Math.min(Math.max(startHeight + (startY - ev.clientY), MIN_HEIGHT), maxHeight())
+      setHeight(next)
+    }
+    const onUp = (ev: MouseEvent) => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      const final = Math.min(Math.max(startHeight + (startY - ev.clientY), MIN_HEIGHT), maxHeight())
+      localStorage.setItem(heightKey, String(final))
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   const eventsBottomRef = useRef<HTMLDivElement>(null)
   const eventsScrollRef = useRef<HTMLDivElement>(null)
@@ -107,7 +148,12 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
   }
 
   return (
-    <div className="debug-panel">
+    <div className={`debug-panel${resizable ? '' : ' debug-panel--fill'}`}
+      style={resizable ? { height } : undefined}>
+      {resizable && (
+        <div className="debug-resize-handle" onMouseDown={handleResizeStart}
+          title="Drag to resize the debug panel" />
+      )}
       <div className="debug-toolbar">
         <div className="debug-tabs">
           <button className={`debug-tab ${tab === 'fires' ? 'debug-tab--active' : ''}`} onClick={() => setTab('fires')}>
@@ -165,7 +211,7 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
                 disabled={!entry.ruleId || !onGotoFireRule}
                 title={entry.ruleId ? `Edit this ${entry.kind} rule in Automations` : 'No rule id on this entry'}
                 onClick={() => entry.ruleId && onGotoFireRule?.(entry.kind, entry.ruleId)}
-              >→</button>
+              >Edit →</button>
             </div>
           ))}
           <div ref={firesBottomRef} />
@@ -195,6 +241,7 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
       {tab === 'rawxml' && (
         <div className="debug-scroll" ref={rawScrollRef} onScroll={handleRawScroll}
           onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}>
+          <div className="rawxml-header">Raw XML stream</div>
           {rawXmlLines.map((line, i) => (
             <div key={rawBaseRef.current + i} className="rawxml-line">
               <span className="rawxml-body">{line}</span>
