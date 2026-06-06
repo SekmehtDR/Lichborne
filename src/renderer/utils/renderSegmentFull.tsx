@@ -1,6 +1,7 @@
 import type { TextSegment } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'
 import type { CompiledRule } from '../HighlightsContext'
+import type { HighlightStyle } from '../highlights'
 import { renderSegment } from './renderSegment'
 
 type MatchRange =
@@ -92,30 +93,71 @@ export function renderSegmentFull(
   for (const r of ranges) { boundarySet.add(r.start); boundarySet.add(r.end) }
   const boundaries = [...boundarySet].sort((a, b) => a - b)
 
-  type Run = { start: number; end: number; range: MatchRange | null }
+  // Per gap, resolve the style. Contacts outrank highlights (B116). Among
+  // highlights we follow ProfanityFE's model (v0.11.3): SPECIFICITY +
+  // PER-PROPERTY COMPOSITING. Each visual property (text color / background /
+  // bold / glow) is taken INDEPENDENTLY from the SMALLEST (most-specific)
+  // covering highlight that SETS it — so a small word-highlight's color punches
+  // through a broad phrase/line highlight while the phrase's background still
+  // shows behind it, and a bold-only or bg-only highlight layers onto another's
+  // fg. Chosen over Wrayth/Frostbite's bottom-of-list-wins because
+  // specific-beats-general is a better default and doesn't force users to manage
+  // list order at scale (see CLAUDE.md Automations — the cross-client research).
+  // Within a property, equal-length ties go to the FIRST-encountered (top-of-
+  // list) highlight — deterministic, vs Profanity's arbitrary unstable sort.
+  type HlComposite = { kind: 'highlight'; textColor: string | null; bgColor: string | null; bold: boolean; glow: boolean; glowColor: string | null }
+  type ContactRun  = { kind: 'contact'; contact: Contact; template: ContactTemplate | null }
+  type RunStyle = ContactRun | HlComposite | null
+  type Run = { start: number; end: number; style: RunStyle; key: string }
+
   const runs: Run[] = []
+  const covering: Extract<MatchRange, { kind: 'highlight' }>[] = []
   for (let i = 0; i < boundaries.length - 1; i++) {
     const start = boundaries[i]
     const end = boundaries[i + 1]
     if (start === end) continue
-    // Find ranges that fully cover this gap. Contacts outrank highlights;
-    // within a kind, the first matching one wins (order they were pushed).
-    let topContact: MatchRange | null = null
-    let topHighlight: MatchRange | null = null
+
+    let contactHit: Extract<MatchRange, { kind: 'contact' }> | null = null
+    covering.length = 0
     for (const r of ranges) {
       if (r.start <= start && r.end >= end) {
-        if (r.kind === 'contact' && !topContact) topContact = r
-        else if (r.kind === 'highlight' && !topHighlight) topHighlight = r
+        if (r.kind === 'contact') { if (!contactHit) contactHit = r }
+        else covering.push(r)
       }
     }
-    const top = topContact ?? topHighlight ?? null
-    // Merge with previous run if same range identity.
-    const last = runs[runs.length - 1]
-    if (last && last.range === top) {
-      last.end = end
+
+    let style: RunStyle
+    let key: string
+    if (contactHit) {
+      style = { kind: 'contact', contact: contactHit.contact, template: contactHit.template }
+      key = `c:${contactHit.contact.id}:${contactHit.template?.id ?? ''}`
+    } else if (covering.length > 0) {
+      // smallest match range first; pick() returns the most-specific covering
+      // highlight whose style satisfies the test (first-encountered on ties).
+      covering.sort((a, b) => (a.end - a.start) - (b.end - b.start))
+      const pick = (test: (s: HighlightStyle) => boolean): HighlightStyle | null => {
+        for (const c of covering) if (test(c.compiled.rule.style)) return c.compiled.rule.style
+        return null
+      }
+      const gl = pick(s => s.glow)
+      style = {
+        kind: 'highlight',
+        textColor: pick(s => !!s.textColor && s.textColor !== 'transparent')?.textColor ?? null,
+        bgColor:   pick(s => !!s.bgColor && s.bgColor !== 'transparent')?.bgColor ?? null,
+        bold:      !!pick(s => s.bold),
+        glow:      !!gl,
+        glowColor: gl?.glowColor ?? null,
+      }
+      key = `h:${style.textColor ?? ''}|${style.bgColor ?? ''}|${style.bold}|${style.glow}|${style.glowColor ?? ''}`
     } else {
-      runs.push({ start, end, range: top })
+      style = null
+      key = 'n'
     }
+
+    // Merge with the previous run when the resolved style is identical.
+    const last = runs[runs.length - 1]
+    if (last && last.key === key) last.end = end
+    else runs.push({ start, end, style, key })
   }
 
   const parts: React.ReactNode[] = []
@@ -123,17 +165,18 @@ export function renderSegmentFull(
   const k = () => segKey * 10000 + n++
 
   for (const run of runs) {
-    if (run.range === null) {
-      // No range covers this run — render via renderSegment so it picks
-      // up the segment's preset / fg / bg as plain text.
-      parts.push(renderSegment({ ...seg, text: text.slice(run.start, run.end) }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
+    const matchText = text.slice(run.start, run.end)
+    const s = run.style
+
+    if (s === null) {
+      // No highlight/contact covers this run — render via renderSegment so it
+      // picks up the segment's preset / fg / bg as plain text.
+      parts.push(renderSegment({ ...seg, text: matchText }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
       continue
     }
-    const r = run.range
-    const matchText = text.slice(run.start, run.end)
 
-    if (r.kind === 'contact') {
-      const { contact, template } = r
+    if (s.kind === 'contact') {
+      const { contact, template } = s
       if (template?.tagText) {
         const tagStyle: React.CSSProperties = {
           color: template.tagColor,
@@ -160,17 +203,13 @@ export function renderSegmentFull(
         >{nameContent}</span>
       )
     } else {
-      const { rule } = r.compiled
       const hlStyle: React.CSSProperties = {
-        ...(rule.style.textColor && rule.style.textColor !== 'transparent'
-          ? { color: rule.style.textColor } : {}),
-        ...(rule.style.bgColor && rule.style.bgColor !== 'transparent'
-          ? { backgroundColor: rule.style.bgColor } : {}),
-        ...(rule.style.glow
-          ? { textShadow: `0 0 6px ${rule.style.glowColor}, 0 0 14px ${rule.style.glowColor}` } : {}),
+        ...(s.textColor ? { color: s.textColor } : {}),
+        ...(s.bgColor ? { backgroundColor: s.bgColor } : {}),
+        ...(s.glow && s.glowColor ? { textShadow: `0 0 6px ${s.glowColor}, 0 0 14px ${s.glowColor}` } : {}),
       }
       parts.push(
-        rule.style.bold
+        s.bold
           ? <strong key={k()} className="hl-match" style={hlStyle}>{matchText}</strong>
           : <span key={k()} className="hl-match" style={hlStyle}>{matchText}</span>
       )

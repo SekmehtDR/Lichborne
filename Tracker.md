@@ -83,6 +83,17 @@
 
 **B89 — Inactive character tab too dark ✅: the base `.character-tab` text color was `--text-dim` (the de-emphasized variable), so a connected-but-inactive tab read as dim and drifted toward looking like the disconnected state. Changed to `--text-secondary` (near-full strength) — three brightness tiers now: active (full + bold + bg + border), inactive-connected (near-full), disconnected (opacity 0.55 + italic). One-line CSS. Reported by the developer ✅**
 
+**v0.11.3 — Highlight overlap resolution → ProfanityFE model (specificity + per-property compositing) ✅**
+
+Prompted by TheTargonian/Rakkor: *"the higher in the list wins? is that how Genie does it? Wrayth and Frostbite go top-to-bottom, bottom supersedes."* That flagged that v0.11.2's brand-new "top-of-list wins" reorder was non-standard. **Read all four front-ends' actual source** to settle it (captured in CLAUDE.md Automations):
+- **Wrayth / Frostbite** — list position, **bottom wins** (Frostbite verified in `highlighter.cpp`: nested HTML `<span>`s, innermost/last color wins; user-reorderable).
+- **Genie** — **pattern-text SortedList** (`Globals.cs` / `ComponentRichTextBox.cs`), last-applied in alphabetical order wins; NOT user-orderable.
+- **Profanity** — **specificity, smallest match wins**, with fg/bg/underline composited **per-property** (`highlight_processor.rb`).
+
+**Decision (Sekmeht): adopt Profanity's model** — most dynamic, handles overlaps well, and doesn't force users to maintain a precedence order (judged unmanageable at scale). Implemented in [renderSegmentFull.tsx](src/renderer/utils/renderSegmentFull.tsx): contacts still beat highlights (B116); among covering highlights, each property (text color / bg / bold / glow) comes independently from the smallest covering highlight that sets it; equal-length ties → first-in-array (deterministic, vs Profanity's arbitrary unstable sort). **Removed the v0.11.2 reorder UI** (▲/▼ buttons + `moveRule` + `.hp-reorder-btn` CSS) — list order no longer controls precedence, so a reorder control would falsely imply one. `HighlightRule.priority` stays vestigial; line-scope highlights unchanged (separate `getLineHighlightStyle` path). No `CharacterProfile`/`SharedProfile` shape change. Docs: CLAUDE.md Automations (cross-client research + live behavior), DESIGN.md §17, release-notes v0.11.3.
+
+---
+
 **v0.11.2 — Quality, performance & theming pass + tester bug fixes ✅**
 
 A broad consolidation pass (developer-driven, plus live tester reports). No schema change anywhere — every change is `state`-only or CSS/themes (so no migration). Modal-chrome standardization was deliberately **deferred** to a session where each modal can be eyeballed on a light theme (pitfall #55 warns that changing a shared modal bg var collides with inner elements keyed to the old value — too risky to do blind).

@@ -176,29 +176,6 @@
   flex-shrink: 0;
 }
 
-/* Reorder controls — earlier in the list = higher priority (first match wins). */
-.hp-list-reorder {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.hp-list-item:hover .hp-list-reorder { opacity: 1; }
-
-.hp-reorder-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-faint);
-  font-size: 0.5rem;
-  line-height: 0.85;
-  padding: 0 3px;
-  cursor: pointer;
-  transition: color 0.1s;
-}
-.hp-reorder-btn:hover:not(:disabled) { color: var(--accent); }
-.hp-reorder-btn:disabled { opacity: 0.25; cursor: default; }
-
 /* ── Detail pane ─────────────────────────────────────────────────────────── */
 
 .hp-detail {
