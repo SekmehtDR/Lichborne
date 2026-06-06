@@ -143,6 +143,28 @@
   color: var(--text-dim, #888) !important;
 }
 
+/* Reconnecting (tab-menu Reconnect, v0.11.6): the session is down so the tab is
+   also --disconnected, but this reads as ACTIVE work, not stale — so lift the
+   dim/italic and spin an accent-colored ⟳ glyph as the "connecting" feedback the
+   launcher overlay can't give for a tab reconnect. Higher specificity than the
+   --disconnected rules above so it wins. */
+.character-tab--reconnecting {
+  opacity: 0.9;
+  font-style: normal;
+}
+.character-tab--reconnecting .character-tab-glyph {
+  color: var(--accent) !important;
+  animation: char-tab-spin 0.9s linear infinite;
+}
+@keyframes char-tab-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+/* Respect reduced-motion: keep the accent glyph, drop the spin. */
+@media (prefers-reduced-motion: reduce) {
+  .character-tab--reconnecting .character-tab-glyph { animation: none; }
+}
+
 .character-tab-close {
   appearance: none;
   background: transparent;

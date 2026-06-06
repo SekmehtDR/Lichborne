@@ -43,6 +43,11 @@ function AppShell() {
   const { sessions, activeId, addSession, removeSession, setActive, updateStatus } = useSessions()
   const { isPrimary, roster } = useRoster()
 
+  // Characters mid-reconnect via the tab-menu "Reconnect" — drives a "connecting"
+  // indicator on the tab (the launcher's connecting overlay isn't visible for a
+  // tab reconnect). Added on reconnect start, removed when runConnect settles.
+  const [reconnectingIds, setReconnectingIds] = useState<Set<CharacterId>>(() => new Set())
+
   // ── Multi-window decouple sync (v0.11.0) ──────────────────────────────────────
   // Keep this window's tab set aligned with the sessions main has assigned to it.
   // On mount we PULL the sessions main owns for this window (a new decoupled
@@ -689,6 +694,32 @@ function AppShell() {
     removeSession(id)
   }
 
+  // Tab right-click "Reconnect" (shown only on a disconnected tab): one-click
+  // re-login of that specific character, no picker. Tears down the dead session
+  // in main first (so it isn't orphaned) — same as the Login button's destroy —
+  // then re-runs the connect flow. On success runConnect → handleConnected →
+  // addSession REPLACES the existing record by characterId (its reconnect-in-tab
+  // path: status resets to connected), so the tab un-greys and the still-mounted
+  // GameWindow (keyed by characterId, not sessionId) picks up the new sessionId
+  // via its sessionIdRef. On failure, surface the error in the picker so the
+  // user can retry (the connecting/error UI lives in the Launcher).
+  function handleReconnectTab(id: CharacterId) {
+    const s = sessions.find(x => x.characterId === id)
+    if (!s || s.status.connected) return
+    window.api.destroySession(s.sessionId)
+    const c: LauncherCharacter = {
+      name: s.character, account: s.account, game: s.game, useLich: s.useLich,
+      hidden: false, favorite: false,
+    }
+    setReconnectingIds(prev => new Set(prev).add(id))
+    runConnect(c)
+      .catch(err => {
+        setConnectError(String(err))
+        setShowAdd(true)
+      })
+      .finally(() => setReconnectingIds(prev => { const n = new Set(prev); n.delete(id); return n }))
+  }
+
   // App-bar "Login" button (shown when the active character is disconnected):
   // tear down the dead session and open the character picker so the player can
   // re-login. Mirrors the GameWindow onDisconnect login path, scoped to the
@@ -756,6 +787,8 @@ function AppShell() {
           onAdd={() => setShowAdd(true)}
           onClose={handleCloseTab}
           onLoginActive={handleLoginActive}
+          onReconnect={handleReconnectTab}
+          reconnectingIds={reconnectingIds}
         />
       )}
 

@@ -22,13 +22,18 @@ interface Props {
   // Login flow for a disconnected active session: destroy + remove + open the
   // character picker. Owned by App (it has the session/launcher state).
   onLoginActive: () => void
+  // One-click reconnect of a disconnected tab (tab right-click menu). Owned by
+  // App (needs the connect flow); passed through to CharacterTabBar.
+  onReconnect: (id: CharacterId) => void
+  // Characters mid-reconnect — drives the per-tab "connecting" indicator.
+  reconnectingIds: Set<CharacterId>
 }
 
 function dispatchSessionAction(action: string) {
   document.dispatchEvent(new CustomEvent('lichborne:session-action', { detail: { action } }))
 }
 
-export default function AppBar({ onAdd, onClose, onLoginActive }: Props) {
+export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, reconnectingIds }: Props) {
   const { sessions, activeId } = useSessions()
   const active = sessions.find(s => s.characterId === activeId)
   const st = active?.status
@@ -61,7 +66,7 @@ export default function AppBar({ onAdd, onClose, onLoginActive }: Props) {
         <span className={`app-bar-status-dot${connected ? ' app-bar-status-dot--on' : ''}`} />
       </span>
 
-      <CharacterTabBar onAdd={onAdd} onClose={onClose} />
+      <CharacterTabBar onAdd={onAdd} onClose={onClose} onReconnect={onReconnect} reconnectingIds={reconnectingIds} />
 
       <div className="app-bar-actions">
         <button className={`btn-panel-manager${st?.panelManager ? ' btn-panel-manager--active' : ''}`} onClick={() => dispatchSessionAction('toggle-panels')}>Panels</button>

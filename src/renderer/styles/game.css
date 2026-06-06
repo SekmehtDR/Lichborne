@@ -166,6 +166,14 @@
 
 .game-main {
   flex: 1;
+  /* min-height: 0 is REQUIRED on a flex child in a flex COLUMN (.game-layout):
+     without it the default min-height:auto is the content height, so .game-main
+     refuses to shrink below its content and the column overflows the window by
+     ~the amount the content exceeds the available space — clipping the bottom
+     (last text line / the vitals-bar boundary). Symptom that pinned this: moving
+     the vitals bar to the top "shifted the main window down a line" — the
+     overflow flipping ends. (B155.) */
+  min-height: 0;
   overflow: hidden;
   display: flex;
 }
@@ -210,6 +218,11 @@
 
 .text-window {
   flex: 1;
+  /* min-height: 0 so this flex child of the .text-area column can shrink to the
+     space left after the vitals strip + command bar, instead of holding its
+     content height and pushing the bottom out of view (B155, same class of bug
+     as .game-main above). */
+  min-height: 0;
   overflow: hidden;
   cursor: text;
   /* Stops scroll chain to the surrounding panel layout and kills the

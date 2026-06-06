@@ -1492,6 +1492,8 @@ Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends 
 
 **Lifecycle.** Closing a decoupled window gracefully **logs out** its character (like closing a tab); re-home is explicit via Window → "Move Character to Main Window" (auto-closes the emptied window). Closing the primary window quits the app (flushing every window's profile saves first).
 
+**Tab right-click menu (v0.11.6).** The character-tab context menu is the per-character action surface. It lists only the **actionable** options (no greyed rows): **Reconnect** (disconnected tab) XOR **Disconnect** (connected tab), **Open in New Window** (when the window holds >1 character), **Move to Main Window** (only in a decoupled/secondary window — `useRoster().isPrimary === false`). Close is intentionally omitted (the tab's × covers it). **Disconnect** calls `window.api.disconnect(sessionId)` directly rather than the `lichborne:session-action` bridge, because the bridge only reaches the *active* GameWindow and the menu must act on the right-clicked (possibly background) tab. **Reconnect** (App `handleReconnectTab`) destroys the dead session then re-runs the connect flow; because a GameWindow is keyed by `characterId` (not `sessionId`), it reconnects **in place** — the window stays mounted (scrollback preserved) and just receives the new `sessionId`. That makes resetting the GameWindow's `dropped`/`disconnecting` flags on the `sessionId` *prop change* (not on the racy `onConnectionStatus` 'Connected' event) load-bearing for the tab to refresh to "connected" — see CLAUDE.md pitfall #69. A per-tab spinning ⟳ ("Reconnecting…", `prefers-reduced-motion`-aware) is driven by an App-owned `reconnectingIds` set, since the launcher's connecting overlay isn't on screen for a tab reconnect.
+
 ### 13.10 Per-Character Memory
 
 Each character profile independently remembers:
@@ -3617,30 +3619,35 @@ Padding belongs on each item, not on the `.text-window` container. Applying `pad
 **Last-line "one line short" at font ≥ 13 — rAF-deferred bottom correction (B122 → B153):**
 At game font ≥ 13 the pinned view rests exactly one line short of the bottom — the last line (e.g. the `>` prompt) clips at the vitals bar, and you can always wheel down one notch to reveal it (so the true DOM bottom *is* reachable; the auto-follow just isn't getting there). Cause: Virtuoso's `followOutput` lands at "last item at viewport bottom" but **under-measures the last row at fractional heights** (a row is ~1.55em — `.text-line` `min-height: 1.4em` + `.text-line-wrap` `0.15em` padding — non-integer at font ≥ 13), so the last line lands clipped; and `followOutput` runs *after* a synchronous bottom-correction in `totalListHeightChanged`, overriding it. **Fix (v0.11.4):** `totalListHeightChanged` **defers** its raw, DOM-truth bottom scroll (`el.scrollTop = el.scrollHeight − el.clientHeight`) into a `requestAnimationFrame`, so it runs *after* `followOutput` and wins — landing at the genuine bottom (DOM `scrollHeight` is immune to Virtuoso's internal under-measurement). The last line sits flush at every font, with no footer, no clip, and no gap. `scrollToBottom` (End key) and the font re-snap do the same rAF raw correction after their `scrollToIndex({ align: 'end' })`. **Two dead ends, recorded:** v0.8.8's fixed-14px `components.Footer` (and a v0.11.4 attempt to scale it to one row) only added bottom *slack* — once the correction reached the true bottom, the footer just became a one-line *gap* above the vitals bar, non-monotonic around font 13–14, so the footer was removed; and integer per-row pixel heights did not help because the short-landing is a `followOutput` under-measurement + override, not row-height rounding. A companion fix: the font-change re-snap effect arms `suppressUntilRef` synchronously *before* its rAF, because the relayout on a font change (rows AND the game-font-scaled command bar both grow) balloons `scrollHeight` while `scrollTop` holds, crossing the un-pin deadband and un-pinning before the re-snap could fire (the "N new lines" badge appearing on a font change). The `totalListHeightChanged` threshold is `dist > 0.5`.
 
-**Scroll-following (pin to bottom) — B36:**
-Auto-follow is owned entirely by Virtuoso's `followOutput` prop. `followOutput` uses Virtuoso's internal height map for ALL items (rendered and unrendered), not `el.scrollHeight` which only reflects rendered items + spacer estimates. This is the correct tool for following a virtual list where new items appear below the current viewport and have no DOM presence yet.
+**v0.11.6 (B155) — the clip was partly a LAYOUT overflow, and `followOutput` was retired.** The B153 story above framed the clip as purely a scroll-math under-measurement; debugging with Sekmeht/Binu found that was incomplete. (1) **Layout:** `.game-main` and `.text-window` were `flex: 1` children of flex **columns** without `min-height: 0`, so they wouldn't shrink below their content and the column overflowed the window by ~one line — clipping the bottom independently of any scroll math. The tell was that moving the vitals bar top↔bottom shifted the main window by a line. Added `min-height: 0` to both (the standard flexbox scrollable-child fix). (2) **Auto-follow:** with the overflow gone the viewport became cleanly fractional, and `followOutput`'s under-measurement now showed on *every* line as a "scroll up a notch, then jump to bottom" two-step (its short-landing, then the deferred correction). So `followOutput` was turned **off** and pinned auto-scroll is now owned by a *synchronous* `totalListHeightChanged` correction (see the rewritten "Scroll-following" section below). The rAF in `totalListHeightChanged` is now only a backup for still-settling rows, not the primary lever.
+
+**Scroll-following (pin to bottom) — B36, rebuilt in v0.11.6 (B155):**
+Through v0.11.5 auto-follow was owned by Virtuoso's `followOutput` prop (`() => pinnedRef.current ? 'auto' : false`), with `totalListHeightChanged` doing a deferred (rAF) fine-correction. The trouble: `followOutput` aligns the last row to the viewport bottom but **under-measures it at fractional row/viewport heights** — and the viewport is fractional, because the vitals strip and command bar scale with `var(--game-font-size)` in `em`. So `followOutput` lands ~one notch short and the correction snaps it down a frame later: the visible **"scroll up a notch, then jump to bottom"** two-step (which the v0.11.6 layout fix above made appear on every line by making the viewport cleanly fractional).
+
+**v0.11.6: `followOutput` is OFF — we own pinned auto-scroll.** With nothing else trying to scroll, `totalListHeightChanged` sets the DOM-truth bottom **synchronously, before paint**, when pinned — so the last line is flush in the *same* frame the new content renders, with no short-landing for anything to correct:
 
 ```tsx
-followOutput={() => pinnedRef.current ? 'auto' : false}
-```
-
-Scroll-to-bottom is **instant** (`'auto'`). A smooth-scroll variant existed v0.6.8–v0.6.11 (an opt-in `smoothScroll` setting, later with a flood-adaptive fallback and a tunable burst limit) but was **removed in v0.6.12** — it was off by default, marginal in value, and a recurring source of false bug reports (its lagging viewport position, combined with CSS `contain` on the rows, looked like broken scroll pinning). The story window is now plain instant-follow, the proven pre-v0.6.8 behavior. The Genie *map* camera glide was kept — see §19.16.6 — gated on the `mapAnimations` setting.
-
-A `totalListHeightChanged` callback provides a fine-correction pass after ResizeObserver fires post-render. If `pinnedRef.current` is true and `dist > 2` (scroll landed slightly short), it instantly snaps `scrollTop` to the true DOM bottom and arms `suppressUnpinRef` for 200ms:
-
-```tsx
+followOutput={false}
 totalListHeightChanged={() => {
   if (!pinnedRef.current) return
-  const dist = el.scrollHeight - el.scrollTop - el.clientHeight
-  if (dist > 2) {
-    suppressUntilRef.current = Date.now() + 200
-    el.scrollTop = el.scrollHeight - el.clientHeight
-  }
+  const el = scrollRef.current
+  if (!el) return
+  suppressUntilRef.current = Date.now() + 200
+  el.scrollTop = el.scrollHeight - el.clientHeight   // synchronous, DOM-truth
+  requestAnimationFrame(() => {                       // backup: only if rows were still settling
+    const el2 = scrollRef.current
+    if (!el2 || !pinnedRef.current) return
+    if (el2.scrollHeight - el2.scrollTop - el2.clientHeight > 0.5) {
+      suppressUntilRef.current = Date.now() + 200
+      el2.scrollTop = el2.scrollHeight - el2.clientHeight
+    }
+  })
 }}
 ```
 
-**Why `followOutput` instead of `useLayoutEffect + scrollTop`:**
-Direct `el.scrollTop = el.scrollHeight - el.clientHeight` uses DOM `scrollHeight`, which only accounts for rendered items plus spacer estimates. Items beyond the current viewport have 0 or minimal spacer height when first appended, so the assignment lands far short of the true bottom. `followOutput` avoids this because it references Virtuoso's internal item height accumulator (which tracks all items, not just rendered ones) and calls `scrollTo` after Virtuoso has updated its own layout.
+`scrollHeight − clientHeight` is DOM-truth and immune to Virtuoso's internal under-measurement. The concern that motivated `followOutput` originally — DOM `scrollHeight` lagging because newly-appended items below the fold aren't measured yet — does not bite the *pinned* case: when pinned we are at the bottom, so appended lines render within the bottom buffer (`increaseViewportBy` bottom: 3000) and are measured by the time `totalListHeightChanged` fires; the rAF backup catches the rare still-settling frame. A bonus the change surfaced: one scroll write + one paint per line instead of two, so the stream visibly flows smoother. **Do not re-enable `followOutput`** — it and a manual correction always fight into the two-step. Scroll-to-bottom is still instant. (A smooth-scroll variant existed v0.6.8–v0.6.11 and was removed in v0.6.12 — off by default, marginal, a source of false bug reports; the Genie *map* camera glide was kept, §19.16.6, gated on `mapAnimations`.)
+
+**Relayout re-snaps (v0.11.6):** discrete relayouts that reshape the scroller over several frames (font change, tab become-active under pitfall #24's `display:none`→0×0, `window` focus/visibility regain, post-replay/decouple) route through a shared `resnapToBottom()` settle loop (re-issues the DOM-truth scroll each frame until `scrollHeight` stabilizes, 12-frame cap, sync-suppress, `pinnedRef`-gated). Continuous viewport-height changes (vitals strip appearing at login, compact↔regular toggle, window resize) are caught by a **passive** `ResizeObserver` on the scroller that does a single bare `scrollTop` write on an integer-height change — it must NOT call `resnapToBottom`/`scrollToIndex` (those re-render → nudge the scroller size → re-fire the observer → an idle "jitter" feedback loop).
 
 **Un-pinning:**
 Un-pinning happens only via explicit user action:
@@ -3670,6 +3677,9 @@ This separation is critical: `followOutput` and `totalListHeightChanged` both ge
 - Scroll handler re-pins automatically when the user scrolls all the way to the bottom (`dist <= 10`)
 - `scrollToBottom()` — called by badge click, the `End` key (focus-elsewhere), or `Ctrl+End` — sets `pinnedRef.current = true` explicitly and calls `virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })`. `index: 'LAST'` (not `lines.length - 1`) is deliberate: the once-at-mount `keydown` listener captures `scrollToBottom` when `lines` is still empty — a `lines.length` reference would be permanently stale and the scroll would silently no-op.
 - `clearLines()` sets `pinnedRef.current = true` so the user is not stranded at the top of an empty buffer after a screen clear
+
+**Re-snap on relayout — the settle loop (B153, B155):**
+`followOutput` lands the last item at the viewport bottom but **under-measures the final row at fractional heights** (a row is ~1.55em, non-integer at font ≥ 13), and it runs *after* the `totalListHeightChanged` correction, overriding it — so at larger fonts the pinned view rests one line short / clipped under the vitals bar (B153). The DOM-truth `scrollTop = scrollHeight − clientHeight` is immune to that under-measurement, but issuing it **once** is not enough on a relayout that reshapes the scroller: a `display:none → visible` tab switch (an inactive tab measures 0×0 — see §13/pitfall #24), a window focus regain (backgrounding throttles `requestAnimationFrame`), or a font/line-height change all settle over **several frames** as Virtuoso re-measures rows and the flex layout reclaims space. A single-rAF read lands mid-settle (short → un-pin + "new lines" badge, or overshoot → clip). The shared `resnapToBottom()` routine instead re-issues `scrollTop = scrollHeight − clientHeight` **each frame until `scrollHeight` stabilizes** (12-frame cap), converging on the final bottom; it arms `suppressUntilRef` synchronously before its first frame (relayout scroll events fire before the rAF) and gates on `pinnedRef` throughout (a scrolled-up reader is never yanked down). It is the single re-snap path for the badge/`End` (`scrollToBottom`), the font/line-height/large-print effect, the tab-becomes-active effect, and a window `focus`/`visibilitychange` listener. The steady-state per-line `totalListHeightChanged` correction (above) is the hot path and is unchanged.
 
 **Word wrap:**
 Virtuoso's scroller div has `overflow: auto` internally, enabling horizontal scrolling and breaking word wrap. Fixed by `el.style.overflowX = 'hidden'` in the `scrollerRef` callback. The same callback also sets `el.style.willChange = 'scroll-position'` to promote the scroll subtree to its own GPU layer (compositor-only scroll, no text re-rasterization).
