@@ -28,7 +28,15 @@ export function RosterProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false
     window.api.getWindowInfo().then(i => { if (!cancelled) setInfo(i) }).catch(() => {})
+    // Subscribe to future pushes AND pull the current roster now. The push
+    // (onSessionRoster) fires on main's did-finish-load broadcast — a race a
+    // freshly-opened window's renderer loses, leaving `roster` empty so Quick
+    // Send (cross-window roster-targeted) renders nothing in a decoupled
+    // window. The pull seeds it deterministically on mount. Pull resolves after
+    // subscribe is set up, so a push that arrives in between isn't lost; if the
+    // pull resolves last it just reasserts the same authoritative list.
     const unsub = window.api.onSessionRoster(payload => setRoster(payload.roster))
+    window.api.getRoster().then(r => { if (!cancelled) setRoster(r) }).catch(() => {})
     return () => { cancelled = true; unsub() }
   }, [])
 

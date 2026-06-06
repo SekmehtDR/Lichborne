@@ -499,6 +499,24 @@ export default function GenieMapView({
     if (nd) {
       const exact = pool.find(c => c.node.descriptions.some(d => normalizeDesc(d) === nd))
       if (exact) { staleZoneCountRef.current = 0; return exact }
+      // Substring fallback (the comment above promised "substring/equality").
+      // Genie's stored descriptions are routinely a truncation — typically the
+      // first sentence — of the live look, so exact equality misses on real
+      // supported rooms (a Barrows hunting room whose ambiguous title shares
+      // many siblings but whose description is distinctive). Accept containment
+      // in EITHER direction, but only when it resolves to exactly ONE candidate
+      // and both strings are long enough that the overlap is meaningful — so an
+      // over-generic shared description can't mis-disambiguate. Without this the
+      // marker fell through to the conservative cross-zone fallback and stranded
+      // in the previous zone while the player hunted (reported: "looking in a
+      // supported room over and over, location won't update").
+      if (nd.length >= 24) {
+        const subHits = pool.filter(c => c.node.descriptions.some(d => {
+          const dn = normalizeDesc(d)
+          return dn.length >= 24 && (dn.includes(nd) || nd.includes(dn))
+        }))
+        if (subHits.length === 1) { staleZoneCountRef.current = 0; return subHits[0] }
+      }
     }
     // Graph-adjacency disambiguation. When the title is ambiguous (the
     // Crossing has 7 rooms titled "Moonstone Street") and the description

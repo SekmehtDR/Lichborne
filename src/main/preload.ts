@@ -65,6 +65,10 @@ contextBridge.exposeInMainWorld('api', {
   moveSessionToWindow: (sessionId: SessionId, target: 'new' | 'main' | number): Promise<void> =>
     ipcRenderer.invoke('session:move-window', sessionId, target),
   getOwnedSessions: (): Promise<RosterEntry[]> => ipcRenderer.invoke('get-owned-sessions'),
+  // Pull the full cross-window roster on mount (the onSessionRoster push is
+  // race-prone for a freshly-opened window — it may subscribe after main's
+  // broadcast). Lets Quick Send target characters in other windows immediately.
+  getRoster: (): Promise<RosterEntry[]> => ipcRenderer.invoke('get-roster'),
   onSessionAcquire: (cb: (entry: RosterEntry) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, entry: RosterEntry) => cb(entry)
     ipcRenderer.on('session-acquire', listener)

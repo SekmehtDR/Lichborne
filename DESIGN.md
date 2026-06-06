@@ -2565,16 +2565,20 @@ This matches Genie's `ConvertPoint` convention (direct `y * scale`, no flip). Ou
 
 ### 19.4 Room Matching
 
-The game sends the current room title in the `streamWindow` subtitle attribute:
+The game sends the current room title in the `streamWindow` subtitle attribute, in **two id formats** (parse both — v0.11.2, B151):
 
 ```
-subtitle=" - [Zone, Room Name - LichID]"
+subtitle=" - [Zone, Room Name - 335]"        # id INSIDE the brackets, after " - "
+subtitle=" - [Zone, Room Name] (56107)"       # id in PARENS after the brackets — the
+                                              # Simutronics room-id flag (optional account
+                                              # setting); "(**)" means unmapped/no id
 ```
 
 **StormFrontParser extraction pipeline:**
 1. Extract bracket content: `/\[([^\]]+)\]/` → inner string e.g. `"The Crossing, Champions' Square - 335"`
-2. Strip trailing Lich room ID: inner.match(`/\s*-\s*(\d+)\s*$/`) → `roomId = 335`, `cleanTitle = "The Crossing, Champions' Square"`
-3. Emit `room-title` event with both `title` and `roomId`
+2. Strip trailing Lich room ID **if present inside the brackets**: `inner.match(/\s*-\s*(\d+)\s*$/)` → `roomId = 335`, `cleanTitle = "The Crossing, Champions' Square"`
+3. **Else** try the parens form after the closing bracket: `subtitle.match(/\]\s*\((\d+)\)/)` → `roomId = 56107` (`(**)` yields no match → `undefined`)
+4. Emit `room-title` event with `title` and `roomId` (id is **optional** — the flag can be off; the whole pipeline works id-free, falling back to title+desc)
 
 **RoomState** stores `roomId?: number` alongside title and desc. `GameWindow` updates it from every `room-title` event. Both MapPanel instances (panel tab + overlay) receive it as a prop.
 
@@ -2952,11 +2956,11 @@ Lookup tries exact-case first, falls back to normalized. Without the normalized 
 
 **Stub preference:** when a title has both stub and non-stub candidates, non-stubs win. A stub is a 1-room cross-zone marker — same title as the real room in the other zone, but with `note` pointing to the other zone's `.xml` filename. Without preference, the marker in zone A could outvote the real room in zone B.
 
-**Description tiebreaker:** Shard has 7 rooms titled "Shard, Moonstone Street" (#78–#85). Title-only matching made the "here" marker stick on whichever was indexed first while the player walked east through #79–#85. `currentLocation` now disambiguates by `normalizeDesc` equality against `node.descriptions[]` when title has multiple non-stub candidates.
+**Description tiebreaker:** Shard has 7 rooms titled "Shard, Moonstone Street" (#78–#85). Title-only matching made the "here" marker stick on whichever was indexed first while the player walked east through #79–#85. `currentLocation` disambiguates by description against `node.descriptions[]` when title has multiple non-stub candidates — **exact `normalizeDesc` equality first, then substring containment** (v0.11.2, B148): stored descriptions are routinely a truncation (first sentence) of the live look, so exact equality alone missed real rooms; the substring step accepts containment in either direction but only when it resolves to exactly ONE candidate and both strings are ≥24 chars (so a generic shared description can't mis-disambiguate). The Lich Map's `findRoom` ([mapTypes.ts](src/renderer/components/panels/mapTypes.ts)) carries the same exact-then-substring logic (B150) so both map views behave identically on its title+desc fallback path.
 
 `roomDesc` is plumbed through `MapPanel` → `GenieMapView`. Without it, a same-title cluster collapses to the first candidate.
 
-**Graph-adjacency tiebreaker (v0.7.0).** The description tiebreaker fails *while running* — the game streams room titles with no fresh `<description>` per step, so an ambiguous title fell back to file order (`pool[0]`), stranding the marker on the wrong same-named room until a `look` (B87). `currentLocation` now has a third disambiguation step: when title is ambiguous and description doesn't resolve it, prefer the candidate joined by a Genie arc to the previously-resolved room (`prevLocRef`, a ref advanced one step behind by an effect, only on a non-null match). You walked here from there, so you are in one of its neighbours. **Resolution order: description → graph adjacency → file order.**
+**Graph-adjacency tiebreaker (v0.7.0).** The description tiebreaker fails *while running* — the game streams room titles with no fresh `<description>` per step, so an ambiguous title fell back to file order (`pool[0]`), stranding the marker on the wrong same-named room until a `look` (B87). `currentLocation` now has a third disambiguation step: when title is ambiguous and description doesn't resolve it, prefer the candidate joined by a Genie arc to the previously-resolved room (`prevLocRef`, a ref advanced one step behind by an effect, only on a non-null match). You walked here from there, so you are in one of its neighbours. **Resolution order: single-candidate → description (exact, then substring) → graph adjacency → cross-zone stub adjacency → conservative cross-zone hold (with 3-strike escape) → file order.**
 
 #### 19.16.5 Cross-Zone Stubs
 
@@ -5142,3 +5146,58 @@ Core logic in [profileTransfer.ts](src/renderer/profileTransfer.ts). Each per-ch
 
 See CLAUDE.md pitfall #56.
 
+
+---
+
+## 30. Lich-Integration Opportunities — Research (v0.11.2, NOT YET BUILT)
+
+Framing (DESIGN.md §1, §24): Lichborne is a **display & configuration layer over Lich**,
+not a Lich replacement. Genie and Frostbite are static front-ends; Lich is a live,
+scriptable Ruby proxy with a SQLite store we already read/write (vars, pitfall #53). The
+question driving this section: where does Lich give us capabilities Genie/Frostbite never
+had that fit our lane (surface/configure Lich state — don't reimplement automation)?
+
+This is a research backlog. Each item is a proposal with a rough cost and the Lich surface
+it taps; **none is built**. Sequencing and specifics need sign-off before implementation.
+
+### 30.1 Live Lich variables as a variable source — *biggest payoff*
+The natural extension of v0.11.2's variable expansion (which surfaced state we *already*
+track). Lich exposes a large runtime catalog the client never reads: `Char`, `Stats`,
+`Skills`, `Society`, `gametimeepoch`, `Spell`/`Spells`, `Char.health/mana/...`, the full
+`Vars` hash. Proposal: read these via the existing `;eq`/`lich:get-vars` plumbing and
+expose under a `$lich.*` namespace in the trigger/macro/alias resolver. Cost: **medium-high**
+— needs a new periodic/poll read path (or an on-demand `;eq` round-trip) + a cache, plus a
+decision on staleness (live-poll vs lazy). The read asymmetry from pitfall #53 applies:
+read via the structured SQLite/`;eq` path, never write. This is the "also pull live Lich
+vars" option deferred from the v0.11.2 planning.
+
+### 30.2 Script repository browser
+Lich ships a `;repository` command (list/download community scripts). Today a tester types
+`;repo` commands blind into the game stream. Proposal: a Lichborne panel that lists
+available + installed scripts, shows versions, and installs/updates with a click — pure
+display/config over an existing Lich capability (squarely in our lane). Cost: **medium** —
+parse `;repository list` output (or read Lich's script dir + remote index), a panel UI, and
+install via the silent-command path (pitfall #53's no-echo `onRunCommand`).
+
+### 30.3 Richer running-script controls
+We already poll `;listall` (LichBridge, pitfall #22) and have the Lich Scripts panel. Build
+it out: per-script **pause/resume/kill** buttons, run-state, uptime, and the script's
+declared variables — a real "process manager" for Lich scripts. Cost: **low-medium** (the
+poll + command plumbing exists; this is mostly UI + wiring `;pause/;unpause/;kill`).
+
+### 30.4 Surface Lich's mapper / `;go2`
+Lich maintains its own room database and `;go2`/`;goto` pathing that we don't render. The
+Lich Map already shows Lich's image tiles; a deeper integration could surface Lich's room
+search and offer one-click `;go2 <room>` from the map or a search box. Cost: **medium** —
+respect the boundary (Lich owns pathing/automation; we'd be a launcher/visualizer, not a
+re-implementation). Overlaps the existing map work — design carefully to avoid duplicating
+Lich's mapper rather than surfacing it.
+
+### 30.5 Conceptual: what Genie/Frostbite did that Lich does better
+Genie/Frostbite bundle their own variables, classes (≈ our groups/modes), `#`-commands, and
+named windows because they had no proxy. We have Lich for all of that. The client's job is
+to **make Lich's power legible and configurable**, not to grow a parallel automation engine.
+Concretely that means: prefer surfacing Lich state (30.1) and Lich capabilities (30.2–30.4)
+over building Lichborne-native scripting. The one place we own outright is *display* (themes,
+panels, rendering) and *portability* (Profile Transfer) — keep new effort there or in the
+"surface Lich" column, and keep pushing back on requests that would reimplement Lich.

@@ -528,12 +528,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       concentration: { current: 0, max: 0 },
     },
     rtSeconds: 0,
+    ctSeconds: 0,
     stance: '',
     spell: 'None',
     leftHand: 'Empty',
     rightHand: 'Empty',
     indicators: {},
     roomTitle: '',
+    roomId: 0,
+    exits: [],
     variables: {},
     characterName: session.character,
   })
@@ -1198,7 +1201,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             triggerCtxRef.current.rtSeconds = Math.max(0, (evt.expires - Date.now()) / 1000)
             processVariableChangeRef.current('rt', String(Math.ceil(triggerCtxRef.current.rtSeconds)))
             break
-          case 'casttime':   newCt = evt.expires; break
+          case 'casttime':
+            newCt = evt.expires
+            triggerCtxRef.current.ctSeconds = Math.max(0, (evt.expires - Date.now()) / 1000)
+            processVariableChangeRef.current('ct', String(Math.ceil(triggerCtxRef.current.ctSeconds)))
+            break
           case 'indicator':
             indicatorUpdates[evt.id] = evt.visible
             triggerCtxRef.current.indicators[evt.id] = evt.visible
@@ -1229,13 +1236,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           case 'exits':
             setExits(evt.directions)
             roomUpdates.exits = evt.directions
+            triggerCtxRef.current.exits = evt.directions
+            processVariableChangeRef.current('exits', evt.directions.join(', '))
             break
           case 'room-title':
             roomUpdates.title = evt.title
             roomUpdates.roomId = evt.roomId
             triggerCtxRef.current.roomTitle = evt.title
+            if (evt.roomId != null) triggerCtxRef.current.roomId = evt.roomId
             processVariableChangeRef.current('room', evt.title)
             processVariableChangeRef.current('roomname', evt.title)
+            if (evt.roomId != null) processVariableChangeRef.current('roomid', String(evt.roomId))
             break
           case 'room-id':
             // v0.8.8 (Rakkor): roomId from <nav rm='X'/> when no fresh
@@ -1247,6 +1258,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             // path picks up the fresh id and the indicator tracks
             // correctly even when title hasn't refreshed.
             roomUpdates.roomId = evt.roomId
+            triggerCtxRef.current.roomId = evt.roomId
+            processVariableChangeRef.current('roomid', String(evt.roomId))
             break
           case 'exp-component':
             expUpdates[evt.skill] = evt.text
@@ -1848,11 +1861,27 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       spirit:        String(s.vitals.spirit?.current        ?? 0),
       concentration: String(s.vitals.concentration?.current ?? 0),
       rt:            String(Math.ceil(s.rtSeconds)),
+      ct:            String(Math.ceil(s.ctSeconds)),
+      casttime:      String(Math.ceil(s.ctSeconds)),
       stance:        s.stance,
       spell:         s.spell,
+      preparedspell: s.spell,
       left:          s.leftHand,
       right:         s.rightHand,
       room:          s.roomTitle,
+      roomname:      s.roomTitle,
+      roomid:        String(s.roomId || ''),
+      exits:         s.exits.join(', '),
+      bleeding:      s.indicators.bleeding  ? 'true' : 'false',
+      poisoned:      s.indicators.poisoned  ? 'true' : 'false',
+      diseased:      s.indicators.diseased  ? 'true' : 'false',
+      stunned:       s.indicators.stunned   ? 'true' : 'false',
+      webbed:        s.indicators.webbed    ? 'true' : 'false',
+      joined:        s.indicators.joined    ? 'true' : 'false',
+      hidden:        s.indicators.hidden    ? 'true' : 'false',
+      invisible:     s.indicators.invisible ? 'true' : 'false',
+      dead:          s.indicators.dead      ? 'true' : 'false',
+      characterName: s.characterName,
       ...s.variables,
     }
   }
@@ -2151,6 +2180,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 }}
                 style={{ height: '100%' }}
                 data={lines}
+                // B152 (Binu): keep a generous buffer of rows mounted ABOVE and
+                // BELOW the viewport. Virtuoso unmounts off-screen rows, and the
+                // browser drops unmounted DOM from a text selection — so when you
+                // start selecting up top, scroll down to extend, and release, the
+                // start rows had unmounted and the mouseup copy (getSelection()
+                // .toString()) captured "only a portion from the end." A ~3000px
+                // buffer each way keeps several screenfuls of selection intact
+                // through the auto-scroll. (Rows are memoized + cheap, so the
+                // extra ~150/side is negligible; the cap on `lines` still bounds
+                // total DOM. Doesn't touch scroll math — followOutput /
+                // totalListHeightChanged are unchanged.)
+                increaseViewportBy={{ top: 3000, bottom: 3000 }}
                 followOutput={() => pinnedRef.current ? 'auto' : false}
                 totalListHeightChanged={() => {
                   if (!pinnedRef.current) return

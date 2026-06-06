@@ -556,6 +556,13 @@ ipcMain.handle('session:move-window', (_event, sessionId: SessionId, target: 'ne
 ipcMain.handle('get-owned-sessions', (event): RosterEntry[] =>
   buildRoster().filter(r => r.ownerWindowId === event.sender.id))
 
+// Pull the FULL roster on mount. broadcastRoster() is push-only and fires on
+// did-finish-load — a race a freshly-opened window's renderer loses (it
+// subscribes after React mounts), so without this pull a decoupled window
+// could keep an empty roster and Quick Send (which targets the cross-window
+// roster) would render nothing. Mirrors get-owned-sessions' pull-on-mount.
+ipcMain.handle('get-roster', (): RosterEntry[] => buildRoster())
+
 // Cross-window remount (Profile Transfer): the modal can run in any window but a
 // target character may live in ANOTHER window. After writing the imported
 // localStorage working copy (shared across windows), route a reload to the

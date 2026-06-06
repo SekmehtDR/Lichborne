@@ -132,6 +132,18 @@
 }
 .iw-btn:hover { background: var(--bg-active); }
 
+/* Keyboard focus outlines — these are clickable elements that had no visible
+   focus state (a11y gap; matters under high-contrast / keyboard nav). */
+.iw-btn:focus-visible,
+.iw-btn--primary:focus-visible,
+.iw-source-card:focus-visible,
+.iw-file-btn:focus-visible,
+.iw-preview-tab:focus-visible,
+.iw-close:focus-visible {
+  outline: 2px solid var(--accent-dim);
+  outline-offset: 1px;
+}
+
 .iw-btn--primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -334,7 +346,7 @@
 
 .iw-table td {
   padding: 5px 8px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
   vertical-align: middle;
   color: var(--text-primary);
 }
@@ -362,7 +374,7 @@
   width: 14px;
   height: 14px;
   border-radius: 2px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
   display: inline-block;
   vertical-align: middle;
 }
@@ -386,9 +398,11 @@
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-.iw-status-badge--ready   { background: rgba(0,200,100,0.15); color: #44dd88; }
-.iw-status-badge--partial { background: rgba(255,170,0,0.15); color: #ffaa00; }
-.iw-status-badge--unsupported { background: rgba(255,80,80,0.12); color: #ff6666; }
+/* Fixed semantic hues blended with theme vars so the meaning (green/amber/red)
+   survives but contrast self-corrects on light themes (pitfall #55). */
+.iw-status-badge--ready   { background: color-mix(in srgb, #1f9d57 16%, var(--bg-base)); color: color-mix(in srgb, #1f9d57 72%, var(--text-primary)); }
+.iw-status-badge--partial { background: color-mix(in srgb, #c98a00 16%, var(--bg-base)); color: color-mix(in srgb, #c98a00 72%, var(--text-primary)); }
+.iw-status-badge--unsupported { background: var(--color-danger-bg); color: var(--color-danger); }
 
 .iw-pattern {
   font-family: monospace;
@@ -415,8 +429,8 @@
 
 .iw-scope-notice {
   margin-bottom: 16px;
-  background: rgba(100, 180, 255, 0.07);
-  border: 1px solid rgba(100, 180, 255, 0.2);
+  background: color-mix(in srgb, #5c9fe0 9%, var(--bg-base));
+  border: 1px solid color-mix(in srgb, #5c9fe0 24%, var(--bg-base));
   border-radius: 4px;
   padding: 10px 14px;
   font-size: 0.8rem;
@@ -430,17 +444,17 @@
 
 .iw-sub-notice {
   margin-top: 16px;
-  background: rgba(255, 170, 0, 0.08);
-  border: 1px solid rgba(255, 170, 0, 0.25);
+  background: color-mix(in srgb, #c98a00 10%, var(--bg-base));
+  border: 1px solid color-mix(in srgb, #c98a00 30%, var(--bg-base));
   border-radius: 4px;
   padding: 10px 14px;
   font-size: 0.78rem;
-  color: #ffaa00;
+  color: color-mix(in srgb, #c98a00 72%, var(--text-primary));
 }
 
 .iw-sub-notice code {
   font-family: monospace;
-  background: rgba(255,255,255,0.08);
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -455,7 +469,7 @@
 
 .iw-summary-table td {
   padding: 6px 8px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
   font-size: 0.85rem;
   color: var(--text-primary);
 }
@@ -469,17 +483,17 @@
 
 .iw-lich-section {
   margin-bottom: 24px;
-  border: 1px solid rgba(255, 170, 0, 0.2);
+  border: 1px solid color-mix(in srgb, #c98a00 30%, var(--bg-base));
   border-radius: 6px;
   overflow: hidden;
 }
 
 .iw-lich-section-title {
-  background: rgba(255, 170, 0, 0.08);
+  background: color-mix(in srgb, #c98a00 10%, var(--bg-base));
   padding: 7px 12px;
   font-size: 0.75rem;
   font-weight: 600;
-  color: #ffaa00;
+  color: color-mix(in srgb, #c98a00 72%, var(--text-primary));
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }

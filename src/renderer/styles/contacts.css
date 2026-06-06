@@ -25,10 +25,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 700px;
+  width: var(--modal-w-standard);
   max-width: 95vw;
-  height: 72vh;
-  max-height: 680px;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;

@@ -14,10 +14,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 740px;
+  width: var(--modal-w-standard);
   max-width: 96vw;
-  height: 76vh;
-  max-height: 720px;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -116,7 +116,9 @@
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
 .ma-sidebar {
-  width: 210px;
+  /* Scales with the wider window (was a fixed 210px that smashed the rule
+     list in Automations). Clamped for standalone / small-screen sanity. */
+  width: clamp(240px, 25%, 380px);
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -524,7 +526,11 @@
 
 .ma-var-item {
   display: flex;
-  align-items: center;
+  /* baseline (not center) so a long token like {ReturnOrRepeatLast} whose
+     description WRAPS to two lines shares a baseline with its first line —
+     the wrapped line then flows naturally below instead of the whole 2-line
+     description floating vertically-centered against the 1-line token. */
+  align-items: baseline;
   gap: 10px;
   padding: 5px 10px;
   cursor: pointer;
@@ -539,11 +545,14 @@
   font-family: monospace;
   font-size: 0.82rem;
   min-width: 56px;
+  flex-shrink: 0;
 }
 
 .ma-var-item span {
   color: var(--text-faint);
   font-size: 0.75rem;
+  flex: 1;
+  line-height: 1.45;
 }
 
 /* Section divider inside the variable picker (separates $vars from {Tokens}). */

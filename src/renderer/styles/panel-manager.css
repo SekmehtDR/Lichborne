@@ -20,9 +20,10 @@
      row now carries ◀/▶ reorder buttons in addition to the move/remove
      buttons, and the previous width was visibly cramped on the 3-button
      move rows. */
-  width: 870px;
+  width: var(--modal-w-standard);
   max-width: 92vw;
-  max-height: 80vh;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -73,6 +74,8 @@
 .pm-close:hover { color: var(--text-secondary); }
 
 .pm-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 10px 0;
 }

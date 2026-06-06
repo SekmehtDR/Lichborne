@@ -20,10 +20,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 720px;
+  width: var(--modal-w-standard);
   max-width: 95vw;
-  height: 74vh;
-  max-height: 700px;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -74,7 +74,10 @@
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
 .hp-sidebar {
-  width: 210px;
+  /* Scales with the (now much wider) window instead of a fixed 210px that
+     left the rule list smashed in the Automations manager — the % is of the
+     flex body, clamped so it stays sane standalone and on small screens. */
+  width: clamp(240px, 25%, 380px);
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;
@@ -172,6 +175,29 @@
   letter-spacing: 0.5px;
   flex-shrink: 0;
 }
+
+/* Reorder controls — earlier in the list = higher priority (first match wins). */
+.hp-list-reorder {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.hp-list-item:hover .hp-list-reorder { opacity: 1; }
+
+.hp-reorder-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.5rem;
+  line-height: 0.85;
+  padding: 0 3px;
+  cursor: pointer;
+  transition: color 0.1s;
+}
+.hp-reorder-btn:hover:not(:disabled) { color: var(--accent); }
+.hp-reorder-btn:disabled { opacity: 0.25; cursor: default; }
 
 /* ── Detail pane ─────────────────────────────────────────────────────────── */
 

@@ -14,9 +14,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 640px;
+  width: var(--modal-w-standard);
   max-width: 96vw;
-  max-height: 82vh;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -24,7 +25,7 @@
 }
 
 .lp-modal--profile {
-  width: 820px;
+  width: var(--modal-w-standard);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -107,7 +108,7 @@
   gap: 10px;
   padding: 6px 14px;
   cursor: pointer;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent);
   transition: background 0.1s;
 }
 .lp-row:hover { background: var(--bg-hover); }
@@ -164,7 +165,7 @@
 
 .lp-footer code {
   font-family: monospace;
-  background: rgba(255,255,255,0.07);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -211,11 +212,11 @@
 }
 
 /* YAML syntax colors */
-.yaml-key     { color: #7ec8e3; }
-.yaml-string  { color: #c3e88d; }
+.yaml-key     { color: var(--syntax-key); }
+.yaml-string  { color: var(--syntax-string); }
 .yaml-value   { color: var(--text-secondary); }
-.yaml-bool    { color: #f78c6c; }
-.yaml-number  { color: #f78c6c; }
+.yaml-bool    { color: var(--syntax-number); }
+.yaml-number  { color: var(--syntax-number); }
 .yaml-comment { color: var(--text-faint); font-style: italic; }
 .yaml-punct   { color: var(--text-dim); }
 
@@ -334,7 +335,7 @@
 }
 .sl-empty code {
   font-family: monospace;
-  background: rgba(255,255,255,0.07);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   padding: 1px 5px;
   border-radius: 3px;
 }
@@ -344,7 +345,7 @@
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent);
   transition: background 0.1s;
 }
 .sl-row:hover { background: var(--bg-hover); }
@@ -390,16 +391,16 @@
   border-radius: 3px;
 }
 .sl-status--running {
-  color: #4caf50;
-  background: rgba(76,175,80,0.1);
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 .sl-status--paused {
   color: var(--preset-expiry);
-  background: rgba(255,165,0,0.1);
+  background: color-mix(in srgb, var(--preset-expiry) 12%, transparent);
 }
 .sl-status--killing {
   color: var(--color-danger);
-  background: rgba(255,80,80,0.1);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 
 .sl-uptime {
@@ -433,7 +434,7 @@
 .sl-btn:hover { color: var(--text-primary); border-color: var(--text-dim); }
 
 .sl-btn--pause:hover  { color: var(--preset-expiry); border-color: var(--preset-expiry); }
-.sl-btn--resume:hover { color: #4caf50; border-color: #4caf50; }
+.sl-btn--resume:hover { color: var(--color-success); border-color: var(--color-success); }
 .sl-btn--kill:hover   { color: var(--color-danger); border-color: var(--color-danger); }
 
 .sl-kill-confirm {
@@ -497,8 +498,8 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 .lp-modal--dashboard {
-  width: 860px;
-  max-height: 86vh;
+  width: var(--modal-w-standard);
+  max-height: var(--modal-h-standard);
 }
 
 /* ── Tab nav ─────────────────────────────────────────────────────────────── */
@@ -564,7 +565,7 @@
   padding: 2px 8px;
   flex-shrink: 0;
 }
-.ld-session-pill--live { color: var(--color-success); border-color: #004a28; background: #001408; }
+.ld-session-pill--live { color: var(--color-success); border-color: color-mix(in srgb, var(--color-success) 40%, transparent); background: color-mix(in srgb, var(--color-success) 12%, transparent); }
 
 .ld-session-dot {
   width: 6px;
@@ -637,14 +638,14 @@
   align-items: baseline;
   gap: 12px;
   padding: 5px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent);
   font-size: 0.8rem;
   font-family: monospace;
 }
 .ld-var-row:hover { background: var(--bg-hover); }
 
 .ld-var-key {
-  color: #7ec8e3;
+  color: var(--syntax-key);
   flex-shrink: 0;
   min-width: 160px;
   max-width: 220px;
@@ -661,7 +662,7 @@
   font-size: 0.75rem;
   color: var(--text-dim);
   background: color-mix(in srgb, var(--accent-dim) 12%, transparent);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
 .ld-var-add {
@@ -669,7 +670,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 7%, transparent);
   background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
 }
 .ld-var-eq { color: var(--text-faint); font-family: monospace; }
@@ -708,15 +709,15 @@
 .ld-var-btn:disabled { opacity: 0.4; cursor: default; }
 .ld-var-btn--save:not(:disabled) { color: var(--vital-health-ok-start, #7ec699); }
 .ld-var-btn--del,
-.ld-var-btn--del-trigger:hover { color: #e06c75; border-color: color-mix(in srgb, #e06c75 50%, transparent); }
+.ld-var-btn--del-trigger:hover { color: var(--color-danger); border-color: color-mix(in srgb, var(--color-danger) 50%, transparent); }
 
 .ld-var-hint { font-size: 0.72rem; color: var(--text-faint); }
-.ld-var-hint--warn { color: #e0a96c; }
+.ld-var-hint--warn { color: color-mix(in srgb, #c98a00 72%, var(--text-primary)); }
 
 /* Recursive value tree */
 .ld-val--null   { color: var(--text-faint); }
-.ld-val--bool   { color: #f78c6c; }
-.ld-val--num    { color: #c3e88d; }
+.ld-val--bool   { color: var(--syntax-number); }
+.ld-val--num    { color: var(--syntax-string); }
 .ld-val--str    { color: var(--preset-speech); white-space: pre-wrap; word-break: break-all; }
 .ld-val--dim    { color: var(--text-faint); }
 
@@ -748,7 +749,7 @@
 }
 
 .ld-key {
-  color: #7ec8e3;
+  color: var(--syntax-key);
   flex-shrink: 0;
   min-width: 80px;
 }
@@ -773,7 +774,7 @@
   align-items: center;
   gap: 12px;
   padding: 6px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent);
   font-size: 0.8rem;
 }
 .ld-setting-row:hover { background: var(--bg-hover); }
@@ -803,7 +804,7 @@
   padding: 2px 8px;
   border-radius: 3px;
 }
-.ld-flag-badge--on  { background: #001408; color: var(--color-success); border: 1px solid #004a28; }
+.ld-flag-badge--on  { background: color-mix(in srgb, var(--color-success) 12%, transparent); color: var(--color-success); border: 1px solid color-mix(in srgb, var(--color-success) 40%, transparent); }
 .ld-flag-badge--off { background: var(--bg-sunken); color: var(--text-faint); border: 1px solid var(--border-faint); }
 
 /* ── Profiles tab ────────────────────────────────────────────────────────── */
@@ -853,7 +854,12 @@
 .ld-line-num {
   font-family: monospace;
   font-size: 0.75rem;
-  line-height: 1.65;
+  /* Absolute (not unitless) line-height so the gutter row height is INDEPENDENT
+     of font-size. The gutter (0.75rem) and the content pre/textarea (0.79rem)
+     must share an identical per-line height or the numbers drift ~1px/line and
+     by line ~50 they're 2-3 lines off the content they label. Keep this value
+     in lockstep with .ld-yaml-preview / .ld-yaml-editor. */
+  line-height: 1.3rem;
   color: var(--text-faint);
   padding: 0 8px 0 4px;
 }
@@ -885,7 +891,11 @@
 .ld-yaml-preview {
   font-family: monospace;
   font-size: 0.79rem;
-  line-height: 1.65;
+  /* MUST match .ld-line-num / .ld-yaml-editor line-height (absolute) so the
+     gutter, the syntax-highlighted view, and the search overlay all share one
+     per-line height. getComputedStyle(pre).lineHeight (read by the search /
+     overlay math) returns this absolute px, so search lands true. */
+  line-height: 1.3rem;
   color: var(--text-primary);
   background: transparent;
   margin: 0;
@@ -908,16 +918,16 @@
 
 /* ── YAML syntax highlight (highlight.js — VS Code dark+ palette) ────────────── */
 
-.ld-yaml-preview .hljs-attr     { color: #9cdcfe; }          /* keys */
-.ld-yaml-preview .hljs-string   { color: #ce9178; }          /* string values */
-.ld-yaml-preview .hljs-number   { color: #b5cea8; }          /* numbers */
-.ld-yaml-preview .hljs-literal  { color: #569cd6; }          /* true / false / null */
-.ld-yaml-preview .hljs-comment  { color: #6a9955; font-style: italic; }  /* comments */
-.ld-yaml-preview .hljs-meta     { color: #c586c0; }          /* --- ... */
-.ld-yaml-preview .hljs-bullet   { color: #c586c0; }          /* list - */
-.ld-yaml-preview .hljs-type     { color: #4ec9b0; }
-.ld-yaml-preview .hljs-symbol   { color: #dcdcaa; }          /* :anchor */
-.ld-yaml-preview .hljs-template-variable { color: #9cdcfe; } /* *alias */
+.ld-yaml-preview .hljs-attr     { color: var(--syntax-key); }       /* keys */
+.ld-yaml-preview .hljs-string   { color: var(--syntax-string); }    /* string values */
+.ld-yaml-preview .hljs-number   { color: var(--syntax-number); }    /* numbers */
+.ld-yaml-preview .hljs-literal  { color: var(--syntax-literal); }   /* true / false / null */
+.ld-yaml-preview .hljs-comment  { color: var(--syntax-comment); font-style: italic; }  /* comments */
+.ld-yaml-preview .hljs-meta     { color: var(--syntax-meta); }      /* --- ... */
+.ld-yaml-preview .hljs-bullet   { color: var(--syntax-meta); }      /* list - */
+.ld-yaml-preview .hljs-type     { color: var(--syntax-type); }
+.ld-yaml-preview .hljs-symbol   { color: var(--syntax-symbol); }    /* :anchor */
+.ld-yaml-preview .hljs-template-variable { color: var(--syntax-key); } /* *alias */
 
 /* ── Profile editor ──────────────────────────────────────────────────────────── */
 
@@ -1031,7 +1041,10 @@
   color: var(--text-primary);
   font-family: monospace;
   font-size: 0.79rem;
-  line-height: 1.65;
+  /* MUST match .ld-line-num / .ld-yaml-preview line-height (absolute) — the
+     edit-mode gutter and scrollElementToLine() rely on a shared per-line
+     height. See the .ld-line-num note. */
+  line-height: 1.3rem;
   resize: none;
   padding: 12px 16px;
   outline: none;
@@ -1053,15 +1066,15 @@
 }
 
 .ld-validation-bar--ok {
-  background: color-mix(in srgb, #1a4a28 60%, transparent);
-  border-color: #2a6a3a;
-  color: #6dbf86;
+  background: color-mix(in srgb, var(--color-success) 14%, var(--bg-base));
+  border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+  color: var(--color-success);
 }
 
 .ld-validation-bar--err {
-  background: color-mix(in srgb, #4a1a1a 60%, transparent);
-  border-color: #6a2a2a;
-  color: #e07070;
+  background: color-mix(in srgb, var(--color-danger) 14%, var(--bg-base));
+  border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+  color: var(--color-danger);
 }
 
 .ld-validation-icon { font-weight: 700; flex-shrink: 0; }
@@ -1132,8 +1145,8 @@
 }
 
 .ld-diff-line--same   { color: var(--text-dim); }
-.ld-diff-line--add    { background: color-mix(in srgb, #1a4a28 40%, transparent); color: #6dbf86; }
-.ld-diff-line--remove { background: color-mix(in srgb, #4a1a1a 40%, transparent); color: #e07070; }
+.ld-diff-line--add    { background: color-mix(in srgb, var(--color-success) 14%, transparent); color: var(--color-success); }
+.ld-diff-line--remove { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
 
 .ld-diff-gutter {
   width: 16px;

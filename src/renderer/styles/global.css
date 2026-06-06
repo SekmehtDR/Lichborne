@@ -7,6 +7,15 @@
   padding: 0;
 }
 
+/* Shared layout tokens (not theme colors — these live here, not in themes.ts).
+   --modal-w-standard unifies the big management windows (Panel Manager,
+   Automations, Lich, Settings, Logs, Contacts, Themes) to the SAME width as the
+   Maps button overlay (.map-overlay-window). One value to retune them all. */
+:root {
+  --modal-w-standard: 88vw;
+  --modal-h-standard: 86vh;
+}
+
 html, body, #root {
   width: 100%;
   height: 100%;

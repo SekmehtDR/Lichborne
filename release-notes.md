@@ -1,3 +1,37 @@
+## What's new in v0.11.2
+
+A quality, performance and polish release — plus fixes for a couple of bugs testers hit live.
+
+### More information you can use in triggers and macros
+
+Triggers, macros, and aliases can now reference a lot more about your character and surroundings. New built-in variables include **`$roomid`**, **`$exits`**, **`$ct`** (cast time), **`$timestamp`**, and true/false flags for your status — **`$bleeding`, `$poisoned`, `$diseased`, `$stunned`, `$webbed`, `$joined`, `$hidden`, `$invisible`, `$dead`**. Triggers also now support **named capture groups**: write a pattern like `(?<who>\w+) arrives` and use `$who` in the response. The full list is shown in the trigger/macro editors.
+
+### Reorder your highlights
+
+When two highlights can match the same text, the one **higher in the list wins**. You can now reorder highlights with the ▲/▼ buttons in the Highlights panel, so you control which takes priority.
+
+### Easier-to-read text across every theme
+
+The five text shades (from body text down to faint decorative text) were spread too far apart on some themes, making the dimmer ones hard to read. They've been tightened so low-emphasis text stays legible everywhere — and a bug where **Classic Light** rendered "faint" text as solid black (more prominent than your actual body text) is fixed. A batch of small color bugs that could make text or badges hard to see on light themes were also cleaned up.
+
+### The command bar now follows your Font Size
+
+The command input, Send button, and the right-click menu now scale with **Settings → Font Size** like the rest of the game text.
+
+### Bigger, consistent management windows
+
+Panel Manager, Automations, Lich, Settings, Logs, Contacts, and Themes now all open at the same size as the Maps window, so there's more room to work — and the Automations rule lists on the left no longer feel cramped.
+
+### Fixes
+
+- **Copy/paste:** selecting more than a screenful of text (scrolling down as you drag) now copies the whole selection instead of just the last part. *(Thanks, Binu.)*
+- **Quick Send in separate windows:** Ctrl+Shift+Enter now opens Quick Send in a decoupled window, with all your characters (in any window) as targets. *(Thanks for the report.)*
+- **Map tracking:** your location updates correctly in more rooms on both maps. If you turn on DragonRealms' room-number display (a number in parentheses after the room name), the **Lich Map** locks onto your position by room id and tracks reliably — even in repetitive hunting areas. The **Genie Map** matches by room name + description, so it can briefly lag in rooms with many identical names until the game sends a description (a `LOOK` resyncs it). *(Thanks for the reports.)*
+- **Lich profile (YAML) editor:** the line numbers now line up with the content, and search jumps to the right spot. *(Thanks for the report.)*
+- **Macros:** the special-token list (`{RepeatLast}`, etc.) descriptions are aligned properly again.
+
+---
+
 ## What's new in v0.11.1
 
 A big upgrade to **importing from Wrayth**. If you're coming from the Wrayth client, your setup now carries over far more completely.
@@ -23,29 +57,3 @@ Wrayth lets you keep up to ten macro sets; the importer used to read only the de
 The import preview now shows each highlight's **color swatch** right next to its text (long phrases no longer push the color off-screen), and notes how many gag and variable entries were found (gags aren't imported yet — that's coming).
 
 *(Thanks, Thanator.)*
-
----
-
-## What's new in v0.11.0
-
-Run your characters in **separate windows** — without running Lichborne twice.
-
-### Pop a character out into its own window
-
-You can now move a tabbed character into its **own full window** while everything still runs in a single Lichborne. That means you can watch multiple characters side by side (or full-screen on different monitors) and **cross-character features still work** — for example, Quick Send can target a character living in another window. Three ways to do it:
-
-- **Right-click a character tab → "Open … in new window."**
-- **Window menu → "Move Character to New Window."**
-- **Bulk Connect → "Open each character in its own window"** (a remembered setting, off by default) — connect a whole team and have each one land in its own window.
-
-The moved window is a complete client: its own tabs, panels, map, vitals, Quick Send, and Lich integration. When a character moves, the new window **inherits its recent scrollback, room/map, and all vital bars** so it doesn't start blank.
-
-### Bringing a character back, and closing windows
-
-- **Window menu → "Move Character to Main Window"** re-homes a decoupled character back into the main window (and tidily closes the now-empty window).
-- **Closing a decoupled window logs that character out** (a clean disconnect), just like closing a tab. So if you want to keep a character running, move it back first.
-- You can't pop out the **only** character in a window (that option is greyed out) — it would just leave an empty window behind.
-
-### Why one Lichborne instead of two
-
-Everything stays in one process on purpose: it's why Quick Send and other cross-character tools reach every window, and it means your characters share one Lich coordinator (no fighting over the connection). If you'd rather keep two completely separate sets of characters (say, different teams), you can still launch Lichborne more than once — those instances simply stay independent of each other.

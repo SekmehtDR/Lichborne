@@ -108,14 +108,31 @@ export function findRoom(
     candidates = normTitleIndex.get(normalizeMatchKey(gameTitle)) ?? []
   }
   if (candidates.length === 0) return undefined
+  if (candidates.length === 1) return candidates[0]
   const normDesc = normalizeDesc(gameDesc)
   if (normDesc) {
     const exact = candidates.find(r =>
       (r.description ?? []).some(d => normalizeDesc(d) === normDesc)
     )
     if (exact) return exact
+    // Substring fallback (parallels GenieMapView's currentLocation, B148/B150).
+    // Stored descriptions (Lich db OR Genie) are often a truncation of the live
+    // look, so exact equality misses on a real ambiguous room. Accept
+    // containment in either direction, but only when it resolves to exactly ONE
+    // candidate and both strings are long enough to be meaningful — so a generic
+    // shared description can't mis-disambiguate. This is the fallback path the
+    // Lich Map takes when roomId lookup misses (id is the primary, exact signal).
+    if (normDesc.length >= 24) {
+      const subHits = candidates.filter(r =>
+        (r.description ?? []).some(d => {
+          const dn = normalizeDesc(d)
+          return dn.length >= 24 && (dn.includes(normDesc) || normDesc.includes(dn))
+        })
+      )
+      if (subHits.length === 1) return subHits[0]
+    }
   }
-  return candidates.length === 1 ? candidates[0] : undefined
+  return undefined
 }
 
 // BFS path-finding via Lich wayto — returns sequence of move commands

@@ -246,6 +246,8 @@ export const ALIAS_VARS: { name: string; desc: string }[] = [
   { name: 'left',   desc: 'left hand item' },
   { name: 'right',  desc: 'right hand item' },
   { name: 'room',   desc: 'room name' },
+  { name: 'roomid', desc: 'room id number' },
+  { name: 'exits',  desc: 'room exits (comma-separated)' },
 ]
 
 export const MACRO_VARS: { name: string; desc: string }[] = [
@@ -255,11 +257,23 @@ export const MACRO_VARS: { name: string; desc: string }[] = [
   { name: 'spirit',        desc: 'spirit %' },
   { name: 'concentration', desc: 'concentration %' },
   { name: 'rt',            desc: 'roundtime seconds' },
+  { name: 'ct',            desc: 'cast time seconds' },
   { name: 'stance',        desc: 'current stance' },
   { name: 'spell',         desc: 'prepared spell' },
   { name: 'left',          desc: 'left hand item' },
   { name: 'right',         desc: 'right hand item' },
   { name: 'room',          desc: 'room name' },
+  { name: 'roomid',        desc: 'room id number' },
+  { name: 'exits',         desc: 'room exits (comma-separated)' },
+  { name: 'bleeding',      desc: 'true/false' },
+  { name: 'poisoned',      desc: 'true/false' },
+  { name: 'diseased',      desc: 'true/false' },
+  { name: 'stunned',       desc: 'true/false' },
+  { name: 'webbed',        desc: 'true/false' },
+  { name: 'joined',        desc: 'true/false' },
+  { name: 'hidden',        desc: 'true/false' },
+  { name: 'invisible',     desc: 'true/false' },
+  { name: 'dead',          desc: 'true/false' },
 ]
 
 // ── Special macro tokens (v0.8.3) ─────────────────────────────────────────────

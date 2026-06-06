@@ -180,6 +180,21 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
     onSaved?.()
   }
 
+  // Reorder = priority. Overlap resolution in renderSegmentFull is "first matching
+  // rule wins", so earlier-in-array = higher priority. Up/down move the rule in the
+  // stored array. Disabled while searching (the visible order is filtered, not real).
+  function moveRule(id: string, dir: -1 | 1) {
+    const i = rules.findIndex(r => r.id === id)
+    if (i < 0) return
+    const j = i + dir
+    if (j < 0 || j >= rules.length) return
+    const updated = [...rules]
+    ;[updated[i], updated[j]] = [updated[j], updated[i]]
+    setRules(updated)
+    saveHighlights(character, updated)
+    onSaved?.()
+  }
+
   // ── Sidebar list item ─────────────────────────────────────────────────────
 
   function listItemSwatch(r: HighlightRule): React.CSSProperties {
@@ -230,6 +245,22 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                   <span className="hp-list-swatch" style={listItemSwatch(r)} />
                   <span className="hp-list-label">{r.name || r.pattern || <em className="hp-unnamed">Unnamed</em>}</span>
                   <span className="hp-list-scope">{r.scope}</span>
+                  {!search && (
+                    <span className="hp-list-reorder">
+                      <button
+                        className="hp-reorder-btn"
+                        title="Move up (higher priority)"
+                        disabled={rules.findIndex(x => x.id === r.id) === 0}
+                        onClick={e => { e.stopPropagation(); moveRule(r.id, -1) }}
+                      >▲</button>
+                      <button
+                        className="hp-reorder-btn"
+                        title="Move down (lower priority)"
+                        disabled={rules.findIndex(x => x.id === r.id) === rules.length - 1}
+                        onClick={e => { e.stopPropagation(); moveRule(r.id, 1) }}
+                      >▼</button>
+                    </span>
+                  )}
                   <button
                     className="list-item-delete"
                     title="Delete"

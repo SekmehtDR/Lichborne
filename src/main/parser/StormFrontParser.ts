@@ -437,10 +437,24 @@ export class StormFrontParser {
             const titleMatch = attrs.subtitle.match(/\[([^\]]+)\]/)
             if (titleMatch) {
               const inner      = titleMatch[1]
+              // DR carries the room id in TWO subtitle formats — handle both:
+              //   "[Whistling Wood, Barrows - 9479]"   id INSIDE the brackets after " - "
+              //   "[Arthelun Ruins, Courtyard] (56107)" id in PARENS after the brackets
+              // The parens form is the StormFront standard `[Title] (uid)`, with
+              // "(**)" meaning unmapped (e.g. "[The Heavens] (**)" during a
+              // telescope flip). Before v0.11.2 only the dash form was parsed, so
+              // parens-form rooms got NO roomId — the Lich Map's instant
+              // lichDb.get(roomId) lookup never fired and it fell back to the
+              // fragile title+desc match (the "stuck until something forces a
+              // re-emit" symptom), and $roomid was empty.
               const trailMatch = inner.match(/\s*-\s*(\d+)\s*$/)
               const cleanTitle = trailMatch
                 ? inner.slice(0, trailMatch.index).trim()
                 : inner.trim()
+              const parenMatch = trailMatch ? null : attrs.subtitle.match(/\]\s*\((\d+)\)/)
+              const roomId = trailMatch
+                ? parseInt(trailMatch[1], 10)
+                : parenMatch ? parseInt(parenMatch[1], 10) : undefined
               // B121 (Rakkor, v0.8.7): emit clear-streams for room
               // sub-components BEFORE the room-title event whenever the
               // subtitle CHANGES (new room). DR sends streamWindow
@@ -466,7 +480,7 @@ export class StormFrontParser {
               this.events.push({
                 type: 'room-title',
                 title: cleanTitle,
-                roomId: trailMatch ? parseInt(trailMatch[1], 10) : undefined,
+                roomId,
               })
             }
           }

@@ -339,8 +339,8 @@
   width: 16px;
 }
 
-.path-status-icon--valid  { color: #5a9e5a; }
-.path-status-icon--invalid { color: #9e4a4a; }
+.path-status-icon--valid  { color: var(--color-success); }
+.path-status-icon--invalid { color: var(--color-danger); }
 
 .btn-browse {
   flex-shrink: 0;
@@ -397,21 +397,21 @@
 }
 
 .mode-badge.lich {
-  background: #1a2e1a;
-  color: #4caf50;
-  border: 1px solid #2d5a2d;
+  background: color-mix(in srgb, #1f9d57 14%, var(--bg-base));
+  color: color-mix(in srgb, #1f9d57 72%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, #1f9d57 32%, var(--bg-base));
 }
 
 .mode-badge.direct {
-  background: #1a1e2e;
-  color: #5c8ac4;
-  border: 1px solid #2d3a5a;
+  background: color-mix(in srgb, #5c8ac4 14%, var(--bg-base));
+  color: color-mix(in srgb, #5c8ac4 72%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, #5c8ac4 32%, var(--bg-base));
 }
 
 .login-error {
-  background: #2e1a1a;
-  border: 1px solid #5a2d2d;
-  color: #e06c6c;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
   border-radius: 4px;
   padding: 10px 12px;
   font-size: 0.85rem;

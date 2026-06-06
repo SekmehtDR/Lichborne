@@ -109,7 +109,7 @@
 
 .character-tab-health.health-ok   { color: var(--color-success, #4caf50); }
 .character-tab-health.health-warn { color: var(--accent, #e0c860); }
-.character-tab-health.health-bad  { color: #e08040; }
+.character-tab-health.health-bad  { color: color-mix(in srgb, #d2781e 76%, var(--text-primary)); }
 .character-tab-health.health-crit { color: var(--color-danger, #c04040); }
 
 /* Single icon slot per tab — fixed width + centered so swapping between

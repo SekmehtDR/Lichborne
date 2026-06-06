@@ -21,6 +21,7 @@ declare global {
       setSessionName: (sessionId: SessionId, character: string) => void
       moveSessionToWindow: (sessionId: SessionId, target: 'new' | 'main' | number) => Promise<void>
       getOwnedSessions: () => Promise<RosterEntry[]>
+      getRoster: () => Promise<RosterEntry[]>
       onSessionAcquire: (cb: (entry: RosterEntry) => void) => () => void
       onSessionRelease: (cb: (sessionId: SessionId) => void) => () => void
       requestReplay: (sessionId: SessionId) => void

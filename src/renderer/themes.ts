@@ -23,8 +23,8 @@ export const darkBase: ThemeVars = {
   '--text-primary':   '#d4c9a8',
   '--text-secondary': '#aaaaaa',
   '--text-muted':     '#888888',
-  '--text-dim':       '#7a7a7a',
-  '--text-faint':     '#585858',
+  '--text-dim':       '#7e7e7e',
+  '--text-faint':     '#6e6e6e',
 
   '--border':        '#3c3c3c',
   '--border-subtle': '#2d2d2d',
@@ -66,6 +66,19 @@ export const darkBase: ThemeVars = {
   '--preset-expiry-bg':   'transparent',
   '--preset-store-bg':    'transparent',
   '--preset-cmd-bg':      'transparent',
+
+  // Syntax-highlight palette (Lich Dashboard YAML/var preview, Debug panel).
+  // Defined once here; each value blends a fixed hue toward the theme's own
+  // --text-primary so the token stays a distinct hue but contrast self-corrects
+  // on light themes — no per-theme overrides needed (pitfall #34/#55).
+  '--syntax-key':     'color-mix(in srgb, #4a90c0 66%, var(--text-primary))',
+  '--syntax-string':  'color-mix(in srgb, #6aa84f 66%, var(--text-primary))',
+  '--syntax-number':  'color-mix(in srgb, #cc7a40 70%, var(--text-primary))',
+  '--syntax-literal': 'color-mix(in srgb, #4a90c0 70%, var(--text-primary))',
+  '--syntax-comment': 'color-mix(in srgb, #6a9955 60%, var(--text-primary))',
+  '--syntax-meta':    'color-mix(in srgb, #b06ab0 66%, var(--text-primary))',
+  '--syntax-type':    'color-mix(in srgb, #3fa6a0 66%, var(--text-primary))',
+  '--syntax-symbol':  'color-mix(in srgb, #c2a23a 70%, var(--text-primary))',
 
   '--vital-health-ok-start':   '#1a5a1a',
   '--vital-health-ok-end':     '#3a9a3a',
@@ -266,8 +279,8 @@ const darker: ThemeVars = {
   '--text-primary':   '#ccc2a0',
   '--text-secondary': '#999999',
   '--text-muted':     '#787878',
-  '--text-dim':       '#626262',
-  '--text-faint':     '#454545',
+  '--text-dim':       '#696969',
+  '--text-faint':     '#5c5c5c',
   '--border':        '#2b2b2b',
   '--border-subtle': '#1c1c1c',
   '--border-faint':  '#191919',
@@ -305,8 +318,8 @@ const slate: ThemeVars = {
   '--text-primary':   '#c9d1d9',
   '--text-secondary': '#8b949e',
   '--text-muted':     '#6e7681',
-  '--text-dim':       '#484f58',
-  '--text-faint':     '#30363d',
+  '--text-dim':       '#545b65',
+  '--text-faint':     '#4d535c',
   '--border':        '#30363d',
   '--border-subtle': '#21262d',
   '--border-faint':  '#161b22',
@@ -372,8 +385,8 @@ const ivory: ThemeVars = {
   '--text-primary':   '#1a1a1a',
   '--text-secondary': '#4a4a4a',
   '--text-muted':     '#767676',
-  '--text-dim':       '#a0a0a0',
-  '--text-faint':     '#c0c0c0',
+  '--text-dim':       '#939393',
+  '--text-faint':     '#9e9e9e',
 
   '--border':        '#d0d0d0',
   '--border-subtle': '#e0e0e0',
@@ -555,8 +568,8 @@ const mist: ThemeVars = {
   '--text-primary':   '#1c2028',
   '--text-secondary': '#404858',
   '--text-muted':     '#687080',
-  '--text-dim':       '#909aaa',
-  '--text-faint':     '#b8c0cc',
+  '--text-dim':       '#838d9d',
+  '--text-faint':     '#939ba9',
 
   '--border':        '#c0c8d4',
   '--border-subtle': '#d0d8e4',
@@ -737,8 +750,8 @@ const parchment: ThemeVars = {
   '--text-primary':   '#2a1f0e',
   '--text-secondary': '#5a4a2a',
   '--text-muted':     '#8a7050',
-  '--text-dim':       '#b09060',
-  '--text-faint':     '#c8a870',
+  '--text-dim':       '#a4865b',
+  '--text-faint':     '#ab8e61',
   '--border':        '#c0a878',
   '--border-subtle': '#d4bc90',
   '--border-faint':  '#e0cca8',
@@ -897,8 +910,8 @@ const terminal: ThemeVars = {
   '--text-primary':   '#00ff41',
   '--text-secondary': '#00cc33',
   '--text-muted':     '#00992a',
-  '--text-dim':       '#005c18',
-  '--text-faint':     '#003010',
+  '--text-dim':       '#00701e',
+  '--text-faint':     '#00601c',
   '--border':        '#003a10',
   '--border-subtle': '#002808',
   '--border-faint':  '#011501',
@@ -1616,8 +1629,8 @@ const classic: ThemeVars = {
   '--text-primary':   '#f5f5f5',  // WhiteSmoke — Genie's exact default output color
   '--text-secondary': '#c8c8c8',  // slightly brighter for UI labels
   '--text-muted':     '#909090',  // muted UI text — still passes WCAG AA on lifted bg
-  '--text-dim':       '#606060',
-  '--text-faint':     '#404040',
+  '--text-dim':       '#6f6f6f',
+  '--text-faint':     '#656565',
 
   '--border':        '#3c3c3c',  // visible separation between panels
   '--border-subtle': '#282828',  // section dividers
@@ -1802,8 +1815,11 @@ const classicLight: ThemeVars = {
   '--text-primary':   '#1a1a1a',
   '--text-secondary': '#4a4a4a',
   '--text-muted':     '#767676',
-  '--text-dim':       '#000000',
-  '--text-faint':     '#000000',
+  // dim/faint must be LIGHTER than muted on a light theme (least-emphasis =
+  // toward the white bg). They were pure black pre-v0.11.2 — an inverted ramp
+  // that rendered "faint" decorative text MORE prominent than body text.
+  '--text-dim':       '#969696',
+  '--text-faint':     '#a6a6a6',
 
   '--border':         '#d0d0d0',
   '--border-subtle':  '#e0e0e0',

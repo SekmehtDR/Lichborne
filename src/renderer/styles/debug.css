@@ -42,8 +42,8 @@
 
 .debug-tab--active {
   background: var(--bg-sunken);
-  color: #9cdcfe;
-  border-bottom: 2px solid #9cdcfe;
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent);
 }
 
 .debug-copy,
@@ -61,7 +61,7 @@
 .debug-copy:hover,
 .debug-clear:hover {
   background: var(--border);
-  color: #fff;
+  color: var(--text-primary);
 }
 
 /* v0.10.1: close (X) the panel from its own toolbar. Slight danger tint on
@@ -110,25 +110,25 @@
 .debug-type {
   flex-shrink: 0;
   min-width: 140px;
-  color: #569cd6;
+  color: var(--syntax-literal);
   font-weight: bold;
 }
 
-.debug-event--stream-text    .debug-type { color: #9cdcfe; }
-.debug-event--vital-update   .debug-type { color: #4ec9b0; }
-.debug-event--roundtime      .debug-type { color: #ce9178; }
-.debug-event--casttime       .debug-type { color: #ce9178; }
-.debug-event--indicator      .debug-type { color: #dcdcaa; }
-.debug-event--stance         .debug-type { color: #c586c0; }
-.debug-event--spell          .debug-type { color: #b5cea8; }
-.debug-event--hand           .debug-type { color: #b5cea8; }
-.debug-event--room-title     .debug-type { color: #f7c948; }
-.debug-event--exp-component  .debug-type { color: #6a9955; }
-.debug-event--clear-stream   .debug-type { color: #f44747; }
+.debug-event--stream-text    .debug-type { color: var(--syntax-key); }
+.debug-event--vital-update   .debug-type { color: var(--syntax-type); }
+.debug-event--roundtime      .debug-type { color: var(--syntax-number); }
+.debug-event--casttime       .debug-type { color: var(--syntax-number); }
+.debug-event--indicator      .debug-type { color: var(--syntax-symbol); }
+.debug-event--stance         .debug-type { color: var(--syntax-meta); }
+.debug-event--spell          .debug-type { color: var(--syntax-string); }
+.debug-event--hand           .debug-type { color: var(--syntax-string); }
+.debug-event--room-title     .debug-type { color: var(--accent); }
+.debug-event--exp-component  .debug-type { color: var(--syntax-comment); }
+.debug-event--clear-stream   .debug-type { color: var(--color-danger); }
 .debug-event--unknown        .debug-type { color: var(--text-muted); }
 
 .debug-body {
-  color: #d4d4d4;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -151,7 +151,7 @@
 }
 
 .rawxml-body {
-  color: #9cdcfe;
+  color: var(--syntax-key);
   font-family: var(--game-font-family);
 }
 
@@ -257,13 +257,13 @@
 }
 
 .fire-log-kind--highlight {
-  background: #1e3a5f;
-  color: #9cdcfe;
+  background: color-mix(in srgb, var(--syntax-key) 22%, var(--bg-base));
+  color: var(--syntax-key);
 }
 
 .fire-log-kind--trigger {
-  background: #3a2a1e;
-  color: #ce9178;
+  background: color-mix(in srgb, var(--syntax-number) 22%, var(--bg-base));
+  color: var(--syntax-number);
 }
 
 /* v0.10.1: name/matched/detail WRAP (min-width:0 + overflow-wrap:anywhere) so a
@@ -284,7 +284,7 @@
 }
 
 .fire-log-detail {
-  color: #4ec9b0;
+  color: var(--syntax-type);
   min-width: 0;
   font-size: 0.75rem;
   overflow-wrap: anywhere;

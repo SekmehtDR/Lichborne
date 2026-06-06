@@ -242,11 +242,16 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private flushLines() {
+    // Single-pass: walk a cursor over the buffer slicing each line once, then
+    // drop the consumed prefix in one final assignment. The previous form
+    // re-sliced `this.buffer` from index 0 per line — O(K·N) for a chunk with
+    // K lines in N chars, which combat spam can make large.
+    let start = 0
     let idx: number
-    while ((idx = this.buffer.indexOf('\n')) !== -1) {
-      const line = this.buffer.slice(0, idx + 1)
-      this.buffer = this.buffer.slice(idx + 1)
-      this.emit('line', line)
+    while ((idx = this.buffer.indexOf('\n', start)) !== -1) {
+      this.emit('line', this.buffer.slice(start, idx + 1))
+      start = idx + 1
     }
+    if (start > 0) this.buffer = this.buffer.slice(start)
   }
 }

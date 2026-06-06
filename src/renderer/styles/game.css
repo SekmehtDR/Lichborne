@@ -128,6 +128,10 @@
   padding: 3px 0;
   min-width: 120px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  /* Portaled (position:fixed) so it can't inherit a game-area container —
+     anchor directly to the game font so items scale with Settings → Font
+     Size like the text they act on (pitfall #45). */
+  font-size: var(--game-font-size);
 }
 
 .ctx-menu-item {
@@ -138,7 +142,7 @@
   color: var(--text-secondary);
   padding: 6px 14px;
   font-family: inherit;
-  font-size: 0.8rem;
+  font-size: 1.07em;
   text-align: left;
   cursor: pointer;
 }
@@ -379,6 +383,11 @@
   background: linear-gradient(180deg, var(--bg-sunken), var(--bg-base));
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  /* Anchor to the per-character game font so the input, Send button, and
+     prompt marker track Settings → Font Size. Children size in `em` off this
+     (rem would stay pinned to the 16px html root — pitfall #45). em values
+     below = old rem × 16/12 to preserve the default 12px look. */
+  font-size: var(--game-font-size);
 }
 
 .cmd-input-wrap {
@@ -464,7 +473,7 @@
 .prompt-marker {
   color: var(--accent-dim);
   font-weight: var(--ui-bold-weight);
-  font-size: 1rem;
+  font-size: 1.33em;
   flex-shrink: 0;
   /* v0.8.6 (Rakkor): marker is now a <button> that opens QuickSend on
      click. Strip the browser button chrome so it still looks like the
@@ -489,7 +498,7 @@
   border: none;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: 1.2em;
   padding: 6px 10px;
   outline: none;
 }
@@ -501,7 +510,7 @@
   border-radius: 4px;
   padding: 6px 14px;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 1.13em;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -509,4 +518,9 @@
 .btn-send:hover {
   background: var(--border);
   color: var(--text-primary);
+}
+
+.btn-send:focus-visible {
+  outline: 1px solid var(--accent-dim);
+  outline-offset: 1px;
 }

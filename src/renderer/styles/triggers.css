@@ -14,10 +14,10 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 800px;
+  width: var(--modal-w-standard);
   max-width: 96vw;
-  height: 80vh;
-  max-height: 760px;
+  height: var(--modal-h-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -68,7 +68,9 @@
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 
 .tp-sidebar {
-  width: 210px;
+  /* Scales with the wider window (was a fixed 210px that smashed the rule
+     list in Automations). Clamped for standalone / small-screen sanity. */
+  width: clamp(240px, 25%, 380px);
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   display: flex;

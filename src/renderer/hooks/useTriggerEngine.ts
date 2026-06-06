@@ -8,12 +8,15 @@ import { isRuleActive } from '../groups'
 export interface TriggerGameState {
   vitals: Record<string, { current: number; max: number }>
   rtSeconds: number
+  ctSeconds: number
   stance: string
   spell: string
   leftHand: string
   rightHand: string
   indicators: Record<string, boolean>
   roomTitle: string
+  roomId: number
+  exits: string[]
   variables: Record<string, string>
   characterName: string
 }
@@ -146,17 +149,33 @@ function buildVars(
     characterName: state.characterName,
     date:          now.toLocaleDateString(),
     time:          now.toLocaleTimeString(),
+    timestamp:     String(now.getTime()),
     health:        String(state.vitals.health?.current        ?? 0),
     mana:          String(state.vitals.mana?.current          ?? 0),
     stamina:       String(state.vitals.stamina?.current       ?? 0),
     spirit:        String(state.vitals.spirit?.current        ?? 0),
     concentration: String(state.vitals.concentration?.current ?? 0),
     rt:            String(Math.ceil(state.rtSeconds)),
+    ct:            String(Math.ceil(state.ctSeconds)),
+    casttime:      String(Math.ceil(state.ctSeconds)),
     stance:        state.stance,
     spell:         state.spell,
+    preparedspell: state.spell,
     left:          state.leftHand,
     right:         state.rightHand,
     room:          state.roomTitle,
+    roomname:      state.roomTitle,
+    roomid:        String(state.roomId || ''),
+    exits:         state.exits.join(', '),
+    bleeding:      state.indicators.bleeding  ? 'true' : 'false',
+    poisoned:      state.indicators.poisoned  ? 'true' : 'false',
+    diseased:      state.indicators.diseased  ? 'true' : 'false',
+    stunned:       state.indicators.stunned   ? 'true' : 'false',
+    webbed:        state.indicators.webbed    ? 'true' : 'false',
+    joined:        state.indicators.joined    ? 'true' : 'false',
+    hidden:        state.indicators.hidden    ? 'true' : 'false',
+    invisible:     state.indicators.invisible ? 'true' : 'false',
+    dead:          state.indicators.dead      ? 'true' : 'false',
     ...state.variables,
     ...groups,
   }
@@ -375,7 +394,9 @@ export function useTriggerEngine(
 
       cooldownsRef.current[rule.id] = now
 
-      const vars = buildVars(newValue, newValue, { '0': newValue, '1': newValue }, state)
+      // Variable-watch triggers have no regex match, so the only meaningful
+      // capture is the new value itself ($0 / $match). Don't fake a $1.
+      const vars = buildVars(newValue, newValue, {}, state)
 
       if (callbacks.onFire) {
         const parts: string[] = [`watch: $${rule.watchVariable} = "${newValue}"`]
