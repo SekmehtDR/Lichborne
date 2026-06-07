@@ -1,3 +1,11 @@
+## What's new in v0.11.8
+
+### Fixes
+
+- **The main window now stays locked to the bottom line — every time.** That occasional "it's resting one line short, and I have to nudge the scroll wheel once to snap it down" behavior is gone. The story window now holds the very last line flush against the bottom no matter how the text arrives, and only lets go when *you* scroll up — at which point the "▼ new lines" badge appears so you can jump back. As a side benefit, big bursts of text (combat, room floods, long script output) scroll smoothly and continuously instead of arriving in chunky jumps. *(Thanks, Binu/Rakkor/Sekmeht.)*
+
+---
+
 ## What's new in v0.11.7
 
 ### Fixes
@@ -7,15 +15,3 @@
 - **The map no longer loses your location when the window is minimized or idle.** If you left Lichborne minimized (or in the background) while a script moved your character, the map indicator would freeze on the room you were in and only catch up when you brought the window back and typed `LOOK`. Windows now keep fully processing the game stream while minimized, so the map (and the rest of the client) tracks your movement live in the background.
 
 - **Right-click tab menu: Disconnect moved off the top.** The window options ("Open in new window" / "Move to main window") now come first, with Disconnect/Reconnect last under a divider — so it's much harder to disconnect a character by accident. *(Thanks, Binu.)*
-
----
-
-## What's new in v0.11.6
-
-### New
-
-- **Right-click a character tab for quick actions.** The tab menu now offers exactly what's available for that character: **Reconnect** a dropped character (with a spinning indicator while it connects), **Disconnect** a connected one, **Open in New Window**, or **Move to Main Window** (when it's in its own window). Reconnecting happens right in the tab — your scrollback is preserved — and the tab now correctly shows "connected" again afterward.
-
-### Fixes
-
-- **The main window now stays glued to the bottom, and text flows more smoothly.** A cluster of scrolling problems is fixed: the last line (like the `>` prompt) no longer clips under the vitals bar at larger fonts; new text no longer "scrolls up a notch then jumps back down"; and the view stays pinned to the bottom when you switch characters, alt-tab to another app and back, split a character into its own window, or toggle compact vitals. As a bonus, removing the redundant re-scrolling made the whole text stream noticeably smoother. *(Thanks, Sekmeht and Binu.)*
