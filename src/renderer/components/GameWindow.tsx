@@ -1508,7 +1508,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // initial `focus` fires before the listener mounts. The settle loop is
       // the right tool here (converges across the first-paint frames). Gated on
       // pinnedRef so a replay into a scrolled-up view isn't yanked down.
-      if (batch.replay === true && pinnedRef.current) resnapToBottom()
+      if (batch.replay === true && pinnedRef.current) stickToBottom(true)
 
       // Clear the replay flag so it can't leak into later non-loop callers of
       // the gated functions (e.g. handleCommand → logToSession on the next send).
@@ -1577,62 +1577,82 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Scroll ────────────────────────────────────────────────────────────────
 
-  function suppressUnpin(ms = 150) {
-    suppressUntilRef.current = Date.now() + ms
-  }
-
-  // ── Robust re-snap-to-bottom (B153 + tab-switch/alt-tab relayout) ──────────
-  // The canonical "land the last line flush at the true DOM bottom" routine,
-  // shared by EVERY programmatic snap (badge click, End key, font change, tab
-  // becoming active, window focus regain). Why a multi-frame SETTLE LOOP and
-  // not a single rAF correction:
-  //   A relayout that reshapes the scroller — display:none→visible (tab switch,
-  //   pitfall #24: an inactive tab measures 0×0), a font change (every row +
-  //   the command bar grow, pitfall #45), or rAF throttling lifting on window
-  //   focus regain (alt-tab back from Discord) — does NOT settle in one frame.
-  //   Virtuoso re-measures rows over several frames, and the flex layout
-  //   (vitals + command bar claiming their space) settles alongside. A single
-  //   rAF reading `scrollHeight`/`clientHeight` reads a MID-SETTLE value and
-  //   lands wrong: short (→ "N new lines" badge, view one line up) OR
-  //   overshooting (→ last line clipped under the vitals bar — exactly the
-  //   symptom testers saw clicking the badge after a tab switch). So we keep
-  //   re-issuing `scrollTop = scrollHeight - clientHeight` each frame until
-  //   scrollHeight stops changing (or a frame cap), which converges on the
-  //   final laid-out bottom. `scrollHeight - clientHeight` is DOM truth, immune
-  //   to Virtuoso's followOutput under-measurement (the B153 lever). Gated on
-  //   pinnedRef throughout so a scrolled-up reader (or a mid-settle wheel-up,
-  //   which onWheel un-pins NOT suppress-gated) is never yanked to the bottom.
-  const resnapRafRef = useRef<number | null>(null)
+  // ── stickToBottom: the SINGLE auto-scroll primitive (v0.11.8 rewrite) ──────
+  // One settle loop now owns every "land the last line flush at the true DOM
+  // bottom" path: the per-batch new-text follow, viewport resizes, and every
+  // discrete relayout (badge/End, font change, tab becoming active, window
+  // focus regain, replay). It replaced THREE separate mechanisms that used to
+  // race the same target (the old inline sync+1rAF in totalListHeightChanged,
+  // the resnapToBottom settle loop, and the inline ResizeObserver write).
+  //
+  // WHY a loop, not a single write — the intermittent "rests one line short,
+  // wheel down once to fix it" bug: react-virtuoso virtualizes rows and
+  // measures the just-appended LAST row ASYNCHRONOUSLY (its ResizeObserver
+  // fires a frame or two after the row mounts). So the scroller's `scrollHeight`
+  // keeps GROWING for a few frames after new content renders, and any single
+  // `scrollTop = scrollHeight - clientHeight` write — even rAF-deferred — can
+  // run BEFORE that measurement lands and converge on the short (pre-measure)
+  // bottom. The loop re-asserts the bottom every frame until `scrollHeight` has
+  // been STABLE for TWO consecutive frames (so the async last-row measurement
+  // is always captured) or a frame cap. `scrollHeight - clientHeight` is DOM
+  // truth — immune to Virtuoso's internal last-row under-measurement.
+  //
+  // Cancel+restart on each new batch keeps the loop ALIVE through a flood, so
+  // the bottom stays flush every frame (a burst reads as smooth continuous
+  // scroll, not chunky jump-pause-jump) and converges once content stops.
+  //
+  // It writes ONLY `scrollTop` (no re-render), so it can't feed back into the
+  // scroller's ResizeObserver (that observes clientHeight / viewport size, which
+  // a scrollTop write never changes). `reindex` issues ONE scrollToIndex first
+  // — needed only when the last row may be far off-screen / unmounted (tab show,
+  // font change, End from far up, replay); the per-batch and resize paths skip
+  // it. Gated on pinnedRef throughout so a scrolled-up reader (or a mid-settle
+  // wheel-up — onWheel un-pins instantly, NOT suppress-gated) is never yanked
+  // to the bottom.
+  const stickRafRef = useRef<number | null>(null)
   const scrollResizeObsRef = useRef<ResizeObserver | null>(null)
-  function resnapToBottom(maxFrames = 12) {
+  function stickToBottom(reindex = false) {
     if (!pinnedRef.current) return
-    // Arm suppression SYNCHRONOUSLY (before any rAF) — the relayout's scroll
-    // events fire during paint, after this effect/handler returns but before
-    // our first rAF, and would otherwise un-pin us via handleVirtuosoScroll.
-    suppressUntilRef.current = Date.now() + 600
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
-    if (resnapRafRef.current != null) cancelAnimationFrame(resnapRafRef.current)
+    // Arm suppression SYNCHRONOUSLY (before any rAF) — a relayout's scroll
+    // events fire during paint, before our first rAF, and would otherwise
+    // un-pin us via handleVirtuosoScroll.
+    suppressUntilRef.current = Date.now() + 300
+    if (reindex) {
+      virtuosoRef.current?.scrollToIndex({ index: 'LAST', align: 'end', behavior: 'auto' })
+    } else {
+      // Synchronous first write (before paint) so the last line is flush in the
+      // SAME frame the new content renders — no one-frame "scrolled up a notch"
+      // flash. The rAF settle loop below then rides out Virtuoso's async
+      // last-row measurement (which keeps growing scrollHeight for a frame or
+      // two) so we don't stop short. reindex paths skip this — scrollToIndex
+      // owns the initial position there.
+      const el0 = scrollRef.current
+      if (el0) el0.scrollTop = el0.scrollHeight - el0.clientHeight
+    }
+    if (stickRafRef.current != null) cancelAnimationFrame(stickRafRef.current)
     let frames = 0
-    let lastHeight = -1
+    let stable = 0
+    let lastH = -1
     const step = () => {
       const el = scrollRef.current
-      if (!el || !pinnedRef.current) { resnapRafRef.current = null; return }
+      if (!el || !pinnedRef.current) { stickRafRef.current = null; return }
+      // Renew each frame so a continuous flood stays pinned; manual wheel-up
+      // still un-pins instantly (onWheel is not suppress-gated).
       suppressUntilRef.current = Date.now() + 250
       el.scrollTop = el.scrollHeight - el.clientHeight
       frames++
-      // Keep correcting until the layout stops growing (scrollHeight stable for
-      // a frame) or we hit the cap — covers the multi-frame settle.
-      if (el.scrollHeight !== lastHeight && frames < maxFrames) {
-        lastHeight = el.scrollHeight
-        resnapRafRef.current = requestAnimationFrame(step)
-      } else {
-        resnapRafRef.current = null
-      }
+      // Two consecutive frames with no height change == the async row
+      // measurement has fully settled. Fewer can stop before the last-row
+      // ResizeObserver grows scrollHeight, leaving us one line short.
+      if (el.scrollHeight === lastH) stable++; else stable = 0
+      lastH = el.scrollHeight
+      if (stable >= 2 || frames >= 20) { stickRafRef.current = null; return }
+      stickRafRef.current = requestAnimationFrame(step)
     }
-    resnapRafRef.current = requestAnimationFrame(step)
+    stickRafRef.current = requestAnimationFrame(step)
   }
   useEffect(() => () => {
-    if (resnapRafRef.current != null) cancelAnimationFrame(resnapRafRef.current)
+    if (stickRafRef.current != null) cancelAnimationFrame(stickRafRef.current)
     scrollResizeObsRef.current?.disconnect()
   }, [])
 
@@ -1640,14 +1660,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
-    suppressUnpin(300)
     setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
-    // `index: 'LAST'` (resolved inside resnapToBottom) instead of
-    // `lines.length - 1`: the keydown listener captures this function once at
-    // mount (deps []), when `lines` is still empty — a `lines.length` reference
-    // here is permanently stale and the scroll silently no-ops. This is why the
-    // End key appeared to "do nothing."
-    resnapToBottom()
+    // reindex=true (scrollToIndex({index:'LAST'})) instead of a `lines.length`
+    // reference: the keydown listener captures this function once at mount
+    // (deps []), when `lines` is still empty — a `lines.length` here is
+    // permanently stale and the scroll silently no-ops (why End "did nothing").
+    stickToBottom(true)
     inputRef.current?.focus()
   }
 
@@ -1656,25 +1674,26 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // user was pinned, the old scrollTop is now short of the new bottom and the
   // last line clips. Re-snap on font-shape changes, but ONLY if already pinned
   // (don't yank a scrolled-up reader back — their position is intentional).
-  // resnapToBottom arms suppression synchronously here (covering the relayout)
-  // and converges across the multi-frame re-measure.
-  useEffect(() => { resnapToBottom() }, [settings.fontSize, settings.lineHeight, settings.largePrint]) // eslint-disable-line react-hooks/exhaustive-deps
+  // stickToBottom arms suppression synchronously here (covering the relayout)
+  // and converges across the multi-frame re-measure. reindex pulls the last row
+  // into range first since the font change may have shifted it off-screen.
+  useEffect(() => { stickToBottom(true) }, [settings.fontSize, settings.lineHeight, settings.largePrint]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-snap when this tab becomes ACTIVE again (pitfall #24). An inactive tab
   // is display:none → its scroller + every Virtuoso row measure 0×0; on the
   // switch back they re-measure over several frames (the settle loop handles
   // it). Without this, clicking another character's tab and back left the view
   // one line short (badge) or clipped under the vitals bar.
-  useEffect(() => { if (isActive) resnapToBottom() }, [isActive]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (isActive) stickToBottom(true) }, [isActive]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-snap on window focus regain / tab-visible (Binu's alt-tab-to-Discord
   // case). Backgrounding the window throttles/pauses rAF, so the deferred
   // bottom-corrections that fire as new game text arrives run late or not at
   // all — the view drifts one line short / clipped while away. On focus return
   // we re-snap (gated on this being the ACTIVE tab and still pinned). Mount-
-  // once; resnapToBottom only touches refs so the captured closure stays valid.
+  // once; stickToBottom only touches refs so the captured closure stays valid.
   useEffect(() => {
-    const onRefocus = () => { if (!document.hidden && isActiveRef.current && pinnedRef.current) resnapToBottom() }
+    const onRefocus = () => { if (!document.hidden && isActiveRef.current && pinnedRef.current) stickToBottom(true) }
     window.addEventListener('focus', onRefocus)
     document.addEventListener('visibilitychange', onRefocus)
     return () => {
@@ -2331,17 +2350,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                     // bottom line below the new fold (looks like text spilling
                     // under the vitals bar).
                     //
-                    // This MUST stay passive/cheap: do a single raw scrollTop
-                    // correction, NOT resnapToBottom(). resnapToBottom calls
-                    // scrollToIndex(), which makes Virtuoso re-render and can nudge
-                    // the scroller's size by a sub-pixel → re-fires this observer →
-                    // re-snaps → visible idle "jumping" (a ResizeObserver→layout→
-                    // ResizeObserver loop). A bare scrollTop write resizes nothing,
-                    // so it can't loop. Gate on an actual integer HEIGHT change
-                    // (ignore width-only / sub-pixel notifications, e.g. scrollbar
-                    // gutter), and on pinnedRef (never yank a scrolled-up reader).
-                    // Each frame of a multi-frame settle changes height and gets
-                    // its own correction, so relayouts are still covered.
+                    // This MUST stay passive/cheap and must NOT call
+                    // scrollToIndex(): stickToBottom() with reindex=false writes
+                    // ONLY scrollTop (no re-render), so it can't nudge the
+                    // scroller's size and re-fire this observer (the
+                    // ResizeObserver→layout→ResizeObserver "idle jumping" loop a
+                    // scrollToIndex-based resnap would cause). Its settle loop
+                    // also rides out a multi-frame resize (drag-resizing the
+                    // window). Gate on an actual integer HEIGHT change (ignore
+                    // width-only / sub-pixel notifications, e.g. scrollbar
+                    // gutter) — clientHeight only changes on viewport resize, not
+                    // content growth, so this stays orthogonal to the per-batch
+                    // totalListHeightChanged path.
                     let lastObservedH = el.clientHeight
                     const ro = new ResizeObserver(() => {
                       const sc = scrollRef.current
@@ -2349,9 +2369,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                       const h = sc.clientHeight
                       if (h === lastObservedH) return
                       lastObservedH = h
-                      if (!pinnedRef.current) return
-                      suppressUntilRef.current = Date.now() + 200
-                      sc.scrollTop = sc.scrollHeight - sc.clientHeight
+                      stickToBottom()
                     })
                     ro.observe(el)
                     scrollResizeObsRef.current = ro
@@ -2386,21 +2404,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 // when the synchronous read ran; if the sync write was already
                 // exact, the rAF is a no-op (so it adds no visible motion).
                 followOutput={false}
-                totalListHeightChanged={() => {
-                  if (!pinnedRef.current) return
-                  const el = scrollRef.current
-                  if (!el) return
-                  suppressUntilRef.current = Date.now() + 200
-                  el.scrollTop = el.scrollHeight - el.clientHeight
-                  requestAnimationFrame(() => {
-                    const el2 = scrollRef.current
-                    if (!el2 || !pinnedRef.current) return
-                    if (el2.scrollHeight - el2.scrollTop - el2.clientHeight > 0.5) {
-                      suppressUntilRef.current = Date.now() + 200
-                      el2.scrollTop = el2.scrollHeight - el2.clientHeight
-                    }
-                  })
-                }}
+                // Per-batch new-content follow. The settle loop (stickToBottom)
+                // re-asserts the true DOM bottom across the frames it takes
+                // Virtuoso to async-measure the new last row — fixing the
+                // intermittent "rests one line short" landing that a single
+                // sync+rAF write left behind. Cheap (one bare scrollTop/frame)
+                // and self-cancelling, so calling it on every batch is fine.
+                totalListHeightChanged={() => stickToBottom()}
                 // B153 (Rakkor): NO Footer component. The whole B122/B153 saga
                 // was the pinned view resting one line short of the bottom at
                 // font ≥ 13 — Virtuoso's `followOutput` under-measures the last
