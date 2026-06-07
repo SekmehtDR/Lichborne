@@ -41,14 +41,27 @@ export default function CharacterTabBar({ onAdd, onClose, onReconnect, reconnect
 
   // Right-click a tab → a context menu of the actions available for THAT
   // character (v0.11.6 expansion — was decouple-only). We only list options
-  // that are actually actionable for the tab (no greyed rows): Reconnect XOR
-  // Disconnect by connection state; Open-in-new-window only when >1 char shares
-  // this window; Move-to-main-window only in a decoupled (secondary) window.
+  // that are actually actionable for the tab (no greyed rows): Open-in-new-window
+  // only when >1 char shares this window; Move-to-main-window only in a decoupled
+  // (secondary) window; then Reconnect XOR Disconnect by connection state. The
+  // connection toggle is LAST (below a divider) so the destructive Disconnect
+  // isn't the first thing under the cursor and can't be fat-fingered (Binu kept
+  // disconnecting by accident when it was the top item).
   const [ctx, setCtx] = useState<{ x: number; y: number; characterId: CharacterId; sessionId: string; character: string; connected: boolean } | null>(null)
 
   // Built per-open from the snapshot captured at right-click time.
   const menuItems = ctx ? (() => {
-    const items: { label: string; onClick: () => void }[] = []
+    const items: ({ label: string; onClick: () => void } | { label: null })[] = []
+    // Window-move options first (non-destructive).
+    if (sessions.length > 1) {
+      items.push({ label: `Open ${ctx.character} in new window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'new') })
+    }
+    if (isPrimary === false) {
+      items.push({ label: `Move ${ctx.character} to main window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'main') })
+    }
+    // Connection toggle LAST, below a divider when any window options precede it,
+    // so Disconnect isn't the first item under the cursor (Binu's request).
+    if (items.length > 0) items.push({ label: null })
     if (ctx.connected) {
       // Same end result as File → Disconnect (graceful close); direct IPC so it
       // works for ANY tab, not just the active one (the session-action bridge
@@ -56,12 +69,6 @@ export default function CharacterTabBar({ onAdd, onClose, onReconnect, reconnect
       items.push({ label: `Disconnect ${ctx.character}`, onClick: () => window.api.disconnect(ctx.sessionId) })
     } else {
       items.push({ label: `Reconnect ${ctx.character}`, onClick: () => onReconnect(ctx.characterId) })
-    }
-    if (sessions.length > 1) {
-      items.push({ label: `Open ${ctx.character} in new window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'new') })
-    }
-    if (isPrimary === false) {
-      items.push({ label: `Move ${ctx.character} to main window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'main') })
     }
     return items
   })() : []

@@ -1151,6 +1151,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       const labelUpdates: Record<string, string> = {}
       const indicatorUpdates: Record<string, boolean> = {}
       const newDiscovered: string[] = []
+      // Inline room description capture (Genie/Lich map matching). DR streams the
+      // room desc inline as `<preset id='roomDesc'>…</preset>` in the `main`
+      // stream — it is NOT a `<component id='room desc'>`, so the only path that
+      // wrote roomState.desc fired rarely. We collect the roomdesc segment text
+      // here and apply it to roomUpdates.desc AFTER the loop, so it wins over the
+      // B121 streamWindow `clear-stream 'room'` that lands later in the same
+      // batch on a real room entry. Gives the map matcher a fresh description
+      // every look/entry. See pitfall #70.
+      let batchRoomDesc: string | null = null
       let newRt: number | null = null
       let newCt: number | null = null
       let newStance: string | null = null
@@ -1171,6 +1180,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             }
             if (/^--- Map loaded .+\.json$/i.test(lineText.trim())) setLichMapVersion(v => v + 1)
             if (stream === 'main') {
+              // Capture the inline room description (preset 'roomdesc') for the
+              // map matcher — applied to roomUpdates.desc after the loop so it
+              // beats a same-batch clear-stream 'room'. See batchRoomDesc above.
+              const descSegs = segments.filter(s => s.preset === 'roomdesc')
+              if (descSegs.length > 0) {
+                const d = descSegs.map(s => s.text).join('').trim()
+                if (d) batchRoomDesc = d
+              }
               if (!isExpReadout(segments)) newMain.push(mkLine())
               processLineRef.current('main', lineText)
               processHighlightSoundsRef.current(lineText)
@@ -1333,6 +1350,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         }
       }
 
+      // Apply the captured inline room description last so it overrides a
+      // clear-stream 'room' (roomUpdates.desc='') emitted earlier in this batch
+      // by the B121 streamWindow transition logic. The <component id='room desc'>
+      // path (roomUpdates.desc set in-loop) still works on its own; this only
+      // adds the far-more-frequent inline form.
+      if (batchRoomDesc != null) roomUpdates.desc = batchRoomDesc
+
       if (newMain.length > 0) {
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
@@ -1418,7 +1442,25 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         if (roomQueueRef.current.length > ROOM_QUEUE_CAP) {
           roomQueueRef.current = roomQueueRef.current.slice(-ROOM_QUEUE_CAP)
         }
-        if (roomPumpRafRef.current == null) {
+        if (document.hidden) {
+          // Window minimized / occluded / backgrounded: the OS pauses or heavily
+          // throttles requestAnimationFrame, so the rAF pump below would FREEZE
+          // roomState (title/desc/exits) — the map indicator stops tracking
+          // scripted movement and stays stuck on the room you were in when the
+          // window went idle, until you show the window and type LOOK (the
+          // long-standing "idle/minimized loses my location" bug, pitfall #71).
+          // backgroundThrottling:false (main) already keeps rAF alive, but don't
+          // bet room-state correctness on platform throttling behavior: nobody is
+          // watching the map animate through rooms while hidden, so drain the
+          // whole queue immediately, coalesced to the latest state — no per-frame
+          // throttle to fight.
+          const merged = roomQueueRef.current.reduce<Partial<RoomState>>((acc, u) => ({ ...acc, ...u }), {})
+          roomQueueRef.current = []
+          if (roomPumpRafRef.current != null) { cancelAnimationFrame(roomPumpRafRef.current); roomPumpRafRef.current = null }
+          setRoomState(prev => ({ ...prev, ...merged }))
+        } else if (roomPumpRafRef.current == null) {
+          // Visible window: throttle to one room per frame so each room visit gets
+          // its own render commit (no skipped rooms when React batches rapid IPC).
           roomPumpRafRef.current = requestAnimationFrame(function pump() {
             roomPumpRafRef.current = null
             const next = roomQueueRef.current.shift()
@@ -2541,7 +2583,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               <button className="map-overlay-close" onClick={() => setShowMapOverlay(false)}>✕</button>
             </div>
             <div className="map-overlay-body">
-              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} mapAnimations={settings.mapAnimations} large />
+              <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomExits={roomState.exits} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={sendCommand} mapAnimations={settings.mapAnimations} large />
             </div>
           </div>
         </div>

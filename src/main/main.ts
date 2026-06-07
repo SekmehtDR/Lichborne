@@ -294,7 +294,18 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Keep the renderer fully live when minimized / occluded / backgrounded.
+      // Electron defaults this to TRUE, which throttles (or pauses) requestAnimationFrame
+      // and timers for a background window. Lichborne keeps processing the game stream
+      // while minimized (the socket stays connected, events keep arriving), and critical
+      // STATE updates are rAF-driven — most importantly the room-state pump (pitfall #20)
+      // that feeds roomState.title/desc/exits to the map matcher. With throttling on, a
+      // minimized/idle window froze room state on the last room and the map indicator
+      // got stuck there until the window was shown and the player typed LOOK (the
+      // long-standing "idle/minimized loses my location" report). Multi-session
+      // background characters (pitfall #24) need this off too. See pitfall #71.
+      backgroundThrottling: false
     }
   })
   const id = win.webContents.id

@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.11.6",
+  "version": "0.11.7",
   "description": "DragonRealms game client with a primary Lich integration focus.",
   "main": "dist/main/main.js",
   "scripts": {

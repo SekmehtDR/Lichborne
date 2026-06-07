@@ -12,6 +12,7 @@ import '../../styles/map-panel.css'
 interface Props {
   roomTitle?: string
   roomDesc?:  string
+  roomExits?: string[]   // live compass tokens ('e','nw',…) — Genie matcher exit-set discriminator
   roomId?:    number
   lichMapVersion?: number
   onSendCommand: (cmd: string) => void
@@ -28,7 +29,7 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMapVersion = 0, onSendCommand, large = false, mapAnimations = true }: Props) {
+export default function MapPanel({ roomTitle = '', roomDesc = '', roomExits, roomId, lichMapVersion = 0, onSendCommand, large = false, mapAnimations = true }: Props) {
   const character = useCharacter()
   const saveProfile = useProfileSaver()
 
@@ -386,6 +387,7 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomId, lichMa
           zones={genieZones}
           roomTitle={roomTitle}
           roomDesc={roomDesc}
+          roomExits={roomExits}
           onSendCommand={onSendCommand}
           genieMapsDir={genieMapsDir}
           genieLoading={genieLoading}

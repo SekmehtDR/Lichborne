@@ -31,6 +31,7 @@ interface Props {
   zones:        Map<string, GenieZone>     // zoneId → GenieZone
   roomTitle:    string                      // current Lich room title
   roomDesc?:    string                      // current Lich room description — disambiguates title collisions
+  roomExits?:   string[]                    // live compass tokens ('e','nw',…) — exit-set discriminator (mirrors Genie's Node.Compare)
   onSendCommand: (cmd: string) => void
   // Genie folder picker — surfaced inline so the view is usable standalone
   // when no folder is configured yet.
@@ -97,6 +98,192 @@ const ARC_COLOR_VAR: Record<ArcCategory, string> = {
   cardinal: 'var(--map-arc-cardinal, #888)',
   climb:    'var(--map-arc-vertical, #d4a574)',
   go:       'var(--map-arc-special, #ffb74d)',
+}
+
+// ── Exit-set matching (mirrors Genie's Node.Compare) ──────────────────────────
+//
+// The real GenieMaps client identifies a room by NAME + EXIT-SET + DESCRIPTION
+// together (NodeList.cs `Node.Compare` / `CardinalCount`). The exit set is a
+// strong, always-fresh discriminator that survives a stale/empty description
+// while the player is running — exactly the signal Lichborne was missing, which
+// let ambiguous same-titled rooms (40+ "Whistling Wood, Barrows" nodes) resolve
+// to file order. Genie counts every arc as part of room identity EXCEPT `go`
+// and `climb` (non-directional named moves) — so up/down/out DO count.
+//
+// Genie XML stores full-word exits ("northwest"); Lichborne's live compass uses
+// abbreviations ("nw", "dn"). Canonicalize both to one token form.
+const EXIT_CANON: Record<string, string> = {
+  north: 'n',  n: 'n',
+  northeast: 'ne', ne: 'ne',
+  east: 'e',   e: 'e',
+  southeast: 'se', se: 'se',
+  south: 's',  s: 's',
+  southwest: 'sw', sw: 'sw',
+  west: 'w',   w: 'w',
+  northwest: 'nw', nw: 'nw',
+  up: 'up',    u: 'up',
+  down: 'dn',  dn: 'dn', d: 'dn',
+  out: 'out',
+}
+
+// A Genie node's directional-exit set (excludes go/climb — they don't
+// participate in room identity, matching CardinalCount).
+function cardinalExitSet(node: GenieNode): Set<string> {
+  const s = new Set<string>()
+  for (const a of node.arcs) {
+    const e = a.exit.toLowerCase().trim()
+    if (e === 'go' || e === 'climb') continue
+    const c = EXIT_CANON[e]
+    if (c) s.add(c)
+  }
+  return s
+}
+
+// The live room's directional-exit set from the compass tokens.
+function liveExitSet(roomExits: string[] | undefined): Set<string> {
+  const s = new Set<string>()
+  for (const raw of roomExits ?? []) {
+    const c = EXIT_CANON[raw.toLowerCase().trim()]
+    if (c) s.add(c)
+  }
+  return s
+}
+
+function exitsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const x of a) if (!b.has(x)) return false
+  return true
+}
+
+// a ⊇ b — node has at least every live exit (tolerates a Genie map that lists
+// an extra exit the live room hasn't surfaced yet).
+function exitsSuperset(a: Set<string>, b: Set<string>): boolean {
+  for (const x of b) if (!a.has(x)) return false
+  return true
+}
+
+// ── Current-room resolver (pure, testable) ────────────────────────────────────
+//
+// A title-matched Genie candidate. `isStub` marks cross-zone boundary markers
+// so the resolver can prefer real rooms.
+export type GenieMatch = { zone: GenieZone; node: GenieNode; isStub: boolean }
+
+// A node is a cross-zone stub if any of its `note` aliases points at another
+// zone's .xml file. Pure — only depends on the node.
+function isStubNodeFn(n: GenieNode): boolean {
+  return noteAliases(n.note).some(a => a.toLowerCase().endsWith('.xml'))
+}
+
+// B110: how many consecutive different-zone-but-low-confidence titles we hold
+// the breadcrumb through before conceding the player really moved. Three room
+// titles in a row all wanting the same other zone is strong evidence of a real
+// move, not a parser glitch.
+const STALE_ZONE_ESCAPE = 3
+
+// Resolve the player's current room from a title-matched candidate pool, the
+// way GenieMaps' own client does (NAME already applied to build `pool`; here we
+// disambiguate by DESCRIPTION + EXIT-SET + graph ADJACENCY — NodeList.cs
+// `Node.Compare`). This is a PURE function: same inputs → same outputs, no refs,
+// no side effects. The caller persists `prev` (last match) and `staleCount`
+// (cross-zone hold counter) and threads them back in. Returns the resolved
+// match (or null when the pool is empty) plus the next `staleCount`.
+//
+// Design rules learned the hard way (see pitfall #70):
+//  - EXITS ARE ADDITIVE, never a pre-filter before adjacency. Genie maps can
+//    have imperfect exit data for a room and DR's live exits can lag a frame;
+//    pre-filtering by exits excluded the correct neighbour and broke adjacency
+//    that worked before exits existed. `exitMatched` only picks the best blind
+//    guess and corroborates a cross-zone move.
+//  - The cross-zone hold is EXIT-AWARE: it commits to the new zone immediately
+//    when the guess is exit-corroborated OR when `prev`'s own exits no longer
+//    match the live exits (so `prev` provably isn't where we are), and only
+//    holds `prev` when exits are unknown or still consistent — otherwise it
+//    stranded the marker on recall/teleport/walk-through-unmapped.
+function resolveGenieRoom(
+  pool:               GenieMatch[],
+  normDesc:           string,                  // already normalizeDesc()'d ('' if none)
+  liveExits:          Set<string>,             // canonical live exit set (empty if unknown)
+  prev:               GenieMatch | null,
+  sourceFileToZoneId: Map<string, string>,
+  staleCount:         number,
+): { match: GenieMatch | null; staleCount: number } {
+  if (pool.length === 0) return { match: null, staleCount: 0 }
+  if (pool.length === 1) return { match: pool[0], staleCount: 0 }
+
+  // (1) Description EXACT, unique — Genie's authoritative test. With the inline
+  // <preset id='roomDesc'> now captured into roomState.desc this resolves the
+  // common case immediately. Commit only when exactly one node carries it.
+  if (normDesc) {
+    const hits = pool.filter(c => c.node.descriptions.some(d => normalizeDesc(d) === normDesc))
+    if (hits.length === 1) return { match: hits[0], staleCount: 0 }
+  }
+
+  // (2) Exit-set EQUALITY, unique — strong, always-fresh signal that survives a
+  // stale description while the player runs.
+  if (liveExits.size > 0) {
+    const hits = pool.filter(c => exitsEqual(cardinalExitSet(c.node), liveExits))
+    if (hits.length === 1) return { match: hits[0], staleCount: 0 }
+  }
+
+  // (3) Description SUBSTRING, unique — Genie's stored descriptions are routinely
+  // a truncation of the live look; accept containment either way when it
+  // resolves to exactly one candidate and both strings are ≥24 chars (B148/B150).
+  if (normDesc && normDesc.length >= 24) {
+    const hits = pool.filter(c => c.node.descriptions.some(d => {
+      const dn = normalizeDesc(d)
+      return dn.length >= 24 && (dn.includes(normDesc) || normDesc.includes(dn))
+    }))
+    if (hits.length === 1) return { match: hits[0], staleCount: 0 }
+  }
+
+  // Exit-matched candidates — ADDITIVE only (best guess + cross-zone
+  // corroboration). Prefer exact equality, else superset of the live exits.
+  const exitMatched = liveExits.size > 0
+    ? (() => {
+        const eq = pool.filter(c => exitsEqual(cardinalExitSet(c.node), liveExits))
+        return eq.length > 0 ? eq : pool.filter(c => exitsSuperset(cardinalExitSet(c.node), liveExits))
+      })()
+    : []
+
+  // (4) Graph adjacency over the FULL pool — you walked here from `prev`, so this
+  // room must be a neighbour of it. Prefer a neighbour whose exits also match.
+  if (prev) {
+    const sameZoneAdj = pool.filter(c =>
+      c.zone === prev.zone && (
+        prev.node.arcs.some(a => a.destination === c.node.id) ||
+        c.node.arcs.some(a => a.destination === prev.node.id)
+      ))
+    if (sameZoneAdj.length > 0) {
+      const best = sameZoneAdj.find(c => exitMatched.includes(c)) ?? sameZoneAdj[0]
+      return { match: best, staleCount: 0 }
+    }
+    // Cross-zone adjacency via stubs — you walked across a Genie-mapped boundary.
+    const crossAdj = pool.find(c => {
+      if (c.zone === prev.zone) return false
+      return prev.node.arcs.some(arc => {
+        const dest = prev.zone.nodes.find(n => n.id === arc.destination)
+        if (!dest || !isStubNodeFn(dest)) return false
+        const stubXml = noteAliases(dest.note).find(a => a.toLowerCase().endsWith('.xml'))
+        if (!stubXml) return false
+        return sourceFileToZoneId.get(stubXml.toLowerCase()) === c.zone.id
+      })
+    })
+    if (crossAdj) return { match: crossAdj, staleCount: 0 }
+  }
+
+  // Best blind guess: an exit-matched node if we have one, else file order.
+  const guess = exitMatched.length > 0 ? exitMatched[0] : pool[0]
+
+  // (5) Exit-aware conservative cross-zone hold (B110).
+  if (prev && guess.zone !== prev.zone) {
+    const liveKnown          = liveExits.size > 0
+    const guessCorroborated  = liveKnown && exitsSuperset(cardinalExitSet(guess.node), liveExits)
+    const prevStillPlausible = !liveKnown || exitsSuperset(cardinalExitSet(prev.node), liveExits)
+    if (guessCorroborated || !prevStillPlausible) return { match: guess, staleCount: 0 }
+    if (staleCount >= STALE_ZONE_ESCAPE)           return { match: guess, staleCount: 0 }
+    return { match: prev, staleCount: staleCount + 1 }
+  }
+  return { match: guess, staleCount: 0 }
 }
 
 // Visual-effect categorization for COLOR_LEGEND nodes. All recognized
@@ -288,7 +475,7 @@ function bfsZoneRoomPath(zone: GenieZone, fromId: number, toId: number): number[
 }
 
 export default function GenieMapView({
-  zones, roomTitle, roomDesc = '', onSendCommand,
+  zones, roomTitle, roomDesc = '', roomExits, onSendCommand,
   genieMapsDir, genieLoading, genieReady, genieProgress,
   onPickGenieFolder, onClearGenieFolder, mapAnimations = true,
 }: Props) {
@@ -378,9 +565,7 @@ export default function GenieMapView({
   // room lives in Shard's own XML; the Fang Cove node is just a marker.
   // We must prefer real rooms over stubs when matching the player's title,
   // otherwise the view sticks on the wrong zone.
-  const isStubNode = useCallback((n: GenieNode) => (
-    noteAliases(n.note).some(a => a.toLowerCase().endsWith('.xml'))
-  ), [])
+  const isStubNode = useCallback((n: GenieNode) => isStubNodeFn(n), [])
 
   // Resolve a stub's .xml note to the target zone, if loaded. Used by the
   // stub-click handler to switch zones.
@@ -406,10 +591,9 @@ export default function GenieMapView({
   // or stylistic mismatches make whole clusters invisible to the "you
   // are here" marker.
   const titleLookup = useMemo(() => {
-    type Entry = { zone: GenieZone; node: GenieNode; isStub: boolean }
-    const byTitle      = new Map<string, Entry[]>()
-    const byNormalized = new Map<string, Entry[]>()
-    const push = (m: Map<string, Entry[]>, k: string, v: Entry) => {
+    const byTitle      = new Map<string, GenieMatch[]>()
+    const byNormalized = new Map<string, GenieMatch[]>()
+    const push = (m: Map<string, GenieMatch[]>, k: string, v: GenieMatch) => {
       if (!k) return
       const arr = m.get(k) ?? []
       arr.push(v)
@@ -418,7 +602,7 @@ export default function GenieMapView({
     for (const zone of zones.values()) {
       for (const node of zone.nodes) {
         const stub = isStubNode(node)
-        const entry: Entry = { zone, node, isStub: stub }
+        const entry: GenieMatch = { zone, node, isStub: stub }
         // Index by the canonical name plus any non-.xml aliases.
         const keys: string[] = [node.name]
         for (const a of noteAliases(node.note)) {
@@ -442,30 +626,11 @@ export default function GenieMapView({
   // the same. Prefer non-stub matches in either case so cross-zone
   // marker nodes never win.
   //
-  // `prevLocRef` holds the last resolved location so an ambiguous title can be
-  // disambiguated by graph adjacency (see the bottom of the memo). Updated by
-  // an effect below — inside the memo it always reads the PREVIOUS render's
-  // value, which is exactly the room the player just walked from.
-  // Type widened to include `isStub` because the disambiguation chain
-  // below can return `prev` directly (as `currentLocation`) when no
-  // confident match exists — see the "conservative cross-zone fallback"
-  // at the end of the memo. The runtime value is already an Entry from
-  // titleLookup; the older narrower type was just understating reality.
-  const prevLocRef = useRef<{ zone: GenieZone; node: GenieNode; isStub: boolean } | null>(null)
-  // v0.8.4 (B110): counter for the "conservative cross-zone fallback" below.
-  // The fallback refuses to jump the marker to a different zone when no
-  // adjacency / stub / description match confirms the move — good defense
-  // against one-off file-order accidents, but with no escape it traps the
-  // marker forever when the player legitimately moves to a disconnected zone
-  // (recall, go2, death/depart, or just a missing stub in the Genie data).
-  // After STALE_ZONE_ESCAPE consecutive different-zone titles all blocked
-  // by the fallback, give up on `prev` and trust `pool[0]` — three different
-  // room titles in a row wanting the same different zone is strong evidence
-  // the player has actually moved, not a parser glitch.
-  const staleZoneCountRef = useRef(0)
-  const STALE_ZONE_ESCAPE = 3
-  const currentLocation = useMemo(() => {
-    if (!roomTitle) return null
+  // Build the title-matched candidate pool (PURE memo). The resolver
+  // (resolveGenieRoom, module-level) disambiguates within it by desc + exits +
+  // adjacency. Prefer non-stub matches so cross-zone boundary markers never win.
+  const pool = useMemo<GenieMatch[]>(() => {
+    if (!roomTitle) return []
     const target = roomTitle.trim()
     // MERGE both lookups before non-stub filtering, otherwise the
     // exact-case lookup can return ONLY stubs (e.g., a stub in the
@@ -484,113 +649,45 @@ export default function GenieMapView({
     const candidates: typeof byTitleHits = []
     for (const c of byTitleHits) { if (!seen.has(c)) { seen.add(c); candidates.push(c) } }
     for (const c of byNormHits)  { if (!seen.has(c)) { seen.add(c); candidates.push(c) } }
-    if (candidates.length === 0) return null
+    if (candidates.length === 0) return []
     const nonStubs = candidates.filter(c => !c.isStub)
-    const pool = nonStubs.length > 0 ? nonStubs : candidates
-    // Every confident-match path below resets staleZoneCountRef so an
-    // interleaved good match clears the counter — only sustained
-    // consecutive blocks at the conservative fallback should escape.
-    if (pool.length === 1) { staleZoneCountRef.current = 0; return pool[0] }
-    // Disambiguate by description. Genie XML stores one or more
-    // `<description>` strings per node; the game emits a single
-    // description per look. A normalized substring/equality match
-    // against any of the node's descriptions wins.
-    const nd = normalizeDesc(roomDesc)
-    if (nd) {
-      const exact = pool.find(c => c.node.descriptions.some(d => normalizeDesc(d) === nd))
-      if (exact) { staleZoneCountRef.current = 0; return exact }
-      // Substring fallback (the comment above promised "substring/equality").
-      // Genie's stored descriptions are routinely a truncation — typically the
-      // first sentence — of the live look, so exact equality misses on real
-      // supported rooms (a Barrows hunting room whose ambiguous title shares
-      // many siblings but whose description is distinctive). Accept containment
-      // in EITHER direction, but only when it resolves to exactly ONE candidate
-      // and both strings are long enough that the overlap is meaningful — so an
-      // over-generic shared description can't mis-disambiguate. Without this the
-      // marker fell through to the conservative cross-zone fallback and stranded
-      // in the previous zone while the player hunted (reported: "looking in a
-      // supported room over and over, location won't update").
-      if (nd.length >= 24) {
-        const subHits = pool.filter(c => c.node.descriptions.some(d => {
-          const dn = normalizeDesc(d)
-          return dn.length >= 24 && (dn.includes(nd) || nd.includes(dn))
-        }))
-        if (subHits.length === 1) { staleZoneCountRef.current = 0; return subHits[0] }
-      }
-    }
-    // Graph-adjacency disambiguation. When the title is ambiguous (the
-    // Crossing has 7 rooms titled "Moonstone Street") and the description
-    // didn't resolve it — the norm while RUNNING, since the game streams room
-    // titles without a fresh description on each step — prefer the candidate
-    // joined by a Genie arc to the room we were last in. You walked here from
-    // there, so the room you're in now must be a neighbour of it. Without this
-    // the matcher fell back to file order (`pool[0]`) and the marker stuck on
-    // the wrong same-named room until the player typed `look`.
-    const prev = prevLocRef.current
-    if (prev) {
-      const adj = pool.find(c =>
-        c.zone === prev.zone && (
-          prev.node.arcs.some(a => a.destination === c.node.id) ||
-          c.node.arcs.some(a => a.destination === prev.node.id)
-        ))
-      if (adj) { staleZoneCountRef.current = 0; return adj }
+    return nonStubs.length > 0 ? nonStubs : candidates
+  }, [titleLookup, roomTitle])
 
-      // Cross-zone adjacency via stubs. Same-zone adjacency above fires
-      // when you walk WITHIN a zone; this fires when you walk ACROSS a
-      // Genie-mapped boundary. Stubs are 1-room markers whose `note`
-      // contains the target zone's `.xml` filename — if `prev` had an
-      // arc to a stub whose target file matches a candidate's zone,
-      // that's strong evidence you just crossed that boundary into
-      // candidate `c`'s zone. Prefer `c`. No false positives in
-      // practice: stubs are explicit cross-zone markers, not generic
-      // edges.
-      const crossAdj = pool.find(c => {
-        if (c.zone === prev.zone) return false
-        return prev.node.arcs.some(arc => {
-          const dest = prev.zone.nodes.find(n => n.id === arc.destination)
-          if (!dest || !isStubNode(dest)) return false
-          const stubXml = noteAliases(dest.note).find(a => a.toLowerCase().endsWith('.xml'))
-          if (!stubXml) return false
-          return sourceFileToZoneId.get(stubXml.toLowerCase()) === c.zone.id
-        })
-      })
-      if (crossAdj) { staleZoneCountRef.current = 0; return crossAdj }
-    }
-    // Conservative cross-zone fallback. With no desc match, no same-zone
-    // adjacency, and no stub-cross-zone link, `pool[0]` is just file
-    // order — a low-confidence guess. If that guess would teleport us
-    // to a DIFFERENT zone than `prev`, refuse: keep the marker at the
-    // previous location until a confident match arrives (or `look`
-    // re-emits a fresh desc). Honest-stale beats confidently-wrong —
-    // the alternative is what testers were seeing: marker stranded in
-    // Shard while they were in some other hunting area.
-    // Same-zone `pool[0]` is still trusted (legitimate walk within the
-    // current zone). And first-render with no `prev` falls through to
-    // `pool[0]` as before — there is nothing better to do.
-    if (prev && pool[0].zone !== prev.zone) {
-      // Escape valve (B110): after STALE_ZONE_ESCAPE consecutive blocks
-      // we treat sustained "wants a different zone" as a real move and
-      // commit to pool[0]. Counter is a ref mutation inside a memo, which
-      // is a deliberate exception — the memo's result still depends only
-      // on its declared deps, and we reset it on every confident-match
-      // path below so a one-off bad fallback can't poison subsequent runs.
-      if (staleZoneCountRef.current >= STALE_ZONE_ESCAPE) {
-        staleZoneCountRef.current = 0
-        return pool[0]
-      }
-      staleZoneCountRef.current += 1
-      return prev
-    }
-    staleZoneCountRef.current = 0
-    return pool[0]
-  }, [titleLookup, roomTitle, roomDesc, isStubNode, sourceFileToZoneId])
-
-  // Keep `prevLocRef` one step behind `currentLocation` for the adjacency
-  // disambiguation above. Only advance it on a real (non-null) match so a
-  // transient unmatched title doesn't wipe the breadcrumb.
+  // Current location is resolved by a PURE function (resolveGenieRoom) driven
+  // from a SINGLE effect — not the old impure memo that mutated refs as it
+  // computed (which double-counted under StrictMode's double-invoke and made the
+  // cross-zone hold behave differently in dev vs packaged builds). The breadcrumb
+  // (`prevLocationRef`) and the cross-zone hold counter (`staleCountRef`) are
+  // advanced in exactly ONE place here, deterministically, after the resolve.
+  const [currentLocation, setCurrentLocation] = useState<GenieMatch | null>(null)
+  const prevLocationRef = useRef<GenieMatch | null>(null)
+  const staleCountRef   = useRef(0)
+  // Idempotency gate: StrictMode invokes effects twice on mount, and the effect
+  // mutates refs — without this the breadcrumb / stale counter would advance
+  // twice for one room. Re-resolve only when an input actually changed (pool
+  // identity, desc, or exits). pool/desc/exits all derive from the same
+  // roomState, so they're coherent per render.
+  const lastResolveRef = useRef<{ pool: GenieMatch[]; desc: string; exits: string } | null>(null)
   useEffect(() => {
-    if (currentLocation) prevLocRef.current = currentLocation
-  }, [currentLocation])
+    const exitsKey = (roomExits ?? []).join(',')
+    const last = lastResolveRef.current
+    if (last && last.pool === pool && last.desc === roomDesc && last.exits === exitsKey) return
+    lastResolveRef.current = { pool, desc: roomDesc, exits: exitsKey }
+    const { match, staleCount } = resolveGenieRoom(
+      pool,
+      normalizeDesc(roomDesc),
+      liveExitSet(roomExits),
+      prevLocationRef.current,
+      sourceFileToZoneId,
+      staleCountRef.current,
+    )
+    staleCountRef.current = staleCount
+    // Advance the breadcrumb only on a real (non-null) match so a transient
+    // unmatched title (unmapped zone) doesn't wipe it.
+    if (match) prevLocationRef.current = match
+    setCurrentLocation(curr => (curr === match ? curr : match))
+  }, [pool, roomDesc, roomExits, sourceFileToZoneId])
 
   // Auto-switch displayed zone ONLY when `currentLocation` itself changes —
   // i.e., the player walked. We deliberately do NOT depend on currentZoneId

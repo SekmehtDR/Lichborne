@@ -1,3 +1,15 @@
+## What's new in v0.11.7
+
+### Fixes
+
+- **Genie Maps now pinpoints your room far more reliably.** The "you are here" marker used to drift onto the wrong room — especially in big areas where dozens of rooms share the same name (the Barrows, Moonstone Street, etc.) — sometimes showing you in a completely different part of the zone. Lichborne now identifies your room the same way the GenieMaps client itself does: by matching the room's **name, its exits, and its description** together. Two things were fixed under the hood — the room description (which the game sends inline) is now captured every time you move or look, and your room's exits are now used as a matching signal. Together they get the indicator to the right room nearly every time. *(GenieMaps' actively-maintained map data is a fantastic resource — this makes Lichborne a much better citizen of it.)*
+
+- **The map no longer loses your location when the window is minimized or idle.** If you left Lichborne minimized (or in the background) while a script moved your character, the map indicator would freeze on the room you were in and only catch up when you brought the window back and typed `LOOK`. Windows now keep fully processing the game stream while minimized, so the map (and the rest of the client) tracks your movement live in the background.
+
+- **Right-click tab menu: Disconnect moved off the top.** The window options ("Open in new window" / "Move to main window") now come first, with Disconnect/Reconnect last under a divider — so it's much harder to disconnect a character by accident. *(Thanks, Binu.)*
+
+---
+
 ## What's new in v0.11.6
 
 ### New
@@ -7,16 +19,3 @@
 ### Fixes
 
 - **The main window now stays glued to the bottom, and text flows more smoothly.** A cluster of scrolling problems is fixed: the last line (like the `>` prompt) no longer clips under the vitals bar at larger fonts; new text no longer "scrolls up a notch then jumps back down"; and the view stays pinned to the bottom when you switch characters, alt-tab to another app and back, split a character into its own window, or toggle compact vitals. As a bonus, removing the redundant re-scrolling made the whole text stream noticeably smoother. *(Thanks, Sekmeht and Binu.)*
-
----
-
-## What's new in v0.11.5
-
-### A cleaner, more usable Debug panel
-
-The Debug panel (Fires / Events / Raw XML) got a full look-and-feel pass:
-
-- **Columns line up properly now** across all three tabs, and rows have subtle striping so they're easy to read across.
-- **No more washed-out, see-through rows** — surfaces are solid and theme-correct on light themes too.
-- **The Goto control is now a clear "Edit →" button** that's always visible and easy to click, jumping straight to the rule in Automations.
-- **Drag the top edge to resize the panel** — it opens taller by default and remembers your size per character, so you can give yourself room to scroll back through events and fire history.
