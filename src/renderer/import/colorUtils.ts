@@ -144,8 +144,11 @@ function hex2(n: number): string {
 /**
  * Convert a Qt-escaped string (as written in an INI file) to a byte array.
  * Handles: \0, \x41, printable ASCII, and \n \r \t.
+ *
+ * Exported so the Frostbite highlight parser can decode the `options`
+ * QBitArray @Variant blob the same robust way it decodes colours.
  */
-function parseQtEscapes(s: string): number[] {
+export function parseQtEscapes(s: string): number[] {
   const bytes: number[] = []
   let i = 0
   while (i < s.length) {
@@ -154,9 +157,17 @@ function parseQtEscapes(s: string): number[] {
       if (s[i] === '0') {
         bytes.push(0); i++
       } else if (s[i] === 'x') {
-        const hex = s.slice(i + 1, i + 3)
-        bytes.push(parseInt(hex, 16))
-        i += 3
+        // Qt writes MINIMAL hex escapes: `\x1` (one digit) for byte 1, `\xff`
+        // (two) for 255 — NOT a fixed `\x01`. So read 1–2 hex digits greedily
+        // and advance by however many were actually consumed. The old fixed
+        // 2-char slice + `i += 3` over-advanced past the trailing `\` on every
+        // single-digit escape, desyncing the whole byte stream after the first
+        // one (the spec byte is `\x1`), which corrupted both colour channels
+        // and the options bitarray byte.
+        i++  // past the 'x'
+        let hex = ''
+        while (hex.length < 2 && /[0-9a-fA-F]/.test(s[i] ?? '')) { hex += s[i]; i++ }
+        bytes.push(hex ? parseInt(hex, 16) : 0)
       } else if (s[i] === 'n') {
         bytes.push(10); i++
       } else if (s[i] === 'r') {

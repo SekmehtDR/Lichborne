@@ -42,11 +42,21 @@
   font-size: 0.9rem;
   letter-spacing: 1px;
   flex: 1;
+  /* Let the title shrink (and clip) before the tabs / Import / ✕ get pushed
+     off-screen on narrow windows — adding the Mutes + Substitutes tabs (v0.12.0)
+     made a 5-tab bar an 8-tab bar, overflowing the header on smaller windows. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .at-tab-bar {
   display: flex;
   gap: 2px;
+  /* Wrap to a second row rather than clipping when the window is very narrow. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .at-tab {

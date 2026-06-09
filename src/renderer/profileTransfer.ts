@@ -44,7 +44,7 @@ import type { CharacterProfile } from './profile-types'
 
 export type TransferCategoryId =
   | 'display' | 'layout' | 'viewPrefs' | 'theme'
-  | 'highlights' | 'triggers' | 'macros' | 'aliases'
+  | 'highlights' | 'triggers' | 'macros' | 'aliases' | 'mutes' | 'substitutes'
   | 'groupsModes' | 'contacts'
 
 export type CategoryKind = 'config' | 'rules'
@@ -100,6 +100,8 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
   { id: 'triggers',   label: 'Triggers',   kind: 'rules', desc: 'Trigger rules and their actions.', suffixes: ['triggers'] },
   { id: 'macros',     label: 'Macros',     kind: 'rules', desc: 'Keyboard macros.', suffixes: ['macros'] },
   { id: 'aliases',    label: 'Aliases',    kind: 'rules', desc: 'Command aliases.', suffixes: ['aliases'] },
+  { id: 'mutes',      label: 'Mutes',       kind: 'rules', desc: 'Lines/text hidden from the window.', suffixes: ['mutes'] },
+  { id: 'substitutes', label: 'Substitutes', kind: 'rules', desc: 'Text rewrite rules.', suffixes: ['substitutes'] },
   {
     id: 'groupsModes', label: 'Groups & Modes', kind: 'rules',
     desc: 'Rule groups and the modes that toggle them.',
@@ -242,6 +244,8 @@ function countCategory(id: TransferCategoryId, bag: Record<string, unknown>): nu
     case 'triggers':   return arrLen(bag.triggers)
     case 'macros':     return arrLen(bag.macros)
     case 'aliases':    return arrLen(bag.aliases)
+    case 'mutes':      return arrLen(bag.mutes)
+    case 'substitutes': return arrLen(bag.substitutes)
     case 'groupsModes': return arrLen(bag.groups) + arrLen(bag.modes)
     case 'contacts':   return arrLen(bag.contacts) + arrLen(bag['contact-templates'])
     case 'theme':      return 1
@@ -343,7 +347,7 @@ export async function applyProfileImport(
   // Process in a fixed order so Display runs before Layout (both touch
   // `settings`), and rules last.
   const order: TransferCategoryId[] =
-    ['display', 'layout', 'viewPrefs', 'theme', 'highlights', 'triggers', 'macros', 'aliases', 'groupsModes', 'contacts']
+    ['display', 'layout', 'viewPrefs', 'theme', 'highlights', 'triggers', 'macros', 'aliases', 'mutes', 'substitutes', 'groupsModes', 'contacts']
 
   for (const id of order) {
     if (!opts.selected.has(id)) continue
@@ -364,6 +368,8 @@ export async function applyProfileImport(
       case 'triggers':   applyRuleArray(store, 'triggers',   bag.triggers,   opts.merge, regenTriggers,  trKey); break
       case 'macros':     applyRuleArray(store, 'macros',     bag.macros,     opts.merge, regenSimple,    maKey); break
       case 'aliases':    applyRuleArray(store, 'aliases',    bag.aliases,    opts.merge, regenSimple,    alKey); break
+      case 'mutes':      applyRuleArray(store, 'mutes',       bag.mutes,       opts.merge, regenSimple, muteKey); break
+      case 'substitutes': applyRuleArray(store, 'substitutes', bag.substitutes, opts.merge, regenSimple, subKey); break
       case 'groupsModes': applyGroupsModes(store, bag, opts.merge); break
       case 'contacts':   applyContacts(store, bag, opts.merge); break
     }
@@ -514,6 +520,16 @@ function maKey(it: unknown): string {
 }
 function alKey(it: unknown): string {
   return String((it as { input?: string }).input ?? '').toLowerCase()
+}
+function muteKey(it: unknown): string {
+  const g = it as { pattern?: string; mode?: string; scope?: string; caseSensitive?: boolean }
+  const p = g.caseSensitive ? (g.pattern ?? '') : (g.pattern ?? '').toLowerCase()
+  return `${p}|${g.mode ?? 'phrase'}|${g.scope ?? 'line'}|${g.caseSensitive ? 1 : 0}`
+}
+function subKey(it: unknown): string {
+  const g = it as { pattern?: string; mode?: string; replacement?: string; caseSensitive?: boolean }
+  const p = g.caseSensitive ? (g.pattern ?? '') : (g.pattern ?? '').toLowerCase()
+  return `${p}|${g.mode ?? 'phrase'}|${g.replacement ?? ''}|${g.caseSensitive ? 1 : 0}`
 }
 
 // ── Misc helpers for the UI ─────────────────────────────────────────────────────

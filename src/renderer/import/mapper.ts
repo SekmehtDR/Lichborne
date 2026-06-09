@@ -1,8 +1,10 @@
 import { nanoid } from 'nanoid'
-import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger } from './types'
+import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportMute, ImportSubstitute } from './types'
 import { HighlightRule, HighlightStyle } from '../highlights'
 import { MacroRule, AliasRule } from '../macros'
 import { TriggerRule, TriggerAction } from '../triggers'
+import { MuteRule } from '../mutes'
+import { SubstituteRule } from '../substitutes'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -25,6 +27,15 @@ function mapSoundPreset(file: string): TriggerAction['soundPreset'] {
   return 'alarm'
 }
 
+// A real audio FILE (a path or an audio extension) vs a source-client built-in
+// sound NAME (Genie's `MiniFanfare1`, etc.). The `sound` TriggerAction supports
+// a `soundFile` (a WAV/audio path the engine plays via playWavFile, taking
+// priority over `soundPreset`), so an actual file is preserved verbatim;
+// a built-in name has no file to play, so it falls back to the closest preset.
+function isAudioFile(s: string): boolean {
+  return /[/\\]/.test(s) || /\.(wav|mp3|ogg|aiff?|m4a|aac|flac)$/i.test(s)
+}
+
 // ── Highlight mapper ──────────────────────────────────────────────────────────
 
 export function mapHighlight(h: ImportHighlight, priority: number): HighlightRule {
@@ -41,6 +52,40 @@ export function mapHighlight(h: ImportHighlight, priority: number): HighlightRul
     groupIds:      [],
     allGroups:     true,
     ...(h.soundFile ? { soundFile: h.soundFile } : {}),
+  }
+}
+
+// ── Mute mapper ──────────────────────────────────────────────────────────────
+
+export function mapMute(g: ImportMute): MuteRule {
+  return {
+    id:            nanoid(),
+    name:          '',
+    enabled:       true,
+    pattern:       g.pattern,
+    mode:          g.matchType,
+    scope:         'line',   // every client's gag/ignore hides the whole line
+    caseSensitive: g.caseSensitive,
+    ...(g.stream ? { stream: g.stream } : {}),
+    groupIds:      [],
+    allGroups:     true,
+  }
+}
+
+// ── Substitute mapper ─────────────────────────────────────────────────────────
+
+export function mapSubstitute(s: ImportSubstitute): SubstituteRule {
+  return {
+    id:            nanoid(),
+    name:          '',
+    enabled:       true,
+    pattern:       s.pattern,
+    mode:          s.matchType,
+    caseSensitive: s.caseSensitive,
+    replacement:   s.replacement,
+    ...(s.stream ? { stream: s.stream } : {}),
+    groupIds:      [],
+    allGroups:     true,
   }
 }
 
@@ -104,7 +149,11 @@ export function mapTrigger(t: ImportTrigger): TriggerRule {
   }
 
   for (const sound of (t.soundFiles ?? [])) {
-    actions.push({ id: nanoid(), type: 'sound', soundPreset: mapSoundPreset(sound) })
+    // Preserve a real WAV/audio file exactly (the engine plays it); only a
+    // built-in sound NAME falls back to a preset.
+    actions.push(isAudioFile(sound)
+      ? { id: nanoid(), type: 'sound', soundFile: sound }
+      : { id: nanoid(), type: 'sound', soundPreset: mapSoundPreset(sound) })
   }
 
   if (t.hasFlash) actions.push({ id: nanoid(), type: 'flash' })

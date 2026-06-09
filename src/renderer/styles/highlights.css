@@ -238,6 +238,7 @@
 }
 
 .hp-input:focus { border-color: var(--accent-dim); }
+select.hp-input { cursor: pointer; }
 
 .hp-input--hex {
   width: 100px;

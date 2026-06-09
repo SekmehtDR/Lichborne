@@ -5231,3 +5231,122 @@ Concretely that means: prefer surfacing Lich state (30.1) and Lich capabilities 
 over building Lichborne-native scripting. The one place we own outright is *display* (themes,
 panels, rendering) and *portability* (Profile Transfer) — keep new effort there or in the
 "surface Lich" column, and keep pushing back on requests that would reimplement Lich.
+
+---
+
+## 31. Text Modification — Mutes & Substitutes (v0.12.x)
+
+**Status:** spec'd + Phase 1 building. The #1 onboarding request from Wrayth/Genie/Frostbite
+testers. All three sibling clients ship it; Lichborne previously counted-but-didn't-import it.
+
+**Naming (Sekmeht, 2026-06-08):** the two are grouped under one **"Text Modification"** feature
+category. "Gag" was renamed to **Mute** (friendlier; "mute or substitute text"). Internally the
+rule type is `MuteRule` / `mutes.ts` / `scopedKey('mutes')`; the source clients' "Gag/Ignore"
+terms survive only as import-side aliases.
+
+### 31.1 What & why (native, client-side)
+Two new per-character automation rule types ("Text Modification") that act on **displayed game text**:
+- **Mute** (a.k.a. Gag/Ignore — Frostbite "Ignore", Genie "Gag", Wrayth `<ignores>`): a line
+  matching the pattern is **suppressed from the window** — kill the static/noise (`has arrived!`).
+- **Substitute** (all three call it "Substitutes"): matched text is **rewritten** (regex with
+  `$1…` capture groups), e.g. mind-state words → numbers, damage rankings → fractions.
+
+**Why native, not delegated to Lich `textsubs.lic`** (decision 2026-06-08, Sekmeht; Binu
+concurred on placement). Gags/subs are a *display* concern — squarely Lichborne's lane, not
+Lich automation. Concretely: (1) **Principle #2** — must work without Lich (SGE-direct users);
+(2) **portability** — rules live in the character's YAML and ride Profile Transfer, vs Lich's
+global `private_textsubs` which wouldn't transfer; (3) **import target** — Genie/Frostbite/Wrayth
+exports need a reliable native home (writing into Lich YAML is Lich-required + fragile);
+(4) **UX coherence** — gags + subs are one mental model; splitting them across the Lichborne UI
+and Lich-YAML is the friction newcomers complain about; (5) **cost is low** — the regex +
+capture-group + `interpolate($1…)` machinery already exists (triggers use it), so a substitute
+is a render-pass reusing it, not a new engine. `textsubs.lic` stays the *complementary* tool for
+what it does uniquely well (the spell→Elanthipedia hyperlink catalog, global cross-front-end
+subs). (A one-way "push my substitutes to textsubs.lic" export was once floated as a Phase-3 bridge
+but was **dropped** — Sekmeht, 2026-06-08; the native feature suffices and delegating re-imports the
+no-Lich/portability problems above.) (Profanity — our north star — does gags native but delegates general
+subs to Lich; we diverge on subs *only* because Lichborne supports no-Lich play, which Profanity
+does not.)
+
+### 31.2 Data model
+Same shape/lifecycle as highlights/triggers (Principle #1 — dynamic `state.*`, no profile-shape
+change), group-gated via `isRuleActive`:
+```
+MuteRule        { id, name, enabled, pattern, mode:'text'|'phrase'|'regex',
+                 scope:'line'|'match', caseSensitive, stream?, groupIds, allGroups }
+SubstituteRule { id, name, enabled, pattern, mode, caseSensitive,
+                 replacement /* $1… */, stream?, groupIds, allGroups }
+```
+Per-character `scopedKey(character,'mutes' | 'substitutes')`, `load/save` mirroring `highlights.ts`.
+`MuteRule.scope` mirrors `HighlightRule.scope` (Sekmeht request): **`line`** (default — hide the
+whole line, the typical gag) or **`match`** (remove only the matched text, keep the rest). The
+mute regex is **global** so `match` can `replace(re,'')` all occurrences. `stream?` is the optional
+stream scope (Frostbite's `target`, Profanity's combat-gag); absent = all.
+
+### 31.3 Render pipeline integration
+One choke point in `GameWindow` where the per-batch `newMain: TextLine[]` is assembled, before
+it commits to `lines`: **mute → substitute-rewrite → (existing highlight/contact styling at
+render)**. Substitutes run *before* highlights so highlights style the substituted text (matches
+Genie/Frostbite). Active rules are kept in a ref (`activeMutesRef` — compiled regex, filtered by
+`isRuleActive(activeGroupStates)`), refreshed like `allHighlightRulesRef`.
+- **Mute** = `applyMutesToSegments(line.segments, activeMutes)` ([mutes.ts](src/renderer/mutes.ts)):
+  a `line`-scope match returns `null` (drop the `TextLine`); a `match`-scope match strips the text
+  out of each segment (`replace(re,'')`, dropping now-empty segments — and the whole line if it
+  empties). `match` is **per-segment**, so server styling survives and a match spanning segment
+  boundaries isn't caught (same limit as per-segment highlighting). After a `match` removal the
+  **whitespace gap is tidied** (collapse double-space, drop a space dangling before punctuation,
+  trim the seam/edges) so `…the healer Quentin.` → `…the healer.`, not `…the healer .`.
+- **Substitute** = `applySubstitutesToSegments` ([substitutes.ts](src/renderer/substitutes.ts)):
+  `segment.text.replace(globalRegex, rule.replacement)` per-segment (native JS `$N`/`$&` capture
+  refs — matches Genie's `$N`; the Frostbite importer converts its `\N`/`\0`). Preserves server
+  styling; a match spanning segment boundaries isn't caught. Game-state vars are NOT interpolated
+  (capture groups only — what the source clients use).
+- **Scope = GLOBAL by default, with an optional per-rule stream restrict** (Sekmeht; = Genie's
+  global model + Frostbite's per-rule `target`). The passes run over `newMain` (stream id `'main'`)
+  **AND every `newStream[key]` buffer** ([GameWindow.tsx](src/renderer/components/GameWindow.tsx)
+  `applyTextMods`), so a rule applies everywhere. If a rule's **`stream`** is set it's filtered to
+  that one stream only (`!rule.stream || rule.stream === streamId`). The editor's **"Apply to"**
+  dropdown (`STREAM_OPTIONS` in [mutes.ts](src/renderer/mutes.ts): All / Main / Thoughts /
+  Conversation / Combat / Deaths / Arrivals) sets it; default `''` = all. Genie applies gags
+  everywhere-but-Thoughts; we DON'T auto-skip Thoughts (a global rule means everywhere — Sekmeht).
+  Room sub-streams aren't in `newStream` (they're room state), so they're untouched.
+
+### 31.4 Session Log behavior (decided)
+- **Gag** drops from **display only** — the raw line still hits the Session Log (a gag can never
+  silently lose history). Naturally satisfied because logging is per-event in `onGameEvent`,
+  upstream of `newMain` display assembly.
+- **Substitute** logs the **rewritten** text (what you saw is what's recorded). *(Phase 2.)*
+
+### 31.5 UI
+**Mute and Substitute are TWO separate top-level Automations tabs** (Sekmeht — cleaner than one
+nested "Text Modification" tab; matches the flat Highlights/Triggers/Macros/Aliases structure):
+[MutePanel.tsx](src/renderer/components/MutePanel.tsx) and
+[SubstitutesPanel.tsx](src/renderer/components/SubstitutesPanel.tsx). Both **mirror HighlightsPanel
+exactly** (same `hp-*` classes: sidebar list + detail form, the Text/Phrase/Regex `hp-mode-toggle`,
+the `Aa` case button, the `hp-actions` Save/Delete/Revert footer). Mute adds a `hp-scope-row`
+Line/Match radio; Substitute adds a `Replace with` field (`$1` hint) instead. **Right-click menu**
+([ContextMenu.tsx](src/renderer/components/ContextMenu.tsx) supports **nested submenus** — hover-
+expand, flips left/up at the viewport edge, on top of the root-menu viewport clamp): the game-window
+menu groups display-changing actions under **`Modify Text ▸`** (Highlight / Mute / Substitute, each
+× "word" / "this line") and automation under **`Trigger ▸`**, then Show in Log / Clear — four short
+root rows instead of ten flat ones (Sekmeht: "modify the text" vs "build something *from* the text").
+Each `Mute …`/`Substitute …`/`Highlight …` opens the matching editor prefilled (`openMuteEditor` →
+`mutePrefill` → AutomationsPanel `mutes` tab → unsaved draft, same flow as `highlightPrefill`).
+(Profile Transfer likewise has **separate `mutes` + `substitutes` categories**.)
+
+### 31.6 Import (flip 4 count-only paths → real)
+| Client | Source | Notes |
+|---|---|---|
+| Genie | `#gag {/…/i}`, `#subs {a} {b}` | reuses `stripGenieSlashWrap`; route to gag/sub stores |
+| Frostbite | `ignores.ini` `[ignore]`, `substitutes.ini` `[substitution]` | new `[ignore]` parser + **add `ignores.ini` slot**; `target`→`stream` (`@Invalid()` = all) |
+| Wrayth | `<ignores disable="n"><h text=…/>` | ~10-line `parseIgnores` like `parseStrings`; substring; block `disable` flag |
+New Gags/Substitutes preview tabs (data-driven, same checkbox/select-all UX). Step-1 scope notice
+reworded (these now import instead of "belong in Lich").
+
+### 31.7 Phasing
+- **Phase 1 — Mutes** ✅ (native + import all three + right-click + scope).
+- **Phase 2 — Substitutes** ✅ (native per-segment rewrite + import Genie/Frostbite + right-click).
+- **Phase 3 — Stream scope** ✅ (global-by-default over all stream buffers + optional per-rule
+  "Apply to" stream restrict). **Feature complete.** (A once-considered "push to textsubs.lic"
+  export was **dropped** — Sekmeht, 2026-06-08; the native feature already does what's needed and
+  delegating to Lich reintroduces the no-Lich/portability problems §31.1 lists.)

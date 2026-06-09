@@ -164,6 +164,40 @@
   margin: 3px 0;
 }
 
+/* Submenu support (Modify Text ▸ / Trigger ▸) */
+.ctx-sub { position: relative; }
+
+.ctx-menu-item--parent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ctx-sub-arrow {
+  color: var(--text-dim);
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+/* keep the parent row highlighted while its submenu is open (hovered) */
+.ctx-sub:hover > .ctx-menu-item--parent {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ctx-submenu {
+  position: absolute;   /* overrides .ctx-menu's fixed (this rule comes after it) */
+  left: 100%;
+  top: -4px;            /* align the first child row with the parent row */
+  z-index: 501;
+}
+
+.ctx-submenu--left {
+  left: auto;
+  right: 100%;
+}
+
 .game-main {
   flex: 1;
   /* min-height: 0 is REQUIRED on a flex child in a flex COLUMN (.game-layout):

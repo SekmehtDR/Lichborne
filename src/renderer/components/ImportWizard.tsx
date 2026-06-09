@@ -4,7 +4,9 @@ import { ImportResult, ImportSource } from '../import/types'
 import { parseGenieFiles } from '../import/parsers/genie'
 import { parseWraythXml } from '../import/parsers/wrayth'
 import { parseFrostbiteFiles } from '../import/parsers/frostbite'
-import { mapImportResult, MergeStrategy, type MappedRules } from '../import/mapper'
+import { mapImportResult, mapMute, mapSubstitute, MergeStrategy, type MappedRules } from '../import/mapper'
+import { loadMutes, saveMutes } from '../mutes'
+import { loadSubstitutes, saveSubstitutes } from '../substitutes'
 import { loadHighlights, saveHighlights, type HighlightRule } from '../highlights'
 import { loadMacros, saveMacros, loadAliases, saveAliases, type MacroRule, type AliasRule } from '../macros'
 import { loadTriggers, saveTriggers, type TriggerRule } from '../triggers'
@@ -20,7 +22,7 @@ import '../styles/import-wizard.css'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Step = 'source' | 'preview' | 'confirm' | 'done'
-type PreviewTab = 'highlights' | 'macros' | 'aliases' | 'triggers' | 'contacts' | 'theme'
+type PreviewTab = 'highlights' | 'macros' | 'aliases' | 'triggers' | 'mutes' | 'substitutes' | 'contacts' | 'theme'
 
 // Friendly display labels for Genie preset → Frostborne CSS variable mappings
 const THEME_VAR_LABELS: Record<string, string> = {
@@ -91,15 +93,16 @@ const GENIE_SLOTS: FileSlot[] = [
   { key: 'aliases',     label: 'aliases.cfg',      hint: 'Aliases (global or per-character)' },
   { key: 'triggers',    label: 'triggers.cfg',     hint: 'Triggers' },
   { key: 'presets',     label: 'presets.cfg',      hint: 'Color presets → custom theme' },
-  { key: 'substitutes', label: 'substitutes.cfg',  hint: 'Substitutions (counted, not imported — use textsubs.lic)' },
-  { key: 'gags',        label: 'gags.cfg',         hint: 'Gag rules (counted, not imported — use textsubs.lic)' },
+  { key: 'gags',        label: 'gags.cfg',         hint: 'Gags → Mutes (hide lines)' },
+  { key: 'substitutes', label: 'substitutes.cfg',  hint: 'Substitutions → Substitutes (rewrite text)' },
   { key: 'variables',   label: 'variables.cfg',    hint: 'Variables (counted, not imported — live in Lich Vars)' },
 ]
 
 const FROSTBITE_SLOTS: FileSlot[] = [
   { key: 'highlights',  label: 'highlights.ini',  hint: 'Text highlights' },
   { key: 'macros',      label: 'macros.ini',       hint: 'Keyboard macros' },
-  { key: 'substitutes', label: 'substitutes.ini',  hint: 'Substitutions (counted, not imported — use textsubs.lic)' },
+  { key: 'ignores',     label: 'ignores.ini',      hint: 'Ignores → Mutes (hide lines)' },
+  { key: 'substitutes', label: 'substitutes.ini',  hint: 'Substitutions → Substitutes (rewrite text)' },
   { key: 'general',     label: 'general.ini',      hint: 'Window colors → theme; quick buttons (counted)' },
 ]
 
@@ -141,6 +144,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
   const [selM, setSelM] = useState<Set<number>>(new Set())
   const [selA, setSelA] = useState<Set<number>>(new Set())
   const [selT, setSelT] = useState<Set<number>>(new Set())
+  const [selMu, setSelMu] = useState<Set<number>>(new Set())
+  const [selSub, setSelSub] = useState<Set<number>>(new Set())
   const [selC, setSelC] = useState<Set<number>>(new Set())
 
   // F29 follow-up: per-index "duplicate of existing entry" flags, computed
@@ -153,6 +158,9 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
   const [dupM, setDupM] = useState<Set<number>>(new Set())
   const [dupA, setDupA] = useState<Set<number>>(new Set())
   const [dupT, setDupT] = useState<Set<number>>(new Set())
+  const [dupMu, setDupMu] = useState<Set<number>>(new Set())
+  const [dupSub, setDupSub] = useState<Set<number>>(new Set())
+  const [dupC, setDupC] = useState<Set<number>>(new Set())
   // Toggle: "Hide items already in this profile" — filters preview rows
   // and uncheck-all / select-all act on visible rows only.
   const [hideExisting, setHideExisting] = useState(false)
@@ -197,6 +205,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       return parseFrostbiteFiles({
         highlights:  fileTexts['highlights'],
         macros:      fileTexts['macros'],
+        ignores:     fileTexts['ignores'],
         substitutes: fileTexts['substitutes'],
         general:     fileTexts['general'],
       })
@@ -225,11 +234,26 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     const maExist = new Set(existingMa.map(m => m.key.toLowerCase()).filter(Boolean))
     const alExist = new Set(existingAl.map(a => a.input.toLowerCase()).filter(Boolean))
 
+    const existingMu = loadMutes(character)
+    const muKey = (pattern: string, mode: string, scope: string, cs: boolean) => `${cs ? pattern : pattern.toLowerCase()}|${mode}|${scope}|${cs ? 1 : 0}`
+    const muExist = new Set(existingMu.map(m => muKey(m.pattern, m.mode, m.scope, m.caseSensitive)))
+    const existingSub = loadSubstitutes(character)
+    const subKey = (pattern: string, mode: string, repl: string, cs: boolean) => `${cs ? pattern : pattern.toLowerCase()}|${mode}|${repl}|${cs ? 1 : 0}`
+    const subExist = new Set(existingSub.map(s => subKey(s.pattern, s.mode, s.replacement, s.caseSensitive)))
+    // Names import as CONTACTS, so the "already exists" check must look in the
+    // contacts store (by name), not highlights — otherwise the same names are
+    // offered every re-import with no EXISTS flag (the append-apply already
+    // skips them, but the preview never said so).
+    const contactExist = new Set(loadContacts(character).map(c => c.name.toLowerCase()))
+
     const dH = new Set<number>(); r.highlights.forEach((h, i) => { if (hlExist.has(hlContentKey(h.pattern, h.scope, h.caseSensitive))) dH.add(i) })
     const dT = new Set<number>(); r.triggers  .forEach((t, i) => { if (trExist.has(trContentKey(t.pattern, t.caseSensitive))) dT.add(i) })
     const dM = new Set<number>(); r.macros    .forEach((m, i) => { if (m.key && maExist.has(m.key.toLowerCase())) dM.add(i) })
     const dA = new Set<number>(); r.aliases   .forEach((a, i) => { if (a.input && alExist.has(a.input.toLowerCase())) dA.add(i) })
-    setDupH(dH); setDupT(dT); setDupM(dM); setDupA(dA)
+    const dMu = new Set<number>(); (r.mutes ?? []).forEach((m, i) => { if (muExist.has(muKey(m.pattern, m.matchType, 'line', m.caseSensitive))) dMu.add(i) })
+    const dSub = new Set<number>(); (r.substitutes ?? []).forEach((s, i) => { if (subExist.has(subKey(s.pattern, s.matchType, s.replacement, s.caseSensitive))) dSub.add(i) })
+    const dC = new Set<number>(); r.names.forEach((n, i) => { if (contactExist.has(n.pattern.toLowerCase())) dC.add(i) })
+    setDupH(dH); setDupT(dT); setDupM(dM); setDupA(dA); setDupMu(dMu); setDupSub(dSub); setDupC(dC)
 
     // Pre-select all ready/partial items, INCLUDING duplicates. (Earlier
     // draft auto-unchecked duplicates here, but that broke Replace merge:
@@ -244,17 +268,28 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     setSelM(new Set(r.macros    .map((m, i) => m.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
     setSelA(new Set(r.aliases   .map((a, i) => a.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
     setSelT(new Set(r.triggers  .map((t, i) => t.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
+    setSelMu(new Set((r.mutes ?? []).map((m, i) => m.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
+    setSelSub(new Set((r.substitutes ?? []).map((s, i) => s.status !== 'unsupported' ? i : -1).filter(i => i >= 0)))
     setSelC(allIndices(r.names.length))
     // Pre-select theme import if presets were found
     setSelTheme(!!(r.themeVars && Object.keys(r.themeVars).length > 0))
     // Pre-select layout import if the file carries a layout block.
     setSelLayout(!!r.nativeLayout)
-    // Default preview tab to whichever type has content
-    if (r.highlights.length > 0) setPreviewTab('highlights')
-    else if (r.macros.length > 0) setPreviewTab('macros')
-    else if (r.aliases.length > 0) setPreviewTab('aliases')
-    else if (r.themeVars && Object.keys(r.themeVars).length > 0) setPreviewTab('theme')
-    else setPreviewTab('triggers')
+    // Default preview tab to the FIRST type that has content (same order as the
+    // tab bar). Must cover EVERY tab — a substitutes-only or mutes-only import
+    // previously fell through to the empty 'triggers' tab ("No importable
+    // triggers found") even though Substitutes/Mutes was the only real tab.
+    const firstTab: PreviewTab =
+      r.highlights.length > 0                              ? 'highlights' :
+      r.names.length > 0                                   ? 'contacts'   :
+      r.macros.length > 0                                  ? 'macros'     :
+      r.aliases.length > 0                                 ? 'aliases'    :
+      r.triggers.length > 0                                ? 'triggers'   :
+      (r.mutes?.length ?? 0) > 0                           ? 'mutes'      :
+      (r.substitutes?.length ?? 0) > 0                     ? 'substitutes':
+      (r.themeVars && Object.keys(r.themeVars).length > 0) ? 'theme'      :
+                                                             'highlights'
+    setPreviewTab(firstTab)
     setStep('preview')
   }
 
@@ -370,6 +405,38 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       if (mapped.macros.length     > 0) saveMacros    (character, mapped.macros)
       if (mapped.aliases.length    > 0) saveAliases   (character, mapped.aliases)
       if (mapped.triggers.length   > 0) saveTriggers  (character, mapped.triggers)
+    }
+
+    // Mutes (DESIGN.md §31): applied outside mapImportResult (which only covers
+    // the 4 core rule types). Same append-dedup / replace semantics, gated on
+    // having selected content (B127).
+    const selectedMutes = (result.mutes ?? []).filter((m, i) => selMu.has(i) && m.status !== 'unsupported').map(mapMute)
+    if (selectedMutes.length > 0) {
+      const muKey = (m: { pattern: string; mode: string; scope: string; caseSensitive: boolean }) =>
+        `${m.caseSensitive ? m.pattern : m.pattern.toLowerCase()}|${m.mode}|${m.scope}|${m.caseSensitive ? 1 : 0}`
+      if (merge === 'append') {
+        const existingMu = loadMutes(character)
+        const muExist = new Set(existingMu.map(muKey))
+        const keepMu = selectedMutes.filter(m => !muExist.has(muKey(m)))
+        if (keepMu.length > 0) saveMutes(character, [...existingMu, ...keepMu])
+      } else {
+        saveMutes(character, selectedMutes)
+      }
+    }
+
+    // Substitutes (DESIGN.md §31): same apply shape as mutes.
+    const selectedSubs = (result.substitutes ?? []).filter((s, i) => selSub.has(i) && s.status !== 'unsupported').map(mapSubstitute)
+    if (selectedSubs.length > 0) {
+      const subKey = (s: { pattern: string; mode: string; replacement: string; caseSensitive: boolean }) =>
+        `${s.caseSensitive ? s.pattern : s.pattern.toLowerCase()}|${s.mode}|${s.replacement}|${s.caseSensitive ? 1 : 0}`
+      if (merge === 'append') {
+        const existingSub = loadSubstitutes(character)
+        const subExist = new Set(existingSub.map(subKey))
+        const keepSub = selectedSubs.filter(s => !subExist.has(subKey(s)))
+        if (keepSub.length > 0) saveSubstitutes(character, [...existingSub, ...keepSub])
+      } else {
+        saveSubstitutes(character, selectedSubs)
+      }
     }
 
     // F29: Lichborne-native data (groups / modes / contacts / contact
@@ -541,6 +608,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     if (toSave.macros.length)     parts.push(`${toSave.macros.length} macros`)
     if (toSave.aliases.length)    parts.push(`${toSave.aliases.length} aliases`)
     if (toSave.triggers.length)   parts.push(`${toSave.triggers.length} triggers`)
+    if (selectedMutes.length)     parts.push(`${selectedMutes.length} mutes`)
+    if (selectedSubs.length)      parts.push(`${selectedSubs.length} substitutes`)
     // F29: native counts from a Lichborne export
     if (result.nativeGroups?.length)           parts.push(`${result.nativeGroups.length} groups`)
     if (result.nativeModes?.length)            parts.push(`${result.nativeModes.length} modes`)
@@ -579,17 +648,25 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
 
   function selectAllTab(tab: PreviewTab, all: boolean) {
     if (!result) return
-    if (tab === 'highlights') setSelH(all ? allIndices(result.highlights.length) : new Set())
-    if (tab === 'macros')     setSelM(all ? allIndices(result.macros.length)     : new Set())
-    if (tab === 'aliases')    setSelA(all ? allIndices(result.aliases.length)    : new Set())
-    if (tab === 'triggers')   setSelT(all ? allIndices(result.triggers.length)   : new Set())
-    if (tab === 'contacts')   setSelC(all ? allIndices(result.names.length)      : new Set())
+    // "Select all" selects only SELECTABLE (non-unsupported) rows — same as the
+    // default selection — so it can't pull in `unsupported` items (whose
+    // checkboxes are disabled), e.g. the Frostbite mind-state subs deliberately
+    // held back. (Was `allIndices(length)`, which selected unsupported too.)
+    const sel = (items: { status: string }[]) =>
+      new Set(items.map((it, i) => it.status !== 'unsupported' ? i : -1).filter(i => i >= 0))
+    if (tab === 'highlights') setSelH(all ? sel(result.highlights) : new Set())
+    if (tab === 'macros')     setSelM(all ? sel(result.macros)     : new Set())
+    if (tab === 'aliases')    setSelA(all ? sel(result.aliases)    : new Set())
+    if (tab === 'triggers')   setSelT(all ? sel(result.triggers)   : new Set())
+    if (tab === 'mutes')      setSelMu(all ? sel(result.mutes ?? []) : new Set())
+    if (tab === 'substitutes') setSelSub(all ? sel(result.substitutes ?? []) : new Set())
+    if (tab === 'contacts')   setSelC(all ? sel(result.names)      : new Set())
     // 'theme' tab uses selTheme toggle — not handled here
   }
 
   // ── Render helpers ──────────────────────────────────────────────────────────
 
-  const totalSelected = selH.size + selM.size + selA.size + selT.size + selC.size
+  const totalSelected = selH.size + selM.size + selA.size + selT.size + selMu.size + selSub.size + selC.size
 
   function renderStepDots() {
     const steps: Array<{ id: Step; label: string }> = [
@@ -649,8 +726,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
     return (
       <>
         <div className="iw-scope-notice">
-          Lichborne imports <strong>display preferences</strong> — highlights, colors, key bindings, and themes.
-          Variables, substitutions, and complex automation belong in Lich.
+          Lichborne imports <strong>display preferences</strong> — highlights, colors, key bindings, themes,
+          and text rules (mutes &amp; substitutes). Variables and complex automation belong in Lich.
         </div>
         <div className="iw-source-grid">
           {cards.map(c => (
@@ -722,6 +799,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
       { id: 'macros',     label: 'Macros',        count: result.macros.length     },
       { id: 'aliases',    label: 'Aliases',       count: result.aliases.length    },
       { id: 'triggers',   label: 'Triggers',      count: result.triggers.length   },
+      { id: 'mutes',      label: 'Mutes',         count: (result.mutes ?? []).length },
+      { id: 'substitutes', label: 'Substitutes',  count: (result.substitutes ?? []).length },
       { id: 'theme',      label: 'Theme Colors',  count: themeVarCount            },
     ]
     const tabs = allTabs.filter(t => t.count > 0)
@@ -800,13 +879,32 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                             onChange={() => toggleSel(selH, i, setSelH)}
                           />
                         </td>
-                        <td><span className="iw-pattern" title={h.pattern}>{h.pattern}</span></td>
-                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{h.matchType}</td>
                         <td>
-                          {h.textColor
-                            ? <span className="iw-color-swatch" style={{ background: h.textColor }} title={h.textColor} />
-                            : <span className="iw-color-none">—</span>
-                          }
+                          <span
+                            className="iw-hl-preview"
+                            title={h.pattern}
+                            style={{
+                              color: h.textColor ?? undefined,
+                              ...(h.bgColor && h.bgColor !== 'transparent' ? { background: h.bgColor } : {}),
+                            }}
+                          >
+                            {h.pattern}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                          {h.matchType}{h.scope === 'line' ? ' · whole line' : ''}
+                        </td>
+                        <td>
+                          <span className="iw-swatch-pair">
+                            {h.textColor
+                              ? <span className="iw-color-swatch" style={{ background: h.textColor }} title={`Text ${h.textColor}`} />
+                              : <span className="iw-color-none">—</span>
+                            }
+                            {h.bgColor && h.bgColor !== 'transparent'
+                              ? <span className="iw-color-swatch" style={{ background: h.bgColor }} title={`Background ${h.bgColor}`} />
+                              : null
+                            }
+                          </span>
                         </td>
                         <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }} title={h.soundFile}>
                           {h.soundFile
@@ -931,6 +1029,78 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
               </table>
         )}
 
+        {previewTab === 'mutes' && (
+          (result.mutes ?? []).length === 0
+            ? <div className="iw-empty">No mutes found</div>
+            : <table className="iw-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 28 }}></th>
+                    <th>Pattern (hides matching lines)</th>
+                    <th>Mode</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(result.mutes ?? []).map((m, i) => {
+                    const isDup = dupMu.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${m.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selMu.has(i)}
+                            disabled={m.status === 'unsupported'}
+                            onChange={() => toggleSel(selMu, i, setSelMu)}
+                          />
+                        </td>
+                        <td><span className="iw-pattern" title={m.pattern}>{m.pattern}</span></td>
+                        <td style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{m.matchType}</td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(m.status, m.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+        )}
+
+        {previewTab === 'substitutes' && (
+          (result.substitutes ?? []).length === 0
+            ? <div className="iw-empty">No substitutes found</div>
+            : <table className="iw-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 28 }}></th>
+                    <th>Find</th>
+                    <th>Replace with</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(result.substitutes ?? []).map((s, i) => {
+                    const isDup = dupSub.has(i)
+                    if (hideExisting && isDup) return null
+                    return (
+                      <tr key={i} className={`${s.status === 'unsupported' ? 'iw-row--unsupported' : ''}${isDup ? ' iw-row--exists' : ''}`}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selSub.has(i)}
+                            disabled={s.status === 'unsupported'}
+                            onChange={() => toggleSel(selSub, i, setSelSub)}
+                          />
+                        </td>
+                        <td><span className="iw-pattern" title={s.pattern}>{s.pattern}</span></td>
+                        <td><span className="iw-pattern" title={s.replacement}>{s.replacement || <span className="iw-color-none">(removed)</span>}</span></td>
+                        <td>{isDup ? <span className="iw-exists-badge" title="Already in your profile">EXISTS</span> : renderStatusBadge(s.status, s.statusNote)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+        )}
+
         {previewTab === 'contacts' && (
           result.names.length === 0
             ? <div className="iw-empty">No name highlights found</div>
@@ -948,11 +1118,15 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                       <th>Template</th>
                       <th>Text Color</th>
                       <th>BG Color</th>
+                      <th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {result.names.map((n, i) => (
-                      <tr key={i}>
+                    {result.names.map((n, i) => {
+                      const isDup = dupC.has(i)
+                      if (hideExisting && isDup) return null
+                      return (
+                      <tr key={i} className={isDup ? 'iw-row--exists' : ''}>
                         <td>
                           <input
                             type="checkbox"
@@ -974,8 +1148,13 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
                             : <span className="iw-color-none">—</span>
                           }
                         </td>
+                        <td>{isDup
+                          ? <span className="iw-exists-badge" title="Already in your Contacts">EXISTS</span>
+                          : renderStatusBadge(n.status, n.statusNote)}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </>
@@ -1016,18 +1195,6 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             : <div className="iw-empty">No theme colors found in presets.cfg</div>
         )}
 
-        {result.substitutionCount > 0 && (
-          <div className="iw-sub-notice">
-            {result.substitutionCount} substitution rule{result.substitutionCount !== 1 ? 's' : ''} found —
-            use <code>textsubs.lic</code>. Lich rewrites game text before Lichborne sees it, so client-side substitution would be redundant.
-          </div>
-        )}
-        {(result.gagsCount ?? 0) > 0 && (
-          <div className="iw-sub-notice">
-            {result.gagsCount} gag rule{result.gagsCount !== 1 ? 's' : ''} found —
-            not imported yet. Native gag support is planned; for now use <code>textsubs.lic</code>.
-          </div>
-        )}
         {(result.variablesCount ?? 0) > 0 && (
           <div className="iw-sub-notice">
             {result.variablesCount} variable{result.variablesCount !== 1 ? 's' : ''} found —
@@ -1050,6 +1217,8 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
             <tr><td>Macros</td>    <td><span className="iw-summary-count">{selM.size}</span></td></tr>
             <tr><td>Aliases</td>   <td><span className="iw-summary-count">{selA.size}</span></td></tr>
             <tr><td>Triggers</td>  <td><span className="iw-summary-count">{selT.size}</span></td></tr>
+            <tr><td>Mutes</td>     <td><span className="iw-summary-count">{selMu.size}</span></td></tr>
+            <tr><td>Substitutes</td><td><span className="iw-summary-count">{selSub.size}</span></td></tr>
             {result?.themeVars && Object.keys(result.themeVars).length > 0 && (
               <tr>
                 <td>Theme</td>
@@ -1067,16 +1236,14 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
 
         {(() => {
           const lichRows: Array<{ label: string; count: number; note: string }> = []
-          if ((result?.substitutionCount ?? 0) > 0)
-            lichRows.push({ label: 'Substitution rules', count: result!.substitutionCount, note: 'Use textsubs.lic — Lich rewrites text before Lichborne sees it' })
-          if ((result?.gagsCount ?? 0) > 0)
-            lichRows.push({ label: 'Gag rules', count: result!.gagsCount!, note: 'Native gag support is planned; for now use textsubs.lic' })
           if ((result?.variablesCount ?? 0) > 0)
             lichRows.push({ label: 'Variables', count: result!.variablesCount!, note: 'These live in Lich\'s Vars system' })
           if ((result?.scriptsCount ?? 0) > 0)
             lichRows.push({ label: 'Lich scripts', count: result!.scriptsCount!, note: 'Run in Lich, not the client' })
           if ((result?.alertHighlightCount ?? 0) > 0)
             lichRows.push({ label: 'Alert highlights', count: result!.alertHighlightCount!, note: 'Health/stun thresholds — no Lichborne equivalent yet' })
+          if ((result?.quickButtonCount ?? 0) > 0)
+            lichRows.push({ label: 'Quick buttons', count: result!.quickButtonCount!, note: 'No quick-button bar in Lichborne — recreate as macros or Lich aliases' })
 
           if (lichRows.length === 0) return null
           return (

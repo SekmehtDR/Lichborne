@@ -1,7 +1,8 @@
-import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportEchoAction, ImportVarAction, ImportLogAction } from '../types'
+import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportMute, ImportSubstitute, ImportEchoAction, ImportVarAction, ImportLogAction } from '../types'
 import { normalizeStreamId } from '../../../shared/streamAliases'
 import { parseGenieColor } from '../colorUtils'
 import { normalizeGenieKey } from '../keyNormalizer'
+import { parseImportedMacroAction } from '../macroAction'
 
 // ── Argument parser ───────────────────────────────────────────────────────────
 // Genie uses {curly brace} delimited arguments, possibly quoted with "..."
@@ -61,51 +62,51 @@ function isGenieInternal(cmd: string): boolean {
   return cmd.startsWith('#') && !cmd.startsWith('##')
 }
 
-// Check if the string has an `@` that isn't escaped as `\@`. Used by Genie
-// and Wrayth importers to decide whether the macro is already in wait-mode
-// (has a cursor marker) or whether a trailing `@` should be appended to
-// translate the source client's implicit wait-mode signal.
-function hasUnescapedAt(s: string): boolean {
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\' && s[i + 1] === '@') { i++; continue }
-    if (s[i] === '@') return true
-  }
-  return false
-}
-
-// Split a Genie action string on ; into individual commands, filtering internals.
+// Genie macro/alias action → Lichborne command(s), via the SHARED importer
+// helper (macroAction.ts) so Wrayth, Frostbite and Genie all import macros
+// identically. Genie is a SEPARATOR client: commands are `;`-separated and
+// every one AUTO-SENDS, so nothing gets an `@` appended — a command is
+// type-and-wait only if the author wrote an `@` in it (e.g. `assess @`,
+// `first @`), which the runtime `parseCursorMarker` honours (incl. mid-string).
 //
-// B137 follow-up (Sekmeht, v0.8.10): Genie's `\x` is its "clear input box"
-// command. Lichborne always replaces the command-bar contents when a macro
-// types into it (no separate clear step needed), so `\x` is purely import-
-// time noise — we strip it from each part and let the part-filter drop the
-// resulting empty entries. **`\x` does NOT trigger wait-mode in Lichborne**
-// (per Sekmeht 2026-06-01) — only `@` does. So `\\x;hide` (hypothetical)
-// imports as just `hide` and auto-sends; `\\x;send $think @` imports as
-// `send $think @` and waits (because of `@`, not because of `\x`). This is
-// a deliberate simplification from Genie's two-mode behavior; users who
-// genuinely want "insert at cursor without clearing first" can edit their
-// macros after import to remove the `\\x;` and we'd treat them as wait-mode
-// only if they have `@`.
-function splitAction(action: string): { commands: string[]; hadInternal: boolean } {
-  const parts = action.split(';').map(s => s.trim()).filter(Boolean)
-  const commands: string[] = []
-  let hadInternal = false
-  for (const p of parts) {
-    if (isGenieInternal(p)) {
-      hadInternal = true
-    } else {
-      // Strip leading \x (Genie's "clear input" command — see comment block above).
-      commands.push(p.replace(/^\\x/, '').trim())
-    }
-  }
-  // After splitting, filter out empties that resulted from `\x`-only parts.
-  return { commands: commands.filter(Boolean), hadInternal }
+// Per-segment cleaners: Genie's `\x` is its "clear input box" command — pure
+// import-time noise (Lichborne always replaces the bar; **only `@` triggers
+// wait-mode**, not `\x` — Sekmeht 2026-06-01), so a leading `\x` is dropped and
+// the empty result is filtered; a trailing `\r` (Genie's send marker) is
+// redundant since Genie auto-sends, so it's dropped too. `#`-prefixed commands
+// are Genie-internal scripting (`#if`/`#put`/`#class`/…) and filtered out
+// (`isGenieInternal`); `##x` is an escape for a literal `#x` and is NOT internal.
+function parseGenieAction(action: string) {
+  return parseImportedMacroAction(action, {
+    separator:    /;/g,
+    cleanSegment: s => s.replace(/^\\x/, '').replace(/\\r$/, ''),
+    isBuiltin:    isGenieInternal,
+  })
 }
 
 // Strip trailing \r (Genie's "send with enter" marker — Frostborne does this automatically)
 function stripSendMarker(s: string): string {
   return s.endsWith('\\r') ? s.slice(0, -2).trim() : s.trim()
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Genie's `/pattern/`, `/pattern/i` wrapping marks an EXPLICIT regex regardless
+// of the highlight/trigger type — Globals.cs:1007-1019 strips the leading `/`
+// then a trailing `/i` (→ case-insensitive) or `/`. Without this, a slash-
+// wrapped pattern imported with the slashes/flag baked in as literal text and
+// never matched (e.g. `/The taipan…/i`). Returns the unwrapped body + flags; for
+// a non-slash pattern `isRegex` is false and the caller uses the type mapping.
+function stripGenieSlashWrap(raw: string): { pattern: string; isRegex: boolean; caseInsensitive: boolean } {
+  const p = raw.trim()
+  if (!p.startsWith('/')) return { pattern: raw, isRegex: false, caseInsensitive: false }
+  let body = p.slice(1)
+  let caseInsensitive = false
+  if (body.endsWith('/i'))      { caseInsensitive = true; body = body.slice(0, -2) }
+  else if (body.endsWith('/'))  { body = body.slice(0, -1) }
+  return { pattern: body, isRegex: true, caseInsensitive }
 }
 
 // Strip a trailing " /i" case-insensitivity flag from a Genie pattern.
@@ -148,9 +149,28 @@ function parseHighlights(text: string): ImportHighlight[] {
 
     const [matchTypeRaw, colorRaw, patternRaw, classTag, soundFile] = args
     const { textColor, bgColor } = parseGenieColor(colorRaw)
-    const matchType = mapMatchType(matchTypeRaw)
-    const scope     = mapMatchScope(matchTypeRaw)
-    const { pattern, caseSensitive } = stripCaseFlag(patternRaw)
+    const scope = mapMatchScope(matchTypeRaw)
+
+    // Resolve the pattern + match mode. Three cases, in Genie's own precedence:
+    //   (1) `/…/`-wrapped → explicit regex (any type); strip slashes + `/i`.
+    //   (2) `beginswith` → the line must START WITH the pattern, so anchor it as
+    //       a `^`-regex. (Mapping it to a plain substring over-matched: it would
+    //       fire on the pattern appearing ANYWHERE in the line, not just the
+    //       start — a real fidelity gap vs Genie's HighlightBeginsWithList.)
+    //   (3) otherwise → the type mapping (regexp→regex, line→phrase, string→text).
+    const slash = stripGenieSlashWrap(patternRaw)
+    let pattern: string
+    let matchType: ImportHighlight['matchType']
+    let caseSensitive: boolean
+    if (slash.isRegex) {
+      pattern = slash.pattern; matchType = 'regex'; caseSensitive = !slash.caseInsensitive
+    } else if (matchTypeRaw.toLowerCase() === 'beginswith') {
+      const cf = stripCaseFlag(patternRaw)
+      pattern = '^' + escapeRegex(cf.pattern); matchType = 'regex'; caseSensitive = cf.caseSensitive
+    } else {
+      const cf = stripCaseFlag(patternRaw)
+      pattern = cf.pattern; matchType = mapMatchType(matchTypeRaw); caseSensitive = cf.caseSensitive
+    }
 
     results.push({
       kind:        'highlight',
@@ -216,12 +236,12 @@ function parseMacros(text: string): ImportMacro[] {
     const key = normalizeGenieKey(`{${keyRaw}}`)
     if (!key) continue
 
-    const action = stripSendMarker(actionRaw)
-    const { commands, hadInternal } = splitAction(action)
+    const { commands, hadBuiltin, allBuiltin } = parseGenieAction(actionRaw)
 
-    // All commands were Genie-internal — surface as unsupported rather than silently dropping
+    // All commands were Genie-internal scripting — surface as unsupported
+    // rather than silently dropping (uniform with Wrayth/Frostbite).
     if (commands.length === 0) {
-      results.push({
+      if (allBuiltin) results.push({
         kind: 'macro', source: 'genie', status: 'unsupported',
         statusNote: 'All commands are Genie-internal — nothing to import',
         key, commands: [],
@@ -229,10 +249,13 @@ function parseMacros(text: string): ImportMacro[] {
       continue
     }
 
+    // NOTE: `@` is NOT flagged — it's Lichborne's native cursor marker, so
+    // `assess @` / `first @` import as working type-and-wait macros (the cursor
+    // lands where the `@` is, incl. mid-string). Only unresolved Genie `$vars`
+    // get a note.
     const notes: string[] = []
-    if (hadInternal)                         notes.push('Some Genie-internal commands were removed')
+    if (hadBuiltin)                          notes.push('Some Genie-internal commands were removed')
     if (commands.some(c => c.includes('$'))) notes.push('Variable references won\'t resolve — move to a Lich script')
-    if (commands.some(c => c.includes('@'))) notes.push('@ target placeholder won\'t resolve — move to a Lich alias')
 
     results.push({
       kind:       'macro',
@@ -259,15 +282,15 @@ function parseAliases(text: string): ImportAlias[] {
     if (args.length < 2) continue
 
     const [input, actionRaw] = args
-    const action = stripSendMarker(actionRaw)
-    const { commands, hadInternal } = splitAction(action)
+    const { commands, hadBuiltin } = parseGenieAction(actionRaw)
 
     if (commands.length === 0) continue
 
+    // `@` is intentionally NOT flagged here either (consistent with macros);
+    // it's near-nonexistent in real Genie aliases (which use `$1`/`$rest`).
     const notes: string[] = []
-    if (hadInternal)                         notes.push('Some Genie-internal commands were removed')
+    if (hadBuiltin)                          notes.push('Some Genie-internal commands were removed')
     if (commands.some(c => c.includes('$'))) notes.push('Variable references won\'t resolve — move to a Lich script')
-    if (commands.some(c => c.includes('@'))) notes.push('@ target placeholder won\'t resolve — move to a Lich alias')
 
     results.push({
       kind:       'alias',
@@ -279,6 +302,63 @@ function parseAliases(text: string): ImportAlias[] {
     })
   }
 
+  return results
+}
+
+// ── Gags (#gag / #ignore → suppress a line) ──────────────────────────────────
+// `#gag {pattern}` (also `#ignore`). Pattern uses the same `/…/i` slash-wrapping
+// as highlights/triggers (reuses stripGenieSlashWrap), else a literal substring.
+function parseMutes(text: string): ImportMute[] {
+  const results: ImportMute[] = []
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (!line.startsWith('#gag') && !line.startsWith('#ignore')) continue
+
+    const rest = line.replace(/^#(?:gag|ignore)\s*/, '')
+    const args = parseArgs(rest)
+    if (args.length < 1 || !args[0].trim()) continue
+
+    const slash = stripGenieSlashWrap(args[0])
+    let pattern: string
+    let matchType: ImportMute['matchType']
+    let caseSensitive: boolean
+    if (slash.isRegex) {
+      pattern = slash.pattern; matchType = 'regex'; caseSensitive = !slash.caseInsensitive
+    } else {
+      const cf = stripCaseFlag(args[0])
+      pattern = cf.pattern; matchType = 'phrase'; caseSensitive = cf.caseSensitive
+    }
+
+    results.push({ kind: 'mute', source: 'genie', status: 'ready', pattern, matchType, caseSensitive })
+  }
+  return results
+}
+
+// ── Substitutes (#sub / #subs / #substitute → rewrite text) ───────────────────
+// `#subs {pattern} {replacement}`. Genie patterns are regex (slash-wrap reuses
+// stripGenieSlashWrap) and the replacement uses `$N` capture refs — same syntax
+// as our SubstituteRule, so it passes through unchanged.
+function parseSubstitutes(text: string): ImportSubstitute[] {
+  const results: ImportSubstitute[] = []
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim()
+    if (!line.startsWith('#sub')) continue
+
+    const rest = line.replace(/^#(?:substitute|subs|sub)\s*/, '')
+    const args = parseArgs(rest)
+    if (args.length < 1 || !args[0].trim()) continue
+
+    const slash = stripGenieSlashWrap(args[0])
+    results.push({
+      kind:          'substitute',
+      source:        'genie',
+      status:        'ready',
+      pattern:       slash.isRegex ? slash.pattern : args[0],
+      matchType:     'regex',
+      caseSensitive: false,
+      replacement:   args[1] ?? '',
+    })
+  }
   return results
 }
 
@@ -517,6 +597,11 @@ function parseTriggers(text: string): ImportTrigger[] {
       continue
     }
 
+    // Genie triggers can be `/…/`-wrapped regex too — strip the slashes/`/i` so
+    // the pattern doesn't import with literal slashes (Globals.cs). Triggers are
+    // already imported case-insensitive, so the `/i` flag is informational.
+    const triggerPattern = stripGenieSlashWrap(patternRaw).pattern
+
     const {
       commands, echoActions, varActions, logActions,
       soundFiles, hasFlash, hasBeep, hasLibrarySound, dropped,
@@ -532,7 +617,7 @@ function parseTriggers(text: string): ImportTrigger[] {
         statusNote: dropped.length > 0
           ? `Unsupported actions only: ${[...new Set(dropped.map(d => d.split(/\s/)[0]))].join(', ')}`
           : 'No importable actions found',
-        pattern: patternRaw, matchType: 'regex', caseSensitive: false,
+        pattern: triggerPattern, matchType: 'regex', caseSensitive: false,
         commands: [], echoActions: [], varActions: [], logActions: [],
         soundFiles: [], hasFlash: false, hasBeep: false, droppedActions: dropped,
         classTag,
@@ -540,7 +625,12 @@ function parseTriggers(text: string): ImportTrigger[] {
       continue
     }
 
-    // Determine status
+    // Determine status. Only genuinely-dropped actions make a trigger `partial`.
+    // A sound IS a supported action (it imports as a sound preset and plays), so
+    // a Genie library-sound name does NOT downgrade the trigger — uniform with
+    // how Frostbite imports highlight sounds as `ready`. We keep an
+    // informational note (shown as a tooltip on the `ready` badge) because the
+    // specific Genie sound becomes one of Lichborne's built-in presets.
     let status: ImportTrigger['status'] = 'ready'
     const notes: string[] = []
     if (dropped.length > 0) {
@@ -548,8 +638,7 @@ function parseTriggers(text: string): ImportTrigger[] {
       notes.push(`Unsupported actions skipped: ${[...new Set(dropped.map(d => d.split(/\s/)[0]))].join(', ')}`)
     }
     if (hasLibrarySound) {
-      status = 'partial'
-      notes.push('Genie library sound name — update path after import')
+      notes.push('Genie sound mapped to a built-in preset — change it in the trigger if you want a different one')
     }
 
     results.push({
@@ -557,7 +646,7 @@ function parseTriggers(text: string): ImportTrigger[] {
       source:        'genie',
       status,
       statusNote:    notes.length > 0 ? notes.join('; ') : undefined,
-      pattern:       patternRaw,
+      pattern:       triggerPattern,
       matchType:     'regex',
       caseSensitive: false,
       commands,
@@ -665,25 +754,15 @@ export function parseGenieFiles(files: GenieFiles): ImportResult {
 
   const themeVars = files.presets ? parsePresets(files.presets) : undefined
 
-  // Count substitution rules for the deferred-feature notice
-  let substitutionCount = 0
-  if (files.substitutions) {
-    for (const line of files.substitutions.split('\n')) {
-      if (line.trim().startsWith('#substitute')) substitutionCount++
-    }
-  }
+  const substitutes = files.substitutions ? parseSubstitutes(files.substitutions) : []
+  const mutes = files.gags ? parseMutes(files.gags) : []
 
-  let gagsCount = 0
-  if (files.gags) {
-    for (const line of files.gags.split('\n')) {
-      if (line.trim().startsWith('#gag')) gagsCount++
-    }
-  }
-
+  // Variables stay count-only (they live in Lich's Vars). Genie writes the SHORT
+  // form `#var` (also covers `#variable`).
   let variablesCount = 0
   if (files.variables) {
     for (const line of files.variables.split('\n')) {
-      if (line.trim().startsWith('#variable')) variablesCount++
+      if (line.trim().startsWith('#var')) variablesCount++
     }
   }
 
@@ -693,9 +772,10 @@ export function parseGenieFiles(files: GenieFiles): ImportResult {
 
   return {
     highlights, names, macros, aliases, triggers,
-    substitutionCount, unsupportedCount,
+    substitutionCount: 0, unsupportedCount,
+    ...(mutes.length > 0 ? { mutes } : {}),
+    ...(substitutes.length > 0 ? { substitutes } : {}),
     ...(themeVars && Object.keys(themeVars).length > 0 ? { themeVars } : {}),
-    ...(gagsCount     > 0 ? { gagsCount }     : {}),
     ...(variablesCount > 0 ? { variablesCount } : {}),
   }
 }

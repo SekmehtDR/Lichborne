@@ -29,6 +29,29 @@ export interface ImportHighlight {
   templateName?: string
 }
 
+export interface ImportMute {
+  kind: 'mute'
+  source: ImportSource
+  status: ImportStatus
+  statusNote?: string
+  pattern: string
+  matchType: 'text' | 'phrase' | 'regex'
+  caseSensitive: boolean
+  stream?: string        // optional stream scope (Frostbite target); undefined = all
+}
+
+export interface ImportSubstitute {
+  kind: 'substitute'
+  source: ImportSource
+  status: ImportStatus
+  statusNote?: string
+  pattern: string
+  matchType: 'text' | 'phrase' | 'regex'
+  caseSensitive: boolean
+  replacement: string    // normalized to $N capture-group syntax
+  stream?: string
+}
+
 export interface ImportMacro {
   kind: 'macro'
   source: ImportSource
@@ -94,11 +117,14 @@ export interface ImportResult {
   macros: ImportMacro[]
   aliases: ImportAlias[]
   triggers: ImportTrigger[]
-  substitutionCount: number     // deferred feature — count only, not imported
+  mutes?: ImportMute[]          // Mutes (Gags / Ignores) → imported as MuteRule (DESIGN.md §31)
+  substitutes?: ImportSubstitute[] // Substitutes → imported as SubstituteRule (DESIGN.md §31)
+  substitutionCount: number     // legacy count (no longer surfaced once `substitutes` imports)
   unsupportedCount: number
   themeVars?: Record<string, string>  // CSS vars mapped from Genie/Frostbite/Wrayth presets
   // "Belongs in Lich" counts — surfaced on confirm screen, never imported
   alertHighlightCount?: number  // Frostbite [AlertHighlight] health/stun threshold entries
+  quickButtonCount?: number     // Frostbite general.ini [QuickButton] entries (no LB equivalent)
   gagsCount?: number            // Genie gags.cfg rule count
   variablesCount?: number       // Genie variables.cfg entry count
   scriptsCount?: number         // Wrayth <scripts> block entry count

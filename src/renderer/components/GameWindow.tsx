@@ -8,6 +8,8 @@ import { ContactsContext } from '../ContactsContext'
 import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
 import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
+import { loadMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
+import { loadSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, type AliasRule, type MacroRule } from '../macros'
@@ -22,7 +24,7 @@ import PanelManager from './PanelManager'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
 import SessionLogModal from './SessionLogModal'
-import ContextMenu from './ContextMenu'
+import ContextMenu, { type CtxItem } from './ContextMenu'
 import ContactsPanel from './ContactsPanel'
 import AutomationsPanel from './AutomationsPanel'
 import LichDashboard, { type DashTab } from './LichDashboard'
@@ -424,10 +426,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [showLichDash,      setShowLichDash]      = useState(false)
   const [lichDashTab,       setLichDashTab]       = useState<DashTab>('scripts')
   const [showMapOverlay,  setShowMapOverlay]    = useState(false)
-  const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'groups'>('highlights')
+  const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'mutes'|'substitutes'|'groups'>('highlights')
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
+  const [mutePrefill,           setMutePrefill]           = useState<MuteRule | undefined>(undefined)
+  const [substitutePrefill,     setSubstitutePrefill]     = useState<SubstituteRule | undefined>(undefined)
   // v0.8.2: open EXISTING trigger by id (drives the Fires-log → GOTO button).
   // Distinct from prefillPattern, which always creates a new trigger.
   const [triggerOpenId,        setTriggerOpenId]        = useState<string | undefined>(undefined)
@@ -453,6 +457,25 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     scheduleProfileSave(session.account, session.character, session.game, session.useLich)
   }, [activeModeId]) // eslint-disable-line react-hooks/exhaustive-deps
   const { matchRules, lineRules } = useCompiledHighlights(highlights, activeGroupStates)
+  // Mutes (DESIGN.md §31): compiled + group-gated, kept in a ref for the render
+  // hot-path that filters newMain before commit.
+  const [mutes, setMutes] = useState<MuteRule[]>(() => loadMutes(session.character))
+  const activeMutesRef = useRef<CompiledMute[]>([])
+  useEffect(() => {
+    activeMutesRef.current = compileMutes(
+      mutes,
+      (groupIds, allGroups) => isRuleActive(groupIds, activeGroupStates, allGroups),
+    )
+  }, [mutes, activeGroupStates])
+  // Substitutes (DESIGN.md §31): compiled + group-gated, applied after mutes.
+  const [substitutes, setSubstitutes] = useState<SubstituteRule[]>(() => loadSubstitutes(session.character))
+  const activeSubsRef = useRef<CompiledSubstitute[]>([])
+  useEffect(() => {
+    activeSubsRef.current = compileSubstitutes(
+      substitutes,
+      (groupIds, allGroups) => isRuleActive(groupIds, activeGroupStates, allGroups),
+    )
+  }, [substitutes, activeGroupStates])
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers(session.character))
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases(session.character))
   const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros(session.character))
@@ -1357,6 +1380,36 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // adds the far-more-frequent inline form.
       if (batchRoomDesc != null) roomUpdates.desc = batchRoomDesc
 
+      // Text-modification passes (DESIGN.md §31): mute → substitute, applied to
+      // the main window AND every stream buffer — GLOBAL by default; a rule with
+      // a `stream` set applies ONLY to that stream (Frostbite-style restrict).
+      // Order matters (mute before substitute, both before render so highlights
+      // style the result). Display-only — the Session Log captured the raw line
+      // per-event upstream, so this can never silently lose history. Mutates the
+      // buffers in place so the commit blocks below are unchanged.
+      if (activeMutesRef.current.length > 0 || activeSubsRef.current.length > 0) {
+        const applyTextMods = (buf: TextLine[], streamId: string) => {
+          if (buf.length === 0) return
+          const mu  = activeMutesRef.current.filter(m => !m.rule.stream || m.rule.stream === streamId)
+          const sub = activeSubsRef.current.filter(s => !s.rule.stream || s.rule.stream === streamId)
+          if (mu.length > 0) {
+            for (let i = buf.length - 1; i >= 0; i--) {
+              const segs = applyMutesToSegments(buf[i].segments, mu)
+              if (segs === null) buf.splice(i, 1)
+              else if (segs !== buf[i].segments) buf[i] = { ...buf[i], segments: segs }
+            }
+          }
+          if (sub.length > 0) {
+            for (let i = 0; i < buf.length; i++) {
+              const segs = applySubstitutesToSegments(buf[i].segments, sub)
+              if (segs !== buf[i].segments) buf[i] = { ...buf[i], segments: segs }
+            }
+          }
+        }
+        applyTextMods(newMain, 'main')
+        for (const key of Object.keys(newStream)) applyTextMods(newStream[key], key)
+      }
+
       if (newMain.length > 0) {
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
@@ -2239,6 +2292,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     setShowAutomations(true)
   }
 
+  function openMuteEditor(rule: MuteRule) {
+    setHighlightPrefill(undefined)
+    setTriggerPrefillPattern(undefined)
+    setMutePrefill(rule)
+    setAutomationsTab('mutes')
+    setShowAutomations(true)
+  }
+
+  function openSubstituteEditor(rule: SubstituteRule) {
+    setHighlightPrefill(undefined)
+    setTriggerPrefillPattern(undefined)
+    setSubstitutePrefill(rule)
+    setAutomationsTab('substitutes')
+    setShowAutomations(true)
+  }
+
   function openTriggerEditor(pattern: string) {
     setHighlightPrefill(undefined)
     setTriggerPrefillPattern(pattern)
@@ -2572,12 +2641,33 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           ...(mainCtxMenu.word ? [{ label: `Trigger for "${mainCtxMenu.word}"`, onClick: () => openTriggerEditor(mainCtxMenu.word!) }] : []),
           ...(mainCtxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => openTriggerEditor(mainCtxMenu.lineText!) }] : []),
         ]
+        const muGroup = [
+          ...(mainCtxMenu.word ? [{ label: `Mute "${mainCtxMenu.word}"`, onClick: () => openMuteEditor({ ...newMute(mainCtxMenu.word!, 'phrase'), scope: 'match' }) }] : []),
+          ...(mainCtxMenu.lineText ? [{ label: 'Mute this line', onClick: () => openMuteEditor({ ...newMute(mainCtxMenu.lineText!, 'phrase'), scope: 'line' }) }] : []),
+        ]
+        const subGroup = [
+          ...(mainCtxMenu.word ? [{ label: `Substitute "${mainCtxMenu.word}"`, onClick: () => openSubstituteEditor(newSubstitute(mainCtxMenu.word!, '')) }] : []),
+          ...(mainCtxMenu.lineText ? [{ label: 'Substitute this line', onClick: () => openSubstituteEditor(newSubstitute(mainCtxMenu.lineText!, '')) }] : []),
+        ]
         const logGroup = mainCtxMenu.lineText
           ? [{ label: 'Show in Log', onClick: () => { setSessionLogSearch(mainCtxMenu.lineText!); setSessionLogKey(k => k + 1); setShowSessionLog(true) } }]
           : []
         const clGroup = [{ label: 'Clear', onClick: clearLines }]
-        const groups = [hlGroup, trGroup, logGroup, clGroup].filter(g => g.length > 0)
-        const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
+        // Two sibling submenus: "Modify Text" (Highlight / Mute / Substitute —
+        // change how text displays) and "Trigger" (automation off the text),
+        // then Show in Log / Clear. Keeps the root menu to four short rows.
+        const join = (gs: CtxItem[][]) => {
+          const ne = gs.filter(g => g.length > 0)
+          return ne.flatMap((g, i) => i < ne.length - 1 ? [...g, sep] : g)
+        }
+        const modifyItems = join([hlGroup, muGroup, subGroup])
+        const tail = [...logGroup, ...clGroup]
+        const items: CtxItem[] = [
+          ...(modifyItems.length ? [{ label: 'Modify Text', submenu: modifyItems }] : []),
+          ...(trGroup.length     ? [{ label: 'Trigger',     submenu: trGroup }]     : []),
+          ...((modifyItems.length || trGroup.length) && tail.length ? [sep] : []),
+          ...tail,
+        ]
         return (
           <ContextMenu x={mainCtxMenu.x} y={mainCtxMenu.y} onClose={() => setMainCtxMenu(null)} items={items} />
         )
@@ -2683,6 +2773,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           highlightTestText={highlightTestText}
           triggerPrefillPattern={triggerPrefillPattern}
           triggerOpenId={triggerOpenId}
+          mutePrefill={mutePrefill}
+          substitutePrefill={substitutePrefill}
           onThemeSaved={(themeId) => {
             const updated = loadMyThemes()
             setMyThemes(updated)
@@ -2696,6 +2788,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             setTriggers(loadTriggers(session.character))
             setAliases(loadAliases(session.character))
             setMacros(loadMacros(session.character))
+            setMutes(loadMutes(session.character))
+            setSubstitutes(loadSubstitutes(session.character))
             setContacts(loadContacts(session.character))
             setContactTemplates(loadContactTemplates(session.character))
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
@@ -2705,10 +2799,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             setHighlightPrefill(undefined)
             setHighlightTestText(undefined)
             setTriggerPrefillPattern(undefined)
+            setMutePrefill(undefined)
+            setSubstitutePrefill(undefined)
             setHighlights(loadHighlights(session.character))
             setTriggers(loadTriggers(session.character))
             setAliases(loadAliases(session.character))
             setMacros(loadMacros(session.character))
+            setMutes(loadMutes(session.character))
+            setSubstitutes(loadSubstitutes(session.character))
             scheduleProfileSave(session.account, session.character, session.game, session.useLich)
           }}
         />

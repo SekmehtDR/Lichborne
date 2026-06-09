@@ -14,9 +14,12 @@
   background: var(--bg-base);
   border: 1px solid var(--border);
   border-radius: 6px;
-  width: 780px;
-  max-width: 97vw;
-  max-height: 88vh;
+  /* Standard management-window size (Settings, Automations, Panel Manager, …) —
+     the old fixed 780px squished the Genie highlights table (many columns). */
+  width: var(--modal-w-standard);
+  height: var(--modal-h-standard);
+  max-width: var(--modal-w-standard);
+  max-height: var(--modal-h-standard);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -416,6 +419,34 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* WYSIWYG highlight preview: render the pattern in its real fg/bg colours on a
+   FIXED dark game-like backdrop so it reads the way it will in the game window,
+   regardless of the wizard's theme. The dark fill is a deliberate fixed surface
+   (like the vital bars — Principle #4's saturated-fill exception): a white
+   highlight previewed on a light-theme panel would otherwise vanish. The
+   highlight's own bgColor (when set) overrides the backdrop via inline style. */
+.iw-hl-preview {
+  font-family: monospace;
+  font-size: 0.78rem;
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: #14161a;
+  color: #d6d6d6;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+.iw-swatch-pair {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
 
 .iw-empty {
