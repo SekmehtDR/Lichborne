@@ -190,8 +190,13 @@ function parseHighlights(text: string): ImportHighlight[] {
   return results
 }
 
+// `names.cfg`: `#name {#COLOR} {PlayerName}`. Imported as CONTACTS (not
+// highlights), with a per-colour `templateName` (`color<HEX>`) so the wizard's
+// contacts-apply creates one reusable template per colour and assigns it —
+// matching the Frostbite `group=Names` and Wrayth `<names>` paths.
 function parseNames(text: string): ImportHighlight[] {
   const results: ImportHighlight[] = []
+  const seen = new Set<string>()
 
   for (const rawLine of text.split('\n')) {
     const line = rawLine.trim()
@@ -202,19 +207,24 @@ function parseNames(text: string): ImportHighlight[] {
     if (args.length < 2) continue
 
     const [colorRaw, name] = args
+    const pattern = name.trim()
+    if (!pattern || seen.has(pattern.toLowerCase())) continue
+    seen.add(pattern.toLowerCase())
+
     const { textColor, bgColor } = parseGenieColor(colorRaw)
 
     results.push({
       kind:          'highlight',
       source:        'genie',
       status:        'ready',
-      pattern:       name.trim(),
+      pattern,
       matchType:     'text',
       caseSensitive: false,
       scope:         'match',
       textColor,
       bgColor,
       sourceClass:   'names',
+      templateName:  textColor ? `color${textColor.replace('#', '').toUpperCase()}` : undefined,
     })
   }
 

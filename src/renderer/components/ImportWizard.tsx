@@ -88,7 +88,7 @@ interface FileSlot {
 
 const GENIE_SLOTS: FileSlot[] = [
   { key: 'highlights',  label: 'highlights.cfg',  hint: 'Text highlights' },
-  { key: 'names',       label: 'names.cfg',        hint: 'Name highlights' },
+  { key: 'names',       label: 'names.cfg',        hint: 'Names → Contacts (per-colour templates)' },
   { key: 'macros',      label: 'macros.cfg',       hint: 'Keyboard macros (global or per-character)' },
   { key: 'aliases',     label: 'aliases.cfg',      hint: 'Aliases (global or per-character)' },
   { key: 'triggers',    label: 'triggers.cfg',     hint: 'Triggers' },

@@ -1,4 +1,4 @@
-## What's new in v0.12.0
+## What's new in v0.12.1
 
 ### Mute the noise
 
@@ -12,7 +12,7 @@
 
 - **Coming from Genie, Frostbite, or Wrayth? Your ignore/gag AND substitute lists come with you.** The import wizard now brings over your **Mutes** (Genie `gags.cfg`, Frostbite `ignores.ini`, Wrayth `<ignores>`) and your **Substitutes** (Genie `substitutes.cfg`, Frostbite `substitutes.ini` — capture groups and all) — each on its own preview tab so you pick exactly what to keep. They import and save exactly like your highlights do.
 
-- **Frostbite player names become Contacts — grouped by color.** Importing a Frostbite profile now turns your highlighted player names (the `Names` group) into **Contacts**, and each name color becomes a reusable **contact template** you can rename ("Friends," "Enemies," …) — recolor a whole group in one edit, exactly like the Wrayth import. The Contacts preview also flags names you already have (with an EXISTS badge and a "hide existing" toggle), so re-importing doesn't keep re-offering the same people.
+- **Frostbite *and* Genie player names become Contacts — grouped by color.** Importing turns your highlighted player names (Frostbite's `Names` group, Genie's `names.cfg`) into **Contacts**, and each name color becomes a reusable **contact template** you can rename ("Friends," "Enemies," …) — recolor a whole group in one edit, exactly like the Wrayth import. All three legacy clients now do this. The Contacts preview also flags names you already have (with an EXISTS badge and a "hide existing" toggle), so re-importing doesn't keep re-offering the same people.
 
 - **Smoother imports.** A handful of import-wizard papercuts are fixed: importing only Substitutes (or only Mutes) no longer dead-ends on an empty "Triggers" tab, the Confirm button now counts mutes/substitutes, and a freshly-imported list shows up immediately instead of needing a tab switch. (Frostbite's experience-window mind-state numbering substitutes — which would scramble Lichborne's already-aligned skill table — are shown in the preview but held back as unsupported.)
 
