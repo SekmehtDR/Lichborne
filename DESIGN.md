@@ -75,6 +75,18 @@
     - 25.4 What to Add
     - 25.5 New Architecture: The LichBridge Module
     - 25.6 Recommendation
+26. [Release C — Lich Dashboard Design](#26-release-c--lich-dashboard-design)
+27. [Release D — Lich Dashboard Deep Integration](#27-release-d--lich-dashboard-deep-integration)
+28. [Session Log — Release E2](#28-session-log--release-e2)
+29. [Profile Transfer — Platform-wide Export/Import](#29-profile-transfer--platform-wide-exportimport-f38-v0100)
+30. [Lich-Integration Opportunities — Research](#30-lich-integration-opportunities--research-v0112-not-yet-built)
+31. [Text Modification — Mutes & Substitutes](#31-text-modification--mutes--substitutes-v012x)
+32. [Visual, Interactive & AI Experiences — Backlog](#32-visual-interactive--ai-experiences--backlog-brainstorm-v012x)
+    - 32.1 Graphical Visualization Features (G1–G10)
+    - 32.2 Interactive Experiences (X1–X6)
+    - 32.3 AI-Assisted Features (AI1–AI10)
+    - 32.4 Cross-cutting architecture & dependencies
+    - 32.5 Suggested build order
 
 ---
 
@@ -1003,6 +1015,11 @@ On login, the client receives the character name from SGE. It looks up a matchin
 
 AI features use the OpenAI API (key stored locally, never transmitted anywhere else).
 
+> **See also §32.3** for the full AI-feature backlog (AI1–AI10: Setup Sage, RP Muse, Elanthia
+> Oracle, Catch Me Up, Chronicle, Ask Your Logs, War Council, Loremaster's Loom, Portrait Forge,
+> Mentor). §32 supersedes this section's OpenAI-only assumption with a provider-agnostic, BYO-key
+> adapter (Claude default) and per-feature consent gates. §10.1 below is the matured form of AI1.
+
 ### 10.1 Highlight Suggester (Phase 4)
 
 The first AI feature. Analyzes recent session logs and the current highlight config, then suggests new highlight rules:
@@ -1149,8 +1166,17 @@ Priority order reflects data availability from the protocol and player-facing va
 - [ ] Sound alerts
 - [ ] HUD widget system — individual repositionable elements (hands, spell; compass is already a floating overlay; RT/CT are already embedded in the command bar)
 
+### Visual, Interactive & AI Experiences — Backlog
+> **Full spec: §32.** The "graphics for text players" pipeline — 10 graphical visualizations
+> (G1–G10: Combat HUD, Wound Paper-Doll, Life Orbs, Tactical Radar, World Ambiance, Buffs Board,
+> Comms Console, Skill Momentum, Portrait Forge, Reactive Soundscape), 6 interactive experiences
+> (X1–X6: Living Tableau flagship, Spar Arena, Empath's Ward, Bardic Stage, Tavern Games, Scene
+> Composer), and 10 AI-assisted features (§32.3). Suggested build order in §32.5 (start: G2 Wound
+> Paper-Doll). All held to display-not-automate + BYO-key/opt-in guardrails.
+
 ### AI Features — Backlogged
 All AI features require the highlight system and session capture to exist first.
+> (Expanded and superseded by §32.3 — provider-agnostic, BYO-key. The items below are the original sketch.)
 
 - [ ] Session recorder — click Record → click Stop → captures raw game text for that window
 - [ ] Session summarizer — after recording, AI summarizes interactions: who talked to you, notable events, suggested highlight rules for names/keywords that appeared
@@ -3737,6 +3763,8 @@ Lichborne is not a general-purpose DR client that happens to support Lich. It is
 
 The features that make Lichborne different from Genie and Frostbite are not triggers and aliases. They are rendering quality, display depth, and Lich integration. Go deep there, not sideways into automation.
 
+**Clarification — "Lich-first, with backwards compatibility" (2026-06-09, Sekmeht).** The purist framing above ("never duplicate Lich automation"; "the differentiator is *not* triggers/aliases") is the *direction*, but the shipped reality is more nuanced and intentional: Lichborne **does** carry a native automation layer — highlights, triggers, macros, aliases, mutes/substitutes (Phase 7 + §31). It exists as a **backwards-compatibility / regression path** so a player who connects **directly to the game (SGE, no Lich)** isn't stranded, and as a **GUI convenience** for Lich users who don't write scripts. The reconciliation: Lichborne is **Lich-first** — Lich is the optimal, full-power route (maps, spell timers, variables, scripts, repository all light up with it) — and the native layer is the **graceful-degradation floor** beneath that, not the product's reason to exist. The hard line still held: that native layer is **finite and GUI-configured — we do NOT reinvent a scripting engine** (Frostbite's embedded Ruby, Genie's `#command` language). Heavy/conditional automation stays Lich's job; Lichborne *surfaces* Lich, it doesn't *host* a script runtime. So "go deep on rendering, not sideways into automation" still governs *new* work — but **"make the no-Lich path usable" is a first-class constraint, not a contradiction**, and a Lich-optimal feature with a degraded no-Lich mode is allowed (full parity is not required — this sharpens Principle #2, dropping its old "every feature must work without Lich" absolute). It is the Lich analogue of §32's "AI enhances, never gates": an optional power tier over a working baseline.
+
 ---
 
 ### 24.2 The Full Stack
@@ -5350,3 +5378,270 @@ reworded (these now import instead of "belong in Lich").
   "Apply to" stream restrict). **Feature complete.** (A once-considered "push to textsubs.lic"
   export was **dropped** — Sekmeht, 2026-06-08; the native feature already does what's needed and
   delegating to Lich reintroduces the no-Lich/portability problems §31.1 lists.)
+
+---
+
+## 32. Visual, Interactive & AI Experiences — Backlog (brainstorm v0.12.x)
+
+**Status:** Brainstorm / wishlist. None of these are built or scheduled — this section is the
+durable home for the "graphics for text players" feature pipeline so it doesn't get lost. Each idea
+carries a stable local ID (`G#` graphical, `X#` interactive experience, `AI#` AI-assisted) for
+reference in conversation and commits; a real `F##` number gets assigned when an item is actually
+scheduled. Ideas are described richly on purpose (the value is in the *why* and the data source, not
+a one-line checkbox).
+
+**Three guardrails every item here is held to:**
+1. **Display & surface, never automate.** These *visualize, compose, summarize, and decorate* —
+   they do not issue game commands or play the game. This keeps the whole pipeline on the right side
+   of Principle #1 (display/config layer, not a Lich-replacement) and of Simutronics' scripting/botting
+   policy. Where an item "stages" a command (e.g. Empath's Ward, X3), the human always presses send.
+2. **AI is bring-your-own-key, opt-in, privacy-disclosed.** Key stored encrypted via `safeStorage`
+   (same as `passwords.json`), a provider-agnostic `AIProvider` adapter (Claude as the default and
+   highest-quality option, OpenAI/others supported), and a per-feature consent gate that discloses
+   "this sends game text to <provider>." Nothing leaves the machine unless that specific feature is
+   enabled. (Supersedes the OpenAI-only assumption in §10.)
+3. **AI ENHANCES, it never GATES — every feature has a working non-AI baseline.** (Sekmeht,
+   2026-06-09 — a load-bearing design rule, the AI mirror of Principle #2's "Lich-first with a
+   working no-Lich baseline".) No player should ever hit a wall that reads "you need an API key / can't afford AI
+   to use this." Each feature must deliver real value with **AI disabled**, and the AI tier is the
+   *next-level* experience that makes a player *want* a key — not the price of admission. Concretely:
+   the graphical/interactive surfaces (G-series, X-series) are **fully functional without AI** — the
+   only thing AI adds there is *generated art* (portraits/backdrops), which **always degrades to the
+   procedural fallback** (guild sigil + initials + Contact color for avatars; flat themed backdrops
+   for scenes — X1 already specifies this). The AI-assisted features (AI-series) are each the **"smart
+   tier" of a non-AI baseline** (the baseline is an existing feature, a static reference, a template
+   library, or pure-arithmetic analytics — see the §32.3 baseline column). Build the baseline FIRST;
+   the AI tier is an additive layer on top, never a reimplementation. **When speccing any item here,
+   state its non-AI baseline explicitly** — if an item can't function at all without AI, that's a
+   design smell to resolve before it's scheduled.
+
+The unifying thesis: **text-MUD players are thrilled by graphics they've never had** (the existing
+graphical exp bars are the proof). The richest signal sources we already parse — vitals, stance,
+RT/CT, hands, spell, the indicator set, per-body-part injury severity, exits, room players/creatures,
+exp components, contacts — are a goldmine that most of these consume with little or no new parsing.
+
+### 32.1 Graphical Visualization Features (G1–G10)
+
+- **G1 — Combat HUD ("Engagement" panel).** A compact graphical combat cockpit. Central **readiness
+  ring** that sweeps as roundtime burns down; **stance** as a posture icon; a **range gauge** to the
+  current target (melee → pole → missile); a **facing/engagement** indicator; a row of **threat pips**
+  (one per creature, tinted by apparent condition); active conditions (stunned/webbed/bleeding) flash
+  a red ring border. *Data:* stance / roundtime / casttime / indicators / room-creatures are already
+  structured; **range / position / facing / "you advance on…" need a new stateful parse of the combat
+  stream** (~70% existing, ~30% new). *Fit:* pure display, never auto-acts. The headline differentiator.
+
+- **G2 — Wound Paper-Doll.** Replace the text list in [InjuriesPanel.tsx](src/renderer/components/panels/InjuriesPanel.tsx)
+  with an **anatomical silhouette**: each wounded part glows by severity (yellow→orange→deep red),
+  bleeders pulse, severe wounds get a jagged overlay, nerve damage (`nsys`) washes the figure in an
+  electric tint; hover for detail. *Data:* 100% already flowing (`InjuryState`, levels 0–3 + nerves) —
+  no new parsing. *Fit:* pure display, keep text labels as the accessibility/screen-reader layer.
+  **Highest wow-per-effort; proves the SVG+theming pattern G1/X-series reuse.**
+
+- **G3 — Vitals as Life Orbs.** Diablo-style liquid-filled orbs (health/mana/stamina/spirit/concentration)
+  as a third vitals display style beside the existing bar/compact modes — drain/refill with a wave,
+  pulse red when critical. *Data:* `vital-update` already carries current/max (Barbarian "Inner Fire"
+  custom label supported for free). *Fit:* presentation alternative, wire through `applySettingsToDOM`
+  + theme vars per Principle #9.
+
+- **G4 — Tactical Room Radar.** A "what's in this room with me" mini-view (distinct from the map,
+  which is for navigation): you at center, **exits as arrows** around the rim (reuses the compass
+  model), **creatures as hostile dots**, **players as friendly dots** colored by Contact template.
+  *Data:* exits / room-players / room-creatures already structured; contacts already exist. *Fit:*
+  situational-awareness display; complements the map, doesn't duplicate `;go2`.
+
+- **G5 — World Ambiance Strip.** A thin atmospheric strip: time of day / **moon phases** (mechanically
+  relevant to Moon Mages, aesthetic to everyone), a weather/environment glyph per room type, an
+  optional dawn→dusk sky gradient. *Data:* some inferable from the stream; moons/weather are best
+  **surfaced from Lich vars** (don't recompute — Profanity north-star). *Fit:* pure immersion.
+
+- **G6 — Active Spells & Buffs Board.** The MMO buff-bar: a strip of **buff/debuff chips** with radial
+  countdowns, colored by type, pulsing amber in their last ~30s; debuffs on a red sub-row. *Data:*
+  durations live in **Lich's spell-timer tracking** → a surface-it feature, with our `spell`/prepared
+  event feeding the "casting now" slot. *Fit:* display over Lich-owned state.
+
+- **G7 — Comms Console.** Social streams as a chat client: speaker name in **Contact-template color**,
+  channel tabs/filters (Say · Whisper · Thought · Group · LNet), **unread badges**, click-name →
+  existing contact popover, optional compose line routed through `dispatchUserText`. *Data:* streams
+  already routed (talk/whispers/thoughts, `STREAM_FALLBACK` rules exist) — a richer renderer, no new
+  parsing. *Fit:* display layer leaning on Contacts + the stream model. High RP delight.
+
+- **G8 — Skill Momentum Dashboard.** Turn the loved exp panel from "current state" into "story of your
+  session": per-skill **mindstate sparklines**, a **session TDP counter** with a celebration on each
+  gain, **"time to next rank"** projection from observed rate, a where-the-XP-went heatmap, a gentle
+  "mind-locked 6 min — switch it up" nudge. *Data:* built entirely on `exp-component` events + a
+  rolling in-session history (the replay/snapshot infra already models history). *Fit:* observes &
+  projects — never auto-trains.
+
+- **G9 — Portrait Forge (AI character & scene art).** *(Also an AI feature — see AI9; listed here for
+  the visual payoff.)* Generate art from in-game text: a **character portrait** from a person's
+  appearance/LOOK description (cached per name), or **scene art** for the current room from its
+  description (feeds G5's backdrop and X1's tableau). *Data:* image-gen API + the LOOK/room prose.
+  *Fit:* opt-in, clearly-labeled AI art; the ultimate "graphics!!" moment.
+
+- **G10 — Reactive Soundscape.** Promote the existing trigger-sound WAV playback into a curated audio
+  HUD: a **heartbeat that quickens as health drops** (ragged when bleeding), a **chime the instant RT
+  clears** (act without watching), distinct cues for whisper vs. foe-arrival, a soft ambient bed per
+  room type. Every cue toggleable; master kill-switch; no startle-loud defaults. *Data:* drives off
+  existing `vital-update` / `roundtime` / indicators / stream-push / room-type; `playWavFile` exists.
+  *Fit:* feedback layer; mirror epilepsy-safe's restraint (it already disables the RT pulse).
+
+**Clusters:** Combat cockpit = G1+G2+G6+G10(RT chime). Identity/social = G7. Progression = G3+G8.
+World feel = G4+G5+G10(ambient). **Fast wins (no new parser):** G2, G3, G7, G8, G10. **Needs a
+parser pass:** G1 (combat). **Needs a Lich surface bridge:** G6 (spell timers).
+
+### 32.2 Interactive Experiences (X1–X6)
+
+Modes you *step into*, not panels you glance at. **X1 (Living Tableau) is the platform** — its
+avatar/seating/speech-bubble engine + the existing comms-stream routing are the shared foundation
+X2/X4/X5 reuse, so building X1 once makes the rest dramatically cheaper.
+
+- **X1 — Living Tableau (flagship; aka "Gather Mode").** A toggle that turns the text scroll into a
+  *living scene*: everyone in the room becomes an avatar, their words bloom as **illustrated speech
+  bubbles**, arrivals walk in / departures walk out, the room is a painted backdrop. The text MUD
+  becomes a graphic novel you stand inside. **Mechanics:** (a) *Cast* from `roomState.players` /
+  `creatures`; each gets a **stable seat** (hash name → position on an arc) so nobody teleports
+  between updates; you're center/foreground. (b) *Speech→bubbles* from the comms streams — **Say** →
+  comic bubble with a tail, tinted by Contact color; **Emote** → an action caption + a physical beat
+  (bow dip, laugh bounce); **Whisper-to-you** → private dotted-tail bubble only you see; **Thought/ESP**
+  → telepathic wisps at the screen edges, *not* a body in the room (the speaker isn't physically
+  present — getting this wrong puts a phantom in the scene). (c) *Entrances/exits as choreography* —
+  "arrives from the north" slides the avatar in from the north edge (we have exit directions). (d)
+  *Focus the speaker* — whoever's talking raises & brightens; idle folks soften. **AI layer:** room
+  backdrop from the room description (G9/AI9), avatars from appearance/LOOK (cached per name) with a
+  **procedural fallback** (guild sigil + initials + Contact color) so the scene is never empty waiting
+  on art. **Honest constraints:** the game gives **no spatial coordinates** of people — positioning is
+  *invented* (stable seating + exit-direction entrances), so Tableau is *expressive*, not tactical
+  (that's G4's job); festival rooms (50+) need a cap (real avatars for active/known speakers, a
+  "+34 others" crowd silhouette, promote-on-speak); art is opt-in + hard-cached; **a synchronized text
+  equivalent is mandatory** (Tableau augments the log, never replaces it; epilepsy-safe tames the
+  motion). *Fit:* all display of streams we already parse + optional AI decoration. The feature people
+  screenshot and post.
+
+- **X2 — The Spar Arena.** G1 staged like a fighting game for duels/sparring: two avatars across a
+  strip, **the space between them is range** (close for melee, drift for missile), hits flash with a
+  damage tick, stance shows as posture, a knockdown drops the avatar to a knee; foe condition on a mini
+  Wound-Doll. *Data:* shares G1's combat parser + stance/indicators. *Fit:* visualizes; you issue every
+  command. Sparring is deeply social — this makes a duel an *event*.
+
+- **X3 — Empath's Ward (interactive party frames).** MMO-style group frames built for DR healers: group
+  members as portrait cards with live vitals + **wound pips per body part**, "needs attention" sort,
+  click a member to **stage** `assess`/heal into your bar (you confirm-send). *Data:* group membership +
+  per-member status (some via `assess`/`perceive` text — a light parse) + injury data we model. *Fit:*
+  click *stages* a command, never auto-heals. Genuinely useful + the group HUD DR never had.
+
+- **X4 — The Bardic Stage.** Turn a performance (music/song/dance/poetry) into a *show*: musical notes
+  rise with the message rhythm, dancers leave motion trails, the **audience avatars react** (applause
+  bubbles, swoons) from the appreciation messages the game sends; a flubbed performance gets a comic
+  wince. *Data:* performance + audience-reaction messages (focused parse), reuses X1's crowd avatars.
+  *Fit:* pure display celebration of an under-served playstyle.
+
+- **X5 — Tavern Games Table.** Mirror DR's dice/cards/gambling/board games onto an interactive graphical
+  table: roll in-game → animated dice tumble on felt; a card game → your hand fans out, the pot stacks;
+  players seated around it (X1 avatars). You still play via game commands; you *see* the table. *Data:*
+  per-game message parse (ship one — dice or one card game — prove the pattern). *Fit:* delightful
+  low-stakes interactive layer.
+
+- **X6 — Scene Composer.** The shareable payoff: freeze a moment and compose it into a **comic panel** —
+  grab the current avatars + AI backdrop, pick a log line as the caption, choose a frame/filter, export
+  a polished image ("*The night we held the East Gate*"). *Data:* composites X1's rendered scene + a
+  chosen log line + optional AI art. *Fit:* creative export from data we own — **the viral loop** that
+  makes Lichborne spread, because people share the pictures.
+
+### 32.3 AI-Assisted Features (AI1–AI10)
+
+Held to guardrail #1 (assist, never auto-play), #2 (BYO-key/opt-in/disclosed), and **#3 (every one is
+the "smart tier" of a non-AI baseline — build the baseline first; AI is the additive upsell)**. These
+expand and supersede §10's OpenAI-only sketch. AI1 is the maturation of §10.1's Highlight Suggester.
+
+**Non-AI baseline → AI tier (guardrail #3 made concrete):**
+
+| # | Feature | Non-AI baseline (ships first, fully usable) | What the AI tier adds |
+|---|---|---|---|
+| AI1 | Setup Sage | Manual rule editors + right-click "Highlight/Trigger this" + frequency-based name detection (Phase 6D) | Smart, context-aware rule *suggestions* pre-filled to approve |
+| AI2 | RP Muse | An emote/phrase template library + quick-emote palette | Bespoke in-character drafts tuned to a vibe & context |
+| AI3 | Elanthia Oracle | Bundled searchable lore reference + Elanthipedia link-outs | Conversational, room/guild-aware, cited answers |
+| AI4 | Catch Me Up | "Unread since AFK" divider + filtered comms scrollback | A 3-line prose summary of what happened |
+| AI5 | Chronicle | Raw session-log view + export (already exists) | The log rewritten as narrative diary prose |
+| AI6 | Ask Your Logs | Existing keyword Session Log search | Natural-language querying over the same logs |
+| AI7 | War Council | Pure-arithmetic combat recap (hit/miss %, damage tallies) | Coaching advice on *why* + what to change |
+| AI8 | Loremaster's Loom | The Theme Editor + Layout Designer (manual authoring) | Generate a full theme/layout from a text prompt |
+| AI9 | Portrait Forge | Procedural avatars + flat themed backdrops (the G/X fallback) | Generated portraits & scene art from descriptions |
+| AI10 | Mentor | Static contextual tooltips + a glossary of game messages | Adaptive, watching guidance that fades as you level |
+
+The pattern is deliberate: the no-key player still gets a complete, useful feature; the key-holder gets
+the *magic* version — which is exactly the wanting-the-next-level pull we're after, never a paywall.
+
+- **AI1 — Setup Sage.** AI watches a few minutes of stream and proposes **ready-to-approve config
+  cards** — highlights, triggers, contacts, mutes, substitutes — pre-filled in our existing editors;
+  you tweak & accept. Outputs structured rule JSON into the existing stores. *The* on-brand AI feature
+  (AI authoring config is Lichborne's lane). Matures §10.1.
+
+- **AI2 — RP Muse.** A compose assistant for in-character speech/emotes: set a vibe → it drafts a
+  `say`/`emote` you edit and send; or "suggest a reply" to what someone just said (2–3 options). *You*
+  always send via the command bar. *Data:* recent conversation + saved persona notes. Compose-assist.
+
+- **AI3 — Elanthia Oracle.** A lore sidebar: ask about DR lore/guilds/mechanics → grounded, **cited**
+  answers via RAG over a curated DR lore corpus (Elanthipedia/official docs), optionally room/guild-aware.
+  Knowledge surface, not automation.
+
+- **AI4 — "Catch Me Up."** One button summarizes the recent main/comms buffer — "while you were away:
+  Rakkor arrived and asked about the caravan; a bandit attacked and fled" — great after AFK or in chaotic
+  event rooms. *Data:* the recent buffer we already keep (minimal privacy surface).
+
+- **AI5 — Chronicle (auto journal).** Turn a day's **session log** (already captured per-character) into
+  a narrative diary entry in the character's voice; save to an in-app journal, export to RP forums.
+  Creative output from data we own. Pairs with X6 / G9.
+
+- **AI6 — Ask Your Logs.** Conversational natural-language search over the local per-character logs
+  ("when did I last talk to Rakkor, and about what?") with **jump-to-log** links reusing
+  `SessionLogSearchHit`. An intelligence layer over an existing feature; logs stay local except queried
+  snippets.
+
+- **AI7 — War Council (combat coach).** Post-fight analysis that *teaches*, strictly advisory: "you
+  whiffed 6 of 10 — weapon skill trails this creature's defenses; try kneeling, or close to pole range."
+  *Data:* the parsed combat stream (ties to G1). **Explicitly never auto-executes** — this boundary is
+  what keeps it TOS-safe; state it in the UI.
+
+- **AI8 — Loremaster's Loom (theme & layout designer).** Generative config against our structured
+  formats: "design a spooky Necromancer theme" → a full theme JSON to preview/save; "build a
+  combat-focused layout" → a panel arrangement. Validate against the schema (reject out-of-range like
+  imported profiles do). Dead-center on the config-layer mission and very shippable (formats exist).
+
+- **AI9 — Portrait Forge (image gen).** *(= G9; the AI realization.)* AI portraits from appearance text
+  and scene art from room descriptions, cached locally; feeds X1's backdrop/avatars, G5, X6, and the
+  Appearance Card. Opt-in, clearly labeled AI art.
+
+- **AI10 — Mentor (adaptive new-player guide).** Context-aware tutor (with consent): explains unfamiliar
+  messages on hover, suggests next steps for your guild/skills, answers "what do I do now?", fading out
+  as you level. *Data:* stream context + AI3's lore corpus + your skills. Advisory onboarding.
+
+**Fast/low-risk AI starters:** AI8 + AI1 (near-pure config-gen against existing schemas), AI5 (delight
+from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
+
+### 32.4 Cross-cutting architecture & dependencies
+
+- **Shared engines worth building once:** (a) the **SVG figure + theming pattern** (G2 first, reused by
+  G1/X2/X3); (b) the **avatar/seating/speech-bubble engine** (X1, reused by X2/X4/X5/X6); (c) the
+  **combat-stream parser** for range/position/facing (G1, reused by X2/AI7) — a stateful reader in the
+  spirit of `StormFrontParser`; (d) the **`AIProvider` adapter** (chat + embeddings + image), Claude
+  default, per-provider keys via `safeStorage`, per-feature consent + token/cost meter (every AI item
+  calls the adapter, never an SDK directly); (e) **RAG grounding** (a curated DR lore corpus for
+  AI3/AI10; local-log indexing for AI6) so these cite rather than hallucinate.
+- **The bright line, surfaced in-UI:** AI here advises/composes/summarizes/decorates and **never issues
+  game commands** — the single rule that keeps every AI item inside Simutronics' scripting policy and
+  Principle #1.
+- **Accessibility is a contract, not a nicety:** every graphical/tableau surface needs a synchronized
+  text equivalent and must respect large-print / high-contrast / color-blind / epilepsy-safe (applied
+  via `applySettingsToDOM`, re-applied after theme writes — pitfall #33). Audio (G10) needs a master
+  kill-switch and gentle defaults.
+
+### 32.5 Suggested build order
+
+1. **G2 (Wound Paper-Doll)** — fast, all data exists, proves the SVG/theming pattern, instant "ooh."
+2. **G3 (Life Orbs) + G8 (Skill Momentum)** — more fast no-parser wins; great screenshots to rally testers.
+3. **G1 (Combat HUD)** — build the combat-stream parser here (de-risked by capturing real Raw-XML during
+   a fight first); it unlocks X2 and AI7.
+4. **X1 (Living Tableau) foundation → X6 (Scene Composer)** — the flagship platform + its viral shareable
+   payoff; then layer X2/X3/X4/X5 as their parsers come online.
+5. **AI track in parallel** once the `AIProvider` adapter exists: AI8 + AI1 (config-gen) first, then
+   AI5/AI4/AI6 (log/RAG), then AI9 (Portrait Forge, which lights up X1/G5/X6).
