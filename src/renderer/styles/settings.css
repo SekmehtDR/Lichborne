@@ -304,6 +304,16 @@
   padding: 6px 16px 4px;
 }
 
+/* Greyed out when the setting doesn't apply in the current layout mode (§33 —
+   e.g. bar positions in Windowed Panels). Inputs are also `disabled` in JSX. */
+.sp-radio-group--disabled { opacity: 0.45; }
+.sp-radio-group--disabled .sp-radio-row { cursor: default; }
+.sp-field-hint {
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: normal;
+}
+
 .sp-radio-group .sp-field-label {
   padding: 2px 0 6px;
   display: block;

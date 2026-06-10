@@ -51,6 +51,7 @@ interface Props {
   settings: AppSettings
   character: string                 // owning character — for "Open Logs Folder"
   onChange: (s: AppSettings) => void
+  layoutMode?: 'panels' | 'free'    // §33 — grey out panel-only toggles in Windowed Panels
   onClose: () => void
 }
 
@@ -73,18 +74,23 @@ function Toggle({ label, checked, onChange, description }: {
   )
 }
 
-function RadioGroup<T extends string>({ label, value, options, onChange }: {
+function RadioGroup<T extends string>({ label, value, options, onChange, disabled, disabledHint }: {
   label: string
   value: T
   options: { value: T; label: string; description?: string }[]
   onChange: (v: T) => void
+  disabled?: boolean
+  disabledHint?: string
 }) {
   return (
-    <div className="sp-radio-group">
-      <div className="sp-field-label">{label}</div>
+    <div className={`sp-radio-group${disabled ? ' sp-radio-group--disabled' : ''}`}>
+      <div className="sp-field-label">
+        {label}
+        {disabled && disabledHint && <span className="sp-field-hint"> — {disabledHint}</span>}
+      </div>
       {options.map(opt => (
         <label key={opt.value} className={`sp-radio-row${value === opt.value ? ' sp-radio-row--active' : ''}`}>
-          <input type="radio" checked={value === opt.value} onChange={() => onChange(opt.value)} />
+          <input type="radio" checked={value === opt.value} disabled={disabled} onChange={() => onChange(opt.value)} />
           <div className="sp-radio-text">
             <span className="sp-radio-label">{opt.label}</span>
             {opt.description && <span className="sp-radio-desc">{opt.description}</span>}
@@ -95,7 +101,8 @@ function RadioGroup<T extends string>({ label, value, options, onChange }: {
   )
 }
 
-export default function SettingsPanel({ settings, character, onChange, onClose }: Props) {
+export default function SettingsPanel({ settings, character, onChange, layoutMode, onClose }: Props) {
+  const inWindowed = layoutMode === 'free'
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const [monoFonts,   setMonoFonts]   = useState<Set<string>>(new Set())
   const [fontQuery,   setFontQuery]   = useState('')
@@ -388,6 +395,8 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
             label="Vitals Bar Position"
             value={settings.vitalsBarPosition}
             onChange={v => set('vitalsBarPosition', v)}
+            disabled={inWindowed}
+            disabledHint="Vitals is its own window in Windowed Panels"
             options={[
               { value: 'top',    label: 'Top',    description: 'Vitals below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Vitals above the command bar' },
@@ -405,6 +414,8 @@ export default function SettingsPanel({ settings, character, onChange, onClose }
             label="Icon Bar Position"
             value={settings.iconBarPosition}
             onChange={v => set('iconBarPosition', v)}
+            disabled={inWindowed}
+            disabledHint="Status bar is its own window in Windowed Panels"
             options={[
               { value: 'top',    label: 'Top',    description: 'Stance, timers, hands, and compass below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Stance, timers, hands, and compass above the command bar' },

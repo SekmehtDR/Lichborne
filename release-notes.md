@@ -1,3 +1,23 @@
+## What's new in v0.13.0
+
+### Windowed Panels — float your whole layout
+
+- **A brand-new way to arrange the client: Windowed Panels.** Open **Panels** and hit **Switch to Windowed Panels**, and your entire layout pops free into floating windows you can drag, resize, and arrange however you like. Your classic docked setup is now called **Static Panels** — nothing changes there unless you opt in, and you can switch back any time.
+
+- **Everything decouples.** Not just the side panels — the **main game text, the command/input bar, the vitals bar, and the status (icon) bar** all become independent windows. Put the input bar wherever you want it. Float vitals across the top. Stack your thought/death/arrival panels anywhere. It's your screen.
+
+- **Magnetic snapping.** Drag a window near a screen edge or another window and it **snaps flush**, with a guide line showing where it'll land — so you can hand-build a clean tiled layout in seconds. Hold **Alt** while dragging to place freely without snapping, and use **arrow keys** to nudge the focused window a pixel at a time.
+
+- **Unlimited windows.** Add as many panel windows as you want from the Panel Manager's **Add Window** list, and re-add any bar you've closed (so the command bar can never be lost). Each window has a title bar you can rename, hide (for a compact look), or close.
+
+- **Lock Windows.** Once your layout is just right, tick **Lock windows** to prevent accidental dragging or resizing.
+
+- **It's yours and it's saved.** Windowed layouts are per-character, persist across launches, and travel with **Profile Transfer**. The Panel Manager keeps things tidy — it shows the Static-Panel zone tools in panel mode and the windowed controls in windowed mode, so you only ever see what's relevant.
+
+> Streams (Thoughts, Room, Experience, Conversations, …) work exactly as before — they're just the *content* you place inside panels, whether those panels are static or windowed.
+
+---
+
 ## What's new in v0.12.1
 
 ### Mute the noise
@@ -15,16 +35,3 @@
 - **Frostbite *and* Genie player names become Contacts — grouped by color.** Importing turns your highlighted player names (Frostbite's `Names` group, Genie's `names.cfg`) into **Contacts**, and each name color becomes a reusable **contact template** you can rename ("Friends," "Enemies," …) — recolor a whole group in one edit, exactly like the Wrayth import. All three legacy clients now do this. The Contacts preview also flags names you already have (with an EXISTS badge and a "hide existing" toggle), so re-importing doesn't keep re-offering the same people.
 
 - **Smoother imports.** A handful of import-wizard papercuts are fixed: importing only Substitutes (or only Mutes) no longer dead-ends on an empty "Triggers" tab, the Confirm button now counts mutes/substitutes, and a freshly-imported list shows up immediately instead of needing a tab switch. (Frostbite's experience-window mind-state numbering substitutes — which would scramble Lichborne's already-aligned skill table — are shown in the preview but held back as unsupported.)
-
----
-
-## What's new in v0.11.9
-
-### Frostbite import, rebuilt
-
-- **Bringing your highlights over from Frostbite now works properly — colors and all.** Importing a Frostbite `highlights.ini` used to quietly drop or mangle a lot: highlights that list several phrases at once (spell-up lists, name lists, "globe of blue fire" variants, etc.) matched nothing, colors came in wrong, and most rows showed up as "partial" in the preview. All of that is fixed. Multi-phrase highlights are converted faithfully, every color decodes correctly, and the preview now shows **each highlight rendered in its actual colors** (on a game-like dark background) so you can see exactly what you're getting before you import. Health/bleeding/death alerts and your color presets (room titles, speech, whispers, thinking) are recognized too. *(Thanks, Rakkor.)*
-
-- **Your whole Frostbite profile comes over, not just highlights.** The importer now reads a full Frostbite profile folder: your **macros** (all keypad/Alt/Ctrl/function keys) import faithfully — including "type-and-wait" macros like `take @ from my backpack` where the cursor lands where the `@` is, so you can fill in the target. Your window **background and text colors** (`general.ini`) come in as a theme, and anything Lichborne can't host natively — quick buttons and text substitutions — is clearly listed on the preview screen with guidance (substitutions belong in Lich's `textsubs.lic`).
-
-- **Genie import is sharper and more faithful.** Macros now import the same way as the other clients — cursor macros like `assess @` / `first @` work (the cursor lands on the `@`, so you fill in the target), instead of being wrongly flagged as unimportable. Genie's regex highlights now match correctly: `/…/i`-style patterns were importing with the slashes stuck on (so they never matched), and "begins-with" highlights were over-firing on text anywhere in the line instead of just the start — both fixed. And the preview now tells you when a substitution/variable file belongs in Lich (it was silently missing that before), plus marks which highlights color the whole line.
-

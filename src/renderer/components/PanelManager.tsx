@@ -55,6 +55,15 @@ interface Props {
   onAddPanelZone: (zone: Zone) => void
   onRemovePanelZone: (zone: Zone) => void
   onResetLayout: () => void
+  // Free Layout (DESIGN.md §33) — toggle floating-window mode, re-snapshot the
+  // current panels layout, lock against accidental drag/resize, and add windows.
+  layoutMode?: 'panels' | 'free'
+  onToggleLayoutMode?: () => void
+  onRebuildFromPanels?: () => void
+  freeLayoutLocked?: boolean
+  onToggleFreeLock?: () => void
+  freeAddItems?: { label: string; kind: string }[]
+  onAddFreeWindow?: (kind: string) => void
   onClose: () => void
 }
 
@@ -63,7 +72,9 @@ export default function PanelManager({
   mainTopAdded, topAdded, midAdded, bottomAdded,
   allTypes, labels,
   discoveredStreams, streamTitles = {},
-  onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout, onClose,
+  onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout,
+  layoutMode, onToggleLayoutMode, onRebuildFromPanels, freeLayoutLocked, onToggleFreeLock, freeAddItems, onAddFreeWindow,
+  onClose,
 }: Props) {
   // v0.8.3: Only count tabs from zones that are actually added to the
   // layout. A tab sitting in an un-added zone is invisible to the user,
@@ -111,6 +122,58 @@ export default function PanelManager({
         </div>
 
         <div className="pm-body">
+          {onToggleLayoutMode && (
+            <div className="pm-freelayout-banner">
+              <div className="pm-freelayout-text">
+                <strong>{layoutMode === 'free' ? 'Windowed Panels' : 'Panel Mode'}</strong>
+                <span>
+                  {layoutMode === 'free'
+                    ? 'Your panels are floating windows — drag titles to move, edges to resize, snap to align.'
+                    : 'Static Panels (docked). Switch to Windowed Panels to float them as draggable, snappable windows.'}
+                </span>
+              </div>
+              <div className="pm-freelayout-actions">
+                {layoutMode === 'free' && onToggleFreeLock && (
+                  <label className="pm-freelayout-lock" title="Prevent windows from being dragged or resized">
+                    <input type="checkbox" checked={!!freeLayoutLocked} onChange={onToggleFreeLock} />
+                    Lock windows
+                  </label>
+                )}
+                {layoutMode === 'free' && onRebuildFromPanels && (
+                  <button className="pm-freelayout-rebuild" onClick={onRebuildFromPanels}
+                          title="Re-snapshot your current panels layout into windows">
+                    Rebuild from panels
+                  </button>
+                )}
+                <button className="pm-freelayout-toggle" onClick={onToggleLayoutMode}>
+                  {layoutMode === 'free' ? 'Switch to Static Panels' : 'Switch to Windowed Panels'}
+                </button>
+              </div>
+            </div>
+          )}
+          {/* Add-window controls (not floating on the overlay) — a section in
+              the Panel Manager's own row layout. Hidden while locked. */}
+          {layoutMode === 'free' && !freeLayoutLocked && onAddFreeWindow && freeAddItems && freeAddItems.length > 0 && (
+            <Section label="Add Window">
+              {freeAddItems.map(it => (
+                <Row key={it.kind} label={it.label}>
+                  <button onClick={() => onAddFreeWindow(it.kind)}>Add</button>
+                </Row>
+              ))}
+            </Section>
+          )}
+          {/* In Free Layout the zone manager doesn't apply (windows aren't
+              bound to zones), so show a short note instead and hide it. */}
+          {layoutMode === 'free' && (
+            <div className="pm-freelayout-note">
+              Windows are managed on screen — drag titles to move, edges to resize, snap to align.
+              Use <strong>Add window</strong> above to add a panel or re-add a bar.
+            </div>
+          )}
+          {/* The zone manager below (Panel Locations / per-zone Streams /
+              Available Streams) is PANELS-mode only — in Free Layout it's
+              hidden to avoid confusion, and returns when you switch back. */}
+          {layoutMode !== 'free' && (<>
           {/* Panel Locations: the 4 fixed slots, each independently added
               to or removed from the layout. Removing a slot clears its
               streams (they reappear under Available Streams below) and
@@ -204,6 +267,7 @@ export default function PanelManager({
               })}
             </Section>
           )}
+          </>)}
         </div>
       </div>
     </div>

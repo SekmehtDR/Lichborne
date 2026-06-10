@@ -1,0 +1,257 @@
+/* Free Layout — floating windows (DESIGN.md §33), Phase 1.
+   All chrome uses theme vars (Principle #4) and is audited against light
+   themes. The dark drop-shadow is the sanctioned literal exception. Chrome
+   is sized in `em` off --game-font-size so it scales with the per-character
+   game font (Principle #9), never `rem`. */
+
+/* Anchor for the absolutely-positioned window layer. Scoped to free mode so
+   panel-mode layout (and the FloatingCompass / scroll-badge, which anchor to
+   closer positioned ancestors) is untouched. */
+.game-layout--free { position: relative; }
+
+.window-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;   /* clicks fall through to the game except on windows */
+  overflow: hidden;
+}
+
+.fl-window {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  /* VERY light shadow — a heavier one (and especially the old focus-only
+     shadow) cast a visible dark seam onto windows beneath it on LIGHT themes
+     (Sekmeht). The border carries window separation; this is just a hair of
+     lift. The shadow does NOT change on focus (see below). */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  /* overflow VISIBLE so the resize handles (negative insets, straddling the
+     border) aren't clipped; content is clipped on .fl-body instead. Square
+     corners read clean for flush tiling. */
+  overflow: visible;
+  font-size: var(--game-font-size);
+}
+
+/* Focus is shown ONLY by the accented title text / grip handle (rules below) —
+   never a window shadow or ring. A focus-only shadow looked odd on light themes,
+   casting onto the windows under the focused one (Sekmeht). So .fl-window--focused
+   deliberately does NOT touch box-shadow. */
+
+/* ── Title bar ─────────────────────────────────────────────────────────── */
+.fl-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  /* ~50% shorter than before (was 1.9em @ 0.9em font): a slimmer drag/title
+     strip. Smaller font too so the title + T/× still fit the shorter bar. */
+  height: 1.3em;
+  padding: 0 0.5em;
+  flex-shrink: 0;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: move;
+  user-select: none;
+  font-size: 0.7em;
+}
+
+.fl-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The focused window's title goes accent (the subtle focus cue for titled
+   windows; collapsed windows use the grip handle below). */
+.fl-window--focused .fl-title { color: var(--accent); }
+
+.fl-title-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--accent-dim);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0 0.3em;
+  outline: none;
+}
+
+.fl-tb-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 1em;
+  line-height: 1;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+  /* Above the corner resize handles so the T / × buttons stay clickable. */
+  position: relative;
+  z-index: 1;
+}
+.fl-tb-btn:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+}
+.fl-tb-close:hover { color: var(--color-danger); background: rgba(200, 60, 60, 0.15); }
+
+/* Title hidden → a thin draggable grip lip (saves vertical space). A centered
+   handle bar makes it findable/grabbable (otherwise it reads as a border). */
+.fl-grip {
+  height: 11px;       /* tall enough to drag below the top resize handle */
+  flex-shrink: 0;
+  cursor: move;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-subtle);
+  position: relative;
+}
+.fl-grip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--text-faint);
+}
+.fl-grip:hover::after { background: var(--text-muted); }
+/* Focus cue for a collapsed window = ONLY the accented "—" handle bar (no
+   window-wide highlight — Sekmeht). */
+.fl-window--focused .fl-grip::after { background: var(--accent); }
+
+/* ── Body (hosts the PanelFrame) ───────────────────────────────────────── */
+.fl-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;   /* clip panel content to the window (window is overflow:visible for the handles) */
+}
+/* PanelFrame draws its own border-left + bg; drop the border-left inside a
+   window so it doesn't double the window's own border. */
+.fl-body .panel-frame { border-left: none; }
+
+/* Chrome windows (command / vitals / icon) are fixed-height (bar + title); the
+   bar is centered in the body so the conversion's small title-height estimate
+   can't clip it or leave a gap. */
+.fl-window--chrome .fl-body { justify-content: center; }
+
+.fl-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ── Snap guide lines (§33.5) ───────────────────────────────────────────── */
+/* Positioned + shown imperatively by FloatingWindow during drag/resize.
+   Above the windows (z 100 > win.z), non-interactive. */
+.fl-guide {
+  position: absolute;
+  display: none;
+  z-index: 100;
+  pointer-events: none;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent);
+}
+.fl-guide-v { top: 0; bottom: 0; width: 1px; }
+.fl-guide-h { left: 0; right: 0; height: 1px; }
+
+/* ── Locked layout (§33.8) ──────────────────────────────────────────────── */
+/* When locked, the title bar / grip stop showing the move cursor (drag/resize
+   are no-ops in JS, and the resize handles aren't rendered). Add-window + the
+   lock toggle live in the Panel Manager, not on the overlay. */
+.fl-window--locked .fl-titlebar,
+.fl-window--locked .fl-grip { cursor: default; }
+
+/* ── Resize handles (invisible hit areas) ──────────────────────────────── */
+/* Insets are 0 (INSIDE the window edges), not negative: a window flush against
+   the window-layer's edge (e.g. the main text at the very top) would otherwise
+   have its top/side handles fall outside the layer's overflow:hidden and become
+   unreachable. */
+.fl-rz { position: absolute; }
+.fl-rz-n  { top: 0;    left: 10px; right: 10px; height: 6px;  cursor: ns-resize; }
+.fl-rz-s  { bottom: 0; left: 10px; right: 10px; height: 6px;  cursor: ns-resize; }
+.fl-rz-e  { right: 0;  top: 10px;  bottom: 10px; width: 6px;  cursor: ew-resize; }
+.fl-rz-w  { left: 0;   top: 10px;  bottom: 10px; width: 6px;  cursor: ew-resize; }
+.fl-rz-ne { top: 0;    right: 0;   width: 10px; height: 10px; cursor: nesw-resize; }
+.fl-rz-nw { top: 0;    left: 0;    width: 10px; height: 10px; cursor: nwse-resize; }
+.fl-rz-se { bottom: 0; right: 0;   width: 10px; height: 10px; cursor: nwse-resize; }
+.fl-rz-sw { bottom: 0; left: 0;    width: 10px; height: 10px; cursor: nesw-resize; }
+
+/* ── Panel Manager "Free Layout (beta)" banner ─────────────────────────── */
+.pm-freelayout-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-base));
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+}
+.pm-freelayout-text { display: flex; flex-direction: column; gap: 2px; }
+.pm-freelayout-text strong { color: var(--accent); }
+.pm-freelayout-text span { color: var(--text-muted); font-size: 0.85rem; }
+.pm-freelayout-toggle {
+  flex-shrink: 0;
+  background: var(--bg-btn);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pm-freelayout-toggle:hover { background: var(--bg-hover); border-color: var(--accent); }
+.pm-freelayout-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.pm-freelayout-rebuild {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pm-freelayout-rebuild:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent-dim); }
+
+.pm-freelayout-lock {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.pm-freelayout-lock input { cursor: pointer; }
+
+/* Free-Layout mode note (replaces the zone manager in the Panel Manager). */
+.pm-freelayout-note {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 6px 2px 2px;
+}
+.pm-freelayout-note strong { color: var(--text-secondary); }

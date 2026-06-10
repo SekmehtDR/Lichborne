@@ -87,6 +87,20 @@
     - 32.3 AI-Assisted Features (AI1–AI10)
     - 32.4 Cross-cutting architecture & dependencies
     - 32.5 Suggested build order
+33. [Free Layout — Floating Windows](#33-free-layout--floating-windows-planned-v013x)
+    - 33.1 Why this is tractable (current-architecture findings)
+    - 33.2 Locked decisions
+    - 33.3 State model
+    - 33.4 The FloatingWindow component
+    - 33.5 Snapping
+    - 33.6 Mode toggle & measure-and-mint conversion
+    - 33.7 Decoupled chrome
+    - 33.8 Unlimited windows
+    - 33.9 Theming & accessibility
+    - 33.10 Persistence & Profile Transfer
+    - 33.11 Relationship to OS-window decouple
+    - 33.12 Risks
+    - 33.13 Build phases
 
 ---
 
@@ -1190,7 +1204,11 @@ All AI features require the highlight system and session capture to exist first.
 
 ## 12. Layout Designer
 
-> Status: Backlog — not scheduled. Full design spec for when this becomes a phase.
+> **⚠ SUPERSEDED (2026-06-09) by §33 Free Layout — Floating Windows.** Sekmeht chose a freeform
+> *floating-window* model over this grid model (drag/snap/unlimited windows, full chrome decouple).
+> This section is kept for historical context only; build against §33, not this grid spec.
+>
+> Status (historical): Backlog — not scheduled. Full design spec for when this becomes a phase.
 
 ### 12.1 Concept
 
@@ -5645,3 +5663,250 @@ from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
    payoff; then layer X2/X3/X4/X5 as their parsers come online.
 5. **AI track in parallel** once the `AIProvider` adapter exists: AI8 + AI1 (config-gen) first, then
    AI5/AI4/AI6 (log/RAG), then AI9 (Portrait Forge, which lights up X1/G5/X6).
+
+---
+
+## 33. Free Layout — Floating Windows (planned, v0.13.x)
+
+**Status:** **SHIPPED v0.13.0 (2026-06-09)** — Phases 1–5 complete & tester-verified (Sekmeht): toggle,
+cascade conversion, full decouple (main text / command / vitals / icon / panels all floating windows,
+fractional), magnetic snapping, unlimited windows + re-add, lock. **User-facing terminology: "Static
+Panels" (docked) vs "Windowed Panels" (floating); "streams" are the content placed inside either.** The
+code/section keep the internal name "Free Layout" (`freeLayout`, `fl-*`); don't bulk-rename. Pending
+(minor): light-theme audit of window chrome + richer keyboard a11y. A toggleable mode that lets a
+player break the fixed panel skeleton into **free-floating, draggable, resizable, snappable
+windows** — where a *window* becomes the new, unlimited evolution of a *panel*. **This supersedes the
+grid-based Layout Designer (§12)** — we chose a freeform floating model over a grid because it's what
+players asked for (drag/snap/unlimited) and it maps onto the existing components far more cleanly.
+
+### 33.1 Why this is tractable (current-architecture findings)
+
+Three facts about today's layout ([GameWindow.tsx](src/renderer/components/GameWindow.tsx) render at
+~L2346) make Free Layout an *overlay* on the existing system, not a rewrite:
+1. **[PanelFrame.tsx](src/renderer/components/PanelFrame.tsx) is already a fully-decoupled tabbed
+   container** (`tabs`/`activeId`/`onTabsChange`/`onActiveChange` + its own `+` add-stream menu). **A
+   window IS a `PanelFrame` in a floating frame** — the content engine exists, and all four zones
+   already share one `sharedFrameProps` bundle, so wiring N windows is nearly free.
+2. **[FloatingCompass.tsx](src/renderer/components/FloatingCompass.tsx) already proves the
+   free-floating, theme-aware overlay pattern** — the template for decoupled chrome.
+3. **Persistence is free** — every layout bit is a per-character `scopedKey(...)` → localStorage →
+   YAML via the dynamic `state.*` pipeline (Principle #1). New Free-Layout keys need no schema change.
+
+The chrome is already componentized (`VitalsBar`, `IconBar`, `FloatingCompass` are standalone). **Only
+the command/input bar is inline** (a `<form>` in GameWindow with history/RT-CT/QuickSend wiring) — its
+extraction into a `CommandWindow` is the one real refactor.
+
+### 33.2 Locked decisions (Sekmeht, 2026-06-09)
+
+1. **Fractional coordinates.** Every window's rect is `{ x, y, w, h }` as fractions `0..1` of the
+   Free-Layout container (the game-area). Windows scale proportionally on OS-window resize and survive
+   the §13.9 OS-window decouple. (Min sizes enforced in px on resize, then re-derived to fractions.)
+2. **Full decouple.** The **main story text is itself a window**, and the input bar, icon bar, vitals
+   bar, and compass all decouple into their own windows (requirement #5). Nothing is privileged chrome.
+3. **Name: "Free Layout."** The toggle and mode are "Free Layout"; the OS-window feature stays "Move to
+   New Window" (§13.9) to disambiguate (see §33.11).
+4. **Snapping: magnetic edges + window-to-window, from v1** (best experience incl. cramped spaces).
+
+### 33.3 State model
+
+New per-character state, no profile-shape change (Principle #1):
+- `scopedKey(character, 'layoutMode')` → `'panels' | 'free'` (default `'panels'`).
+- `scopedKey(character, 'freeWindows')` → `FloatWindow[]` (the whole free layout).
+
+```ts
+type WinKind = 'panel' | 'main' | 'vitals' | 'icon' | 'compass' | 'command'
+interface FloatWindow {
+  id: string
+  kind: WinKind
+  rect: { x: number; y: number; w: number; h: number }  // fractions 0..1 of the container
+  z: number                 // stacking order; click-to-front bumps to max+1
+  showTitle: boolean        // requirement #4 — hide/reveal the window name
+  title?: string            // editable; defaults from the content
+  tabs?: TabDef[]           // kind==='panel' only — reuses the existing zone shape
+  activeId?: string         // kind==='panel' only
+}
+```
+**Conversion trigger:** entering `free` while `freeWindows` is *undefined* (never converted) runs the
+measure-and-mint conversion (§33.6); an *empty array* is respected (the user emptied it on purpose).
+Panel-mode zone state (`topTabs`/`midTabs`/… + heights + `*Added`) is **left untouched** in free mode,
+so toggling back to `panels` restores the old layout exactly. The two layouts are **independent**
+(diverge after the one-time seed); a **"Reset Free Layout"** action re-runs the conversion to re-seed
+from the current panel layout. Both layouts read the same shared `streamLines` data — only *placement*
+differs.
+
+### 33.4 The `FloatingWindow` component
+
+A wrapper hosting either a `PanelFrame` (passing `sharedFrameProps`) or a chrome strip. Responsibilities:
+- **Drag** via the title bar; **resize** via 8 edge/corner handles; **min size** in px (floored so a
+  window can't become unusable, even in a cramped container — overlap is allowed when space is tight).
+- **Z-order**: clicking anywhere in the window raises it (bump `z`, periodic renormalize); the focused
+  window gets an **accent border/glow** so it's obvious in a crowd.
+- **Title bar**: shows the title + controls (rename on dbl-click, title hide/show toggle, close ×).
+  When `showTitle === false`, collapse to a **thin draggable grip lip** at the top edge (saves vertical
+  space for cramped users) — resize handles remain; **Alt+drag anywhere** also moves (snapping-off too).
+- **Keyboard**: when focused, arrow keys nudge 1px (Shift = 10px) for pixel placement; sized/positioned
+  values stay fraction-backed.
+- Lives in a `WindowLayer` (`position: absolute; inset: 0` over a `position: relative` game-area),
+  with a `ResizeObserver` on the layer giving the px container size for fraction↔px conversion.
+
+### 33.5 Snapping (magnetic, v1)
+
+On live drag-move and on resize, within an ~8px (container-space) threshold:
+- **Edge snap** — window edges snap to the container edges (L/T/R/B).
+- **Window-to-window snap** — an edge snaps to any sibling's parallel edge (right-to-left for **flush
+  tiling**, left-to-left / top-to-top for **alignment**), so users can hand-build a seamless tiled
+  layout that reads like the old zones. Snapping applies to resize edges too.
+- **Live guide-lines** (thin accent) show the snap target; **Alt held = snapping disabled** for fine
+  placement.
+- Future (not v1): quick half/quarter "zones," "fill remaining gap," equal-size distribute.
+
+### 33.6 Mode toggle & the measure-and-mint conversion (requirement #6)
+
+Toggle in the **View menu** + a **Panel Manager** entry (and a Free-Layout toolbar affordance). When
+`layoutMode === 'free'`, GameWindow renders the `WindowLayer` **instead of** the fixed skeleton.
+
+**Conversion (the "pop free" effect)** — on first entry to free mode with no `freeWindows`:
+1. Read the container `getBoundingClientRect()`.
+2. For each currently-rendered surface, read its live `getBoundingClientRect()` and mint a `FloatWindow`
+   at that rect: each *added* zone (mainTop/top/mid/bottom → `kind:'panel'` carrying that zone's
+   `tabs`/`activeId`), the main text (`kind:'main'`), the command bar (`kind:'command'`), the vitals bar
+   (`kind:'vitals'`), the icon bar (`kind:'icon'`), and the compass (`kind:'compass'`, placed at its
+   current overlay corner). Skip un-added zones.
+3. Convert each px rect → fractions; assign `z` (main lowest, panels above, chrome on top, compass top).
+4. Save `freeWindows`. The first frame **visually matches the current layout** — the user sees their
+   exact panels "pop free" into draggable windows: *"still my panels, but now I can move them."*
+
+### 33.7 Decoupled chrome (the five non-panel kinds)
+
+`compass` (already an overlay — trivial), `vitals` and `icon` (already standalone components — wrap in a
+`FloatingWindow`), `main` (the Virtuoso text window — see risks), and `command` (the one extraction:
+lift the inline `<form>` + history / RT-CT `TimerDisplay` / QuickSend prompt-marker / global-keydown
+wiring out of GameWindow into a `CommandWindow`). In free mode the panel-mode chrome position settings
+(`vitalsBarPosition`/`iconBarPosition`) are ignored — position comes from the windows, and the Settings
+panel **greys out** those two Vitals/Icon "Position" toggles in windowed mode (`layoutMode` passed to
+`SettingsPanel`; `RadioGroup` gains `disabled`/`disabledHint`) — re-enabled in static-panel mode.
+Compact Vitals and font/line-height still apply (they affect the window *content*), so they stay enabled.
+
+**Decided behavior (2026-06-09, after tester iteration): chrome windows are FIXED-height by default but
+USER-resizable in both axes (like panels).** Command/Vitals/Status are fixed-layout bars; the CASCADE
+conversion (§33.6) gives them a default height (`measured bar + TITLE_PX`), and the bar is **centered**
+in the body (`.fl-window--chrome .fl-body { justify-content: center }`) so growing/shrinking pads/clips
+symmetrically. Both-axis resize was added (`DIRS` in [FloatingWindow.tsx](src/renderer/components/FloatingWindow.tsx))
+because the tester wanted to shrink the command bar's padding — to make a chrome bar minimal, resize it
+down (per-kind floors in `minSizeFor`, [freeLayout.ts](src/renderer/freeLayout.ts)) and/or hit **T** to
+drop the title bar to the thin grip. **CRITICAL — do NOT reintroduce auto-height (`height: undefined`):**
+chrome was first auto-height so the window hugged the bar. It looked right but was a TRAP — an
+auto-height window measures 0-tall on first paint and only gets its real height on a later re-measure, so
+the **icon bar rendered invisible after Rebuild, then "popped in" at full height and shoved the whole
+layout the first time the tester clicked anything** (Sekmeht's repro, 2026-06-09). The height must stay
+an EXPLICIT px/fraction (deterministic); user-resize changes that explicit value, which is fine —
+auto-height is the thing that's banned. Chrome is movable + labeled via a **title bar** (the thin grip
+alone was too hard to find on a full-width bar — "can't move the icon bar"); the grip handle indicator
+covers the collapsed (`showTitle:false`) state. **Revisit
+FIXED-height (never auto).
+
+### 33.8 Unlimited windows, add/remove, safety net (requirements #3, #7)
+
+- **New Window** mints an empty `kind:'panel'` window (cascade-offset); the user fills it via PanelFrame's
+  existing `+` menu. **No 4-slot cap** — the limit was a zone-system artifact, gone here. An empty panel
+  window shows the `EmptyPanelSlot`-style "add a stream" placeholder.
+- **Add Window ▸** menu always lists any chrome kind **not currently present** (so the command/vitals/etc.
+  bar can never be permanently lost) plus "New Panel."
+- **Reset Free Layout** re-runs the §33.6 conversion (the recovery path if a layout gets wedged).
+
+### 33.9 Theming & accessibility
+
+- **All window chrome is theme vars** (Principle #4) — title bar uses the canonical modal-chrome recipe
+  (`--bg-hover`/`--bg-sunken` band, `--accent` title, `--border`), focused window accent glow, snap
+  guides `--accent`. **Mandatory light-theme audit** (Classic Light / Ivory / Mist / Parchment) — the
+  `--bg-raised/sunken/base/hover` scale compresses near-white (pitfall #34/#55).
+- **Game-font scaling** (Principle #9): panel content already scales via PanelFrame's anchor; **size the
+  title bar + grip in `em` off `var(--game-font-size)`** so chrome shrinks with small fonts (cramped
+  users) — never `rem`.
+- **Accessibility**: keyboard move/resize (arrow nudge), a visible focus ring on the active window,
+  windows as labeled regions for screen readers; respect large-print / high-contrast / epilepsy-safe via
+  the theme/overlay vars.
+
+### 33.10 Persistence & Profile Transfer
+
+`layoutMode` + `freeWindows` are per-character `state.*` keys (round-trip to YAML for free). Add both to
+the **Panel Layout** category in `TRANSFER_CATEGORIES` (pitfall #56) so a free layout transfers with the
+rest of the panel layout.
+
+### 33.11 Relationship to the OS-window decouple (§13.9)
+
+Two orthogonal "window" concepts now coexist: **Free Layout = in-app floating windows inside one
+GameWindow**; **§13.9 "Move to New Window" = moves the whole GameWindow to another OS window**. They
+compose — a character's free layout rides along (fractional rects re-scale to the new OS window). The
+distinct naming ("Free Layout" vs "Move to New Window") is the disambiguation; keep it.
+
+### 33.12 Risks (respect before building)
+
+- **The main-text scroll machinery is the #1 hazard.** `stickToBottom`, the scroller `ResizeObserver`
+  resnap, `followOutput=false`, replay handling (B155/B158, pitfalls #24, #68) are tuned to today's
+  resize lifecycle. A freely-resized, movable `kind:'main'` window stresses it hard. Mitigant: the resnap
+  is already `ResizeObserver`-driven (right primitive for free-resize), but main text gets a dedicated
+  **hardening pass** (Phase 2) and stays under the most scrutiny. Pitfall #24 (hidden = 0×0) still applies
+  to a closed/off-screen window.
+- **Command-bar extraction** touches focus, history, RT/CT, the QuickSend prompt-marker, and global
+  keydown — self-contained but fiddly (Phase 3).
+- **Performance** with many windows — PanelFrames are cheap (we already render 4) and memoized; cap
+  guidance + virtualization stays inside each panel. Watch live-drag re-render cost (use refs + rAF for
+  the dragged rect, commit to state on drop).
+
+### 33.13 Build phases
+
+1. ✅ **Window shell & manager** (built + tester-verified 2026-06-09) — `FloatingWindow`
+   (drag/resize/z/title-toggle/rename/theme), `WindowLayer`, fractional state + persistence, container
+   `ResizeObserver`, the Panel-Manager "Free Layout (beta)" toggle. Validated with seeded `kind:'panel'`
+   windows on `sharedFrameProps`, rendered as a **pointer-through overlay** above the live skeleton (so
+   main-text/chrome rendering is untouched until Phase 2). Files: [freeLayout.ts](src/renderer/freeLayout.ts),
+   [FloatingWindow.tsx](src/renderer/components/FloatingWindow.tsx), [WindowLayer.tsx](src/renderer/components/WindowLayer.tsx),
+   [free-layout.css](src/renderer/styles/free-layout.css). All 15 P1 checks pass (drag/resize/z, title
+   hide/rename/close, in-window tabs, persistence across relaunch, fractional rescale, pass-through,
+   light-theme, multi-character isolation).
+2. **Mode toggle + measure-and-mint conversion** (§33.6) — split into 2a/2b to isolate the main-text
+   scroll risk:
+   - **2a ✅ (built 2026-06-09)** — the conversion (`buildWindowsFromCurrentLayout`: snapshots live
+     `getBoundingClientRect()` of each zone + the vitals/icon strips into windows), **vitals + icon
+     decoupled** as windows, and **skeleton replaced** (free mode gates the chrome strips / main-top
+     zone / right column off; floats them instead). The **main text + command stay the central column**
+     — never unmounted, so the scroll machinery only sees a reflow handled by its existing scroller
+     `ResizeObserver` (+ a re-pin on mode toggle). A "Rebuild from panels" Panel-Manager button re-runs
+     the conversion (two-step via panels mode when invoked from free). Compass rides with the central
+     text (own-window decouple deferred). **Most of the "wow" lands here.**
+   - **2b-i ✅ (built 2026-06-09)** — **command/input bar decoupled** into its own `kind:'command'`
+     window (tester feedback: "input bar needs to be decoupled"). `commandBarNode` is extracted and
+     rendered EITHER in the central column (panels) OR the command window (free); the conversion mints
+     it from the `.command-bar` rect (+grip allowance). The main text stays central, never unmounted.
+   - **2b-ii ✅ (built 2026-06-09)** — the **main text is its own window** (`kind:'main'`). `textAreaNode`
+     (the `.text-area` Virtuoso block + new-lines badge + compass) is extracted and rendered in the
+     central column (panels) OR the main window (free); the conversion mints it from the `.text-area`
+     rect (excludes the command/vitals strips, which are their own windows). Free mode now renders NO
+     central column — every surface is a window. Remount happens only on the rare toggle (re-pin effect
+     + the scroller ResizeObserver re-pin it); drag/resize stay within one window (no remount). Compass
+     rides inside the main window.
+3. **Extract the command/input bar** into `CommandWindow` — now every surface in requirement #5 is
+   independently floatable.
+4. ✅ **Snapping** (§33.5, built 2026-06-09) — magnetic snapping on drag AND resize: a moving edge
+   snaps (within `SNAP_PX`=8) to the container edges OR any other window's edges (flush tiling +
+   alignment), with live **guide lines** (`.fl-guide-v/h`, positioned imperatively — no re-render),
+   **Alt held = disabled**, and **arrow-key nudge** of the focused window (1px / Shift 10px, skipped
+   while an input is focused). Snap targets are measured LIVE from the DOM at gesture start
+   (`getSnapTargets` in [WindowLayer.tsx](src/renderer/components/WindowLayer.tsx)) so auto-height
+   chrome reports its true edges. `snapAxis` in [FloatingWindow.tsx](src/renderer/components/FloatingWindow.tsx).
+5. **Unlimited windows + lock + a11y polish.** ✅ **Built 2026-06-09.** Add/lock controls live in the
+   **Panel Manager's Free Layout banner** (NOT floating on the overlay — Sekmeht: a floating button had
+   no good home). `newFloatWindow` ([freeLayout.ts](src/renderer/freeLayout.ts)) builds each window;
+   GameWindow's `addFreeWindow(kind)` + `freeAddItems` drive the banner's **"Add window: New panel /
+   Add Game / Add Command / …"** buttons — **New panel** is unlimited (empty `kind:'panel'`, filled via
+   the PanelFrame `+`), and the singletons (main/command/vitals/icon) only offer to re-add when MISSING
+   so a closed bar can't be permanently lost (§33.8). **Lock windows** (`freeLayoutLocked`, per-character
+   scopedKey) — a banner checkbox shown only in free mode — makes drag/resize/arrow-nudge no-ops and hides
+   the resize handles (cursor goes default; `fl-window--locked`), so a finished layout can't be nudged by
+   accident; add/lock are hidden while locked. Title hide/grip ✅, Reset ✅ ("Rebuild from panels"),
+   keyboard nudge + minimal focus cue ✅. **The Panel Manager hides the zone manager (Panel Locations /
+   per-zone Streams / Available Streams) entirely in free mode** (`layoutMode !== 'free'` gate) — windows
+   aren't bound to zones, so it confused; a short note + the Free-Layout controls take its place, and it
+   returns in panels mode. **Still pending (minor):** a dedicated light-theme audit + richer keyboard a11y
+   (Tab between windows).

@@ -74,12 +74,14 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
   },
   {
     id: 'layout', label: 'Panel Layout', kind: 'config',
-    desc: 'Which panel zones are added, the streams/tabs in each, active tabs, panel widths & heights, and per-panel font overrides.',
+    desc: 'Static-panel zones (which are added, streams/tabs, active tabs, widths & heights), per-panel font overrides, AND the Windowed Panels layout (window positions/sizes, mode, lock).',
     suffixes: [
       'mainTopAdded', 'topAdded', 'midAdded', 'bottomAdded',
       'mainTopTabs', 'topTabs', 'midTabs', 'bottomTabs',
       'mainTopActiveId', 'topActiveId', 'midActiveId', 'bottomActiveId',
       'mainTopHeight', 'topPanelHeight', 'midPanelHeight', 'panelWidth',
+      // §33 Windowed Panels (Free Layout): mode, the floating-window set, lock.
+      'layoutMode', 'freeWindows', 'freeLayoutLocked',
       'panelFontSizes', // virtual — merged into `settings` on apply
     ],
   },

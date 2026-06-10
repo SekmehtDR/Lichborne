@@ -21,6 +21,10 @@ import IconBar from './IconBar'
 import FloatingCompass from './FloatingCompass'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
+import WindowLayer from './WindowLayer'
+import { nanoid } from 'nanoid'
+import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
+import '../styles/free-layout.css'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
 import SessionLogModal from './SessionLogModal'
@@ -412,6 +416,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [bottomAdded, setBottomAdded] = useState(() =>
     loadZoneAdded(scopedKey(session.character, 'bottomAdded'), true))
   const [mainTopActiveId, setMainTopActiveId] = useState(() => loadStr(scopedKey(session.character, 'mainTopActiveId'), 'room'))
+
+  // ── Free Layout (DESIGN.md §33) — floating-window mode ─────────────────────
+  // Phase 1: the window shell rendered as a pointer-through OVERLAY on top of
+  // the normal panel skeleton (so the delicate main-text / chrome rendering is
+  // untouched until Phase 2). `freeWindows` undefined-vs-[] distinguishes
+  // "never converted → seed" from "intentionally emptied → respect" (§33.3).
+  const freeWindowsKey = scopedKey(session.character, 'freeWindows')
+  const freeInitRef = useRef(loadFreeWindows(freeWindowsKey) !== undefined)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() =>
+    loadStr(scopedKey(session.character, 'layoutMode'), 'panels') === 'free' ? 'free' : 'panels')
+  const [freeWindows, setFreeWindows] = useState<FloatWindow[]>(() => loadFreeWindows(freeWindowsKey) ?? [])
+  const gameLayoutRef = useRef<HTMLDivElement>(null)     // measured by the conversion (§33.6)
+  const pendingRebuildRef = useRef(false)                // "Rebuild from panels" two-step
+  // Lock free-layout windows against accidental drag/resize (§33.8). Per-char.
+  const [freeLayoutLocked, setFreeLayoutLocked] = useState(() =>
+    loadStr(scopedKey(session.character, 'freeLayoutLocked'), '0') === '1')
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -1125,6 +1145,41 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopTabs'),    JSON.stringify(mainTopTabs));  saveProfile() }, [session.character, mainTopTabs, saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopActiveId'), mainTopActiveId);             saveProfile() }, [session.character, mainTopActiveId, saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopHeight'),  String(mainTopHeight));        saveProfile() }, [session.character, mainTopHeight, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'layoutMode'), layoutMode); saveProfile() }, [session.character, layoutMode, saveProfile])
+  useEffect(() => { localStorage.setItem(scopedKey(session.character, 'freeLayoutLocked'), freeLayoutLocked ? '1' : '0'); saveProfile() }, [session.character, freeLayoutLocked, saveProfile])
+  // Toggling modes reflows the main text (panel column / chrome strips appear
+  // or vanish) — re-pin to the bottom (gated on pinned inside stickToBottom).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => stickToBottom(true))
+    return () => cancelAnimationFrame(id)
+  }, [layoutMode])
+  // "Rebuild from panels" second step: once we're back in panels mode (skeleton
+  // mounted), measure on the next frame and flip to the freshly-built free layout.
+  useEffect(() => {
+    if (!pendingRebuildRef.current || layoutMode !== 'panels') return
+    const id = requestAnimationFrame(() => {
+      pendingRebuildRef.current = false
+      freeInitRef.current = true
+      setFreeWindows(buildWindowsFromCurrentLayout())
+      setLayoutMode('free')
+    })
+    return () => cancelAnimationFrame(id)
+  }, [layoutMode])
+  // Persist freeWindows only once the layout has been initialized (seeded or
+  // loaded from a real array) — otherwise the initial `[]` would write the key
+  // and break the undefined-vs-[] seed contract (§33.3).
+  useEffect(() => {
+    if (!freeInitRef.current) return
+    saveFreeWindows(scopedKey(session.character, 'freeWindows'), freeWindows); saveProfile()
+  }, [session.character, freeWindows, saveProfile])
+  // Seed on mount if the user persisted free mode but has no windows yet.
+  useEffect(() => {
+    if (layoutMode === 'free' && !freeInitRef.current && freeWindows.length === 0) {
+      freeInitRef.current = true
+      setFreeWindows(seedDefaultWindows())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'mainTopAdded'),  mainTopAdded ? '1' : '0'); saveProfile() }, [session.character, mainTopAdded, saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'topAdded'),      topAdded     ? '1' : '0'); saveProfile() }, [session.character, topAdded,     saveProfile])
   useEffect(() => { localStorage.setItem(scopedKey(session.character, 'midAdded'),      midAdded     ? '1' : '0'); saveProfile() }, [session.character, midAdded,     saveProfile])
@@ -2261,6 +2316,155 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     },
   }
 
+  // ── Free Layout handlers (DESIGN.md §33) ───────────────────────────────────
+  const handleWindowsChange = useCallback((next: FloatWindow[]) => {
+    freeInitRef.current = true
+    setFreeWindows(next)
+  }, [])
+
+  const updateWindow = useCallback((id: string, patch: Partial<FloatWindow>) => {
+    freeInitRef.current = true
+    setFreeWindows(prev => prev.map(w => (w.id === id ? { ...w, ...patch } : w)))
+  }, [])
+
+  // CASCADE conversion (§33.6, revised 2026-06-09 — Sekmeht). The original
+  // "measure-and-mint" recreated the panels layout pixel-for-pixel, but the
+  // panels strips are stacked edge-to-edge and titled WINDOWS are bigger (they
+  // gain a title bar), so it always overlapped and did "weird scaling" to fit —
+  // worst of all the command bar pinned to the bottom border constricted the
+  // whole layout. Cascade instead: give each surface a clean default SIZE at a
+  // staggered position and let the user arrange them (snapping makes it quick).
+  // Only chrome HEIGHTS are measured (so the fixed-height bars aren't clipped);
+  // everything else is defaults. Runs in panels mode so the strips are present.
+  function buildWindowsFromCurrentLayout(): FloatWindow[] {
+    const layoutEl = gameLayoutRef.current
+    if (!layoutEl) return seedDefaultWindows()
+    const C = layoutEl.getBoundingClientRect()
+    if (C.width <= 0 || C.height <= 0) return seedDefaultWindows()
+
+    const TITLE_PX = 16   // ~slim title bar (CSS .fl-titlebar) + breathing room
+    const measureH = (sel: string, fallback: number) => {
+      const el = layoutEl.querySelector(sel) as HTMLElement | null
+      const h = el?.getBoundingClientRect().height ?? 0
+      return (h > 0 ? h : fallback) + TITLE_PX
+    }
+
+    const wins: FloatWindow[] = []
+    let z = 1, ci = 0
+    const stepX = Math.min(38, C.width * 0.025)
+    const stepY = Math.min(38, C.height * 0.04)
+    const place = (wPx: number, hPx: number): FloatRect => {
+      const left = 24 + ci * stepX
+      const top  = 24 + ci * stepY
+      ci++
+      return {
+        x: Math.min(left, Math.max(0, C.width - wPx)) / C.width,
+        y: Math.min(top, Math.max(0, C.height - hPx)) / C.height,
+        w: wPx / C.width,
+        h: hPx / C.height,
+      }
+    }
+
+    // Main text first (largest), then panels, then the chrome bars on top.
+    wins.push({ id: nanoid(), kind: 'main', rect: place(C.width * 0.52, C.height * 0.6), z: z++, showTitle: true, title: 'Game' })
+    const addPanel = (tabs: TabDef[], activeId: string, title: string) => {
+      if (!tabs.length) return
+      wins.push({ id: nanoid(), kind: 'panel', rect: place(C.width * 0.38, C.height * 0.42), z: z++, showTitle: true, title, tabs, activeId })
+    }
+    if (mainTopAdded) addPanel(mainTopTabs, mainTopActiveId, 'Main-Top')
+    if (topAdded)     addPanel(topTabs,    topActiveId,    'Top-Right')
+    if (midAdded)     addPanel(midTabs,    midActiveId,    'Middle-Right')
+    if (bottomAdded)  addPanel(bottomTabs, bottomActiveId, 'Bottom-Right')
+    const addChrome = (kind: WinKind, hPx: number, title: string) => {
+      wins.push({ id: nanoid(), kind, rect: place(C.width * 0.5, hPx), z: z++, showTitle: true, title })
+    }
+    addChrome('vitals',  measureH('.vitals-strip', 44), 'Vitals')
+    addChrome('icon',    measureH('.icon-bar', 36),     'Status')
+    addChrome('command', measureH('.command-bar', 40),  'Command')
+
+    if (wins.length === 0) return seedDefaultWindows()
+    return wins
+  }
+
+  function toggleLayoutMode() {
+    if (layoutMode === 'panels') {
+      // Entering free mode: convert from the live skeleton the first time (or
+      // whenever there are no saved windows); otherwise keep the saved layout.
+      if (!freeInitRef.current || freeWindows.length === 0) {
+        freeInitRef.current = true
+        setFreeWindows(buildWindowsFromCurrentLayout())
+      }
+      setLayoutMode('free')
+    } else {
+      setLayoutMode('panels')
+    }
+  }
+
+  // "Rebuild from panels" — re-run the conversion from the live panels layout.
+  // If currently in free mode, flip to panels first so the skeleton mounts to
+  // be measured; the pending-rebuild effect finishes on the next frame.
+  function rebuildFromPanels() {
+    if (layoutMode === 'panels') {
+      freeInitRef.current = true
+      setFreeWindows(buildWindowsFromCurrentLayout())
+      setLayoutMode('free')
+    } else {
+      pendingRebuildRef.current = true
+      setLayoutMode('panels')
+    }
+  }
+
+  // Add a window (§33.8) — driven from the Panel Manager. New panels are
+  // unlimited; the singletons (main/command/vitals/icon) re-add a closed one.
+  function addFreeWindow(kind: WinKind) {
+    const C = gameLayoutRef.current?.getBoundingClientRect()
+    const size = C && C.width > 0 ? { w: C.width, h: C.height } : { w: 1200, h: 800 }
+    const maxZ = freeWindows.reduce((m, w) => Math.max(m, w.z), 0)
+    const win = newFloatWindow(kind, size, freeWindows.length, kind === 'panel' ? { title: 'Panel' } : undefined)
+    handleWindowsChange([...freeWindows, { ...win, z: maxZ + 1 }])
+  }
+  // What "Add Window" offers: New panel (always) + any missing singleton.
+  // Labels are the window name; the section header + per-row Add button carry
+  // the action (matches the Panel Manager's row pattern).
+  const freeAddItems: { label: string; kind: WinKind }[] = [
+    { label: 'New panel', kind: 'panel' },
+    ...(['main', 'command', 'vitals', 'icon'] as WinKind[])
+      .filter(k => !freeWindows.some(w => w.kind === k))
+      .map(k => ({ label: defaultWindowTitle(k), kind: k })),
+  ]
+
+  // Content for one floating window. 2a: panel / vitals / icon. The main text
+  // (kind:'main') becomes a window in Phase 2b — until then it's the central
+  // column and never appears here.
+  function renderFreeContent(win: FloatWindow): React.ReactNode {
+    switch (win.kind) {
+      case 'panel': {
+        const tabs = win.tabs ?? []
+        return (
+          <PanelFrame
+            {...sharedFrameProps}
+            tabs={tabs}
+            activeId={win.activeId && tabs.some(t => t.id === win.activeId) ? win.activeId : (tabs[0]?.id ?? '')}
+            onTabsChange={t => updateWindow(win.id, {
+              tabs: t,
+              activeId: win.activeId && t.some(x => x.id === win.activeId) ? win.activeId : (t[0]?.id ?? ''),
+            })}
+            onActiveChange={id => updateWindow(win.id, { activeId: id })}
+          />
+        )
+      }
+      case 'vitals': return <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />
+      case 'icon':   return (
+        <IconBar stance={stance} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand}
+                 trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
+      )
+      case 'main':    return textAreaNode
+      case 'command': return commandBarNode
+      default: return <div className="fl-placeholder">{win.kind}</div>
+    }
+  }
+
   const handleContactClick = useCallback((contactId: string, x: number, y: number) => {
     setContactPopover({ contactId, x, y })
   }, [])
@@ -2340,42 +2544,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     }
   }
 
-  return (
-    <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
-    <ContactsContext.Provider value={{ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }}>
-    <div className="game-layout">
-      {/* The per-session toolbar row was folded into the app-level app-bar
-          (AppBar.tsx) in the top-chrome redesign (Phase 2c) — its buttons now
-          act on the active session via the menu-action / session-action
-          bridge, reclaiming this row of vertical space. ModeSwitcher moved to
-          the Icon Bar (it needs per-session GroupsContext). */}
-
-      {settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
-      {settings.iconBarPosition === 'top' && (
-        <IconBar stance={stance} spell={spell}
-                 indicators={indicators} rightHand={rightHand} leftHand={leftHand}
-                 trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
-      )}
-
-      <div className="game-main">
-        {/* v0.8.1 (F24): main-area is now a flex column with an optional top
-            zone above the scrolling text + command bar. Only the LEFT side
-            of game-main is split this way; the right panel column is
-            untouched. mainAreaRef is used by the divider-resize handler to
-            bound mainTopHeight against the available main-area height. */}
-        <div className="game-main-area" ref={mainAreaRef}>
-          {mainTopAdded && (
-            <>
-              <div className="main-top-zone" style={{ height: mainTopHeight, flexShrink: 0 }}>
-                {mainTopTabs.length > 0
-                  ? <PanelFrame {...sharedFrameProps} tabs={mainTopTabs} activeId={mainTopActiveId}
-                      onTabsChange={setMainTopTabs} onActiveChange={handleMainTopActive} />
-                  : <EmptyPanelSlot label="Main-Top" onOpenManager={() => setShowPanelManager(true)} />}
-              </div>
-              <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('main-top', e)} />
-            </>
-          )}
-        <div className="text-window-wrap">
+  // The main scrolling text area (Virtuoso + new-lines badge + compass),
+  // extracted so it renders EITHER in the central column (panels) OR its own
+  // floating window (free, §33 2b-ii). Toggling modes remounts it (rare); the
+  // re-pin effect on layoutMode re-pins the scroll, `lines` is state so no text
+  // is lost. Drag/resize within free mode stay in ONE window (no remount), so
+  // the B155/B158 scroll machinery only sees a reflow (its scroller
+  // ResizeObserver handles it) — the #1 risk is contained to the rare toggle.
+  const textAreaNode = (
           <div className="text-area">
             <div className="text-window"
               onWheel={e => { if (e.deltaY < 0) pinnedRef.current = false }}
@@ -2523,25 +2699,79 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             )}
             <FloatingCompass exits={exits} />
           </div>
-          {settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
-          <form className="command-bar" onSubmit={handleCommand}>
-            {/* v0.8.6 (Rakkor): prompt marker is a button that opens
-                QuickSend — same as Ctrl+Shift+Enter. AppShell listens
-                for the custom event since it owns the QuickSend modal. */}
-            <button
-              type="button"
-              className="prompt-marker"
-              title="Quick Send (Ctrl+Shift+Enter)"
-              onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-quick-send'))}
-            >&gt;</button>
-            <div className="cmd-input-wrap">
-              <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} timerStyle={settings.timerStyle} />
-              <input ref={inputRef} type="text" autoFocus value={command}
-                onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
-                onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
-            </div>
-            <button type="submit" className="btn-send">Send</button>
-          </form>
+  )
+
+  // The command/input bar, extracted so it renders EITHER in the central
+  // column (panels mode) OR in its own floating window (free mode, §33 2b).
+  // Same element either place — toggling modes remounts it (rare; the input
+  // value is controlled state, so nothing is lost).
+  const commandBarNode = (
+    <form className="command-bar" onSubmit={handleCommand}>
+      {/* v0.8.6 (Rakkor): prompt marker is a button that opens
+          QuickSend — same as Ctrl+Shift+Enter. AppShell listens
+          for the custom event since it owns the QuickSend modal. */}
+      <button
+        type="button"
+        className="prompt-marker"
+        title="Quick Send (Ctrl+Shift+Enter)"
+        onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-quick-send'))}
+      >&gt;</button>
+      <div className="cmd-input-wrap">
+        <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} timerStyle={settings.timerStyle} />
+        <input ref={inputRef} type="text" autoFocus value={command}
+          onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
+          onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+      </div>
+      <button type="submit" className="btn-send">Send</button>
+    </form>
+  )
+
+  return (
+    <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
+    <ContactsContext.Provider value={{ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }}>
+    <div ref={gameLayoutRef} className={`game-layout${layoutMode === 'free' ? ' game-layout--free' : ''}`}>
+      {/* The per-session toolbar row was folded into the app-level app-bar
+          (AppBar.tsx) in the top-chrome redesign (Phase 2c) — its buttons now
+          act on the active session via the menu-action / session-action
+          bridge, reclaiming this row of vertical space. ModeSwitcher moved to
+          the Icon Bar (it needs per-session GroupsContext). */}
+
+      {/* Free Layout (§33) replaces the skeleton: in free mode the chrome
+          strips / zones / right column / main text / command are ALL floating
+          windows (renderFreeContent), so the central column renders nothing. */}
+      {layoutMode === 'panels' && settings.vitalsBarPosition === 'top' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
+      {layoutMode === 'panels' && settings.iconBarPosition === 'top' && (
+        <IconBar stance={stance} spell={spell}
+                 indicators={indicators} rightHand={rightHand} leftHand={leftHand}
+                 trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
+      )}
+
+      <div className="game-main">
+        {/* v0.8.1 (F24): main-area is now a flex column with an optional top
+            zone above the scrolling text + command bar. Only the LEFT side
+            of game-main is split this way; the right panel column is
+            untouched. mainAreaRef is used by the divider-resize handler to
+            bound mainTopHeight against the available main-area height. */}
+        <div className="game-main-area" ref={mainAreaRef}>
+          {layoutMode === 'panels' && mainTopAdded && (
+            <>
+              <div className="main-top-zone" style={{ height: mainTopHeight, flexShrink: 0 }}>
+                {mainTopTabs.length > 0
+                  ? <PanelFrame {...sharedFrameProps} tabs={mainTopTabs} activeId={mainTopActiveId}
+                      onTabsChange={setMainTopTabs} onActiveChange={handleMainTopActive} />
+                  : <EmptyPanelSlot label="Main-Top" onOpenManager={() => setShowPanelManager(true)} />}
+              </div>
+              <div className="panel-h-divider" onMouseDown={e => handleRowDividerDown('main-top', e)} />
+            </>
+          )}
+        <div className="text-window-wrap">
+          {/* Free mode: the main text is its own window (§33 2b-ii); the
+              central column renders it only in panels mode. */}
+          {layoutMode === 'panels' && textAreaNode}
+          {layoutMode === 'panels' && settings.vitalsBarPosition === 'bottom' && <VitalsBar vitals={vitals} labels={vitalLabels} compact={settings.compactVitals} />}
+          {/* In free mode the command bar is its own floating window (§33 2b);
+              the central column renders it only in panels mode. */}
+          {layoutMode === 'panels' && commandBarNode}
         </div>
         </div>{/* /game-main-area */}
 
@@ -2561,7 +2791,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             adjusts: 'top-mid' → topPanelHeight, 'mid-bot' → midPanelHeight.
             (Naming kept for backward compat — applies regardless of which
             two zones are currently visible.) */}
-        {(() => {
+        {layoutMode === 'panels' && (() => {
           type RZone = {
             key: 'top' | 'mid' | 'bottom'
             label: string
@@ -2610,7 +2840,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                         <div className="panel-h-divider"
                              onMouseDown={e => handleRowDividerDown(prevDividerKey, e)} />
                       )}
-                      <div className={zoneClass} style={zoneStyle}>
+                      <div className={zoneClass} data-zone={z.key} style={zoneStyle}>
                         {z.tabs.length > 0
                           ? <PanelFrame {...sharedFrameProps} tabs={z.tabs} activeId={z.activeId}
                               onTabsChange={z.setTabs} onActiveChange={z.onActive} />
@@ -2625,10 +2855,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         })()}
       </div>
 
-      {settings.iconBarPosition === 'bottom' && (
+      {layoutMode === 'panels' && settings.iconBarPosition === 'bottom' && (
         <IconBar stance={stance} spell={spell}
                  indicators={indicators} rightHand={rightHand} leftHand={leftHand}
                  trailing={<ModeSwitcher onManage={() => { setAutomationsTab('groups'); setShowAutomations(true) }} />} />
+      )}
+
+      {/* Free Layout (§33) — Phase 1 pointer-through overlay above the panel
+          skeleton. Renders only in free mode; the layer itself is
+          pointer-events:none so the game underneath stays clickable. */}
+      {layoutMode === 'free' && (
+        <WindowLayer
+          windows={freeWindows}
+          onWindowsChange={handleWindowsChange}
+          renderContent={renderFreeContent}
+          locked={freeLayoutLocked}
+        />
       )}
 
       {mainCtxMenu && (() => {
@@ -2703,6 +2945,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           onAddPanelZone={addPanelZone}
           onRemovePanelZone={removePanelZone}
           onResetLayout={resetLayout}
+          layoutMode={layoutMode}
+          onToggleLayoutMode={toggleLayoutMode}
+          onRebuildFromPanels={rebuildFromPanels}
+          freeLayoutLocked={freeLayoutLocked}
+          onToggleFreeLock={() => setFreeLayoutLocked(v => !v)}
+          freeAddItems={freeAddItems}
+          onAddFreeWindow={(k) => addFreeWindow(k as WinKind)}
           onClose={() => setShowPanelManager(false)}
         />
       )}
@@ -2722,6 +2971,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           settings={settings}
           character={session.character}
           onChange={s => { setSettings(s); saveSettings(session.character, s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
+          layoutMode={layoutMode}
           onClose={() => setShowSettings(false)}
         />
       )}
