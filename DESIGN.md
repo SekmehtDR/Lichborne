@@ -101,6 +101,16 @@
     - 33.11 Relationship to OS-window decouple
     - 33.12 Risks
     - 33.13 Build phases
+34. [Lichborne Experiences — Architecture](#34-lichborne-experiences--architecture-decided-2026-06-10-not-yet-built)
+    - 34.1 What an Experience is (and is not)
+    - 34.2 Why this model — the two rejected alternatives
+    - 34.3 Registry
+    - 34.4 The Experience layer
+    - 34.5 The shelf (add/manage UX)
+    - 34.6 Persistence & Profile Transfer
+    - 34.7 Theming, accessibility & guardrails
+    - 34.8 Add-a-new-Experience checklist
+    - 34.9 Build phases
 
 ---
 
@@ -5402,7 +5412,10 @@ reworded (these now import instead of "belong in Lich").
 ## 32. Visual, Interactive & AI Experiences — Backlog (brainstorm v0.12.x)
 
 **Status:** Brainstorm / wishlist. None of these are built or scheduled — this section is the
-durable home for the "graphics for text players" feature pipeline so it doesn't get lost. Each idea
+durable home for the "graphics for text players" feature pipeline so it doesn't get lost.
+**Architecture home: §34 (Lichborne Experiences), decided 2026-06-10** — the G-series and X-series
+ship as registered **Experiences** (floating graphical surfaces over the layout), NOT as panels or
+panel view-modes; the Combat HUD (G1) is Experience #1, ahead of §32.5's original G2-first ordering. Each idea
 carries a stable local ID (`G#` graphical, `X#` interactive experience, `AI#` AI-assisted) for
 reference in conversation and commits; a real `F##` number gets assigned when an item is actually
 scheduled. Ideas are described richly on purpose (the value is in the *why* and the data source, not
@@ -5910,3 +5923,179 @@ distinct naming ("Free Layout" vs "Move to New Window") is the disambiguation; k
    aren't bound to zones, so it confused; a short note + the Free-Layout controls take its place, and it
    returns in panels mode. **Still pending (minor):** a dedicated light-theme audit + richer keyboard a11y
    (Tab between windows).
+
+---
+
+## 34. Lichborne Experiences — Architecture (decided 2026-06-10, not yet built)
+
+**Status:** Architecture locked (Sekmeht, 2026-06-10) after a design discussion that explicitly
+rejected two alternative models (§34.2). Nothing built yet. **The first registered Experience will be
+the Combat HUD (G1, §32.1).** User-facing brand: **"Lichborne Experiences"** — the brand is part of
+the product identity (the shelf button carries it). Internal names: `experiences.ts`,
+`ExperienceLayer`, `ExperienceDef` (the §33 precedent: user-facing terms and internal names may
+diverge; don't bulk-rename either direction).
+
+### 34.1 What an Experience is (and is not)
+
+A **Lichborne Experience** is a first-class layout object: a **registered, graphical, floating
+surface** hosted over the game layout — an *instrument* (Combat HUD, Tactical Radar, Buffs Board) or
+a *scene* (Living Tableau, Spar Arena). It is the architectural home for the §32 G-series and
+X-series features.
+
+An Experience is **not a panel and not a stream**:
+
+- **Panels** are tabbed text/structured rectangles bound to zones (or floating windows in Windowed
+  Panels mode). They are mature, heavily debugged, and **byte-identical under this design** — no
+  migration, no type changes, no new tab kinds. `map` / `exp` / `lichScripts` **stay panels
+  forever** (if we ever want Maps offered as an Experience too, that's an *additive* registry entry
+  later, never a move).
+- **Streams** are what the game/Lich says, routed by stream id. Experiences never enter
+  `discoveredStreams`, never occupy a stream id, never appear in the tab arrays — so the "a new
+  release must never collide with or overwrite a stream a user already created" requirement is
+  satisfied **by construction**, not by a filter. No reserved prefix is needed; the namespaces are
+  disjoint.
+- Experiences read **parsed game state** (typed `GameEvent`s — vitals, RT/CT, stance, indicators,
+  injuries, room players/creatures, exp components) and/or Lich-surfaced state. They are *additive*
+  surfaces: the text never goes away, which is how the §32.4 accessibility contract ("synchronized
+  text equivalent") is met — the equivalent is the game text the player already has, plus each
+  registry entry declaring its text/state equivalent explicitly.
+
+**The Experience catalog (index — full specs live in §32.1/§32.2; this table is the §34 roster):**
+
+| ID | Experience | Kind | One-liner | Status |
+|---|---|---|---|---|
+| G1 | **Combat HUD ("Engagement")** | Instrument | RT readiness ring + CT inner ring, stance figure, threat pips, range gauge, condition border, hands | **Experience #1 — next to build** |
+| G2 | Wound Paper-Doll | Instrument | Anatomical silhouette, wounds glow by severity, bleeders pulse | Likely folds in as G1's center figure |
+| G3 | Life Orbs | Instrument* | Liquid-filled vitals orbs that drain/refill and pulse when critical | *May ship as a vitals-strip display style instead — decide when scheduled |
+| G4 | Tactical Room Radar | Instrument | You at center, exits as rim arrows, creatures/players as dots in Contact colors | Backlog |
+| G5 | World Ambiance Strip | Instrument | Time of day, moon phases, weather glyphs, sky gradient (moons/weather from Lich vars) | Backlog |
+| G6 | Active Spells & Buffs Board | Instrument | MMO buff chips with radial countdowns from Lich's spell timers | Backlog (needs Lich surface bridge) |
+| G7 | Comms Console | Instrument | Social streams as a chat client — Contact-colored speakers, channel tabs, unread badges | Backlog |
+| G8 | Skill Momentum Dashboard | Instrument | Mindstate sparklines, session TDP counter, time-to-next-rank projections | Backlog |
+| G9 | Portrait Forge | Instrument (AI) | AI portraits from LOOK text, scene art from room prose (= AI9; procedural fallback always) | Backlog (needs AIProvider) |
+| G10 | Reactive Soundscape | Instrument (audio) | Heartbeat tracks health, RT-clear chime, whisper/foe cues, ambient beds | Backlog |
+| X1 | **Living Tableau ("Gather Mode")** | Scene | Room becomes a living scene — avatars, speech bubbles, choreographed arrivals, painted backdrop | Backlog — the scene PLATFORM (X2/X4/X5/X6 reuse it) |
+| X2 | Spar Arena | Scene | Duels staged like a fighting game; the space between avatars IS range | Backlog (needs G1's parser + X1) |
+| X3 | Empath's Ward | Scene | Party frames with vitals + wound pips; click STAGES a heal, human sends | Backlog |
+| X4 | Bardic Stage | Scene | Performances as shows — rising notes, motion trails, reacting audience | Backlog (needs X1) |
+| X5 | Tavern Games Table | Scene | Dice/cards mirrored onto an animated graphical table | Backlog (needs X1) |
+| X6 | Scene Composer | Scene | Freeze a moment into a shareable comic panel — the viral loop | Backlog (needs X1) |
+
+The **AI-series (AI1–AI10, §32.3)** is a parallel *assistant* track, not layout surfaces — but several
+render inside or feed Experiences (AI9 paints X1/X6/G5; AI7 analyzes what G1's parser captures), and
+every one keeps its mandatory non-AI baseline (guardrail #3: AI enhances, never gates).
+
+### 34.2 Why this model — the two rejected alternatives
+
+Recorded so the reasoning isn't re-litigated later:
+
+1. **REJECTED — "Interactive Mode" as a per-panel view toggle** (right-click a stream panel →
+   graphical rendering of it). Killed by a game-protocol fact: **Simutronics splits combat text**
+   between the combat stream and main, so many players deliberately don't use a combat window at
+   all — hanging the Combat HUD off the combat panel would gate the flagship feature behind a
+   window people skip. The deeper flaw: the HUD was never a rendering of the combat *stream*; it
+   reads parsed game *state*, which flows regardless of where any text routes. The same is true of
+   every G-series instrument.
+2. **REJECTED — "Interactive Streams" as a new panel category** (a `type: 'interactive'` tab kind +
+   reserved `lb:*` id namespace + grouped Panel Manager sections). Workable, but it (a) forces
+   instruments/scenes into tabbed-panel chrome — a HUD that can be hidden behind a Thoughts tab is a
+   failed HUD; (b) touches the mature panel system (PanelType union, discovery filter, Panel Manager
+   filters, pitfall #27 logic) for no user benefit; (c) requires namespace bookkeeping forever. The
+   Experiences model gets the same features with zero panel-system risk.
+
+**Why Experiences win:** the engine already exists. The Maps overlay (`showMapOverlay` →
+`.map-overlay-window`, opened from the app bar) is the shipped precedent for a graphical surface
+floating over the layout, and v0.13.0's `FloatingWindow` (drag / resize / fractional rects /
+magnetic snapping / lock) is the host component. An Experience is precisely *a registered floating
+window with a graphical component inside*.
+
+### 34.3 Registry
+
+One module, `src/renderer/experiences.ts`:
+
+```ts
+interface ExperienceDef {
+  id: string                  // 'combatHud', 'tableau', … — own id space, disjoint from streams/panels
+  label: string               // user-facing name shown on the shelf
+  component: React.ComponentType<ExperienceProps>  // shared props bag (game state slices, sendCommand-stager, settings)
+  defaultRect: FloatRect      // fractional, like FloatWindow rects (§33.3)
+  chrome: 'standard' | 'compact'  // compact = minimal/frameless chrome for HUD-like instruments
+  multiInstance?: boolean     // default false; reserved for future (two radars is nonsense, but the model allows it)
+  textEquivalent: string      // REQUIRED doc string: what existing text/state surface carries the same info (§32.4 contract)
+}
+```
+
+Adding a future Experience = **one registry entry + its component**. No PanelType union change, no
+labels map, no Panel Manager edits, no discovery-filter audit.
+
+### 34.4 The Experience layer
+
+A new `ExperienceLayer` rendered by GameWindow **in BOTH layout modes** (this is the one real piece
+of new infrastructure — §33's `WindowLayer` is gated to free mode only):
+
+- Hosts one `FloatingWindow` per open Experience — reusing the v0.13.0 component verbatim where
+  possible (snapping, guides, Alt-disable, arrow-nudge, lock, fractional rects — the §33.4/§33.5
+  machinery).
+- **Static Panels mode:** the layer floats over the skeleton, exactly as the Maps overlay does
+  today. **Windowed Panels mode:** it cooperates with the existing window layer (same snap targets,
+  same lock toggle).
+- **Z-discipline:** same rule as §33 — modals/overlays (Panel Manager, Settings, Maps, context
+  menus) must out-z the layer. Experiences sit above the game layout, below all modals.
+- **Per-session isolation (Principle #6):** the layer and all Experience state live inside each
+  GameWindow — per-character, no cross-session bleed, works for backgrounded tabs under the usual
+  hidden-≠-unmounted rules (pitfall #24: anything layout-measuring must guard 0×0 and re-measure on
+  show).
+- Geometry follows the §33 / pitfall #74 law: **deterministic and explicit** — fixed/explicit sizes
+  from `defaultRect`, 0-safe coordinate parsing, never browser-computed auto-height.
+
+### 34.5 The shelf (add/manage UX)
+
+An **"Experiences"** button in the app bar (the Maps button is the precedent), opening a picker of
+registered Experiences with open/close toggles. Routed like every app-bar action through the
+session-action bridge to the active GameWindow; the button gets a `SessionStatus.panel*`-style glow
+flag when any Experience is open (the established reflect-via-snapshot pattern, pitfall #57).
+Closing an Experience never loses anything — reopen it from the shelf (the "updates and accidents
+never break what you built" promise). Right-click garnish ("Add Combat HUD" from a relevant panel)
+is optional, later, and purely a shortcut to the same add.
+
+### 34.6 Persistence & Profile Transfer
+
+One new per-character scopedKey (e.g. `scopedKey(character, 'experiences')`): the open instances +
+their rects + per-Experience prefs. It rides the dynamic `state:` pipeline into YAML automatically —
+**no profile-shape change** (Principle #1; pre-merge check #4 answer: "new optional state suffix").
+Add a new **"Experiences"** category to `TRANSFER_CATEGORIES` (pitfall #56's allowlist) so setups
+travel via Profile Transfer; per-Experience settings default to NOT transferred until listed.
+
+### 34.7 Theming, accessibility & guardrails
+
+The standing law applies in full: every color a `--exp-*`/`--hud-*` var cascading from general vars
+via `color-mix` in `darkBase` (pitfalls #34/#63) + a light-theme eyeball pass (Principle #4); roots
+anchored to `var(--game-font-size)` with `em` children where game-scaled sizing is wanted
+(Principle #9 / pitfall #58); high-contrast / color-blind / epilepsy-safe respected via
+`applySettingsToDOM` overlays (pitfall #33) — instruments must encode meaning by **shape and
+color, never color alone**, and epilepsy-safe swaps flashes for static states. The §32 guardrails
+bind every Experience: display & surface, never automate (clicks may *stage* a command via the
+existing `@` cursor convention — the human always sends); AI is BYO-key and **enhances, never
+gates** (procedural fallbacks always).
+
+### 34.8 Add-a-new-Experience checklist
+
+1. Registry entry in `experiences.ts` (id, label, defaultRect, chrome, `textEquivalent` stated).
+2. The component, reading typed game state via the shared props bag — never raw stream-text scraping
+   where a typed event exists; if new parsing is needed, add typed events in the parser first
+   (sessionId on every payload, Principle #6).
+3. Theme vars + light-theme pass; accessibility toggles verified (the Principle #9 check).
+4. Decide its `TRANSFER_CATEGORIES` exposure.
+5. No panel-system files touched — if a change seems to need one, the design is drifting back to
+   §34.2's rejected models; stop and re-read this section.
+
+### 34.9 Build phases
+
+1. **Scaffold:** `experiences.ts` registry + `ExperienceLayer` (both modes) + the app-bar shelf +
+   persistence + the Transfer category.
+2. **Experience #1 — Combat HUD (G1):** Phase 1 on existing typed events only (readiness ring, CT
+   ring, stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2
+   adds the combat-stream parser (range/target/facing as new typed events — the shared engine §32.4
+   wants for X2/AI7). Corpus capture of real fight Raw-XML precedes the parser.
+3. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
+   center figure or standalone, G4 radar, G6 buffs board, X-series scenes once their engines exist).
