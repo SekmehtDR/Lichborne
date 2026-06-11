@@ -100,7 +100,12 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 9px;
+  /* Slim stream-label tabs (Rakkor/TheTargonian, v0.13.1): the vertical padding
+     was the reclaimable bulk — halved (5px→2px) + a tight line-height reclaims
+     ~6px per tab bar (meaningful on a stacked multi-zone / windowed layout)
+     while keeping the label font legible. */
+  padding: 2px 9px;
+  line-height: 1.2;
   cursor: pointer;
   font-size: 0.93em;
   color: var(--text-muted);   /* was #4a4a4a — improved contrast */

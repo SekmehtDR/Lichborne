@@ -60,6 +60,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Pin to 1 so the overlay text centers on its own box instead of inheriting
+     the game-area line-height (~1.4). The inherited leading overflowed the tight
+     compact bar and shoved the caps/digits optically high (Sekmeth, v0.13.x);
+     flex still centers, this just removes the asymmetric leading. */
+  line-height: 1;
   font-size: 0.91em;
   font-weight: 700;
   color: #fff;

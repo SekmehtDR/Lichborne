@@ -14,7 +14,7 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export function useLichBridge(sessionId: SessionId, connected: boolean) {
+export function useLichBridge(sessionId: SessionId, connected: boolean, shouldPollRef?: { current: boolean }) {
   const [scripts, setScripts]       = useState<ScriptRecord[]>([])
   const [lastUpdated, setLastUpdated] = useState(0)
   const [pending, setPending]       = useState(false)
@@ -110,6 +110,14 @@ export function useLichBridge(sessionId: SessionId, connected: boolean) {
     if (!connected) return
 
     function poll() {
+      // Idea A (Binu, v0.13.1): when no Lich Scripts panel is open, inject
+      // NOTHING. `;listall` travels the same front-end socket Lich hands to
+      // scripts (e.g. automap's UpstreamHook), so an unwatched 5s poll can be
+      // mis-captured as a typed movement command (Lich's do_client runs
+      // UpstreamHook BEFORE handling `;` commands — global_defs.rb:2225). The
+      // interval still ticks but sends nothing while closed; opening the panel
+      // fires one immediate seed via the caller's refresh().
+      if (shouldPollRef && !shouldPollRef.current) return
       if (pendingRef.current) return  // skip if previous poll hasn't responded
       pendingRef.current = true
       setPending(true)

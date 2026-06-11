@@ -10,6 +10,29 @@ export interface Theme {
 
 // ── Dark (base) — all CSS custom properties ────────────────────────────────
 
+// Structural automap colors ALWAYS cascade from the general palette, so the map
+// follows App Background / Game Text / borders on EVERY theme — and live-updates
+// in the Theme Editor (which only exposes the general vars). Spread into darkBase
+// AND re-applied LAST in applyTheme/applyCustomTheme, so a built-in theme's stale
+// per-theme `--map-*` literal can't win — that pin was the bug Binu reported
+// (v0.13.x): editing a theme's App Background moved every surface except the map.
+// Only the SEMANTIC cues stay per-theme (`--map-arc-*`, `--map-current-color`,
+// `--map-select-color`) since those need hand-tuned legibility per background.
+export const MAP_STRUCTURAL_CASCADE: ThemeVars = {
+  '--map-bg':            'var(--bg-app)',
+  '--map-chrome-bg':     'var(--bg-raised)',
+  '--map-border':        'var(--border)',
+  '--map-border-subtle': 'var(--border-subtle)',
+  '--map-text':          'var(--text-secondary)',
+  '--map-text-muted':    'var(--text-muted)',
+  '--map-btn-bg':        'var(--bg-base)',
+  '--map-btn-border':    'var(--border)',
+  '--map-select-bg':     'var(--bg-sunken)',
+  '--map-node-fill':     'var(--bg-raised)',
+  '--map-node-stroke':   'var(--border)',
+  '--map-dot':           'var(--border-subtle)',
+}
+
 export const darkBase: ThemeVars = {
   '--bg-app':    '#0f0f0f',
   '--bg-base':   '#1a1a1a',
@@ -217,28 +240,16 @@ export const darkBase: ThemeVars = {
   '--exp-bar-locked':      '#cc4444',
 
   // ── Automap ────────────────────────────────────────────────────────────────
-  // Default: follow the App Background. Custom themes built in the Theme
-  // Editor only set --bg-app (they don't expose --map-bg), so without this
-  // alias the map stays the darkBase brown-black regardless of how the
-  // user themed their other windows (B108). Built-in themes that want a
-  // distinct map background still override --map-bg explicitly.
-  '--map-bg':            'var(--bg-app)',
-  '--map-chrome-bg':     '#110e07',
-  '--map-border':        '#2a1e0f',
-  '--map-border-subtle': '#1e1608',
-  '--map-text':          '#b8a070',
-  '--map-text-muted':    '#87673c',
-  '--map-btn-bg':        '#1e1608',
-  '--map-btn-border':    '#3a2a10',
-  '--map-select-bg':     '#0d0b07',
-  '--map-select-color':  '#c8a840',
-  '--map-node-fill':     '#3c2a14',
-  '--map-node-stroke':   '#7a5828',
+  // Structural colors (bg / chrome / text / borders / node fills / dots) cascade
+  // from the general palette via MAP_STRUCTURAL_CASCADE (above) — re-applied last
+  // on theme apply so NO theme can pin them (that pin was Binu's "map won't
+  // follow App Background" bug). Only the SEMANTIC cues live per-theme below:
+  ...MAP_STRUCTURAL_CASCADE,
+  '--map-select-color':  'var(--accent)',
   '--map-arc-cardinal':  '#8a7050',
   '--map-arc-vertical':  '#d4a020',
   '--map-arc-special':   '#6a9060',
   '--map-arc-hidden':    '#8a6030',
-  '--map-dot':           '#2a1e0f',
   '--map-current-color': '#50e038',
   // v0.8.2: Lich Map "you are here" sonar locator — themable trio.
   // `--lich-here-color`    bright accent stroke (sonar ping rings + solid ring)
@@ -2051,7 +2062,10 @@ export function registerThemeAppliedHook(fn: (() => void) | null): void {
 }
 
 export function applyTheme(theme: Theme): void {
-  const vars: ThemeVars = theme.id === 'dark' ? darkBase : { ...darkBase, ...theme.vars }
+  // MAP_STRUCTURAL_CASCADE applied LAST so a built-in theme's pinned --map-*
+  // literals can't override the cascade (Binu's map-doesn't-follow-theme bug).
+  const base: ThemeVars = theme.id === 'dark' ? darkBase : { ...darkBase, ...theme.vars }
+  const vars: ThemeVars = { ...base, ...MAP_STRUCTURAL_CASCADE }
   for (const [key, value] of Object.entries(vars)) {
     document.documentElement.style.setProperty(key, value)
   }
@@ -2060,7 +2074,9 @@ export function applyTheme(theme: Theme): void {
 }
 
 export function applyCustomTheme(vars: ThemeVars, id?: string): void {
-  const merged: ThemeVars = { ...darkBase, ...vars }
+  // MAP_STRUCTURAL_CASCADE last — see applyTheme (forces the map to follow the
+  // general palette even for a custom theme carrying inherited --map-* literals).
+  const merged: ThemeVars = { ...darkBase, ...vars, ...MAP_STRUCTURAL_CASCADE }
   for (const [key, value] of Object.entries(merged)) {
     document.documentElement.style.setProperty(key, value)
   }

@@ -360,8 +360,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const lichPath = (() => {
     try { return JSON.parse(localStorage.getItem('lichborne.advancedSettings') ?? '{}').lichPath ?? '' } catch { return '' }
   })()
+  // Idea A (Binu): only auto-poll `;listall` while a Lich Scripts panel is open.
+  // lichPollRef is the gate read inside useLichBridge's interval; the effect by
+  // `lichScriptsOpen` (below the layout state) keeps it in sync and fires one
+  // immediate seed poll on open. Closed → zero `;listall` injected.
+  const lichPollRef = useRef(false)
   const { scripts: lichScripts, lastUpdated: lichLastUpdated, pending: lichPending,
-          pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(session.sessionId, !dropped)
+          pauseScript, resumeScript, killScript, refresh: refreshScripts } = useLichBridge(session.sessionId, !dropped, lichPollRef)
 
   void lichPath
 
@@ -447,6 +452,30 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [lichDashTab,       setLichDashTab]       = useState<DashTab>('scripts')
   const [showMapOverlay,  setShowMapOverlay]    = useState(false)
   const [automationsTab,    setAutomationsTab]    = useState<'highlights'|'triggers'|'macros'|'aliases'|'mutes'|'substitutes'|'groups'>('highlights')
+
+  // ── Lich Scripts poll gate (Idea A, Binu v0.13.1) ──────────────────────────
+  // Only auto-poll `;listall` while a Lich Scripts panel is actually open in
+  // this character's layout — otherwise the poll is silent (see useLichBridge /
+  // lichPollRef). useLichBridge feeds ONLY the `lichScripts` PanelFrame tab (the
+  // Lich Dashboard sources its scripts separately), so the panel tab is the
+  // whole signal: zones in panels mode (gated on each zone's Added flag), or a
+  // floating window's tabs in free mode.
+  const lichScriptsOpen = useMemo(() => {
+    if (layoutMode === 'free') {
+      return freeWindows.some(w => (w.tabs ?? []).some(t => t.id === 'lichScripts'))
+    }
+    const zoneHas = (added: boolean, t: TabDef[]) => added && t.some(x => x.id === 'lichScripts')
+    return zoneHas(mainTopAdded, mainTopTabs) || zoneHas(topAdded, topTabs)
+        || zoneHas(midAdded, midTabs) || zoneHas(bottomAdded, bottomTabs)
+  }, [layoutMode, freeWindows, mainTopAdded, mainTopTabs, topAdded, topTabs, midAdded, midTabs, bottomAdded, bottomTabs])
+
+  useEffect(() => {
+    const wasOpen = lichPollRef.current
+    lichPollRef.current = lichScriptsOpen
+    // false→true (opened): one immediate seed so the list isn't empty for up to
+    // a poll interval, and so scripts already running before open show up.
+    if (lichScriptsOpen && !wasOpen) refreshScripts()
+  }, [lichScriptsOpen, refreshScripts])
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
