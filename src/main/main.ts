@@ -981,6 +981,26 @@ ipcMain.handle('profile-transfer:open-exports-folder', (): void => {
   shell.openPath(ensureExportsDir())
 })
 
+// Generic "save text to a user-picked file" (F45 — Debug CSV export is the
+// first consumer). Renderer supplies the content + a default filename + a
+// filter; main owns the dialog and the write. Dialog is parented to the
+// calling window so it centers correctly in multi-window mode.
+ipcMain.handle('save-text-file', async (e, opts: { defaultName: string; content: string; filterName?: string; extensions?: string[] }): Promise<{ ok: boolean; canceled?: boolean; path?: string }> => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  const filters = [{ name: opts.filterName ?? 'Text', extensions: opts.extensions ?? ['txt'] }]
+  const res = win
+    ? await dialog.showSaveDialog(win, { defaultPath: opts.defaultName, filters })
+    : await dialog.showSaveDialog({ defaultPath: opts.defaultName, filters })
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+  try {
+    fs.writeFileSync(res.filePath, opts.content, 'utf8')
+    return { ok: true, path: res.filePath }
+  } catch (err) {
+    console.error('[save-text-file] write failed', err)
+    return { ok: false }
+  }
+})
+
 ipcMain.on('write-clipboard', (_e, text: string) => clipboard.writeText(text))
 ipcMain.on('open-url', (_e, url: string) => shell.openExternal(url))
 

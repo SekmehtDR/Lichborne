@@ -23,6 +23,26 @@ function parseExits(text: string): string[] {
   return EXIT_DIR_MAP.filter(([re]) => re.test(text)).map(([, abbr]) => abbr)
 }
 
+// Hand-state inference from GLANCE output text (the Profanity fallback —
+// ProfanityFE game_text_processor.rb does the same for the empty-hands case).
+// DR does NOT push <right>/<left> XML updates for every action that puts an
+// item in a hand (custom-verb event items are the known gap), so a hand can
+// silently desync from the real game state with no tag ever arriving to fix
+// it. GLANCE always reports the complete truth in text, so it doubles as a
+// player-reachable re-sync. The single-hand forms imply the other hand is
+// empty — glance never omits a held item.
+const GLANCE_EMPTY_RE = /^You glance down at your empty hands\./
+const GLANCE_BOTH_RE  = /^You are holding (.+?) in your right hand and (.+) in your left(?: hand)?\.$/
+const GLANCE_RIGHT_RE = /^You are holding (.+) in your right hand\.$/
+const GLANCE_LEFT_RE  = /^You are holding (.+) in your left hand\.$/
+
+// The <right>/<left> tags carry the bare item name ("bamboo folder"); glance
+// text carries the article form ("a bamboo folder ..."). Strip the article so
+// the inferred value reads like the tag-driven one.
+function stripArticle(s: string): string {
+  return s.trim().replace(/^(?:a|an|some|the)\s+/i, '')
+}
+
 // v0.8.10 (B135): stream id aliases moved to [shared/streamAliases.ts](src/shared/streamAliases.ts)
 // so the renderer's echoToStream and the import parsers can apply the same
 // normalization. Identity-mapping entries (thoughts → thoughts, etc.) were
@@ -193,6 +213,10 @@ export class StormFrontParser {
     }
 
     this.flushSegments()
+
+    // Glance-text hand re-sync — after the token loop so the suppression check
+    // sees any real hand tags this line emitted.
+    this.inferHandsFromGlance(line)
 
     // Preserve intentional blank lines from the server as empty spacers
     if (isBlankLine && this.events.length === 0) {
@@ -809,6 +833,51 @@ export class StormFrontParser {
         }
         break
       }
+    }
+  }
+
+  // Profanity-style fallback: derive hand state from glance text (see the
+  // GLANCE_*_RE docs at the top of the file). Real <right>/<left> tags stay
+  // authoritative — inference is skipped when this line already carried a hand
+  // tag, and it never runs on stream-routed lines (a Lich script echoing
+  // glance-shaped text into a panel must not touch the hand bars). If the
+  // server sends both the tags and the text (the healthy case), the two agree
+  // on content; only the name length can differ (tag short form vs glance
+  // article form), which is cosmetic and corrected by the next tag update.
+  private inferHandsFromGlance(rawLine: string) {
+    // Cheap substring gate before any regex/strip work runs on the hot path.
+    if (!rawLine.includes('You are holding ') && !rawLine.includes('You glance down at')) return
+    if (this.activeStream !== 'main' || this.streamStack.length > 0) return
+    if (/<(?:push|pop)stream/i.test(rawLine)) return
+    if (this.events.some(e => e.type === 'hand')) return
+
+    const text = decodeEntities(rawLine.replace(/<[^>]*>/g, '')).trim()
+
+    if (GLANCE_EMPTY_RE.test(text)) {
+      this.events.push({ type: 'hand', hand: 'right', item: 'Empty' })
+      this.events.push({ type: 'hand', hand: 'left',  item: 'Empty' })
+      return
+    }
+    let m = text.match(GLANCE_BOTH_RE)
+    if (m) {
+      this.events.push({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
+      this.events.push({ type: 'hand', hand: 'left',  item: stripArticle(m[2]) })
+      return
+    }
+    // The single-hand captures reject anything containing another " in your "
+    // phrase: a sentence shape we don't model (e.g. a hypothetical left-first
+    // ordering) would otherwise greedy-match its WHOLE tail into one hand and
+    // mis-assign garbage. Rejecting turns "unknown shape" into a safe no-op.
+    m = text.match(GLANCE_RIGHT_RE)
+    if (m && !m[1].includes(' in your ')) {
+      this.events.push({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
+      this.events.push({ type: 'hand', hand: 'left',  item: 'Empty' })
+      return
+    }
+    m = text.match(GLANCE_LEFT_RE)
+    if (m && !m[1].includes(' in your ')) {
+      this.events.push({ type: 'hand', hand: 'left',  item: stripArticle(m[1]) })
+      this.events.push({ type: 'hand', hand: 'right', item: 'Empty' })
     }
   }
 

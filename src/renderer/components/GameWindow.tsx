@@ -305,6 +305,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [disconnecting, setDisconnecting] = useState(false)
   const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
+  // True while debug telemetry should be COLLECTED — i.e. a debug surface is
+  // visible somewhere (the docked strip in panels mode, or a `debug` tab in a
+  // zone / floating window). Kept in sync by the `debugOpen` effect (B166).
   const showDebugRef                  = useRef(false)
   const debugEventsBufRef             = useRef<GameEvent[]>([])
   const rawXmlBufRef                  = useRef<string[]>([])
@@ -476,6 +479,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // a poll interval, and so scripts already running before open show up.
     if (lichScriptsOpen && !wasOpen) refreshScripts()
   }, [lichScriptsOpen, refreshScripts])
+
+  // ── Debug visibility (B166) — same presence pattern as lichScriptsOpen ─────
+  // A debug surface is open when: panels mode → the docked strip (`showDebug`)
+  // OR a `debug` tab in an added zone; free mode → a `debug` tab in any
+  // floating window (the strip never renders in free mode — it would sit UNDER
+  // the WindowLayer; the Debug button opens a floating Debug window instead).
+  // This drives COLLECTION (showDebugRef + the raw-xml IPC gate), so a
+  // tab-hosted Debug panel works without the strip — pre-B166 it collected
+  // nothing unless the strip was also open.
+  const debugOpen = useMemo(() => {
+    if (layoutMode === 'free') {
+      return freeWindows.some(w => (w.tabs ?? []).some(t => t.id === 'debug'))
+    }
+    const zoneHas = (added: boolean, t: TabDef[]) => added && t.some(x => x.id === 'debug')
+    return showDebug || zoneHas(mainTopAdded, mainTopTabs) || zoneHas(topAdded, topTabs)
+        || zoneHas(midAdded, midTabs) || zoneHas(bottomAdded, bottomTabs)
+  }, [layoutMode, freeWindows, showDebug, mainTopAdded, mainTopTabs, topAdded, topTabs, midAdded, midTabs, bottomAdded, bottomTabs])
   const [highlightPrefill,      setHighlightPrefill]      = useState<HighlightRule | undefined>(undefined)
   const [highlightTestText,     setHighlightTestText]     = useState<string | undefined>(undefined)
   const [triggerPrefillPattern, setTriggerPrefillPattern] = useState<string | undefined>(undefined)
@@ -782,9 +802,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
 
   useEffect(() => {
-    showDebugRef.current = showDebug
-    window.api.debugPanelToggle(session.sessionId, showDebug)
-    if (showDebug) {
+    showDebugRef.current = debugOpen
+    window.api.debugPanelToggle(session.sessionId, debugOpen)
+    if (debugOpen) {
       setDebugEvents([...debugEventsBufRef.current])
       setRawXmlLines([...rawXmlBufRef.current])
       setFireLog([...fireLogBufRef.current])
@@ -802,7 +822,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       setRawXmlLines([])
       setFireLog([])
     }
-  }, [showDebug])
+  }, [debugOpen, session.sessionId])
 
   useEffect(() => {
     if (!dropped) return
@@ -829,7 +849,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // switching reflects the right character automatically.
   useEffect(() => {
     updateStatus(characterId, {
-      panelDebug:       showDebug,
+      panelDebug:       debugOpen,
       panelLogs:        showSessionLog,
       panelMap:         showMapOverlay,
       panelLich:        showLichDash,
@@ -839,7 +859,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       panelContacts:    showContacts,
       panelTheme:       showThemePicker,
     })
-  }, [characterId, updateStatus, showDebug, showSessionLog, showMapOverlay, showLichDash, showPanelManager, showAutomations, showSettings, showContacts, showThemePicker])
+  }, [characterId, updateStatus, debugOpen, showSessionLog, showMapOverlay, showLichDash, showPanelManager, showAutomations, showSettings, showContacts, showThemePicker])
 
   // Native-menu / app-bar action bridge (Phase 2a/2b). App re-dispatches
   // session actions as 'lichborne:session-action'; every mounted GameWindow
@@ -852,7 +872,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => {
     runSessionActionRef.current = (action: string) => {
       switch (action) {
-        case 'toggle-debug':       setShowDebug(d => !d); break
+        // B166: in windowed mode the docked strip would sit UNDER the
+        // WindowLayer, so Debug opens as a floating window there instead.
+        case 'toggle-debug':
+          if (layoutMode === 'free') toggleFreeDebugWindow()
+          else setShowDebug(d => !d)
+          break
         case 'toggle-logs':
           if (showSessionLog) setShowSessionLog(false)
           else { setSessionLogSearch(null); setSessionLogKey(k => k + 1); setShowSessionLog(true) }
@@ -900,11 +925,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
   const [unreadStreams, setUnreadStreams] = useState<Set<string>>(new Set())
   const unreadRef = useRef<Set<string>>(new Set())
-  // Keep a ref of currently active tab IDs so the event handler (stable closure) can read them
+  // Keep a ref of currently-VISIBLE tab IDs so the event handler (stable
+  // closure) can read them — new content for a visible tab must not mark it
+  // unread. Panels mode: the four zones' active ids (mainTop included — it was
+  // missing pre-B167, so the active Main-Top tab re-marked itself unread on
+  // every new line). Free mode (B167): every floating window's activeId — all
+  // windows are on screen at once, so each window's active tab is visible.
   const activeIdsRef = useRef(new Set([topActiveId, midActiveId, bottomActiveId]))
   useEffect(() => {
-    activeIdsRef.current = new Set([topActiveId, midActiveId, bottomActiveId])
-  }, [topActiveId, midActiveId, bottomActiveId])
+    activeIdsRef.current = layoutMode === 'free'
+      ? new Set(freeWindows.flatMap(w => (w.activeId ? [w.activeId] : [])))
+      : new Set([mainTopActiveId, topActiveId, midActiveId, bottomActiveId])
+  }, [layoutMode, freeWindows, mainTopActiveId, topActiveId, midActiveId, bottomActiveId])
 
   // Drag refs
   const virtuosoRef           = useRef<VirtuosoHandle>(null)
@@ -957,14 +989,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // conversations / etc. back to the main window — the panel is hidden but
   // its streams effectively disappear instead of falling through.
   const watchedStreamsRef = useRef<Set<string>>(new Set())
+  // B168 (v0.13.2): per-mode, like activeIdsRef. In free mode the ZONES aren't
+  // rendered — the floating windows' tabs are the watching surfaces. Building
+  // this from zones in free mode broke fallback BOTH ways: a stream watched
+  // only by a window double-displayed (fallback still routed it to main), and
+  // a stream in a stale zone array but closed in windows had its fallback
+  // BLOCKED (content silently buffered, invisible — the worse failure).
   useEffect(() => {
-    watchedStreamsRef.current = new Set([
-      ...(mainTopAdded ? mainTopTabs : []),
-      ...(topAdded     ? topTabs     : []),
-      ...(midAdded     ? midTabs     : []),
-      ...(bottomAdded  ? bottomTabs  : []),
-    ].map(t => t.id))
-  }, [mainTopTabs, topTabs, midTabs, bottomTabs, mainTopAdded, topAdded, midAdded, bottomAdded])
+    watchedStreamsRef.current = layoutMode === 'free'
+      ? new Set(freeWindows.flatMap(w => (w.kind === 'panel' ? (w.tabs ?? []).map(t => t.id) : [])))
+      : new Set([
+          ...(mainTopAdded ? mainTopTabs : []),
+          ...(topAdded     ? topTabs     : []),
+          ...(midAdded     ? midTabs     : []),
+          ...(bottomAdded  ? bottomTabs  : []),
+        ].map(t => t.id))
+  }, [layoutMode, freeWindows, mainTopTabs, topTabs, midTabs, bottomTabs, mainTopAdded, topAdded, midAdded, bottomAdded])
 
   // v0.8.1: mirrors of the per-zone "added" flags. The divider drag handler
   // is attached once and reads these refs to clamp differently in 2-zone vs
@@ -2452,6 +2492,34 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const win = newFloatWindow(kind, size, freeWindows.length, kind === 'panel' ? { title: 'Panel' } : undefined)
     handleWindowsChange([...freeWindows, { ...win, z: maxZ + 1 }])
   }
+
+  // B166: the Debug button in windowed mode. The docked strip can't be used
+  // there (it renders under the WindowLayer), so Debug toggles as a floating
+  // window: off → add a dedicated "Debug" panel window (front of the stack);
+  // on → remove the debug TAB wherever it lives (the user may have moved it
+  // into another window via the tab `+`), closing a window the removal left
+  // empty. Collection follows tab presence via the `debugOpen` memo, so the
+  // window ✕ and the tab ✕ also turn collection off — no separate bookkeeping.
+  function toggleFreeDebugWindow() {
+    const hasDebug = (w: FloatWindow) => (w.tabs ?? []).some(t => t.id === 'debug')
+    if (freeWindows.some(hasDebug)) {
+      const next: FloatWindow[] = []
+      for (const w of freeWindows) {
+        if (!hasDebug(w)) { next.push(w); continue }
+        const tabs = (w.tabs ?? []).filter(t => t.id !== 'debug')
+        if (tabs.length === 0) continue  // window held only Debug → close it
+        next.push({ ...w, tabs, activeId: w.activeId === 'debug' ? tabs[0].id : w.activeId })
+      }
+      handleWindowsChange(next)
+    } else {
+      const C = gameLayoutRef.current?.getBoundingClientRect()
+      const size = C && C.width > 0 ? { w: C.width, h: C.height } : { w: 1200, h: 800 }
+      const maxZ = freeWindows.reduce((m, w) => Math.max(m, w.z), 0)
+      const win = newFloatWindow('panel', size, freeWindows.length,
+        { title: 'Debug', tabs: [makeTab('debug')], activeId: 'debug' })
+      handleWindowsChange([...freeWindows, { ...win, z: maxZ + 1 }])
+    }
+  }
   // What "Add Window" offers: New panel (always) + any missing singleton.
   // Labels are the window name; the section header + per-row Add button carry
   // the action (matches the Panel Manager's row pattern).
@@ -2478,7 +2546,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               tabs: t,
               activeId: win.activeId && t.some(x => x.id === win.activeId) ? win.activeId : (t[0]?.id ?? ''),
             })}
-            onActiveChange={id => updateWindow(win.id, { activeId: id })}
+            onActiveChange={id => { updateWindow(win.id, { activeId: id }); clearUnread(id) }}
           />
         )
       }
@@ -2944,7 +3012,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         )
       })()}
 
-      {showDebug && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} resizable character={session.character} />}
+      {/* Docked strip is panels-mode only (B166) — in free mode it would render
+          UNDER the WindowLayer; Debug opens as a floating window there. */}
+      {showDebug && layoutMode === 'panels' && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} resizable character={session.character} />}
 
       {showMapOverlay && (
         <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>

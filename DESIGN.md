@@ -330,7 +330,7 @@ When the connection drops for any reason (user-initiated QUIT, server timeout, d
 
 **Toolbar button**: changes from `Disconnect` → `Login` (styled in accent color). Clicking `Login` calls `onDisconnect` to return to the login screen.
 
-**Debug panel**: auto-opens only on *unexpected* disconnects (network drop, Lich crash). Clean disconnects (QUIT command, Disconnect button) do not open it. When the user opens the Debug panel, the renderer sends a `debug-panel-toggle` IPC signal to main; main gates the `raw-xml` channel behind that flag so raw lines are never serialized over IPC during normal play.
+**Debug panel**: opened manually only (the early-version auto-open on unexpected disconnects was removed — no `setShowDebug(true)` path exists in the code today; B11 history). When any debug surface is open — the docked strip in Static Panels, or a `debug` tab in a zone / floating window (the `debugOpen` presence memo, B166 v0.13.2) — the renderer sends a `debug-panel-toggle` IPC signal to main; main gates the `raw-xml` channel behind that flag so raw lines are never serialized over IPC during normal play. The signal re-sends on `session.sessionId` change so a reconnect-in-place re-arms the gate.
 
 **Clean vs unexpected detection**: a `cleanDisconnect` flag in `main.ts` is set when: (1) `quit` or `exit` is sent via `SEND_COMMAND` IPC, (2) the Disconnect button fires the `DISCONNECT` IPC handler, or (3) the parser sees `<exit/>` (direct connection). The flag is read and reset in `connection.on('disconnect')` and passed as `clean: boolean` in the status payload — no cross-channel race possible.
 
@@ -358,7 +358,7 @@ TCP chunk → LichConnection.flush() → 'line' event (one per \n)
 
 **Event batching**: `scheduleFlush()` in `main.ts` uses `setImmediate` so all lines from a single TCP read (which Node.js delivers as one I/O event) are coalesced into a single `webContents.send`. During connection burst (~40–60 lines) this reduces IPC round-trips from one-per-line to one total.
 
-**`raw-xml` channel gating**: raw lines are only sent over the `raw-xml` IPC channel when the Debug panel is open. The renderer sends `debug-panel-toggle: true/false` to main when the panel opens or closes; main stores `debugPanelOpen` and gates the send on it. Zero IPC overhead during normal play.
+**`raw-xml` channel gating**: raw lines are only sent over the `raw-xml` IPC channel when a Debug surface is open (the docked strip, or a `debug` tab in a zone / floating window — the `debugOpen` presence memo, B166 v0.13.2). The renderer sends `debug-panel-toggle: true/false` to main when that presence changes (and on `session.sessionId` change, so a reconnect-in-place re-arms it); main stores `debugPanelOpen` and gates the send on it. Zero IPC overhead during normal play.
 
 **`unknown` event filtering**: `StormFrontParser` emits `UnknownEvent` for tags it does not recognize — these carry no display content and the renderer ignores them. They are dropped in the main process before the IPC send so they never cross the boundary.
 
@@ -609,6 +609,8 @@ The icon bar is a single fixed-height row. Layout left to right:
 | **Left hand** | Label `L`, item name. Dim when empty, warm tan when holding. Truncates with ellipsis. |
 | **Right hand** | Label `R`, same as left. |
 | **Spell** | Always visible. Shows `None` when nothing is prepared (dim); shows the spell name when prepared (purple glow). |
+
+**Hand state has TWO sources (v0.13.2, B165).** Primary: the `<right>`/`<left>` XML tags. Fallback: GLANCE output text — DR does not push hand XML for every action that puts an item in a hand (custom-verb event items are the known gap; Profanity carries the same fallback), so the parser's `inferHandsFromGlance` derives both hands from `You are holding X in your right hand and Y in your left.` / single-hand forms (the other hand is inferred Empty — glance reports complete state) / `You glance down at your empty hands.` Typing `glance` therefore always re-syncs the hand slots. Tags stay authoritative: inference is skipped on any line that carried a hand tag, never runs on stream-routed lines, and the patterns are line-anchored so quoted speech can't match. See CLAUDE.md pitfall #78.
 
 **Right side — 6 status bars (right-anchored)**
 
@@ -3608,7 +3610,7 @@ The Fires tab in the Debug panel shows a live stream of every highlight and trig
 
 ### Architecture
 
-- `FireLogEntry` — defined in `shared/types.ts`; fields: `id`, `ts`, `kind` (`highlight` | `trigger`), `name`, `matched`, `detail`, `stream`
+- `FireLogEntry` — defined in `shared/types.ts`; fields: `id`, `ts`, `kind` (`highlight` | `trigger`), `name`, `matched`, `detail`, `stream`, `ruleId?` (v0.8.2 — drives the Fires → Edit button)
 - `fireLogBufRef` — accumulates entries without triggering React re-renders
 - `setFireLog` — only called when the debug panel is open (`showDebugRef.current`); entries are pushed with `prev => [...prev.slice(-(MAX - 1)), entry]` for O(1) append
 - Cap: 500 entries (same as the Events buffer)
@@ -3648,7 +3650,8 @@ The Debug panel (Fires / Events / Raw XML) is a header-over-rows table inside a 
 - **Column alignment** — the sticky header and the rows share one `grid-template-columns`, and `.debug-scroll` sets `scrollbar-gutter: stable` so the reserved scrollbar gutter keeps the header and rows on the same content width once the list overflows. Fire-log rows are uniform-height (`align-items: center` + single-line ellipsis per cell, full value in a `title` tooltip) so columns read as a real table; long matches truncate rather than wrapping into ragged rows. Events uses a 2-column grid (`Type` fixed, `Payload` flexible) and expands a row on hover to reveal full JSON.
 - **Theming** — all surfaces use theme vars with `:nth-child(even)` zebra striping via `color-mix(... var(--text-primary) 5%, transparent)`; verified on light themes (no transparent/washed-out rows).
 - **Goto** — each fire row has an **"Edit →"** button (fixed last column, always visible) wired to `onGotoFireRule(kind, ruleId)`, which opens the source highlight/trigger in the Automations panel.
-- **Resizable, two render modes** — as the docked bottom strip (GameWindow, `resizable` prop) the panel has a top drag-handle and persists its height per-character via `scopedKey(character, 'debugPanelHeight')` (default 300px, clamped 150 → 70vh; round-trips into YAML `state.*` per the dynamic profile pipeline, no schema change). Rendered inside a panel zone (PanelFrame) it's non-resizable and fills the zone (`.debug-panel--fill`).
+- **Resizable, two render modes** — as the docked bottom strip (GameWindow, `resizable` prop) the panel has a top drag-handle and persists its height per-character via `scopedKey(character, 'debugPanelHeight')` (default 300px, clamped 150 → 70vh; round-trips into YAML `state.*` per the dynamic profile pipeline, no schema change). Rendered inside a panel zone or floating window (PanelFrame `debug` tab) it's non-resizable and fills the host (`.debug-panel--fill`). **The docked strip is Static-Panels-mode only (B166, v0.13.2)** — in Windowed Panels the Debug button toggles a floating Debug window instead (the strip would render under the `WindowLayer`; see §33.6), and telemetry collection follows the `debugOpen` presence memo (strip OR zone tab OR window tab) rather than the strip toggle alone.
+- **Export CSV (F45, v0.13.2)** — toolbar button saving the ACTIVE tab to a CSV for offline analysis: Fires `timestamp,kind,stream,rule,matched,detail` (ms-precision local timestamps); Events `index,type,timestamp,data` (heterogeneous event union → `data` is the event JSON minus `type`, json-parseable per row); Raw XML `index,line`. RFC-4180 quoting + the OWASP formula-injection guard (leading `'` on fields starting `=`/`+`/`-`/`@`/tab — Excel would otherwise parse them as formulas, and game text is player-authored so `=cmd|…` is a genuine injection vector). Saves through the generic `save-text-file` IPC (main: `showSaveDialog` parented to the calling window + `writeFileSync`) — reusable by any future "save this text" feature.
 
 ---
 
@@ -5692,6 +5695,18 @@ windows** — where a *window* becomes the new, unlimited evolution of a *panel*
 grid-based Layout Designer (§12)** — we chose a freeform floating model over a grid because it's what
 players asked for (drag/snap/unlimited) and it maps onto the existing components far more cleanly.
 
+**Direction (Sekmeht, 2026-06-11): Windowed Panels is the END STATE — Static Panels will be
+discontinued.** The plan, in two stages: **(1)** flip the default — new characters start in Windowed
+Panels (`layoutMode` default `'free'`), Static stays available as the legacy toggle; **(2)** pull the
+plug — remove Static Panels entirely, with a one-time automatic conversion (the
+`buildWindowsFromCurrentLayout` cascade already exists) so no existing layout is lost (Principles #3
+and #8 — migration path, no data loss; the zone scopedKeys become legacy state to migrate, not
+delete). Neither stage is scheduled yet — both ship on their own release decision after Windowed
+Panels has soaked with the tester pool. **Until stage 2 lands, both modes stay first-class** (every
+new feature works in both — the pitfall-#79 per-mode aggregation pattern is the cost of the interim),
+but when weighing effort, windowed mode is the future: don't build static-only features, and prefer
+designs that get simpler when the zone skeleton goes away.
+
 ### 33.1 Why this is tractable (current-architecture findings)
 
 Three facts about today's layout ([GameWindow.tsx](src/renderer/components/GameWindow.tsx) render at
@@ -5777,6 +5792,12 @@ On live drag-move and on resize, within an ~8px (container-space) threshold:
 
 Toggle in the **View menu** + a **Panel Manager** entry (and a Free-Layout toolbar affordance). When
 `layoutMode === 'free'`, GameWindow renders the `WindowLayer` **instead of** the fixed skeleton.
+**Docked strips don't exist in free mode (B166, v0.13.2):** the layer is absolute inset-0 over the
+whole shell, so any flex-docked strip (the Debug strip was the case in point) renders UNDER the
+windows. Such surfaces open AS a floating window in free mode instead — the Debug button toggles a
+panel window seeded with the `debug` tab; the docked strip renders only in panels mode, and debug
+collection is presence-based (the `debugOpen` memo: strip OR zone tab OR window tab), so a Debug tab
+hosted anywhere now collects on its own.
 
 **Conversion (the "pop free" effect)** — on first entry to free mode with no `freeWindows`:
 1. Read the container `getBoundingClientRect()`.
@@ -5917,7 +5938,9 @@ distinct naming ("Free Layout" vs "Move to New Window") is the disambiguation; k
    so a closed bar can't be permanently lost (§33.8). **Lock windows** (`freeLayoutLocked`, per-character
    scopedKey) — a banner checkbox shown only in free mode — makes drag/resize/arrow-nudge no-ops and hides
    the resize handles (cursor goes default; `fl-window--locked`), so a finished layout can't be nudged by
-   accident; add/lock are hidden while locked. Title hide/grip ✅, Reset ✅ ("Rebuild from panels"),
+   accident; add/lock are hidden while locked. The grip's centered **dash mark is also hidden when locked**
+   (F44, Rakkor v0.13.2) — it's a drag affordance, a lie on a locked window; the 11px grip STRIP itself
+   stays so geometry doesn't shift on lock toggle, and double-click still restores the name bar. Title hide/grip ✅, Reset ✅ ("Rebuild from panels"),
    keyboard nudge + minimal focus cue ✅. **The Panel Manager hides the zone manager (Panel Locations /
    per-zone Streams / Available Streams) entirely in free mode** (`layoutMode !== 'free'` gate) — windows
    aren't bound to zones, so it confused; a short note + the Free-Layout controls take its place, and it

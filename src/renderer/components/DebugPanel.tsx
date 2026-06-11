@@ -133,6 +133,66 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
 
   const activeOnClear = tab === 'events' ? onClear : tab === 'rawxml' ? onClearRawXml : onClearFireLog
 
+  // ── Export CSV (F45) — the ACTIVE tab's buffer, for offline analysis ──────
+  // One file per export, schema per tab:
+  //   fires:  timestamp,kind,stream,rule,matched,detail
+  //   events: index,type,timestamp,data   (data = the event minus `type`, as
+  //           JSON — the event union is heterogeneous, so a flat column set
+  //           would either explode or lose fields; JSON keeps every field and
+  //           analysis tools can json-parse the column)
+  //   rawxml: index,line
+  // CSV quoting: RFC-4180 — quote when needed, double internal quotes — PLUS
+  // the OWASP formula-injection guard: Excel parses a field starting with
+  // = + - @ (or tab) as a FORMULA on open (`=--- Lich: …` → #NAME?; and since
+  // game text is other-player-authored, a crafted `=cmd|…` cell is a real
+  // injection vector, not just cosmetic). Standard mitigation is a leading
+  // single quote, which Excel renders as text. The quote is visible in the
+  // data — the documented OWASP tradeoff; strip leading `'` when
+  // post-processing programmatically.
+  const csvField = (v: string) => {
+    const guarded = /^[=+\-@\t]/.test(v) ? `'${v}` : v
+    return /[",\r\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded
+  }
+  const csvTs = (ms: number) => {
+    const d = new Date(ms)
+    const p = (n: number, w = 2) => String(n).padStart(w, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
+  }
+  const [exportedTick, setExportedTick] = useState(false)
+
+  async function handleExportCsv() {
+    let rows: string[]
+    if (tab === 'fires') {
+      rows = ['timestamp,kind,stream,rule,matched,detail',
+        ...fireLog.map(e => [csvTs(e.ts), e.kind, e.stream ?? '', e.name, e.matched, e.detail]
+          .map(csvField).join(','))]
+    } else if (tab === 'events') {
+      rows = ['index,type,timestamp,data',
+        ...events.map((e, i) => {
+          const { type, ...rest } = e
+          const ts = 'timestamp' in e && typeof e.timestamp === 'number' ? csvTs(e.timestamp) : ''
+          return [String(i + 1), type, ts, JSON.stringify(rest)].map(csvField).join(',')
+        })]
+    } else {
+      rows = ['index,line', ...rawXmlLines.map((l, i) => [String(i + 1), l.trimEnd()].map(csvField).join(','))]
+    }
+    if (rows.length <= 1) return  // header only — nothing to export
+    const d = new Date()
+    const p = (n: number) => String(n).padStart(2, '0')
+    const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+    const who = character ? `${character.toLowerCase()}-` : ''
+    const res = await window.api.saveTextFile({
+      defaultName: `lichborne-debug-${tab}-${who}${stamp}.csv`,
+      content: rows.join('\r\n') + '\r\n',
+      filterName: 'CSV',
+      extensions: ['csv'],
+    })
+    if (res.ok) {
+      setExportedTick(true)
+      setTimeout(() => setExportedTick(false), 2000)
+    }
+  }
+
   function handleCopy() {
     let text = ''
     if (tab === 'events') text = events.map(e => JSON.stringify(e)).join('\n')
@@ -167,6 +227,9 @@ export default function DebugPanel({ events, onClear, rawXmlLines, onClearRawXml
           </button>
         </div>
         <button className="debug-copy" onClick={handleCopy}>Copy All</button>
+        <button className="debug-copy" onClick={handleExportCsv}
+          title="Save the active tab's contents as a CSV file">
+          {exportedTick ? 'Saved ✓' : 'Export CSV'}</button>
         <button className="debug-clear" onClick={activeOnClear}>Clear</button>
         {onClose && (
           <button className="debug-close" onClick={onClose} title="Close debug panel" aria-label="Close debug panel">✕</button>

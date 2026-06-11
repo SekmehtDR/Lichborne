@@ -1,3 +1,19 @@
+## What's new in v0.13.2
+
+### Windowed Panels fixes, Debug upgrades, and hand bars that catch up
+
+- **Export Debug data to CSV.** The Debug panel has a new **Export CSV** button next to Copy All — it saves whichever tab you're viewing (Fires, Events, or Raw XML) to a CSV file with proper timestamps and columns, ready for offline analysis in a spreadsheet or script. Fields that Excel would misread as formulas (lines starting with `=`, `+`, `-`, or `@`) are safely escaped with a leading apostrophe — standard spreadsheet practice, and it also blocks formula-injection tricks from player-authored game text.
+
+- **Unread dots behave in Windowed Panels.** The orange "new content" dot on a stream tab (e.g. Arrivals) used to stay lit forever in the windowed layout — reading the tab didn't clear it. Now viewing a tab clears its dot, and a tab that's already on screen doesn't light up at all. The same fix repaired stream routing in windowed mode: content for a stream you'd closed could silently vanish instead of falling back to the main window, and window-only streams could show up twice. *(Thanks to Sekmeht.)*
+
+- **Debug is a real window in Windowed Panels.** In the windowed layout, opening Debug used to dock a strip at the bottom of the screen — underneath your floating windows. Now the Debug button opens Debug as a **floating window** like everything else: drag it, resize it, close it from its title bar. (In the classic Static Panels layout it still docks at the bottom as before.) Bonus fix: a Debug tab added to any panel or window now works on its own — it used to stay empty unless the docked strip was also open.
+
+- **Locked windows drop the drag mark.** In Windowed Panels, locking your layout now also hides the little "—" drag mark on windows with hidden title bars — no more affordance for a drag that's disabled. Double-clicking the strip still brings the name bar back. *(Thanks to TheTargonian.)*
+
+- **Held items no longer get stuck showing "Empty" in the hand bar.** DragonRealms doesn't send a hand update for *every* action that puts an item in your hand (event and quest items with custom verbs are the usual culprits), so the `L`/`R` slots could show `Empty` while you were clearly holding something. Lichborne now also reads the text of your **GLANCE** — so a quick `glance` always snaps both hand slots (and the empty-hands case) back to reality, the same trick the Profanity front-end uses. The game's own hand updates still take priority whenever they arrive. *(Thanks to JadedSoul for the report.)*
+
+---
+
 ## What's new in v0.13.1
 
 ### More room, and a better-behaved theme
@@ -11,23 +27,3 @@
 - **The Lich Scripts panel stops polling when it's closed.** Lichborne refreshes its running-scripts list by quietly asking Lich every few seconds — but it was doing that for every connected character even when you weren't looking at the scripts panel, which could occasionally interfere with Lich scripts like the automapper. Now it only refreshes while a Lich Scripts panel is actually open; closed means completely silent. *(Thanks to Binu.)*
 
 - **Tidier Lich Scripts panel.** The "Active Scripts" heading and the status strip at the bottom were oversized; both are now tight strips that match the size and feel of the other panels. *(Thanks to Sekmeht.)*
-
----
-
-## What's new in v0.13.0
-
-### Windowed Panels — float your whole layout
-
-- **A brand-new way to arrange the client: Windowed Panels.** Open **Panels** and hit **Switch to Windowed Panels**, and your entire layout pops free into floating windows you can drag, resize, and arrange however you like. Your classic docked setup is now called **Static Panels** — nothing changes there unless you opt in, and you can switch back any time.
-
-- **Everything decouples.** Not just the side panels — the **main game text, the command/input bar, the vitals bar, and the status (icon) bar** all become independent windows. Put the input bar wherever you want it. Float vitals across the top. Stack your thought/death/arrival panels anywhere. It's your screen.
-
-- **Magnetic snapping.** Drag a window near a screen edge or another window and it **snaps flush**, with a guide line showing where it'll land — so you can hand-build a clean tiled layout in seconds. Hold **Alt** while dragging to place freely without snapping, and use **arrow keys** to nudge the focused window a pixel at a time.
-
-- **Unlimited windows.** Add as many panel windows as you want from the Panel Manager's **Add Window** list, and re-add any bar you've closed (so the command bar can never be lost). Each window has a title bar you can rename, hide (for a compact look), or close.
-
-- **Lock Windows.** Once your layout is just right, tick **Lock windows** to prevent accidental dragging or resizing.
-
-- **It's yours and it's saved.** Windowed layouts are per-character, persist across launches, and travel with **Profile Transfer**. The Panel Manager keeps things tidy — it shows the Static-Panel zone tools in panel mode and the windowed controls in windowed mode, so you only ever see what's relevant.
-
-> Streams (Thoughts, Room, Experience, Conversations, …) work exactly as before — they're just the *content* you place inside panels, whether those panels are static or windowed.

@@ -254,7 +254,7 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       ) : (
         <div
           className="fl-grip"
-          title="Drag to move — double-click to show the name bar"
+          title={locked ? 'Double-click to show the name bar' : 'Drag to move — double-click to show the name bar'}
           onMouseDown={beginDrag}
           onDoubleClick={() => onChange(win.id, { showTitle: true })}
         />

@@ -65,6 +65,7 @@ declare global {
       onMenuAction: (cb: (payload: { action: string }) => void) => () => void
       openUrl: (url: string) => void
       writeClipboard: (text: string) => void
+      saveTextFile: (opts: { defaultName: string; content: string; filterName?: string; extensions?: string[] }) => Promise<{ ok: boolean; canceled?: boolean; path?: string }>
       flashWindow: () => void
       writeLog: (filename: string, content: string) => void
       browseFolder: () => Promise<string | null>

@@ -179,6 +179,12 @@
    lock toggle live in the Panel Manager, not on the overlay. */
 .fl-window--locked .fl-titlebar,
 .fl-window--locked .fl-grip { cursor: default; }
+/* The dash mark is a drag affordance — hide it when locked (F44, Rakkor). The
+   11px grip STRIP stays so the window's geometry doesn't shift on lock toggle
+   (pitfall #74: keep floating-window geometry deterministic), and double-click
+   to restore the name bar keeps working. `display` beats the focused-accent
+   background rule regardless of rule order. */
+.fl-window--locked .fl-grip::after { display: none; }
 
 /* ── Resize handles (invisible hit areas) ──────────────────────────────── */
 /* Insets are 0 (INSIDE the window edges), not negative: a window flush against

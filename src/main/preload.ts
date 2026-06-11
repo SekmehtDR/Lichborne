@@ -193,6 +193,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   openUrl: (url: string) => ipcRenderer.send('open-url', url),
   writeClipboard: (text: string) => ipcRenderer.send('write-clipboard', text),
+  saveTextFile: (opts: { defaultName: string; content: string; filterName?: string; extensions?: string[] }): Promise<{ ok: boolean; canceled?: boolean; path?: string }> =>
+    ipcRenderer.invoke('save-text-file', opts),
 
   flashWindow: () => ipcRenderer.send('flash-window'),
   writeLog: (filename: string, content: string) => ipcRenderer.send('write-log', filename, content),
