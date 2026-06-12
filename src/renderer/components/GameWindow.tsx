@@ -1957,17 +1957,40 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               // Send any pending plain commands first, then deposit text
               // into the bar + position cursor + focus. Stop iteration.
               flushPlain()
-              setCommand(cursor.text)
-              commandRef.current = cursor.text
+              // B170 (JadedSoul): MACRO COMPOSITION — when the user is
+              // mid-composition (command input FOCUSED and NON-EMPTY, e.g.
+              // sitting in the gap a previous `get @ from my pack` macro
+              // left), a cursor-marker macro INSERTS its text at the caret
+              // (replacing any selection) instead of wiping the bar — the
+              // way Wrayth types macro text into the entry box, so
+              // `second ` lands inside the earlier template: `get second
+              // from my pack`. An empty or unfocused bar keeps the v0.8.10
+              // replace behavior (firing a template macro starts fresh).
+              const input = inputRef.current
+              const composing = input && document.activeElement === input && commandRef.current.length > 0
+              let nextValue: string
+              let caretPos: number
+              if (composing) {
+                const cur = commandRef.current
+                const selStart = input.selectionStart ?? cur.length
+                const selEnd = input.selectionEnd ?? selStart
+                nextValue = cur.slice(0, selStart) + cursor.text + cur.slice(selEnd)
+                caretPos = selStart + cursor.cursorPos
+              } else {
+                nextValue = cursor.text
+                caretPos = cursor.cursorPos
+              }
+              setCommand(nextValue)
+              commandRef.current = nextValue
               historyIdxRef.current = -1
               // Wait one frame so React commits the new input value before
               // we set the selection — setSelectionRange on the previous
               // value's length wouldn't match the new value's positions.
               requestAnimationFrame(() => {
-                const input = inputRef.current
-                if (!input) return
-                input.focus()
-                input.setSelectionRange(cursor.cursorPos, cursor.cursorPos)
+                const inp = inputRef.current
+                if (!inp) return
+                inp.focus()
+                inp.setSelectionRange(caretPos, caretPos)
               })
               stoppedForCursor = true
               break

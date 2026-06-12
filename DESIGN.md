@@ -610,7 +610,7 @@ The icon bar is a single fixed-height row. Layout left to right:
 | **Right hand** | Label `R`, same as left. |
 | **Spell** | Always visible. Shows `None` when nothing is prepared (dim); shows the spell name when prepared (purple glow). |
 
-**Hand state has TWO sources (v0.13.2, B165).** Primary: the `<right>`/`<left>` XML tags. Fallback: GLANCE output text — DR does not push hand XML for every action that puts an item in a hand (custom-verb event items are the known gap; Profanity carries the same fallback), so the parser's `inferHandsFromGlance` derives both hands from `You are holding X in your right hand and Y in your left.` / single-hand forms (the other hand is inferred Empty — glance reports complete state) / `You glance down at your empty hands.` Typing `glance` therefore always re-syncs the hand slots. Tags stay authoritative: inference is skipped on any line that carried a hand tag, never runs on stream-routed lines, and the patterns are line-anchored so quoted speech can't match. See CLAUDE.md pitfall #78.
+**Hand state has TWO sources (v0.13.2, B165) — and one upstream guard (v0.13.3, B169).** On Lich sessions, Lichborne sends `_flag Display Inventory Boxes 1` once after login: Lich's default `inventory_boxes_off` hook strips container XML with a greedy regex that could swallow hand tags on container-GET lines (the true cause of B165's "random" desyncs); the flag — consumed by Lich, never reaching DR — disarms it, exactly as Wrayth does (pitfall #80). Primary source: the `<right>`/`<left>` XML tags. Fallback: GLANCE output text — DR does not push hand XML for every action that puts an item in a hand (custom-verb event items are the known gap; Profanity carries the same fallback), so the parser's `inferHandsFromGlance` derives both hands from `You are holding X in your right hand and Y in your left.` / single-hand forms (the other hand is inferred Empty — glance reports complete state) / `You glance down at your empty hands.` Typing `glance` therefore always re-syncs the hand slots. Tags stay authoritative: inference is skipped on any line that carried a hand tag, never runs on stream-routed lines, and the patterns are line-anchored so quoted speech can't match. See CLAUDE.md pitfall #78.
 
 **Right side — 6 status bars (right-anchored)**
 
@@ -1544,7 +1544,7 @@ Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends 
 
 **Move = ownership only.** `session:move-window(sessionId, 'new' | 'main' | windowId)` reassigns `ownerWindowId`; per-session events re-route via `ownerWindow(s)`. The socket/parser/LichBridge are never touched (the source GameWindow merely unmounts; see CLAUDE.md pitfall #59). Entry points: right-click tab, Window menu → "Move Character to New Window", Bulk Connect "Open each character in its own window" (persisted in `_shared.yaml`, default off). The only-character-in-a-window case is guarded (greyed) at three levels.
 
-**Seamless takeover (replay).** A window taking over a session reseeds from a render-only replay: main keeps a per-session **snapshot of the latest sticky state** (every vital/indicator/RT/CT/stance/spell/hand/room/exp — so static bars restore regardless of age) plus a bounded scrollback buffer. The replay is gated so it rebuilds display + state WITHOUT re-firing triggers / re-logging, only goes to a window the session was *moved into* (`replayTarget`), and live delivery is held during the handoff (`holdingForReplay`) so the stream can't double. See CLAUDE.md pitfall #60.
+**Seamless takeover (replay).** A window taking over a session reseeds from a render-only replay: main keeps a per-session **snapshot of the latest sticky state** (every vital/indicator/RT/CT/stance/spell/hand/room/exp — so static bars restore regardless of age) plus a bounded scrollback buffer. The replay is gated so it rebuilds display + state WITHOUT re-firing triggers / re-logging, only goes to a window whose remount *earned* it (`replayTarget` — set on `session:move-window` for decouple/re-home, and since v0.13.3 on `session:reload` for the Profile-Transfer import remount, the B165 root fix: without it, an import to an active character reset hands/vitals/scrollback and a long-parked held item never self-healed because DR only re-sends hand tags on change), and live delivery is held during the handoff (`holdingForReplay`) so the stream can't double. See CLAUDE.md pitfall #60.
 
 **Lifecycle.** Closing a decoupled window gracefully **logs out** its character (like closing a tab); re-home is explicit via Window → "Move Character to Main Window" (auto-closes the emptied window). Closing the primary window quits the app (flushing every window's profile saves first).
 
@@ -2440,6 +2440,26 @@ Existing rule storage keys (`lichborne.highlights`, `lichborne.triggers`, `lichb
 8. ✅ **Wire Aliases** — `groupIds`/`allGroups` on `AliasRule`; All Groups button + GroupPicker; `resolveAlias` filter checks `isRuleActive`
 9. ✅ **Automations panel shell** (`AutomationsPanel.tsx`) — tabbed container (Contacts-style header); hosts all four rule editors inline + Groups & Modes tab; accepts prefill props for right-click open-to
 10. ✅ **Consolidate toolbar** — removed `btn-highlights`, `btn-triggers`, `btn-macros`; added `btn-automations` + ModeSwitcher
+
+### 17.14 Macro cursor markers & composition (B137 v0.8.10, B170 v0.13.3)
+
+A macro command containing an unescaped **`@`** fires in **type-and-wait** mode instead of sending:
+the text (with all unescaped `@` stripped) is typed into the command bar and the caret lands at the
+first `@`'s position — the Genie/Wrayth convention (`get @ from my pack` → `get ⎵ from my pack`,
+caret in the gap). `\@` escapes a literal `@`. The macro stops at the first wait-command; later
+commands in the sequence are skipped. Canonical helper: `parseCursorMarker` ([macros.ts](src/renderer/macros.ts));
+fire path in GameWindow's keydown handler. Full conventions + import translation (Wrayth `\r`,
+Genie `\x`): CLAUDE.md pitfall #51.
+
+**Composition (B170, v0.13.3 — JadedSoul):** when a cursor macro fires while the command input is
+**focused and non-empty** (the user is mid-composition, e.g. sitting in the gap a previous template
+macro left), its text **INSERTS at the caret** (replacing any selection; caret lands at the inserted
+text's `@` offset) — Wrayth's type-into-the-entry-box model, enabling macro-within-macro:
+`Alt-T` (`get @ from my pack`) then `Ctrl-2` (`second @`) → `get second from my pack`. An **empty or
+unfocused** bar keeps replace semantics (a template fire starts fresh). Consequence (Wrayth-faithful):
+re-firing a template while focused in its own non-empty output inserts again — clear the bar for a
+fresh template. Git-verified the fire path was replace-only v0.8.10→v0.13.2; insert mode is new
+capability, not a regression fix.
 
 ---
 
@@ -5224,7 +5244,7 @@ Core logic in [profileTransfer.ts](src/renderer/profileTransfer.ts). Each per-ch
 `applyProfileImport(target, isActive, file, { merge, selected })`, unified over a `TargetStore` abstraction (read/write a suffix):
 
 - **Inactive target** → staged YAML store: read `{Character}.yaml`, merge selected categories into a copy of `state` (+ `theme`), one atomic `writeCharacterProfile`. Never `buildCharacterProfile` (would rebuild `state` from empty localStorage and wipe the char).
-- **Active target** → live localStorage store (`scopedKey`, same string/JSON representation as `importCharacterProfile`), then the modal calls `reloadSession(characterId)` → App bumps the session's reload nonce in the GameWindow `key` → full remount re-reads the imported state. Applies to **focused AND backgrounded** sessions. Writing only the YAML would be overwritten on logout by stale live state — writing the working copy + remount commits it.
+- **Active target** → live localStorage store (`scopedKey`, same string/JSON representation as `importCharacterProfile`), then the modal calls `reloadSession(characterId)` → main's `session:reload` **arms a §13.9 state replay** (`replayTarget`/`holdingForReplay` — v0.13.3, the B165 root fix) and routes to the owner window → App bumps the session's reload nonce in the GameWindow `key` → full remount re-reads the imported state, then its replay request restores scrollback + every sticky state (hands/vitals/room/spell/RT/…). Pre-v0.13.3 the remount started from defaults — vitals self-healed on the next change but a long-parked HELD ITEM never re-sent a hand tag, so the hand bar stuck on "Empty" for the rest of the session (found while chasing JadedSoul's B165 cookbook report; her case likely turned out to be the pitfall-#78 protocol gap instead, but this hole was code-verified real). Applies to **focused AND backgrounded** sessions. Writing only the YAML would be overwritten on logout by stale live state — writing the working copy + remount commits it.
 
 **Merge:** rules (highlights/triggers/macros/aliases/groups/modes/contacts) honor **Append** (dedup by the same content/id/name keys as ImportWizard; highlights/triggers/macros/aliases get regenerated ids) vs **Replace**. Config categories (Display/Layout/View/Theme) always overwrite when selected. `settings`/`panelFontSizes` split: Display preserves the target's `panelFontSizes`; Layout merges its own; Display runs before Layout.
 

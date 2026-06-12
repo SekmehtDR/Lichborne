@@ -73,6 +73,9 @@ interface Session {
   // a session still streaming during the handoff can't show events live AND again
   // in the replay (the bulk-connect login double). Live resumes after the replay.
   holdingForReplay?: boolean
+  // B169: one-shot — `_flag Display Inventory Boxes 1` sent to Lich after login
+  // (player-info) to disarm Lich's tag-eating inventory_boxes_off hook.
+  invBoxesFixSent?: boolean
 }
 
 const HISTORY_BUFFER_MAX = 600
@@ -205,6 +208,24 @@ function wireSession(s: Session) {
     for (const evt of events) {
       if (evt.type === 'launch-url') shell.openExternal(evt.url)
       if (evt.type === 'game-exit') s.cleanDisconnect = true
+      // B169: disarm Lich's `inventory_boxes_off` downstream hook. Lich installs
+      // it BY DEFAULT for stormfront-style front-ends (main.rb:546) and its strip
+      // regex is GREEDY (`<inv.+\/inv>`): on a server line that starts with a
+      // container tag and carries a hand update BETWEEN two inv blocks (a GET
+      // from a container, with the game-side "display inventory windows" account
+      // flag on), it swallows the <right>/<left> tag — the true root cause of
+      // JadedSoul's B165 hand-bar desyncs. Wrayth escapes because it sends this
+      // exact flag at bootstrap; we mimic it ONCE per session after login
+      // (player-info = the <app> tag, which arrives AFTER <playerID>, so Lich
+      // also persists the preference for future sessions — xmlparser.rb:604).
+      // Lich's UpstreamHook CONSUMES the command (returns nil): it never reaches
+      // DR and never touches the real account flag. Lich sessions only — sent
+      // directly to the game on a direct-SGE connection it WOULD flip the real
+      // account flag (and direct connections have no hook, hence no bug).
+      if (evt.type === 'player-info' && s.meta?.useLich && !s.invBoxesFixSent) {
+        s.invBoxesFixSent = true
+        s.connection.send('_flag Display Inventory Boxes 1')
+      }
     }
     const filtered = events.filter(e => e.type !== 'launch-url' && e.type !== 'unknown')
     if (filtered.length > 0) {
@@ -582,7 +603,21 @@ ipcMain.handle('get-roster', (): RosterEntry[] => buildRoster())
 // on its next save (pitfall #56, cross-window).
 ipcMain.on('session:reload', (_e, characterId: string) => {
   const s = Array.from(sessions.values()).find(x => x.meta?.characterId === characterId)
-  if (s) windowById(s.ownerWindowId)?.webContents.send('session-reload', characterId)
+  if (!s) return
+  // B165 root cause (JadedSoul, confirmed 2026-06-11): an import-triggered
+  // remount mounted a fresh GameWindow with default state and NO replay —
+  // vitals self-heal on their next change, but DR only re-sends a hand tag
+  // when the hand CHANGES, so a long-parked item (Illia's cookbook) showed
+  // "Empty" until a manual glance. Arm the same replay the move-window path
+  // uses (pitfall #60): the remounted GameWindow's session:request-replay now
+  // restores scrollback + every sticky state (hands/vitals/room/spell/RT/…),
+  // and the hold prevents live/replay doubling during the remount window.
+  // Bonus: the remount no longer clears in-memory scrollback (the old
+  // documented tradeoff in pitfall #56).
+  s.replayTarget = s.ownerWindowId
+  s.holdingForReplay = true
+  scheduleReplayHoldRelease(s)
+  windowById(s.ownerWindowId)?.webContents.send('session-reload', characterId)
 })
 
 // A GameWindow requests a replay of its session's recent history on mount, so a
