@@ -35,6 +35,7 @@ declare global {
       onRawXml: (cb: (payload: RawXmlPayload) => void) => () => void
       onShutdownStarting: (cb: (info: { activeCount: number }) => void) => () => void
       debugPanelToggle: (sessionId: SessionId, open: boolean) => void
+      sceneActiveToggle: (sessionId: SessionId, active: boolean) => void
 
       // ── Lich SQLite readers (session-agnostic) ───────────────────────────────
       lichDbInfo:       (lichPath: string) => Promise<unknown>

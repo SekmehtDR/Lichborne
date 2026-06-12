@@ -258,6 +258,14 @@ export type GameEvent =
   | LaunchUrlEvent
   | GameExitEvent
   | UnknownEvent
+  | SceneCastEvent
+  | SceneArriveEvent
+  | SceneDepartEvent
+  | SceneSpeechEvent
+  | SceneMoveHintEvent
+  | SceneEmoteEvent
+  | SceneLogonEvent
+  | CharacterGuildEvent
 
 export interface StreamTextEvent {
   type: 'stream-text'
@@ -401,6 +409,126 @@ export interface GameExitEvent {
 export interface UnknownEvent {
   type: 'unknown'
   raw: string
+}
+
+// --- Scene events (SceneParser, DESIGN.md §35) ---
+// Typed "who is here / who moved" state derived from the room components by
+// src/main/parser/SceneParser.ts. Consumed by Lichborne Experiences (§34) —
+// the Living Tableau's cast — and any future scene surface. Extraction rules
+// mirror Lich drinfomon's battle-tested drdefs.rb logic (§35.2).
+
+export interface ScenePlayer {
+  name: string        // bare name (last word — Lich PLAYER_NAME rule)
+  descriptor: string  // as written, status tail stripped ("Lord Rakkor")
+  // Lich SITTING / LYING_DOWN sub-filters + 'hiding' (Sekmeht corpus
+  // 2026-06-12: a NOTICED hider stays in the room list as "Agan who is
+  // hiding" — a status, not a departure; an UNNOTICED hide removes them
+  // from the list entirely, which correctly diffs as a depart).
+  posture?: 'sitting' | 'prone' | 'hiding'
+  // Sekmeht corpus: a corpse stays in the room list as "the body of
+  // Priestess Aenigma who is lying down" — same person, dead. (And they can
+  // still TALK: "You hear the ghostly voice of Aenigma exclaim…")
+  dead?: boolean
+}
+
+export interface SceneCreature {
+  name: string        // cleaned creature name, leading article stripped
+  dead?: boolean      // Lich DEAD_NPC: "(dead)" / "which appears dead"
+  // ≥2 when the room holds multiple identical creatures (Sekmeht corpus:
+  // five "a lava drake" bold spans — collapsing them to one chip hid four).
+  count?: number
+}
+
+// The full current cast. STICKY state (snapshotted for window-handoff replay,
+// pitfall #60b) — emitted whenever the room players/creatures change.
+export interface SceneCastEvent {
+  type: 'scene-cast'
+  players: ScenePlayer[]
+  creatures: SceneCreature[]
+}
+
+// Presence-edge events from diffing successive casts (the DRRoom model,
+// §35.3 `cast-diff`): same-room arrivals/departures only — OUR OWN room
+// transitions are suppressed (everyone in the new room is the new cast, not
+// "arriving"). `direction` stays unset until the §35.3 `arrival-direction`
+// text capturer is corpus-verified. TRANSIENT history events: future
+// choreography consumers must gate on the batch replay flag (pitfall #60a).
+export interface SceneArriveEvent {
+  type: 'scene-arrive'
+  name: string
+  direction?: string
+}
+
+export interface SceneDepartEvent {
+  type: 'scene-depart'
+  name: string
+  direction?: string          // compass word when a movement hint matched
+  reason?: 'logoff'           // "Name just left." — left the GAME, not the room
+}
+
+// A movement-text observation (the §35.3 `movement-hint` capturer). NOT
+// authoritative — the cast diff is (a hint can over-match prose harmlessly;
+// it's only consulted when the room list actually changes). SceneParser
+// consumes these to garnish scene-depart with direction/reason; the renderer
+// ignores them (they're visible in the Debug panel, which is useful).
+// Corpus facts (Sekmeht, 2026-06-12): arrivals carry NO direction
+// ("Magus Champion Deimeter just arrived."), departures do ("… runs west." —
+// the verb varies with movement pace), and "just left." means LOGOFF.
+export interface SceneMoveHintEvent {
+  type: 'scene-move-hint'
+  name: string
+  kind: 'arrive' | 'depart' | 'logoff'
+  direction?: string
+}
+
+// An emote (§35.3 `emote-caption`). Corpus (Sekmeht, 2026-06-12): emotes
+// render as a PARENTHESIZED main-text line — `(Agan laughs.)` — so the
+// structural marker the catalog feared didn't exist, does. `text` is the
+// full caption ("Agan laughs."), actor is its first word.
+export interface SceneEmoteEvent {
+  type: 'scene-emote'
+  actor: string
+  text: string
+}
+
+// A logons-stream notice (§35.3 `logon-events`). GLOBAL (realm-wide), not
+// room-scoped — the Tableau ignores these; they exist for the Debug panel
+// and future surfaces. Corpus (Sekmeht 2026-06-12): the logons stream emits
+// `* Miniature Slimjack Twosacks joins the adventure.` Logoff/death notice
+// shapes are still corpus-pending.
+export interface SceneLogonEvent {
+  type: 'scene-logon'
+  name: string
+}
+
+// The character's guild, captured from the `info` command's output line
+// (`Name: Sekmeht Race: Human Guild: Moon Mage …`) — the same line Lich's
+// drinfomon derives DRStats.guild from (drparser.rb NameRaceGuild). NOT
+// gated behind the §35.6 Experience toggle: guild knowledge feeds the exp
+// panel's Badging default, which must work without any Experience open.
+export interface CharacterGuildEvent {
+  type: 'character-guild'
+  guild: string
+  // The sheet's Name field — consumers MUST verify it is the session's own
+  // character before trusting the guild (Sekmeht's cleric picked up "Moon
+  // Mage" from an info-shaped line that wasn't his own sheet).
+  name: string
+}
+
+// Speech on a comms channel (§35.3 speech capturers — say/ask/exclaim, yell,
+// whisper, thought verified against the real captured session
+// Frostbite-Dev/frostbite/support/mock.xml, 2026-06-12). `thought` speakers
+// are NOT physically present (§32.2 — never seat a body for a thought).
+export interface SceneSpeechEvent {
+  type: 'scene-speech'
+  channel: 'say' | 'yell' | 'whisper' | 'thought' | 'ooc'
+  speaker: string      // 'You' for own speech; bare name otherwise; '' unknown
+  text: string         // quoted content when extractable, else the full line
+  toYou?: boolean      // whisper/thought directed at the player
+  // Directed-speech target ("You say to Agan," / a whisper's recipient) —
+  // 'You' when directed at the player. Drives the Tableau's conversation
+  // gravity (speakers drift toward who they're talking to).
+  target?: string
 }
 
 // --- Map data shapes ---

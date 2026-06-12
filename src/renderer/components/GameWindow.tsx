@@ -22,6 +22,10 @@ import FloatingCompass from './FloatingCompass'
 import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
 import PanelManager from './PanelManager'
 import WindowLayer from './WindowLayer'
+import ExperienceLayer from './ExperienceLayer'
+import ExperienceShelf from './ExperienceShelf'
+import { experienceById, loadExperiences, saveExperiences, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem } from '../experiences'
+import { guildToFocusOption } from '../focusTemplates'
 import { nanoid } from 'nanoid'
 import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
 import '../styles/free-layout.css'
@@ -304,9 +308,38 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
   const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
-  const [expFocus, setExpFocus] = useState<string>(() =>
-    localStorage.getItem(scopedKey(session.character, 'focus')) ?? 'None'
-  )
+  // Badging default = the character's GUILD when we know it (Sekmeht): an
+  // EXPLICIT user choice (the stored `focus` key) always wins; otherwise the
+  // last guild captured from a visible `info` line (`detectedGuild` — the
+  // same line Lich's DRStats.guild comes from) selects the matching badge;
+  // no match → keep the dropdown's default. The launcher profile's guild
+  // field seeds it asynchronously below.
+  const [expFocus, setExpFocus] = useState<string>(() => {
+    const stored = localStorage.getItem(scopedKey(session.character, 'focus'))
+    if (stored) return stored
+    return guildToFocusOption(localStorage.getItem(scopedKey(session.character, 'detectedGuild'))) ?? 'None'
+  })
+  // Secondary guild seed: the launcher profile's (manually set) guild field.
+  // Read-only profile access — never write launcher-owned fields from here
+  // (pitfall #26). Skipped the moment an explicit choice or detection exists.
+  useEffect(() => {
+    if (localStorage.getItem(scopedKey(session.character, 'focus'))) return
+    if (localStorage.getItem(scopedKey(session.character, 'detectedGuild'))) return
+    let cancelled = false
+    window.api.readCharacterProfile(session.character).then(raw => {
+      if (cancelled || !raw) return
+      const mapped = guildToFocusOption((raw as { guild?: string }).guild)
+      // Re-check BOTH sources: the user may have picked a badge, or an `info`
+      // line may have detected the live guild, while the read was in flight —
+      // either outranks the launcher's manual field.
+      if (mapped
+        && !localStorage.getItem(scopedKey(session.character, 'focus'))
+        && !localStorage.getItem(scopedKey(session.character, 'detectedGuild'))) {
+        setExpFocus(mapped)
+      }
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [session.character])
   const [pinnedSkills, setPinnedSkills] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(scopedKey(session.character, 'expPins'))
@@ -488,6 +521,29 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Lock free-layout windows against accidental drag/resize (§33.8). Per-char.
   const [freeLayoutLocked, setFreeLayoutLocked] = useState(() =>
     loadStr(scopedKey(session.character, 'freeLayoutLocked'), '0') === '1')
+
+  // ── Lichborne Experiences (DESIGN.md §34) ──────────────────────────────────
+  // Open floating Experience surfaces, hosted in BOTH layout modes by the
+  // ExperienceLayer. A closed instance keeps its rect/z (`open: false`) so the
+  // shelf's reopen restores it exactly (§34.5). Persisted under the
+  // `experiences` scopedKey → dynamic state: pipeline → YAML (Principle #1).
+  const [experiences, setExperiences] = useState<ExperienceInstance[]>(() =>
+    loadExperiences(scopedKey(session.character, 'experiences')))
+  const [showExpShelf, setShowExpShelf] = useState(false)
+  const expAnyOpen = experiences.some(i => i.open)
+  // §35: the typed cast from main's SceneParser (scene-cast events) — the
+  // Experiences' "who is here" source of truth (replaces any renderer-side
+  // text re-parsing). Replay-snapshotted in main, so a window handoff or
+  // import-remount repaints it without waiting for the next room update.
+  const [sceneCast, setSceneCast] = useState<SceneCast>({ players: [], creatures: [] })
+  // Recent scene-speech events (§35 speech capturers) — the Tableau's bubble
+  // feed. Capped small; bubbles also expire by timestamp in the component.
+  const [sceneSpeech, setSceneSpeech] = useState<SceneSpeechItem[]>([])
+  const speechIdRef = useRef(1)
+  // Recent arrive/depart events (cast-diff + movement-hint garnish) — the
+  // Tableau's entrance/ghost choreography feed.
+  const [sceneMoves, setSceneMoves] = useState<SceneMoveItem[]>([])
+  const moveIdRef = useRef(1)
 
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
@@ -887,8 +943,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => {
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
       showSettings || showContacts || showAutomations || showMapOverlay ||
-      showLichDash || showSessionLog
-  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showSessionLog])
+      showLichDash || showSessionLog || showExpShelf
+  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showSessionLog, showExpShelf])
 
   // Surface open-overlay state so the app-level app-bar can glow the matching
   // button for the ACTIVE session (the old per-session toolbar showed this via
@@ -906,8 +962,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       panelSettings:    showSettings,
       panelContacts:    showContacts,
       panelTheme:       showThemePicker,
+      // §34.5: the Experiences button glows while the shelf OR any Experience
+      // is open (the open surface is the durable state worth reflecting).
+      panelExperiences: showExpShelf || expAnyOpen,
     })
-  }, [characterId, updateStatus, debugOpen, showSessionLog, showMapOverlay, showLichDash, showPanelManager, showAutomations, showSettings, showContacts, showThemePicker])
+  }, [characterId, updateStatus, debugOpen, showSessionLog, showMapOverlay, showLichDash, showPanelManager, showAutomations, showSettings, showContacts, showThemePicker, showExpShelf, expAnyOpen])
 
   // Native-menu / app-bar action bridge (Phase 2a/2b). App re-dispatches
   // session actions as 'lichborne:session-action'; every mounted GameWindow
@@ -936,6 +995,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           setSessionLogSearch(''); setSessionLogKey(k => k + 1); setShowSessionLog(true); break
         case 'toggle-panels':      setShowPanelManager(v => !v); break
         case 'toggle-maps':        setShowMapOverlay(v => !v); break
+        case 'toggle-experiences': setShowExpShelf(v => !v); break
         case 'toggle-contacts':    setOpenContactId(null); setShowContacts(v => !v); break
         case 'toggle-automations': setShowAutomations(v => !v); break
         case 'toggle-lich':        setLichDashTab('scripts'); setShowLichDash(v => !v); break
@@ -1289,6 +1349,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (!freeInitRef.current) return
     saveFreeWindows(scopedKey(session.character, 'freeWindows'), freeWindows); saveProfile()
   }, [session.character, freeWindows, saveProfile])
+  // Persist Experiences (§34.6). Skip the mount echo — the initial state IS
+  // the loaded value, so writing it back would only churn the profile saver.
+  const expDidMountRef = useRef(false)
+  useEffect(() => {
+    if (!expDidMountRef.current) { expDidMountRef.current = true; return }
+    saveExperiences(scopedKey(session.character, 'experiences'), experiences); saveProfile()
+  }, [session.character, experiences, saveProfile])
+  // §35.6 perf gate: tell main whether this session needs scene events AT
+  // ALL. While no Experience is open (the default), the speech capturers
+  // never run (zero per-line cost in the parser), SceneParser emits nothing,
+  // and no scene state churns this component. `session.sessionId` in the
+  // deps re-arms the gate after a reconnect-in-place (pitfall #69 — same
+  // GameWindow, fresh session). On activation main backfills the current
+  // cast, so the Tableau paints instantly.
+  useEffect(() => {
+    window.api.sceneActiveToggle(session.sessionId, expAnyOpen)
+  }, [expAnyOpen, session.sessionId])
   // Seed on mount if the user persisted free mode but has no windows yet.
   useEffect(() => {
     if (layoutMode === 'free' && !freeInitRef.current && freeWindows.length === 0) {
@@ -1528,6 +1605,87 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             break
           case 'injury-update':
             setInjuryState(evt.parts)
+            break
+          // §35 scene events. The cast is sticky state (replay-snapshotted in
+          // main) feeding the Experiences; arrive/depart are transient edges
+          // reserved for future choreography — when consumed, gate them on
+          // `replayingRef` like every other side effect (pitfall #60a).
+          case 'scene-cast':
+            setSceneCast({ players: evt.players, creatures: evt.creatures })
+            break
+          case 'scene-arrive':
+          case 'scene-depart':
+            // Choreography feed — LIVE-ONLY like bubbles (pitfall #60a): a
+            // replay must not re-run old entrances/exits as fresh motion.
+            if (!replayingRef.current) {
+              const item: SceneMoveItem = {
+                id: moveIdRef.current++,
+                name: evt.name,
+                kind: evt.type === 'scene-arrive' ? 'arrive' : 'depart',
+                ...(evt.direction ? { direction: evt.direction } : {}),
+                ...(evt.type === 'scene-depart' && evt.reason ? { reason: evt.reason } : {}),
+                ts: Date.now(),
+              }
+              setSceneMoves(prev => [...prev.slice(-9), item])
+            }
+            break
+          case 'character-guild': {
+            // The `info` line just told us the guild (DRStats.guild's exact
+            // source). ONLY trust a sheet about OUR character — info-shaped
+            // lines about other players exist. The sheet's Name field is the
+            // FULL TITLED name (Sekmeht's cleric: "Soul Reaver Cordio
+            // Hawt-Seord, Divine Hammer of Elanthia" — titles BEFORE the
+            // name, surname + honorific after), so the gate is "the session
+            // character appears as a whole word anywhere in it", never a
+            // first-token compare. A matched OWN-sheet guild is AUTHORITATIVE
+            // (Sekmeht's model): it SELECTS the badge, overriding any stored
+            // pick — a Transfer can plant another character's `focus`
+            // (viewPrefs carries it), and "explicit wins forever" left his
+            // cleric stuck on Moon Mage through a corrective `info`. A
+            // manual pick still sticks until the next own-sheet detection
+            // (which only happens on a deliberate, visible `info`). No
+            // match → leave the dropdown alone (the fallback rule).
+            const ownName = new RegExp(`\\b${session.character.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+            if (!ownName.test(evt.name)) break
+            const mapped = guildToFocusOption(evt.guild)
+            if (mapped) {
+              localStorage.setItem(scopedKey(session.character, 'detectedGuild'), evt.guild)
+              handleFocusChange(mapped)
+            }
+            break
+          }
+          case 'scene-move-hint':
+          case 'scene-logon':
+            // Hints are consumed in main's SceneParser; logons are global
+            // realm notices (not room events). Surfaced here only so the
+            // Debug panel shows them. Nothing to do.
+            break
+          case 'scene-emote':
+            // Emotes ride the speech buffer (same TTL/figure matching); the
+            // Tableau renders them as action captions, not bubbles.
+            if (!replayingRef.current) {
+              const item: SceneSpeechItem = {
+                id: speechIdRef.current++,
+                speaker: evt.actor, channel: 'emote', text: evt.text, ts: Date.now(),
+              }
+              setSceneSpeech(prev => [...prev.slice(-11), item])
+            }
+            break
+          case 'scene-speech':
+            // Bubbles are LIVE-ONLY: a replay rebuilding scrollback must not
+            // resurface old speech as fresh bubbles (pitfall #60a gating).
+            if (!replayingRef.current) {
+              const item: SceneSpeechItem = {
+                id: speechIdRef.current++,
+                speaker: evt.speaker, channel: evt.channel, text: evt.text,
+                ...(evt.toYou ? { toYou: true } : {}),
+                ...(evt.target ? { target: evt.target } : {}),
+                ts: Date.now(),
+              }
+              // Cap 30: the conversation-gravity layout reads a couple of
+              // minutes of chatter, not just the visible bubbles.
+              setSceneSpeech(prev => [...prev.slice(-29), item])
+            }
             break
           case 'stream-declare': {
             const sid = evt.stream
@@ -2651,6 +2809,46 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       .map(k => ({ label: defaultWindowTitle(k), kind: k })),
   ]
 
+  // ── Lichborne Experiences — open/close + content (§34.4/§34.5) ────────────
+  // Shelf toggle: an existing instance flips `open` (rect preserved — the
+  // reopen contract); a first open mints the instance at the registry's
+  // defaultRect, on top.
+  function toggleExperience(id: string) {
+    setExperiences(prev => {
+      const maxZ = prev.reduce((m, i) => Math.max(m, i.z), 0)
+      const existing = prev.find(i => i.id === id)
+      if (existing) {
+        return prev.map(i => i.id === id
+          ? { ...i, open: !i.open, z: i.open ? i.z : maxZ + 1 }
+          : i)
+      }
+      const def = experienceById(id)
+      if (!def) return prev
+      return [...prev, { id, rect: def.defaultRect, z: maxZ + 1, showTitle: true, open: true }]
+    })
+  }
+
+  // Content for one Experience window: the registered component on the shared
+  // props bag (typed game state — never raw stream text, §34.8 #2).
+  function renderExperience(inst: ExperienceInstance): React.ReactNode {
+    const def = experienceById(inst.id)
+    if (!def) return null
+    const C = def.component
+    return (
+      <C
+        character={session.character}
+        roomState={roomState}
+        sceneCast={sceneCast}
+        speech={sceneSpeech}
+        moves={sceneMoves}
+        contacts={contacts}
+        contactTemplates={contactTemplates}
+        settings={settings}
+        isActive={isActive}
+      />
+    )
+  }
+
   // Content for one floating window. 2a: panel / vitals / icon. The main text
   // (kind:'main') becomes a window in Phase 2b — until then it's the central
   // column and never appears here.
@@ -2947,7 +3145,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   return (
     <HighlightsContext.Provider value={highlightsCtxValue}>
     <ContactsContext.Provider value={contactsCtxValue}>
-    <div ref={gameLayoutRef} className={`game-layout${layoutMode === 'free' ? ' game-layout--free' : ''}`}>
+    <div ref={gameLayoutRef} className={`game-layout${layoutMode === 'free' ? ' game-layout--free' : ''}${expAnyOpen ? ' game-layout--has-exp' : ''}`}>
       {/* The per-session toolbar row was folded into the app-level app-bar
           (AppBar.tsx) in the top-chrome redesign (Phase 2c) — its buttons now
           act on the active session via the menu-action / session-action
@@ -3091,6 +3289,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         />
       )}
 
+      {/* Lichborne Experiences (§34.4) — floating surfaces in BOTH layout
+          modes, above the WindowLayer (z 61 vs 60), below all modals. The
+          `game-layout--has-exp` root class provides the positioning anchor in
+          panels mode (free mode is already position:relative). */}
+      {expAnyOpen && (
+        <ExperienceLayer
+          instances={experiences}
+          onInstancesChange={setExperiences}
+          renderContent={renderExperience}
+          locked={layoutMode === 'free' && freeLayoutLocked}
+        />
+      )}
+
       {mainCtxMenu && (() => {
         const sep = { label: null as null }
         const hlGroup = [
@@ -3173,6 +3384,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           freeAddItems={freeAddItems}
           onAddFreeWindow={(k) => addFreeWindow(k as WinKind)}
           onClose={() => setShowPanelManager(false)}
+        />
+      )}
+
+      {showExpShelf && (
+        <ExperienceShelf
+          openIds={new Set(experiences.filter(i => i.open).map(i => i.id))}
+          onToggle={toggleExperience}
+          onClose={() => setShowExpShelf(false)}
         />
       )}
 

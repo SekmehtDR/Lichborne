@@ -45,7 +45,7 @@ import type { CharacterProfile } from './profile-types'
 export type TransferCategoryId =
   | 'display' | 'layout' | 'viewPrefs' | 'theme'
   | 'highlights' | 'triggers' | 'macros' | 'aliases' | 'mutes' | 'substitutes'
-  | 'groupsModes' | 'contacts'
+  | 'groupsModes' | 'contacts' | 'experiences'
 
 export type CategoryKind = 'config' | 'rules'
 
@@ -110,6 +110,11 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
     suffixes: ['groups', 'modes'], // activeGroupStates/activeModeId added on Replace only
   },
   { id: 'contacts', label: 'Contacts', kind: 'rules', desc: 'Contacts and contact templates.', suffixes: ['contacts', 'contact-templates'] },
+  {
+    id: 'experiences', label: 'Experiences', kind: 'config',
+    desc: 'Lichborne Experiences — which are open and their window positions/sizes (§34.6).',
+    suffixes: ['experiences'],
+  },
 ]
 
 export const TRANSFER_CATEGORY_IDS: TransferCategoryId[] = TRANSFER_CATEGORIES.map(c => c.id)

@@ -174,6 +174,10 @@ contextBridge.exposeInMainWorld('api', {
   debugPanelToggle: (sessionId: SessionId, open: boolean) =>
     ipcRenderer.send('debug-panel-toggle', sessionId, open),
 
+  // §35.6: scene capturers + scene-event emission gate (per session).
+  sceneActiveToggle: (sessionId: SessionId, active: boolean) =>
+    ipcRenderer.send('scene-active-toggle', sessionId, active),
+
   // ── Lich SQLite readers (session-agnostic — read the shared lich.db3) ────────
   lichDbInfo:       (lichPath: string):                    Promise<unknown>                            => ipcRenderer.invoke('lich:db-info', lichPath),
   lichGetVars:      (lichPath: string, scope?: string):    Promise<{ scope: string; vars: unknown }[]> => ipcRenderer.invoke('lich:get-vars', lichPath, scope),

@@ -16,6 +16,22 @@ export type DrGuild = typeof DR_GUILDS[number]
 export const FOCUS_OPTIONS = [FOCUS_NONE, ...DR_GUILDS] as const
 export type FocusOption = typeof FOCUS_OPTIONS[number]
 
+// Map a raw guild string to its Badging option. Tolerant of case/spacing
+// variants across our guild sources — the parser's `info`-line capture
+// ("Warrior Mage"), the launcher profile's lowercase canonical key
+// ("warriormage"), or anything a future source provides. Returns null when
+// nothing matches — callers must then KEEP the current dropdown value
+// (Sekmeht's fallback rule), never force a change.
+export function guildToFocusOption(raw: string | null | undefined): FocusOption | null {
+  if (!raw) return null
+  const norm = raw.toLowerCase().replace(/[^a-z]/g, '')
+  if (!norm) return null
+  for (const g of DR_GUILDS) {
+    if (g.toLowerCase().replace(/[^a-z]/g, '') === norm) return g
+  }
+  return null
+}
+
 export type Skillset = 'Armor' | 'Lore' | 'Magic' | 'Survival' | 'Weapon'
 export type SkillsetPriority = 'Primary' | 'Secondary' | 'Tertiary'
 

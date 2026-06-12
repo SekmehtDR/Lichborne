@@ -6,6 +6,7 @@ import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { SGEConnection } from './connection/SGEConnection'
 import { StormFrontParser } from './parser/StormFrontParser'
+import { SceneParser } from './parser/SceneParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
 import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
@@ -40,6 +41,9 @@ interface Session {
   id: SessionId
   connection: ConnectionManager
   parser: StormFrontParser
+  // §35: derives typed scene events (cast / arrive / depart) from the room
+  // components StormFrontParser emits. Per-session state (Principle #6).
+  sceneParser: SceneParser
   lichBridge: LichBridge
   eventQueue: GameEvent[]
   flushScheduled: boolean
@@ -101,6 +105,12 @@ function snapshotKey(evt: GameEvent): string | null {
     case 'room-id':       return 'room-id'
     case 'exp-component': return `exp:${evt.skill}`
     case 'injury-update': return 'injury'
+    // §35: the cast is sticky state — a window taking over the session must
+    // repaint the Tableau without waiting for the next room update.
+    // scene-arrive/depart stay history events (transient edges; future
+    // choreography consumers gate on the batch replay flag, pitfall #60a).
+    case 'scene-cast':    return 'scene-cast'
+    case 'character-guild': return 'character-guild'
     case 'exits':         return 'exits'
     case 'player-info':   return 'player-info'
     default:              return null
@@ -145,9 +155,10 @@ function createSession(): Session {
   const id = crypto.randomUUID()
   const connection = new ConnectionManager()
   const parser = new StormFrontParser()
+  const sceneParser = new SceneParser()
   const lichBridge = new LichBridge((cmd: string) => connection.send(cmd))
   const s: Session = {
-    id, connection, parser, lichBridge,
+    id, connection, parser, sceneParser, lichBridge,
     eventQueue: [], flushScheduled: false, lastFlushAt: 0,
     cleanDisconnect: false, connected: false, debugPanelOpen: false,
     ownerWindowId: 0, meta: null, stateSnapshot: new Map(), historyBuffer: [],
@@ -233,6 +244,11 @@ function wireSession(s: Session) {
       }
     }
     const filtered = events.filter(e => e.type !== 'launch-url' && e.type !== 'unknown')
+    // §35: derive typed scene events (cast / arrive / depart) from this
+    // line's room-component events. Appended AFTER the source events so a
+    // consumer always sees the underlying clear/stream-text first.
+    const sceneEvents = s.sceneParser.derive(filtered)
+    if (sceneEvents.length > 0) filtered.push(...sceneEvents)
     if (filtered.length > 0) {
       s.eventQueue.push(...filtered)
       scheduleFlush(s)
@@ -716,6 +732,22 @@ ipcMain.on(CH.SESSION_DESTROY, (_event, sessionId: SessionId) => {
 ipcMain.on('debug-panel-toggle', (_e, sessionId: SessionId, open: boolean) => {
   const s = getSession(sessionId)
   if (s) s.debugPanelOpen = open
+})
+
+// §35.6 perf gate: scene capturers + scene-event emission run ONLY while the
+// session has an open Experience (the owning GameWindow toggles this on
+// expAnyOpen changes — the debug-panel-toggle precedent). On activation,
+// backfill the current cast immediately (SceneParser tracked it silently)
+// so a just-opened Tableau paints without waiting for the next room update.
+ipcMain.on('scene-active-toggle', (_e, sessionId: SessionId, active: boolean) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  s.parser.sceneCapturersEnabled = active
+  s.sceneParser.setActive(active)
+  if (active) {
+    s.eventQueue.push(s.sceneParser.snapshotCast())
+    scheduleFlush(s)
+  }
 })
 
 // ── IPC: per-session Lich command injection ──────────────────────────────────
@@ -1213,6 +1245,7 @@ function setupMenu() {
         { type: 'separator' },
         { label: 'Panel Manager', click: () => sendMenuAction('toggle-panels') },
         { label: 'Show Map',      click: () => sendMenuAction('toggle-maps') },
+        { label: 'Experiences',   click: () => sendMenuAction('toggle-experiences') },
         { label: 'Theme…',        click: () => sendMenuAction('toggle-theme') },
         { type: 'separator' },
         { role: 'reload' },

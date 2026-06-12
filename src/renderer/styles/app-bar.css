@@ -80,10 +80,30 @@
    open on the active session. */
 .btn-panel-manager--active,
 .btn-automations--active,
-.btn-settings--active {
+.btn-settings--active,
+.btn-experiences--active {
   border-color: var(--accent-dim);
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* The Experiences button (§34.5) is new with the app-bar era, so its base +
+   hover live here rather than game.css (which styles the legacy-toolbar
+   button family). Recipe matches that family exactly. */
+.btn-experiences {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 1.0em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-experiences:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
 }
 
 /* Vertical separator before Disconnect/Login — extra breathing room plus a
@@ -177,8 +197,10 @@
 }
 
 /* Tier 1: compact — wordmark goes (the status dot + window title still
-   identify the app), buttons tighten. (~860px at the default 12px font.) */
-@container (max-width: 71em) {
+   identify the app), buttons tighten. (~950px at the default 12px font —
+   raised from 71em when the Experiences button joined the inline set, §34.5;
+   six buttons need the collapse to fire earlier.) */
+@container (max-width: 79em) {
   /* NOTE: rules in here can only target DESCENDANTS of .app-bar — a container
      query never matches the container itself (self-reference is circular per
      spec), so e.g. `.app-bar { gap }` would be a dead rule. */
@@ -186,11 +208,12 @@
   .app-bar-actions button { padding: 4px 6px; font-size: 0.85em; }
 }
 
-/* Tier 2: collapse — the five inline action buttons fold into the ⋯ More
-   menu (their menu twins un-hide), freeing ~300px for the character tabs.
+/* Tier 2: collapse — the six inline action buttons fold into the ⋯ More
+   menu (their menu twins un-hide), freeing ~360px for the character tabs.
    Disconnect/Login stays inline: the destructive/critical action must never
-   require opening a menu. (~700px at the default 12px font.) */
-@container (max-width: 58em) {
+   require opening a menu. (~790px at the default 12px font — raised from
+   58em alongside Tier 1 for the sixth button.) */
+@container (max-width: 66em) {
   .app-bar-actions .app-bar-collapsible { display: none; }
   .app-bar-more-item--overflow { display: block; }
   .app-bar-more-sep.app-bar-more-item--overflow { display: block; }

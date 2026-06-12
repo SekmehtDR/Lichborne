@@ -1,5 +1,6 @@
 import type { GameEvent, StreamTarget, TextSegment } from '../../shared/types'
 import { STREAM_ID_ALIASES, normalizeStreamId } from '../../shared/streamAliases'
+import { runSceneCapturers } from './sceneCapturers'
 
 function decodeEntities(text: string): string {
   return text
@@ -133,6 +134,11 @@ export class StormFrontParser {
   private pendingSegments: TextSegment[] = []
   private events: GameEvent[] = []
 
+  // §35.6 perf gate: scene line capturers run ONLY while the session has an
+  // open Experience (set from main via 'scene-active-toggle'). Default OFF —
+  // a player who never opens an Experience pays zero per-line cost.
+  sceneCapturersEnabled = false
+
   private captureCtx: CaptureContext | null = null
   private captureBuf = ''
   // v0.8.5 (B117): per-segment view of the captureBuf so component-emit
@@ -217,6 +223,34 @@ export class StormFrontParser {
     // Glance-text hand re-sync — after the token loop so the suppression check
     // sees any real hand tags this line emitted.
     this.inferHandsFromGlance(line)
+
+    // Guild capture from the `info` output line — the exact source Lich's
+    // drinfomon uses for DRStats.guild (drparser.rb NameRaceGuild). Feeds the
+    // exp panel's Badging auto-default. Cheap startsWith gate keeps the hot
+    // path untouched; main-stream-only so a script echoing an info-shaped
+    // line into a panel can't repaint the guild.
+    if (line.startsWith('Name:') && this.activeStream === 'main' && this.streamStack.length === 0) {
+      // VERBATIM Lich NameRaceGuild (drparser.rb:10) — GREEDY captures with a
+      // trailing \b\s+ anchor. A lazy version would stop "Moon Mage" at
+      // "Moon"; DR pads the info line with trailing whitespace, which is
+      // what lets the greedy guild capture land on the full name.
+      const m = line.match(/^Name:\s+\b(.+)\b\s+Race:\s+\b(.+)\b\s+Guild:\s+\b(.+)\b\s+/)
+      if (m) this.events.push({ type: 'character-guild', name: m[1].trim(), guild: m[3].trim() })
+    }
+
+    // SceneParser line capturers (DESIGN §35.1) — registry-driven; only
+    // corpus-VERIFIED capturers execute. GATED on sceneCapturersEnabled
+    // (§35.6 perf contract): until this session has an open Experience, NOT
+    // ONE EXTRA OPERATION runs per line — no tag-strip, no entity decode, no
+    // gate checks. Main flips the flag via the 'scene-active-toggle' IPC
+    // (the debugPanelOpen raw-XML precedent). The stream/preset ctx is the
+    // §35.1 suppression: a Lich script echoing speech-shaped text into a
+    // custom panel can't mint a phantom scene event. (Cast/arrive/depart
+    // events do NOT come from here — SceneParser.derive in main owns those.)
+    if (this.sceneCapturersEnabled) {
+      const sceneLineEvents = runSceneCapturers(line, { stream: this.activeStream, preset: this.currentPreset })
+      if (sceneLineEvents.length > 0) this.events.push(...sceneLineEvents)
+    }
 
     // Preserve intentional blank lines from the server as empty spacers
     if (isBlankLine && this.events.length === 0) {

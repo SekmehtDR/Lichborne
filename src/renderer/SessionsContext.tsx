@@ -38,6 +38,8 @@ export interface SessionStatus {
   panelSettings: boolean
   panelContacts: boolean
   panelTheme: boolean
+  // §34.5: the Experiences shelf is open OR any Experience surface is open.
+  panelExperiences: boolean
 }
 
 const DEFAULT_STATUS: SessionStatus = {
@@ -56,6 +58,7 @@ const DEFAULT_STATUS: SessionStatus = {
   panelSettings: false,
   panelContacts: false,
   panelTheme: false,
+  panelExperiences: false,
 }
 
 export interface SessionRecord {
@@ -173,7 +176,8 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
           && next.panelAutomations === curr.panelAutomations
           && next.panelSettings === curr.panelSettings
           && next.panelContacts === curr.panelContacts
-          && next.panelTheme === curr.panelTheme) return prev
+          && next.panelTheme === curr.panelTheme
+          && next.panelExperiences === curr.panelExperiences) return prev
       const arr = prev.slice()
       arr[idx] = { ...prev[idx], status: next }
       return arr

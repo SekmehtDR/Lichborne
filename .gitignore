@@ -10,6 +10,15 @@ release/
 profiles/
 Exports/
 Logs/
+
+# SceneParser raw-XML capture corpus — contains other players' chatter; never commit
+corpus/
+
+# Local harnesses (tmp-scene-harness = the SceneParser capturer regression
+# suite, tmp-scroll-repro = the B171/B172 scroll simulation). Kept OUT of the
+# repo on purpose: the scene harness embeds verbatim corpus lines with real
+# player names (Sekmeht, 2026-06-12 — same privacy stance as corpus/). They
+# live machine-local; pitfalls #81/#35.4 document how to rebuild them.
 tmp-*/
 
 # Logs

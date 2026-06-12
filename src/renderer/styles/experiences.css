@@ -1,0 +1,530 @@
+/* Lichborne Experiences (DESIGN.md §34) — the layer, the shelf, and the
+   Living Tableau scene. Every color is a theme var or a --experience-* var
+   (NOT --exp-*, which is the experience-POINTS panel's prefix) that
+   cascades from the general palette in darkBase (pitfalls #34/#63); the
+   sanctioned literals are dark drop-shadows and the white-on-saturated-fill
+   avatar text halos (Principle #4). Sized in em off the .fl-window game-font
+   anchor (Principle #9). */
+
+/* Positioning anchor when Experiences are open in STATIC Panels mode —
+   .game-layout is only position:relative in free mode (.game-layout--free,
+   free-layout.css). Scoped to "has an open Experience" so panels-mode layout
+   is untouched when the feature isn't in use (same conservatism as --free). */
+.game-layout--has-exp { position: relative; }
+
+/* The layer itself: pointer-through (clicks reach the game except on the
+   windows), above the §33 WindowLayer (z 60) and the app-bar sits at 70+ with
+   modals/overlays ≥ 100 — Experiences float over the game layout and panel
+   windows, under everything modal (§34.4 z-discipline). */
+.experience-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 61;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* ── The shelf (§34.5) ────────────────────────────────────────────────────
+   Canonical modal chrome recipe (pitfall #55): body --bg-base, header band
+   --bg-hover, title --accent. A compact picker, not a full-size modal. */
+.exp-shelf-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.exp-shelf {
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.exp-shelf-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.exp-shelf-title {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.exp-shelf-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.exp-shelf-close:hover {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+}
+
+.exp-shelf-body {
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.exp-shelf-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+}
+
+.exp-shelf-row-main { flex: 1; min-width: 0; }
+
+.exp-shelf-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.exp-shelf-kind {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.exp-shelf-kind--scene { color: var(--accent); border-color: var(--accent-dim); }
+
+.exp-shelf-label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Maturity badge ("[Beta]") — a quiet status marker, not a kind chip. */
+.exp-shelf-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--accent) 75%, var(--text-secondary));
+}
+
+.exp-shelf-desc {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.exp-shelf-text-equiv {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.exp-shelf-toggle {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 5px 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.exp-shelf-toggle:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+.exp-shelf-toggle--open {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+/* ── Living Tableau — Phase 1 cast kernel ───────────────────────────────── */
+.tableau-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 100%, color-mix(in srgb, var(--experience-scene-text) 7%, transparent), transparent),
+    var(--experience-scene-bg);
+}
+
+.tableau-room-title {
+  position: absolute;
+  top: 0.5em;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--experience-scene-text);
+  font-weight: 600;
+  font-size: 0.95em;
+  letter-spacing: 0.03em;
+  padding: 0 1em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tableau-room-desc {
+  position: absolute;
+  top: 2em;
+  left: 8%;
+  right: 8%;
+  text-align: center;
+  color: var(--experience-scene-muted);
+  font-style: italic;
+  font-size: 0.72em;
+  line-height: 1.3;
+}
+
+.tableau-figure {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25em;
+  /* Seat moves glide; entrances fade in. Epilepsy-safe stills both. */
+  transition: left 400ms ease, top 400ms ease;
+  animation: tableau-enter 350ms ease-out;
+}
+:root[data-epilepsy-safe='true'] .tableau-figure {
+  transition: none;
+  animation: none;
+}
+
+@keyframes tableau-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.tableau-avatar {
+  position: relative;   /* anchors the ×N count badge */
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95em;
+  /* White over a SATURATED data-color fill — the sanctioned halo pattern
+     (works on every theme because the fill is always saturated). */
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  border: 1px solid var(--experience-chip-border);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+}
+
+.tableau-figure--contact .tableau-avatar {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.tableau-figure--self .tableau-avatar {
+  width: 3.2em;
+  height: 3.2em;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tableau-avatar--creature {
+  width: 2em;
+  height: 2em;
+  border-radius: 30%;   /* squarer than players — the species line */
+  font-size: 0.8em;
+  /* NEUTRAL by default (Sekmeht: room creatures are usually pets following
+     their owners, not threats — and the room list can't tell the difference;
+     danger-red painted every tavern lynx like a boss fight). Real threat
+     coloring arrives with the CombatParser's engagement data (G1). */
+  background: color-mix(in srgb, var(--experience-scene-text) 30%, var(--experience-scene-bg));
+}
+
+.tableau-avatar--crowd {
+  background: color-mix(in srgb, var(--experience-scene-text) 25%, var(--experience-scene-bg));
+}
+
+/* Multiple identical creatures: one chip, a count badge (the corpus's five
+   lava drakes). */
+.tableau-count {
+  position: absolute;
+  bottom: -0.35em;
+  right: -0.5em;
+  font-size: 0.62em;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.15em 0.3em;
+  border-radius: 0.6em;
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--experience-chip-border);
+  text-shadow: none;
+}
+
+.tableau-name {
+  max-width: 7em;
+  text-align: center;
+  color: var(--experience-scene-text);
+  font-size: 0.68em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tableau-figure--creature .tableau-name {
+  color: var(--experience-scene-muted);
+  /* Creature names are long descriptors ("furry-footed snow lynx with a
+     luscious white coat tipped in icy silver") — give them room: wider cap
+     + two wrapped lines before the ellipsis (players keep the tight
+     single-line label; their names are short). Full text stays in the
+     tooltip. */
+  max-width: 11em;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tableau-figure--dead { opacity: 0.45; }
+
+/* ── Speech bubbles (X1 — the bubble LAYER, Sekmeht UX pass) ──────────────
+   Bubbles render in scene-pixel space OUTSIDE the scaled figure tree (the
+   component lays them out collision-aware, left/top set inline): constant
+   GAME-FONT size for every speaker, speaker name in the bubble, newest on
+   top, per-speaker tint (--bubble-tint from the avatar color) feeding the
+   background mix, border, name, and tail. left = the bubble's CENTER (the
+   translateX recenters); --tail-dx keeps the tail aimed at the speaker when
+   collision layout had to shift the bubble. */
+.tableau-bubble {
+  position: absolute;
+  transform: translateX(-50%);
+  width: max-content;
+  background: color-mix(in srgb, var(--bubble-tint, transparent) 16%, var(--bg-raised));
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--bubble-tint, var(--experience-chip-border)) 55%, var(--experience-chip-border));
+  border-radius: 0.7em;
+  padding: 0.35em 0.7em 0.45em;
+  font-size: var(--game-font-size);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  animation: tableau-enter 250ms ease-out;
+  /* Collision re-layout (a newer bubble pushing this one up) glides. */
+  transition: left 250ms ease, top 250ms ease;
+}
+/* The comic tail, pointing at the speaker — same surface mix as the body. */
+.tableau-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: calc(50% + var(--tail-dx, 0px));
+  transform: translateX(-50%);
+  border: 0.38em solid transparent;
+  border-top-color: color-mix(in srgb, var(--bubble-tint, transparent) 16%, var(--bg-raised));
+}
+:root[data-epilepsy-safe='true'] .tableau-bubble {
+  animation: none;
+  transition: none;
+}
+
+/* Who's talking, inside the bubble — a crowd can push a bubble away from
+   its speaker's head, so the name travels with the words. */
+.tableau-bubble-speaker {
+  display: block;
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 0.12em;
+  color: color-mix(in srgb, var(--bubble-tint, var(--accent)) 70%, var(--text-primary));
+}
+
+.tableau-bubble--yell {
+  font-weight: 700;
+  text-transform: none;
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--color-danger, #c0392b) 55%, var(--experience-chip-border));
+}
+
+.tableau-bubble--whisper {
+  border-style: dashed;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.tableau-bubble--whisper .tableau-bubble-speaker { font-style: normal; }
+
+/* Emote action caption — under the avatar, italic, no tail (§32.2). */
+.tableau-caption {
+  position: absolute;
+  top: calc(100% + 0.25em);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 12em;
+  font-style: italic;
+  font-size: calc(var(--game-font-size) * 0.85);
+  line-height: 1.25;
+  color: var(--experience-scene-muted);
+  text-align: center;
+  background: color-mix(in srgb, var(--experience-scene-bg) 78%, transparent);
+  padding: 0.15em 0.45em;
+  border-radius: 0.4em;
+  z-index: 2;
+  animation: tableau-enter 250ms ease-out;
+}
+:root[data-epilepsy-safe='true'] .tableau-caption { animation: none; }
+
+/* Focus-the-speaker (§32.2): while anyone holds the floor, idle figures
+   soften; the speaker brightens via the accent ring below. The self figure
+   never dims (you always read yourself). */
+.tableau-scene--focus .tableau-figure:not(.tableau-figure--speaking):not(.tableau-figure--self) {
+  opacity: 0.62;
+}
+.tableau-figure--speaking .tableau-avatar {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── Thought/ESP wisps — telepathy at the scene edge, NEVER a body (§32.2) ── */
+.tableau-wisps {
+  position: absolute;
+  top: 3.6em;
+  right: 0.6em;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35em;
+  max-width: 45%;
+  z-index: 2;
+}
+
+.tableau-wisp {
+  background: color-mix(in srgb, var(--bg-raised) 72%, transparent);
+  border: 1px dashed var(--experience-chip-border);
+  color: var(--experience-scene-muted);
+  font-style: italic;
+  font-size: calc(var(--game-font-size) * 0.8);
+  line-height: 1.3;
+  padding: 0.3em 0.6em;
+  border-radius: 1em;
+  animation: tableau-enter 250ms ease-out;
+}
+:root[data-epilepsy-safe='true'] .tableau-wisp { animation: none; }
+
+.tableau-wisp-speaker {
+  color: var(--experience-scene-text);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tableau-wisp-toyou {
+  color: var(--accent);
+  font-style: normal;
+  font-size: 0.9em;
+}
+
+/* A NOTICED hider stays in the cast ("Agan who is hiding") — show the
+   figure shadowed-but-present. Unnoticed hides drop off the room list and
+   correctly read as departures. */
+.tableau-figure--hiding { opacity: 0.45; }
+.tableau-figure--hiding .tableau-avatar {
+  border-style: dashed;
+  filter: saturate(0.55);
+}
+
+/* A DEAD player (the "body of …" room-list form): present but greyed; the
+   resurrection flips the same cast entry back and the figure stands up. */
+.tableau-figure--player-dead { opacity: 0.55; }
+.tableau-figure--player-dead .tableau-avatar {
+  filter: grayscale(0.7) saturate(0.5);
+  border-style: dashed;
+}
+
+/* A speaker with NO room-list entry (hiding or invisible — Sekmeht's rule):
+   a shadowed presence manifests just to carry their bubble. */
+.tableau-figure--unseen { opacity: 0.6; }
+.tableau-avatar--unseen {
+  border-style: dashed;
+  filter: saturate(0.55);
+}
+
+/* ── Entrance/exit choreography (movement hints, §35.3) ─────────────────── */
+/* Slide in from the origin edge (--ex/--ey set inline from the hint's
+   direction; a plain "just arrived" rises gently). The keyframe carries the
+   figure's depth scale (--fig-sc) so the end of the animation lands exactly
+   on the inline transform with no pop. */
+.tableau-figure--enter {
+  animation: tableau-slide-in 650ms ease-out;
+}
+@keyframes tableau-slide-in {
+  from {
+    transform: translate(calc(-50% + var(--ex, 0px)), calc(-50% + var(--ey, 14px))) scale(var(--fig-sc, 1));
+    opacity: 0;
+  }
+}
+
+/* Departure ghost: lingers ~1.6s walking out toward the exit direction
+   (--gx/--gy), or dissolving in place (logoff / unknown). The component
+   SKIPS rendering ghosts under epilepsy-safe (a frozen duplicate is worse
+   than none), so the CSS animation kill-switch never strands one. */
+.tableau-figure--ghost {
+  pointer-events: none;
+  animation: tableau-ghost-out 1.6s ease-in forwards;
+}
+@keyframes tableau-ghost-out {
+  from {
+    transform: translate(-50%, -50%) scale(var(--fig-sc, 1));
+    opacity: 0.9;
+  }
+  to {
+    transform: translate(calc(-50% + var(--gx, 0px)), calc(-50% + var(--gy, 0px))) scale(calc(var(--fig-sc, 1) * 0.85));
+    opacity: 0;
+  }
+}
+
+/* Amphitheater mode (>12 players): everyone but you renders a notch smaller
+   so two rows breathe; the em sizing scales avatar, name, and bubble
+   together. */
+.tableau-scene--large .tableau-figure:not(.tableau-figure--self) {
+  font-size: 0.84em;
+}
+
+.tableau-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 45%;
+  text-align: center;
+  color: var(--experience-scene-muted);
+  font-style: italic;
+  font-size: 0.85em;
+}

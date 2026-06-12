@@ -245,6 +245,16 @@ export const darkBase: ThemeVars = {
   // on theme apply so NO theme can pin them (that pin was Binu's "map won't
   // follow App Background" bug). Only the SEMANTIC cues live per-theme below:
   ...MAP_STRUCTURAL_CASCADE,
+  // Lichborne Experiences (§34.7): defined ONCE here, cascading from the
+  // general palette (pitfalls #34/#63) — every theme inherits correct values
+  // with no per-theme overrides. NOTE the prefix is --experience-*, NOT
+  // --exp-* (taken by the experience-POINTS panel, e.g. --exp-bar-locked
+  // above). Avatar fills are DATA colors (contact template / name-hash),
+  // not theme vars.
+  '--experience-scene-bg':    'var(--bg-base)',
+  '--experience-scene-text':  'var(--text-secondary)',
+  '--experience-scene-muted': 'var(--text-dim)',
+  '--experience-chip-border': 'var(--border)',
   '--map-select-color':  'var(--accent)',
   '--map-arc-cardinal':  '#8a7050',
   '--map-arc-vertical':  '#d4a020',

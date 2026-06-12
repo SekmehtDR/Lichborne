@@ -101,7 +101,7 @@
     - 33.11 Relationship to OS-window decouple
     - 33.12 Risks
     - 33.13 Build phases
-34. [Lichborne Experiences — Architecture](#34-lichborne-experiences--architecture-decided-2026-06-10-not-yet-built)
+34. [Lichborne Experiences — Architecture](#34-lichborne-experiences--architecture-decided-2026-06-10-shipped-v0140)
     - 34.1 What an Experience is (and is not)
     - 34.2 Why this model — the two rejected alternatives
     - 34.3 Registry
@@ -111,6 +111,14 @@
     - 34.7 Theming, accessibility & guardrails
     - 34.8 Add-a-new-Experience checklist
     - 34.9 Build phases
+35. [SceneParser — Scene-Event Capturer Registry](#35-sceneparser--scene-event-capturer-registry-designed-2026-06-12-phase-1-built)
+    - 35.1 The capturer-registry model
+    - 35.2 What existing parsers already encode (the survey)
+    - 35.3 The initial capturer catalog
+    - 35.4 Verification workflow (corpus = validation, not discovery)
+    - 35.5 Build phases
+    - 35.6 Performance contract — scene work is OFF until an Experience is open
+    - 35.7 Conversation gravity (Tableau layout)
 
 ---
 
@@ -662,6 +670,22 @@ The exp panel is a live skill tracker driven entirely by `<component id='exp Ski
 - Updates live as the server pushes new exp components
 - **Rank gain**: when the server wraps the exp component in `<b>`, the skill row goes bold for 3 seconds (`exp-row--rank-up`); timer resets if another rank fires before it clears
 - **Footer badges**: `TDP`, `Fav`, `RXP` shown when present; `Resting`/`Deep Sleep` when sleep state active; red italic `Death's Sting` when the second `exp rexp` component is present in the batch
+- **Badging auto-selects the character's guild (B184, v0.14.0).** The parser captures the `info`
+  command's output line — the exact source Lich derives `DRStats.guild` from (drparser.rb
+  `NameRaceGuild`, mirrored verbatim including the GREEDY quantifiers; a lazy version captures
+  "Moon" instead of "Moon Mage") — and emits a `character-guild` event (cheap `startsWith('Name:')`
+  gate, main-stream only, NOT behind the §35.6 Experience toggle). GameWindow trusts it only when
+  the session character appears as a whole word in the sheet's FULL TITLED Name field ("Soul Reaver
+  Cordio Hawt-Seord, Divine Hammer of Elanthia" — titles before the name, surname/honorific after;
+  a first-token compare rejects your own sheet). **Precedence (Sekmeht's model): an own-sheet
+  detection is AUTHORITATIVE** — it selects the badge even over a stored pick, because Profile
+  Transfer's viewPrefs category carries the `focus` key and a transferred value is
+  indistinguishable from an explicit choice (the "explicit wins forever" first cut left a cleric
+  stuck on a transferred Moon Mage badging). A manual pick holds until the next own-sheet `info`;
+  an unmatched guild string changes nothing (`guildToFocusOption` → null). Detection persists in
+  the per-character `detectedGuild` scopedKey (deliberately NOT transferable — guild is character
+  identity) and seeds secondarily from the launcher profile's manually-set guild field (read-only,
+  pitfall #26).
 
 **expbrief mode:**
 
@@ -5572,7 +5596,8 @@ X2/X4/X5 reuse, so building X1 once makes the rest dramatically cheaper.
   *Focus the speaker* — whoever's talking raises & brightens; idle folks soften. **AI layer:** room
   backdrop from the room description (G9/AI9), avatars from appearance/LOOK (cached per name) with a
   **procedural fallback** (guild sigil + initials + Contact color) so the scene is never empty waiting
-  on art. **Honest constraints:** the game gives **no spatial coordinates** of people — positioning is
+  on art; optional **emote interpretation** — AI maps a freeform emote to a matching avatar beat
+  ("she draws her blade" → a guard-up pose) — nice-to-have, never load-bearing. **Honest constraints:** the game gives **no spatial coordinates** of people — positioning is
   *invented* (stable seating + exit-direction entrances), so Tableau is *expressive*, not tactical
   (that's G4's job); festival rooms (50+) need a cap (real avatars for active/known speakers, a
   "+34 others" crowd silhouette, promote-on-speak); art is opt-in + hard-cached; **a synchronized text
@@ -5684,8 +5709,10 @@ from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
 ### 32.4 Cross-cutting architecture & dependencies
 
 - **Shared engines worth building once:** (a) the **SVG figure + theming pattern** (G2 first, reused by
-  G1/X2/X3); (b) the **avatar/seating/speech-bubble engine** (X1, reused by X2/X4/X5/X6); (c) the
-  **combat-stream parser** for range/position/facing (G1, reused by X2/AI7) — a stateful reader in the
+  G1/X2/X3); (b) the **avatar/seating/speech-bubble engine** (X1, reused by X2/X4/X5/X6); (c) the parsing layer behind
+  Experiences — the **`SceneParser`** (name pinned 2026-06-12): typed *scene events* — speaker /
+  channel / arrival-direction — from the comms streams (X1, reused by X4/X5/X6); and the
+  **`CombatParser`** for range/position/facing (G1, reused by X2/AI7) — both stateful readers in the
   spirit of `StormFrontParser`; (d) the **`AIProvider` adapter** (chat + embeddings + image), Claude
   default, per-provider keys via `safeStorage`, per-feature consent + token/cost meter (every AI item
   calls the adapter, never an SDK directly); (e) **RAG grounding** (a curated DR lore corpus for
@@ -5708,6 +5735,10 @@ from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
    payoff; then layer X2/X3/X4/X5 as their parsers come online.
 5. **AI track in parallel** once the `AIProvider` adapter exists: AI8 + AI1 (config-gen) first, then
    AI5/AI4/AI6 (log/RAG), then AI9 (Portrait Forge, which lights up X1/G5/X6).
+
+> **Superseded 2026-06-12 (ordering only):** Sekmeht promoted **X1 (Living Tableau) to Experience #1**
+> — it builds FIRST, on the §34 scaffold (see §34.9 for the phased plan); G1 (Combat HUD) follows.
+> The per-feature analysis above remains current; the G-series "fast wins" stay available as fillers.
 
 ---
 
@@ -5990,11 +6021,14 @@ distinct naming ("Free Layout" vs "Move to New Window") is the disambiguation; k
 
 ---
 
-## 34. Lichborne Experiences — Architecture (decided 2026-06-10, not yet built)
+## 34. Lichborne Experiences — Architecture (decided 2026-06-10; shipped v0.14.0)
 
 **Status:** Architecture locked (Sekmeht, 2026-06-10) after a design discussion that explicitly
-rejected two alternative models (§34.2). Nothing built yet. **The first registered Experience will be
-the Combat HUD (G1, §32.1).** User-facing brand: **"Lichborne Experiences"** — the brand is part of
+rejected two alternative models (§34.2). **SHIPPED v0.14.0 (2026-06-12): the full scaffold (§34.3–
+§34.6, plus an optional `badge` field — the Tableau wears [Beta]) and the first registered
+Experience — the Living Tableau (X1, §32.2)** — decided 2026-06-12, superseding the original
+Combat-HUD-first call; **G1 follows it** (X1 is the scene platform X2/X4/X5/X6 reuse, and it's the
+headline feature — building it first proved the scaffold on the most demanding case). User-facing brand: **"Lichborne Experiences"** — the brand is part of
 the product identity (the shelf button carries it). Internal names: `experiences.ts`,
 `ExperienceLayer`, `ExperienceDef` (the §33 precedent: user-facing terms and internal names may
 diverge; don't bulk-rename either direction).
@@ -6028,7 +6062,7 @@ An Experience is **not a panel and not a stream**:
 
 | ID | Experience | Kind | One-liner | Status |
 |---|---|---|---|---|
-| G1 | **Combat HUD ("Engagement")** | Instrument | RT readiness ring + CT inner ring, stance figure, threat pips, range gauge, condition border, hands | **Experience #1 — next to build** |
+| G1 | **Combat HUD ("Engagement")** | Instrument | RT readiness ring + CT inner ring, stance figure, threat pips, range gauge, condition border, hands | Follows X1 (was the original #1) |
 | G2 | Wound Paper-Doll | Instrument | Anatomical silhouette, wounds glow by severity, bleeders pulse | Likely folds in as G1's center figure |
 | G3 | Life Orbs | Instrument* | Liquid-filled vitals orbs that drain/refill and pulse when critical | *May ship as a vitals-strip display style instead — decide when scheduled |
 | G4 | Tactical Room Radar | Instrument | You at center, exits as rim arrows, creatures/players as dots in Contact colors | Backlog |
@@ -6038,7 +6072,7 @@ An Experience is **not a panel and not a stream**:
 | G8 | Skill Momentum Dashboard | Instrument | Mindstate sparklines, session TDP counter, time-to-next-rank projections | Backlog |
 | G9 | Portrait Forge | Instrument (AI) | AI portraits from LOOK text, scene art from room prose (= AI9; procedural fallback always) | Backlog (needs AIProvider) |
 | G10 | Reactive Soundscape | Instrument (audio) | Heartbeat tracks health, RT-clear chime, whisper/foe cues, ambient beds | Backlog |
-| X1 | **Living Tableau ("Gather Mode")** | Scene | Room becomes a living scene — avatars, speech bubbles, choreographed arrivals, painted backdrop | Backlog — the scene PLATFORM (X2/X4/X5/X6 reuse it) |
+| X1 | **Living Tableau ("Gather Mode")** | Scene | Room becomes a living scene — avatars, speech bubbles, choreographed arrivals, painted backdrop | **Experience #1 — next to build (decided 2026-06-12)**; the scene PLATFORM (X2/X4/X5/X6 reuse it) |
 | X2 | Spar Arena | Scene | Duels staged like a fighting game; the space between avatars IS range | Backlog (needs G1's parser + X1) |
 | X3 | Empath's Ward | Scene | Party frames with vitals + wound pips; click STAGES a heal, human sends | Backlog |
 | X4 | Bardic Stage | Scene | Performances as shows — rising notes, motion trails, reacting audience | Backlog (needs X1) |
@@ -6066,6 +6100,12 @@ Recorded so the reasoning isn't re-litigated later:
    failed HUD; (b) touches the mature panel system (PanelType union, discovery filter, Panel Manager
    filters, pitfall #27 logic) for no user benefit; (c) requires namespace bookkeeping forever. The
    Experiences model gets the same features with zero panel-system risk.
+3. **DISCARDED — the "v2" conversion revision (drafted 2026-06-11, deliberately dropped 2026-06-12).**
+   A revision that converted the structured panels (exp/room/injuries/map/lichScripts) into
+   Experiences with dual hosting (floating surface OR an `[e]`-badged tab) was drafted, partially
+   built, and then **discarded on purpose** along with its code. This v1 architecture stands:
+   Experiences are floating surfaces only; panels and streams stay byte-identical. Recorded so the
+   discarded draft isn't mistaken for lost work to restore.
 
 **Why Experiences win:** the engine already exists. The Maps overlay (`showMapOverlay` →
 `.map-overlay-window`, opened from the app bar) is the shipped precedent for a graphical surface
@@ -6157,9 +6197,271 @@ gates** (procedural fallbacks always).
 
 1. **Scaffold:** `experiences.ts` registry + `ExperienceLayer` (both modes) + the app-bar shelf +
    persistence + the Transfer category.
-2. **Experience #1 — Combat HUD (G1):** Phase 1 on existing typed events only (readiness ring, CT
-   ring, stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2
-   adds the combat-stream parser (range/target/facing as new typed events — the shared engine §32.4
-   wants for X2/AI7). Corpus capture of real fight Raw-XML precedes the parser.
-3. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
-   center figure or standalone, G4 radar, G6 buffs board, X-series scenes once their engines exist).
+2. **Experience #1 — Living Tableau (X1, §32.2; decided 2026-06-12):**
+   - **Phase 1 — the kernel:** cast assembly from `roomState.players`/`creatures`, stable hashed
+     seating, **procedural avatars** (initials + guild sigil + Contact color — no AI dependency),
+     Say speech bubbles tinted by Contact color, focus-the-speaker. Requires the **`SceneParser`**
+     (name pinned 2026-06-12 — §32.4's shared-engine list): new typed *scene events* for speaker +
+     channel attribution (today speech/emotes are only styled text lines — no typed "who said what"
+     event exists). **Raw-XML corpus capture of a busy room
+     (tavern/festival: speech, whisper, emote, arrival shapes) precedes the parser**, exactly as
+     the G1 plan prescribed for combat.
+   - **Phase 2 — choreography & channels:** typed arrival/departure events with direction
+     (slide in from the matching edge), emote action-captions + physical beats, whisper-to-you
+     dotted-tail bubbles, thought/ESP wisps at the screen edges (**never a body in the room** —
+     the speaker isn't physically present), and the crowd cap (real avatars for active/known
+     speakers, a "+N others" silhouette, promote-on-speak).
+   - **Phase 3 — the AI tier** (needs the `AIProvider` adapter, §32.4): cached per-room-id
+     backdrops from room prose, LOOK-derived portraits cached per name, optional emote
+     interpretation — all opt-in; the procedural/flat-themed fallback remains the baseline forever
+     (guardrail #3). Epilepsy-safe tames entrance/exit motion; the synchronized text equivalent is
+     the game text itself, which Tableau augments and never replaces.
+3. **Combat HUD (G1) second:** Phase 1 on existing typed events only (readiness ring, CT ring,
+   stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2 adds
+   the **`CombatParser`** (range/target/facing as new typed events — the shared engine §32.4
+   wants for X2/AI7, the `SceneParser`'s sibling). Corpus capture of real fight Raw-XML precedes
+   the parser.
+4. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
+   center figure or standalone, G4 radar, G6 buffs board, X-series scenes on X1's engine as their
+   parsers come online — X6 Scene Composer is the natural follow-on, compositing X1's rendered
+   scene into the shareable comic panel).
+
+---
+
+## 35. SceneParser — Scene-Event Capturer Registry (designed 2026-06-12; Phase 1 built)
+
+**Status:** Architecture designed (Sekmeht + survey, 2026-06-12). **Phase 1 BUILT same day**:
+`sceneCapturers.ts` (the registry — speech drafts present but `unverified` = inert),
+`SceneParser.ts` (cast + cast-diff transformer, wired per-session in main.ts), shared extraction in
+`sceneExtract.ts` (Lich-derived), typed events `scene-cast`/`scene-arrive`/`scene-depart`/
+`scene-speech` in shared/types.ts, `scene-cast` replay-snapshotted, the Tableau consuming the typed
+cast as a pure view. Verified by a real-bundle harness (10 scenarios incl. transition suppression;
+it caught the dead-marker-outside-the-bold-span gap). **Phase 2 (speech) ALSO BUILT 2026-06-12:**
+the say/ask/exclaim, yell, whisper, and thought capturers were verified against a REAL captured DR
+session already on disk — `Frostbite-Dev/frostbite/support/mock.xml` (the B165 corpus) — and flipped
+to `verified`; the harness replays 21 verbatim corpus lines (all pass). Key corpus facts baked into
+the capturers: speaker+verb ride INSIDE `<preset id='speech'>` with the quote outside; **yells are
+`<b>`-wrapped, not preset**; whispers collapse into the `conversation` stream (STREAM_ID_ALIASES);
+thoughts have THREE shapes (gweth relay / ESP `[Name]` bracket incl. `"<to you>"` / in-your-head —
+which rides the TALK stream); DR double-emits every utterance to main (pitfall #49 — deduped by
+home-stream gating); and DR REUSES the speech/thought presets for stat-table alignment, so the verb
+shape — never the preset — is the signal. The Tableau renders channel-styled bubbles (+ whisper
+tags, yell emphasis), thought WISPS at the scene edge (never a body, §32.2), and focus-the-speaker
+dimming; bubbles are replay-gated (pitfall #60a) and expire after ~14s. **First LIVE-corpus fixes
+(Sekmeht's 25-player room, same day — corpus/2026-06-12-says-accents-crowd.xml):** accent/manner
+says (`says in a melodic accent,`) and adverb-before-verb says (`softly says,` / `quietly says,`)
+joined the verified speech-say shape, and **promote-on-speak shipped** — recent speakers (120s
+window, longer than the bubble TTL so seats don't churn) seat ahead of the crowd cap, fixing the
+"bubbles stopped working" symptom (the talkers were in the '+N others' overflow). **Movement
+choreography ALSO landed from the same live-corpus session:** the `movement-hint` capturer (four
+verified shapes — see the §35.3 row; arrivals CAN carry an origin after all, e.g. `wades into view
+coming from the west`, correcting the earlier "no direction on arrivals" read) feeds a hint ring in
+SceneParser that garnishes the authoritative cast-diff events with direction/`reason:'logoff'`
+(hints are never authoritative — an over-matched prose line expires unused, which is what makes the
+open-verb/trailing-clause regexes safe). The Tableau renders directional ENTRANCES (slide in from
+the origin edge), departure GHOSTS (the figure lingers ~1.6s walking out toward its exit direction)
+and logoff DISSOLVES — all replay-gated, all skipped under epilepsy-safe (ghosts are skipped at
+RENDER, not by CSS, so the animation kill-switch can't strand a frozen duplicate). **The stealth
+batch (same live session) verified five more shapes:** noticed hiding is a CAST STATUS, not a
+departure (`Also here: Agan who is hiding.` → posture `hiding`, shadowed figure); unnoticed
+hide/invisibility just vanish from the list (correct dissolve depart); hidden/invisible speech is
+`You hear the voice of Agan say, "…"`; re-materializing is `Agan fades into view.` (into-view hint,
+direction now optional); own whisper `You whisper to Agan, "hi"` confirmed; and **OOC whispers
+TRIPLE-emit** (whispers → ooc → main) — deduped by construction since only the whispers/conversation
+copy is captured. Plus **Sekmeht's rule: a speaker with no room-list entry is hiding/invisible** —
+the Tableau manifests a shadowed "unseen presence" figure to carry their bubble. LOOK-appearance
+corpus banked for Phase-3 portraits. **Emotes verified too** (parenthesized main-text lines —
+`(Agan laughs.)`; rendered as action captions under the avatar) and **directed says** (`You say to
+Agan, "Hello."`) confirmed covered by the manner-clause wildcard. **The lava-drake combat capture
+added:** the `logons` stream JOIN shape (verified), creature COUNTING (five identical bold spans =
+one chip with a ×5 badge — `SceneCreature.count`; collapsing them hid four drakes), and the rule
+that **own emotes are THIRD-PERSON** (`act laughs` → `(Sekmeht laughs.)`, never `(You …)`) — the
+Tableau's self figure matches 'You' AND the character's own name, and the unseen-presence filter
+excludes both. Combat-stream lines (attacks/evades/balance + range-close lines) are BANKED in
+corpus/2026-06-12-combat-lavadrakes.xml for the `CombatParser` (G1) — not parsed yet by design.
+**Adaptive arrangements (Sekmeht, from the first live screenshot):** ≤12 players = the single arc;
+crossing 12 auto-switches to a two-row AMPHITHEATER (26 seats — back arc smaller/higher, front arc
+closer; everyone but the self figure renders at 0.84em) before the "+N others" chip; the seat-glide
+transition makes the relayout morph. A manual arrangement toggle is a possible later add if the
+auto-switch ever annoys. **Game mechanic for G1's design (Sekmeht):** only ~4 creatures can ADVANCE on you at once — extras
+wander to adjacent rooms — so the HUD must distinguish ENGAGED (the `closes to <range> on you!`
+lines, ≤4 slots) from merely PRESENT (the room-objs tally); threat pips count engagement, the cast
+count is a different number. The banked capture demonstrates the whole mechanic: 5 drakes present,
+4 engaged, and the overflow 5th `slinks southwest in a rush of heat` — tally drops 5→4 on the next
+component. Room creatures default to NEUTRAL styling in the Tableau (usually
+pets, not hostiles — the room list can't tell; engagement data is what marks a real threat).
+Still corpus-pending: language says with NO quote, multi-word NPC speakers, logoff/death notices on
+the logons stream, door/climb movement shapes.
+The `SceneParser` is
+the §32.4(c) shared engine that feeds the Living Tableau (X1) and every later scene Experience
+(X4/X5/X6) with **typed scene events**: who is present, who said what on which channel, who arrived
+from where. It lives in `src/main/` beside `StormFrontParser` (same process, same line stream) and
+emits events through the normal `GameEvent` batch pipeline (sessionId on every payload, Principle #6).
+
+### 35.1 The capturer-registry model
+
+Sekmeht's core requirement: **a registry of parser items, so we keep adding more events to capture
+and reuse them everywhere** — never a hardcoded if-chain. One module (`sceneCapturers.ts`) exports a
+flat list of capturers:
+
+```ts
+interface SceneCapturer {
+  id: string                       // 'speech-say', 'cast-players', 'arrival-direction', …
+  event: SceneEventType            // the typed event this capturer emits
+  // Cheap gate first (pitfall #82a discipline), then the real match+extract.
+  // ctx carries what StormFrontParser already knows at the call site: the
+  // active stream id, the active preset, bold state, the clean line text.
+  gate: string                     // literal substring that MUST appear (fast pre-check)
+  match: (line: string, ctx: SceneCtx) => SceneEvent | null
+  provenance: string               // where the pattern came from (Lich drdefs.rb, Frostbite xmlparserthread, corpus file …)
+  status: 'verified' | 'unverified' // flipped to verified ONLY by a real corpus/live capture (§35.4)
+}
+```
+
+- **Adding a new scene event = one capturer entry** (+ a `SceneEventType` member if it is a genuinely
+  new event shape). Consumers (Tableau, future Experiences, triggers someday) read the typed events
+  and never re-parse text.
+- The registry runs from a single hook in `StormFrontParser.parse()` (after the token loop, like
+  `inferHandsFromGlance` — pitfall #78's call-site precedent), with the same suppression discipline:
+  capturers see the STREAM CONTEXT (`ctx.stream`, `ctx.preset`) so a Lich script echoing
+  speech-shaped text into a custom panel can never mint a phantom scene event.
+- Every capturer carries `provenance` and `status` **in the code** — the registry IS the living
+  catalog of what we capture, where the pattern came from, and whether a real capture has confirmed it.
+
+### 35.2 What existing parsers already encode (the survey, 2026-06-12)
+
+Read from the real sources — these are the grounded starting patterns:
+
+- **Lich `drinfomon`** ([drparser.rb](file:///C:/Ruby4Lich5/Lich5/lib/dragonrealms/drinfomon/drparser.rb),
+  [drdefs.rb](file:///C:/Ruby4Lich5/Lich5/lib/dragonrealms/drinfomon/drdefs.rb), DRRoom): the canonical
+  CAST extraction. `RoomPlayers = 'room players'>Also here: (?<players>.*)\.` then `extract_pcs`:
+  **normalize only the TRAILING " and " to a comma** (no Oxford comma), split `', '`, strip the
+  status tail `/ (who|whose body)? ?(has|is|appears|glows) .+/` and parentheticals, **name = last
+  word** (`\w+$`). Posture sub-filters: `who is lying down` / `who is sitting`. NPCs: `NPC_SCAN` —
+  creatures are the `<pushBold/>…<popBold/>` spans of 'room objs' (dead: `which appears dead|\(dead\)`),
+  leading article stripped, creature name `[A-Za-z'-]+$`. **DRRoom.pcs/npcs is maintained by
+  re-parsing the component on every room update — so presence CHANGES (arrive/depart) are derivable
+  by DIFFING successive casts, no text pattern needed** (Sekmeht's observation; this is the robust
+  baseline for entrance/exit choreography — the directional text line is garnish on top).
+- **Frostbite** ([xmlparserthread.cpp](file:///c:/temp/Frostbite-Dev/frostbite/gui/xml/xmlparserthread.cpp)):
+  the CHANNEL routing truth. Conversations window = pushStream `talk` (a child `preset id='thought'`
+  reroutes to Thoughts); `whispers` stream → Conversations; **`logons` stream → its Arrivals window**;
+  `ooc` stream's preset-wrapped speech is a DUPLICATE of the whisper stream (deliberately ignored —
+  the §49-pitfall double-emit family); `atmospherics`, `familiar`, `percWindow` similarly routed.
+  Channel attribution therefore comes (mostly) FREE from stream id + preset, which our parser
+  already tracks — the SceneParser's real work is SPEAKER + VERB + DIRECTION extraction from the line.
+- **Profanity** routes the same stream ids but parses no speakers/arrivals (Lich does it) — it
+  confirms the thin-client baseline needs nothing more than stream routing; the speaker work is what
+  makes Tableau more than a stream panel.
+- **Lichborne already has**: stream ids preserved end-to-end (Principle #5), `preset` per segment
+  (speech/whisper/thought — the same signals Frostbite branches on), `bold` per segment (B117 — the
+  NPC marker), room components split per sub-stream (B121), and the `logons`-family streams surfaced
+  as the arrivals panel.
+
+### 35.3 The initial capturer catalog
+
+| Capturer | Emits | Pattern basis (provenance) | Status (2026-06-12) |
+|---|---|---|---|
+| `cast-players` | `scene-cast` (players + posture) | Lich `extract_pcs` rules, verbatim | **built + harness-verified** |
+| `cast-creatures` | `scene-cast` (NPCs + dead flag) | Lich `NPC_SCAN` (bold spans; dead marker trails OUTSIDE the bold span) | **built + harness-verified** |
+| `cast-diff` | `scene-arrive` / `scene-depart` (no direction) | DRRoom model: diff successive casts, transition-suppressed | **built + harness-verified** |
+| `speech-say` | `scene-speech` (say; covers says/asks/exclaims + adverb/accent forms) | mock.xml:536/702/734 + corpus/2026-06-12-says-accents-crowd.xml (`softly says`, `says in a melodic accent` — Sekmeht live capture) | **verified** (gaps: no-quote language says, multi-word NPC speakers) |
+| `speech-yell` | `scene-speech` (yell) | mock.xml:729/775 — `<b>`-wrapped on the talk stream, NOT preset | **verified** |
+| `speech-whisper` | `scene-speech` (whisper, to-you flag) | mock.xml:708 (to you), :705 (to your group); whispers stream ALIASES into `conversation` | **verified** ("You whisper to X" branch corpus-pending) |
+| `speech-thought` | `scene-speech` (thought; NO body in room) | mock.xml:656 (gweth relay) / :678+:887 (ESP bracket, `"<to you>"`) / :882 (in-your-head — TALK stream) | **verified** |
+| `movement-hint` | `scene-move-hint` → consumed by SceneParser as direction/reason garnish on `scene-arrive`/`-depart` | Sekmeht live corpus 2026-06-12: `just arrived` (no dir) / `wades into view coming from the west` (arrival WITH origin) / `runs west.` + `wades east, <clause>.` (departures) / `just left.` (LOGOFF). Hints are non-authoritative — only consulted when the cast diff fires, so prose over-matches are harmless | **verified** (replaced the `arrival-direction` placeholder) |
+| `logon-events` | `scene-logon` (global realm notice — Tableau ignores; Debug-visible) | Sekmeht corpus 2026-06-12: logons stream emits `* Miniature Slimjack Twosacks joins the adventure.` | **verified** for joins; logoff/death-notice shapes still corpus-pending |
+| `emote-caption` | `scene-emote` (actor, caption) | Sekmeht corpus 2026-06-12: emotes are PARENTHESIZED main-text lines — `(Agan laughs.)` — name first, then anything to the closing paren. The feared "no marker" risk didn't exist; the parens are the marker. Tableau renders an italic action caption under the avatar | **verified** |
+| `look-appearance` (future) | feeds Phase-3 Portrait Forge (AI9), not a scene event | LOOK output corpus BANKED 2026-06-12 ("You see Agan Aldaran of Elanthia, a Human." + appearance paragraphs + "He is wearing …") | waiting on the `AIProvider` adapter — don't build before it |
+
+**Anti-pattern recorded by the corpus (mock.xml:460-461):** DR REUSES `preset id='speech'`/`'thought'`
+for stat-table column alignment — a preset is NEVER a sufficient speech signal; the verb/shape regex
+is. The harness keeps a stat-table line as a permanent must-NOT-match case.
+
+### 35.4 Verification workflow (corpus = validation, not discovery)
+
+The Sekmeht rule: *"make sure the things you find actually are capturing that event, then produce a
+GAP and fill it in."* Concretely: (1) a capturer is born `unverified` with its provenance recorded;
+(2) the corpus capture (`corpus/` — gitignored, busy-room Raw-XML via the Debug panel) is replayed
+against the registry by the harness (`tmp-scene-harness/run.mjs` — **machine-local, gitignored
+under `tmp-*/` like the corpus, because it embeds verbatim captured lines with real player names**;
+rebuild recipe: esbuild-bundle the REAL `StormFrontParser` + `SceneParser`, feed corpus lines
+through `parse()`/`derive()`, assert the emitted events — never a reimplementation, the Iron rule); (3) every corpus line the capturer
+SHOULD have matched but didn't (or matched wrongly) is a GAP — fix the pattern, re-run; (4) flip to
+`verified` with the corpus file named in `provenance`. The Debug panel grows a scene-events view in
+Phase 2 so live play continuously exercises the registry.
+
+### 35.5 Build phases
+
+1. **Registry + cast capturers** (`cast-players`/`cast-creatures`/`cast-diff`) — Lich-derived, can
+   ship ahead of corpus; Tableau Phase 1's interim renderer-side extraction (TableauExperience.tsx)
+   moves down into typed `scene-cast` events and the component becomes a pure view. **✅ BUILT
+   2026-06-12.** The transition-suppression model: `inTransition` arms on room-title, disarms on a
+   real players commit OR the compass ('exits' — the last component of a room burst, Profanity's
+   commit signal) — so our own moves never read as mass arrive/depart, and an empty room's armed
+   flag can't swallow the next real walk-in.
+2. **Speech capturers** after the first corpus batch (says → whispers → thoughts), wiring Tableau's
+   bubbles (X1 Phase 2 choreography rides `cast-diff` + `arrival-direction`).
+3. **Logons + emotes** as corpus coverage grows; promote-on-speak crowd handling lands with speech.
+
+### 35.6 Performance contract — scene work is OFF until an Experience is open
+
+Sekmeht's requirement (v0.14.0): the feature must be **completely free until used**. The gate:
+
+- **Per-line work:** `StormFrontParser.sceneCapturersEnabled` (default FALSE) guards the
+  `runSceneCapturers` call — until a session has an open Experience, not one extra operation runs
+  per game line (no tag-strip, no entity decode, no gate checks). This is the §82-pitfall hot path;
+  it stays untouched for non-users.
+- **Event emission:** `SceneParser.setActive(false)` (default) makes `derive()` emit NOTHING — no
+  scene events in IPC batches, no renderer state churn, no snapshot writes. It still TRACKS the cast
+  silently (a per-room-component switch — the components are already parsed events; this is what
+  makes activation instant without injecting a LOOK, which Lichborne never does — the pitfall-#76
+  no-injection rule).
+- **The toggle:** GameWindow sends `scene-active-toggle(sessionId, expAnyOpen)` (the
+  `debug-panel-toggle` raw-XML precedent) whenever its open-Experience state changes; `sessionId` in
+  the effect deps re-arms after a reconnect-in-place (pitfall #69). On ACTIVATION main backfills the
+  silently-tracked cast via `SceneParser.snapshotCast()` so a just-opened Tableau paints immediately.
+- **Renderer:** the ExperienceLayer (and its ResizeObserver) only mounts while an Experience is
+  open; TableauExperience is `memo()`d (pitfall #82c) so an open-but-unchanged Tableau doesn't
+  re-render on every game batch; speech/move buffers only ever fill while active (main emits
+  nothing otherwise).
+- The harness covers the contract: inactive sessions emit zero events for cast AND speech lines,
+  and `snapshotCast()` carries the silently-tracked cast for the activation backfill.
+
+### 35.7 Conversation gravity (Tableau layout, v0.14.0)
+
+Sekmeht's design: the seating shows WHERE the conversation is. Each present player gets a
+recency-decayed chattiness score from the speech buffer (window = the 120s promote-on-speak TTL);
+anyone with a score leaves their arc seat and joins an inner CONVERSATION CIRCLE around the scene's
+social center — radius shrinks with chattiness (the chattiest end up in the middle of everyone);
+quiet people stay seated back on the arc (and dim under focus-the-speaker). DIRECTED speech is
+captured as `SceneSpeechEvent.target` ("You say to Agan," / a whisper's recipient): partners'
+circle angles converge on their circular mean (±offset so they sit side by side, not stacked), and
+someone talking TO YOU drifts toward your foreground seat. Positions move on the standard figure
+transition, so score changes read as people drifting through the room; epilepsy-safe stills it (the
+figures still relocate, instantly). Bubbles are tinted per speaker (`--bubble-tint` from the avatar
+color feeds the background mix, border, and tail) — the §32.2 "tinted by Contact color" detail —
+with a larger, higher-contrast readability pass. **Second readability pass (same day, from live
+screenshots): bubbles/captions size in the GAME FONT** (absolute `var(--game-font-size)`, not em)
+**and carry an inline counter-scale transform cancelling the figure's depth scale** — speech reads
+at main-window size no matter how small/far the speaker. **Self gravity:** YOU join the
+conversation too — talking floats your figure up from the foreground toward the social center, and
+talking TO someone drifts you toward their actual position (the pair closes from both sides since
+the partner's circle angle pulls toward you); a quiet spell settles you back to your foreground
+seat (you never rise past y=58 — always foreground-most). **Death (Sekmeht corpus):** a corpse
+stays in the room list as `the body of Priestess Aenigma who is lying down` → the SAME cast entry
+with `dead: true` (greyed, dashed, desaturated figure); the dead can speak (`You hear the ghostly
+voice of Aenigma exclaim…` — the voice-of capturer accepts the `ghostly` form, bubble lands on the
+body); resurrection re-lists them plain and the SAME entry flips alive — no phantom depart/arrive
+across the transition (harness-locked). A ghostly voice with NO list entry falls through to the
+unseen-presence rule, exactly like hiding/invisibility. **Third pass — the bubble LAYER (Sekmeht:
+"bubbles still tiny at >12; spacing must be strategic; rewrite freely"):** bubbles moved OUT of the
+scaled figure tree into scene-pixel space — the component measures the scene (ResizeObserver,
+0×0-guarded per pitfall #83) and lays bubbles out itself: constant game-font size for EVERY speaker
+by construction (no more transform-scale inheritance), the speaker's NAME inside the bubble
+(tinted), and a COLLISION-AWARE placement — newest bubble (capped at 6 visible) claims the spot
+nearest its speaker, earlier ones get pushed upward out of the way, so bubbles never overlap; the
+tail's --tail-dx keeps aiming at the speaker when a bubble had to shift, and re-layouts glide
+(epilepsy-safe stills them). Geometry uses char-count ESTIMATES for spacing only — CSS does the
+real wrapping; a generous estimate just means generous spacing. Emote captions stay figure-attached
+(counter-scaled).

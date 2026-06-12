@@ -1,0 +1,123 @@
+// Scene cast extraction (SceneParser §35.2/§35.3 — `cast-players` /
+// `cast-creatures`). The rules MIRROR Lich drinfomon's battle-tested logic
+// (Ruby4Lich5/Lich5/lib/dragonrealms/drinfomon/drdefs.rb — extract_pcs /
+// NPC_SCAN / DEAD_NPC); provenance per pattern is noted inline. Shared
+// module: the SceneParser (main) is the canonical consumer; pure functions
+// over TextSegment[] so a corpus harness can exercise the real code.
+import type { TextSegment, ScenePlayer, SceneCreature } from './types'
+
+// Lich DRDefsPattern.PLAYER_STATUS: / (who|whose body)? ?(has|is|appears|glows) .+/
+const PLAYER_STATUS = / (?:(?:who|whose body) )?(?:has|is|appears|glows) .+$/
+// Lich DRDefsPattern.TRAILING_AND: / and (?<last>.*)$/
+const TRAILING_AND = / and (.*)$/
+// Lich DRDefsPattern.SITTING / LYING_DOWN (checked BEFORE the status strip)
+const SITTING = /who is sitting/i
+const LYING_DOWN = /who is lying down/i
+// Sekmeht corpus 2026-06-12: "Also here: Agan who is hiding." — a noticed
+// hider keeps their room-list entry with this status.
+const HIDING = /who is hiding/i
+// Sekmeht corpus: "the body of Priestess Aenigma who is lying down" — a
+// dead player stays in the list wrapped in this prefix.
+const BODY_OF = /^the body of /i
+// Lich DRDefsPattern.DEAD_NPC
+const DEAD_NPC = /which appears dead|\(dead\)/
+// Lich DRDefsPattern.LEADING_ARTICLE (+ small counts, which DR also uses)
+const LEADING_ARTICLE = /^(?:a|an|some|two|three|four|five|six|seven|eight|nine|ten) /
+
+// Lich normalize_trailing_and: DR lists have no Oxford comma — only the
+// TRAILING " and " becomes a comma (so "Lord and Lady X" mid-list survives
+// everywhere except as the final entry, same tradeoff Lich accepts).
+function normalizeTrailingAnd(text: string): string {
+  const m = text.match(TRAILING_AND)
+  return m ? text.replace(TRAILING_AND, `, ${m[1]}`) : text
+}
+
+// "Also here: Lord Rakkor, Binu who is sitting and Sekmeht." → ScenePlayer[]
+// (Lich extract_pcs: split ', ', strip status tail + parenthetical, name =
+// last word.)
+export function extractScenePlayers(segs: TextSegment[]): ScenePlayer[] {
+  const text = segs.map(s => s.text).join('')
+    .replace(/^\s*(also here:|also in the room:)\s*/i, '')
+    .replace(/[.!]\s*$/, '')
+  if (!text.trim()) return []
+  const seen = new Set<string>()
+  const out: ScenePlayer[] = []
+  for (const chunk of normalizeTrailingAnd(text).split(', ')) {
+    const posture: ScenePlayer['posture'] = HIDING.test(chunk) ? 'hiding'
+      : SITTING.test(chunk) ? 'sitting'
+      : LYING_DOWN.test(chunk) ? 'prone' : undefined
+    const dead = BODY_OF.test(chunk)
+    const cleaned = chunk.replace(BODY_OF, '').replace(PLAYER_STATUS, '').replace(/ \(.+\)/, '').trim()
+    const name = cleaned.match(/\w+$/)?.[0]
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    out.push({ name, descriptor: cleaned, ...(posture ? { posture } : {}), ...(dead ? { dead: true } : {}) })
+  }
+  return out
+}
+
+// Creatures from the BOLD spans of 'room objs' (Lich NPC_SCAN: NPCs are the
+// <pushBold/>…<popBold/> spans — our parser carries that as segment.bold,
+// B117; non-bold objs text is scenery) and/or the dedicated 'room creatures'
+// component when DR sends one. Callers pass each source separately and merge.
+export function extractSceneCreaturesFromBold(segs: TextSegment[]): SceneCreature[] {
+  const out: SceneCreature[] = []
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i]
+    if (!s.bold || !s.text.trim()) continue
+    // Lich's NPC_SCAN spans PAST </popBold>: the corpse marker ("… which
+    // appears dead" / "… (dead)") trails the bold span as PLAIN text, so
+    // check the head of the following non-bold segment (harness-caught).
+    const next = segs[i + 1]
+    const deadHint = !!next && !next.bold && /^\s*(?:which appears dead|\(dead\))/.test(next.text)
+    pushCreature(out, s.text, deadHint)
+  }
+  return out
+}
+
+export function extractSceneCreaturesFromText(segs: TextSegment[]): SceneCreature[] {
+  const text = segs.map(s => s.text).join('')
+    .replace(/^\s*you (also )?see\s*/i, '')
+    .replace(/[.!]\s*$/, '')
+  if (!text.trim()) return []
+  const out: SceneCreature[] = []
+  for (const chunk of normalizeTrailingAnd(text).split(', ')) pushCreature(out, chunk, false)
+  return out
+}
+
+function pushCreature(out: SceneCreature[], raw: string, deadHint: boolean) {
+  const dead = deadHint || DEAD_NPC.test(raw)
+  const cleaned = raw.replace(DEAD_NPC, '').replace(/[.,]\s*$/, '').trim()
+    .replace(LEADING_ARTICLE, '')
+  if (!cleaned) return
+  // Identical creatures COUNT instead of collapsing (Sekmeht corpus: five
+  // "a lava drake" spans in one room — Lich ordinals them; we tally).
+  const existing = out.find(c => c.name.toLowerCase() === cleaned.toLowerCase())
+  if (existing) {
+    existing.count = (existing.count ?? 1) + 1
+    if (dead) existing.dead = true   // at least one of them is a corpse
+    return
+  }
+  out.push({ name: cleaned, ...(dead ? { dead: true } : {}) })
+}
+
+export function mergeSceneCreatures(...lists: SceneCreature[][]): SceneCreature[] {
+  const out: SceneCreature[] = []
+  const byKey = new Map<string, SceneCreature>()
+  for (const list of lists) {
+    for (const c of list) {
+      const key = c.name.toLowerCase()
+      const existing = byKey.get(key)
+      if (existing) {
+        // Same room seen through two components — take the larger tally.
+        if ((c.count ?? 1) > (existing.count ?? 1)) existing.count = c.count
+        if (c.dead) existing.dead = true
+        continue
+      }
+      const copy = { ...c }
+      byKey.set(key, copy)
+      out.push(copy)
+    }
+  }
+  return out
+}

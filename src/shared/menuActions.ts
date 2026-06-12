@@ -21,6 +21,7 @@ export const SESSION_ACTIONS = [
   'toggle-logs',
   'toggle-panels',
   'toggle-maps',
+  'toggle-experiences',
   'toggle-contacts',
   'toggle-automations',
   'toggle-lich',
