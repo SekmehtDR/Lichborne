@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import type { LichRoom, GenieZone } from './mapTypes'
 import { findRoom, parseGenieZone, lichTitle, normalizeMatchKey } from './mapTypes'
 import { scheduleSharedProfileSave } from '../../profile'
@@ -29,7 +29,10 @@ function getLichPath(): string {
   } catch { return '' }
 }
 
-export default function MapPanel({ roomTitle = '', roomDesc = '', roomExits, roomId, lichMapVersion = 0, onSendCommand, large = false, mapAnimations = true }: Props) {
+// B172: memoized — the map re-renders when the room actually changes (its
+// props are room primitives + stable callbacks), not on every GameWindow
+// render (vitals ticks, main-text batches).
+export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits, roomId, lichMapVersion = 0, onSendCommand, large = false, mapAnimations = true }: Props) {
   const character = useCharacter()
   const saveProfile = useProfileSaver()
 
@@ -137,8 +140,16 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomExits, roo
 
   // ── Auto-reload when repository.lic downloads a new map database ────────────
 
+  // B174: fire only on a version CHANGE after mount. The old `=== 0` guard
+  // only skipped the very first render of a session — once Lich had printed
+  // "--- Map loaded" (version ≥ 1), every REMOUNT of this panel ran the
+  // mount-effect load AND this effect = the whole multi-second Lich JSON
+  // parsed twice back-to-back. Initializing the ref to the mount-time version
+  // makes mount-loading the mount effect's job alone.
+  const lastMapVersionRef = useRef(lichMapVersion)
   useEffect(() => {
-    if (lichMapVersion === 0) return  // skip initial render
+    if (lichMapVersion === lastMapVersionRef.current) return
+    lastMapVersionRef.current = lichMapVersion
     loadLichDb()
   }, [lichMapVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -400,4 +411,4 @@ export default function MapPanel({ roomTitle = '', roomDesc = '', roomExits, roo
       )}
     </div>
   )
-}
+})

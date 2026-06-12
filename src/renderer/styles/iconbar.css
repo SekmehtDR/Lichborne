@@ -14,6 +14,10 @@
      --game-font-size) so the default appearance is unchanged. Pitfall #45 /
      Principle #9. */
   font-size: var(--game-font-size);
+  /* B178: size container for the narrow tier below. Container (not media)
+     query — in Windowed Panels the icon bar lives in a floating window, so
+     its own width, not the OS window's, is what matters. */
+  container-type: inline-size;
 }
 
 .icon-row {
@@ -43,7 +47,12 @@
   font-size: 0.96em;
   white-space: nowrap;
   flex: 1;
-  min-width: 0;
+  /* B178: hands/spell are the bar's REAL game state — guarantee them a
+     readable floor (label + a few chars, ellipsized) instead of letting
+     `flex: 1` collapse them to zero while the fixed-basis status chips kept
+     the row ("Left and Right hands completely disappearing"). Only binds
+     when space runs out. */
+  min-width: 5.5em;
   overflow: hidden;
 }
 
@@ -80,11 +89,19 @@
    ============================================================ */
 
 .status-bar {
-  /* 7.14em (not 6) because em on `width` is relative to THIS element's own
-     font-size (0.84em ≈ 10px at default), not the parent: 72px / 10.08px ≈
-     7.14. Scales with the game font, preserves the default 72px width. */
-  width: 7.14em;
-  flex-shrink: 0;
+  /* 7.14em (not 6) because em is relative to THIS element's own font-size
+     (0.84em ≈ 10px at default), not the parent: 72px / 10.08px ≈ 7.14.
+     Scales with the game font, preserves the default 72px width.
+     B178 (Morress/Sekmeht): flex-BASIS with shrink allowed, not a fixed
+     `width` + `flex-shrink: 0` — at narrow window widths the six rigid slots
+     overflowed the strip. All six chips share IDENTICAL flex factors, so they
+     stay equal-width at any container width: state toggles still never shift
+     the layout (the original design goal of the fixed slots), but narrow
+     windows shrink every slot equally (labels ellipsize) instead of clipping. */
+  flex: 0 1 7.14em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   box-sizing: border-box;
   text-align: center;
   font-size: 0.84em;
@@ -104,6 +121,18 @@
   border-color: var(--border-faint);
   color: transparent;
   background: transparent;
+}
+
+/* B178: narrow tier — EMPTY status slots collapse entirely, giving their
+   space to the hands/spell (the actual game state). The empty chips are
+   placeholders whose only job is the no-layout-shift guarantee at full
+   width; in a cramped strip, six vacant boxes crowding out the held items
+   is the wrong trade (Sekmeht). ACTIVE states (Standing, Hidden, Bleeding…)
+   always stay visible. Consequence, accepted: at narrow widths a state
+   toggling on/off shifts the row — content beats slot stability here. */
+@container (max-width: 46em) {
+  .status-bar--empty { display: none; }
+  .row-sep { margin: 0 5px; }
 }
 
 /* Active states — reuse indicator vars */

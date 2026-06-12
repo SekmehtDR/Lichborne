@@ -4,6 +4,7 @@ import {
   buildTriggerRegex, interpolate,
 } from '../triggers'
 import { isRuleActive } from '../groups'
+import { literalGate } from '../regexLiteral'
 
 export interface TriggerGameState {
   vitals: Record<string, { current: number; max: number }>
@@ -294,7 +295,9 @@ export function useTriggerEngine(
       .map(r => ({
         rule: r,
         regex: buildTriggerRegex(r),
-        fastLower: r.mode === 'regex' ? null : r.pattern.trim().toLowerCase(),
+        // B172: shared gate — regex-mode rules get a conservative extracted
+        // literal; text-mode gates on its longest token (see literalGate).
+        fastLower: literalGate(r.mode, r.pattern),
       }))
     varRulesRef.current = rules.filter(r => r.triggerType === 'variable')
   }, [rules])

@@ -3,7 +3,7 @@ import type { TextLine } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'
 import type { CompiledRule } from '../HighlightsContext'
 import { renderSegment } from '../utils/renderSegment'
-import { renderSegmentFull, getLineHighlightStyle } from '../utils/renderSegmentFull'
+import { renderSegmentFull, getLineHighlightStyle, computeLineMatchRanges } from '../utils/renderSegmentFull'
 
 export interface TextLineRowProps {
   line: TextLine
@@ -41,6 +41,11 @@ export const TextLineRow = memo(function TextLineRow({
   // segments — without this, regex highlights like `Your mind hears .*?
   // thinking,` could never match because the text was split.
   const lineText = hasExtras ? line.segments.map(s => s.text).join('') : ''
+  // B172: run the contact/match-rule scan ONCE for the whole line and share
+  // the ranges with every segment — renderSegmentFull used to re-scan the
+  // full lineText per segment, multiplying the ruleset cost by the segment
+  // count (DR fragments lines into 3-5 segments around names/links/bold).
+  const lineRanges = hasExtras ? computeLineMatchRanges(lineText, contacts, templates, nameRegex, matchRules) : []
   let cursor = 0
   return (
     <div className="text-line" style={monoStyle ?? undefined}>
@@ -51,7 +56,7 @@ export const TextLineRow = memo(function TextLineRow({
         if (!hasExtras) return renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety)
         const offset = cursor
         cursor += seg.text.length
-        return renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety, lineText, offset)
+        return renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety, lineText, offset, lineRanges)
       })}
     </div>
   )

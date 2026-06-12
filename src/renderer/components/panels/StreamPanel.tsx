@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
 import { useContacts } from '../../ContactsContext'
 import { useHighlights } from '../../HighlightsContext'
@@ -6,20 +6,29 @@ import { newHighlight, type HighlightRule } from '../../highlights'
 import { TextLineRow } from '../TextLineRow'
 import ContextMenu from '../ContextMenu'
 
+// B172: memoized — a GameWindow render no longer re-renders every stream
+// panel; this panel re-renders only when ITS lines (or rules/contacts via
+// context) change. For the memo to hold, every prop must be referentially
+// stable across unrelated renders, which is why onClear/onToggleTimestamp
+// take the streamId as an argument (the parent passes its STABLE
+// clearStream/toggleStreamTimestamp callbacks straight through instead of
+// minting `() => onClear(id)` closures per render — see PanelFrame's
+// renderPanel).
 interface Props {
+  streamId: string
   lines: TextLine[]
   emptyMessage?: string
-  onClear?: () => void
+  onClear?: (streamId: string) => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
   onSendCommand?: (cmd: string) => void
   autoLinkUrls?: boolean
   webLinkSafety?: boolean
   showTimestamp?: boolean
-  onToggleTimestamp?: () => void
+  onToggleTimestamp?: (streamId: string) => void
 }
 
-export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp, onToggleTimestamp }: Props) {
+export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp, onToggleTimestamp }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -105,8 +114,8 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
           ...(onTrigger && ctxMenu.word ? [{ label: `Trigger for "${ctxMenu.word}"`, onClick: () => onTrigger(ctxMenu.word!) }] : []),
           ...(onTrigger && ctxMenu.lineText ? [{ label: 'Trigger for this line', onClick: () => onTrigger(ctxMenu.lineText!) }] : []),
         ]
-        const tsGroup = onToggleTimestamp ? [{ label: showTimestamp ? 'Disable Timestamps' : 'Enable Timestamps', onClick: onToggleTimestamp }] : []
-        const clGroup = onClear ? [{ label: 'Clear', onClick: onClear }] : []
+        const tsGroup = onToggleTimestamp ? [{ label: showTimestamp ? 'Disable Timestamps' : 'Enable Timestamps', onClick: () => onToggleTimestamp(streamId) }] : []
+        const clGroup = onClear ? [{ label: 'Clear', onClick: () => onClear(streamId) }] : []
         const groups = [hlGroup, trGroup, tsGroup, clGroup].filter(g => g.length > 0)
         const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
         return (
@@ -115,4 +124,4 @@ export default function StreamPanel({ lines, emptyMessage, onClear, onHighlight,
       })()}
     </div>
   )
-}
+})

@@ -10,6 +10,7 @@ release/
 profiles/
 Exports/
 Logs/
+tmp-*/
 
 # Logs
 *.log

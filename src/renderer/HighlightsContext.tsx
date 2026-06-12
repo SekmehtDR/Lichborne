@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from 'react'
 import { buildHighlightRegex, type HighlightRule } from './highlights'
 import { isRuleActive } from './groups'
+import { literalGate } from './regexLiteral'
 
 export interface CompiledRule {
   rule: HighlightRule
@@ -36,7 +37,10 @@ export function useCompiledHighlights(
       if (!isRuleActive(rule.groupIds ?? [], activeGroupStates, rule.allGroups ?? false)) continue
       const regex = buildHighlightRegex(rule)
       if (!regex) continue
-      const fastLower = rule.mode === 'regex' ? null : rule.pattern.trim().toLowerCase()
+      // B172: regex-mode rules get a conservative extracted literal so the
+      // includes() fast path gates them too (imported rulesets are regex-
+      // heavy); text-mode gates on its longest token (see literalGate).
+      const fastLower = literalGate(rule.mode, rule.pattern)
       if (rule.scope === 'match') matchRules.push({ rule, regex, fastLower })
       else lineRules.push({ rule, regex, fastLower })
     }

@@ -12,6 +12,12 @@
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   font-size: var(--game-font-size);
+  /* B178: size container for the degradation tiers below. Container (not
+     media) queries with em thresholds: the bar's content scales with
+     --game-font-size, and em in a container query resolves against the
+     container's own font — so the collapse points track the user's font
+     setting instead of firing too late at large fonts. */
+  container-type: inline-size;
 }
 
 /* The tabs fill the middle and scroll horizontally when crowded. The app-bar
@@ -141,4 +147,39 @@
 }
 .app-bar-more-item--active {
   color: var(--accent);
+}
+
+/* ── B178: narrow-window degradation ladder (Morress — tiling 4 windows on
+   one monitor needs ~480px each; minWidth dropped 900 → 480 in main.ts).
+   The bar must stay usable the whole way down. Media queries (not container
+   queries) are correct here — the app-bar always spans the window. ──────── */
+
+/* The collapsed inline buttons re-surface in the ⋯ More menu only when the
+   narrow tier actually hides them from the bar (below). */
+.app-bar-more-item--overflow { display: none; }
+
+.app-bar-more-sep {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--border);
+}
+
+/* Tier 1: compact — wordmark goes (the status dot + window title still
+   identify the app), buttons tighten. (~860px at the default 12px font.) */
+@container (max-width: 71em) {
+  /* NOTE: rules in here can only target DESCENDANTS of .app-bar — a container
+     query never matches the container itself (self-reference is circular per
+     spec), so e.g. `.app-bar { gap }` would be a dead rule. */
+  .app-bar-wordmark { display: none; }
+  .app-bar-actions button { padding: 4px 6px; font-size: 0.85em; }
+}
+
+/* Tier 2: collapse — the five inline action buttons fold into the ⋯ More
+   menu (their menu twins un-hide), freeing ~300px for the character tabs.
+   Disconnect/Login stays inline: the destructive/critical action must never
+   require opening a menu. (~700px at the default 12px font.) */
+@container (max-width: 58em) {
+  .app-bar-actions .app-bar-collapsible { display: none; }
+  .app-bar-more-item--overflow { display: block; }
+  .app-bar-more-sep.app-bar-more-item--overflow { display: block; }
 }

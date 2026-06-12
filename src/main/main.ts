@@ -43,6 +43,11 @@ interface Session {
   lichBridge: LichBridge
   eventQueue: GameEvent[]
   flushScheduled: boolean
+  // B172: timestamp of the last event-batch flush, for the leading-edge
+  // coalescing throttle in scheduleFlush (idle → flush immediately; during a
+  // flood → one batch per FLUSH_COALESCE_MS so the renderer does one render
+  // pass per frame instead of one per socket chunk).
+  lastFlushAt: number
   cleanDisconnect: boolean
   connected: boolean
   debugPanelOpen: boolean
@@ -143,7 +148,7 @@ function createSession(): Session {
   const lichBridge = new LichBridge((cmd: string) => connection.send(cmd))
   const s: Session = {
     id, connection, parser, lichBridge,
-    eventQueue: [], flushScheduled: false,
+    eventQueue: [], flushScheduled: false, lastFlushAt: 0,
     cleanDisconnect: false, connected: false, debugPanelOpen: false,
     ownerWindowId: 0, meta: null, stateSnapshot: new Map(), historyBuffer: [],
   }
@@ -247,10 +252,25 @@ function wireSession(s: Session) {
   })
 }
 
+// B172: leading-edge coalescing. Pre-v0.13.4 this was a bare setImmediate —
+// during a Lich flood (fast travel, script spam) every small socket chunk
+// became its own IPC batch, and the renderer ran a FULL pipeline pass + React
+// render per chunk (several per frame) — the "chunky, not smooth" travel.
+// Now: when the queue has been idle ≥ FLUSH_COALESCE_MS the flush is
+// immediate (zero added latency for normal play, same as before); during a
+// burst, subsequent flushes wait out the remainder of the window, so the
+// renderer sees at most ~one batch per frame and renders once per frame.
+// Triggers still fire within ~16ms of arrival. Don't lower this below a
+// frame, and don't make it trailing-only (that would add latency to EVERY
+// line, including sparse interactive play).
+const FLUSH_COALESCE_MS = 16
+
 function scheduleFlush(s: Session) {
   if (s.flushScheduled) return
   s.flushScheduled = true
-  setImmediate(() => {
+  const sinceLast = Date.now() - s.lastFlushAt
+  const delay = sinceLast >= FLUSH_COALESCE_MS ? 0 : FLUSH_COALESCE_MS - sinceLast
+  const run = () => {
     if (s.eventQueue.length > 0 && sessions.has(s.id)) {
       const batch: GameEventBatch = { sessionId: s.id, events: s.eventQueue }
       // While holding for a replay (a move is in flight), DON'T send live — the
@@ -269,9 +289,12 @@ function scheduleFlush(s: Session) {
         s.historyBuffer.splice(0, s.historyBuffer.length - HISTORY_BUFFER_MAX)
       }
       s.eventQueue = []
+      s.lastFlushAt = Date.now()
     }
     s.flushScheduled = false
-  })
+  }
+  if (delay <= 0) setImmediate(run)
+  else setTimeout(run, delay)
 }
 
 function sendStatus(s: Session, connected: boolean, message: string, clean?: boolean) {
@@ -308,7 +331,13 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 900,
+    // B178 (Morress): was 900 — users tile multiple windows side by side
+    // (4 columns on a 1920 monitor = 480 each), and the old floor hard-stopped
+    // the resize drag at ~half screen. The app-bar degrades for narrow widths
+    // via CSS media tiers (app-bar.css: wordmark hides, buttons compact, then
+    // the inline action buttons collapse into the ⋯ More menu), so 480 stays
+    // fully usable. Don't raise this without checking that ladder.
+    minWidth: 480,
     minHeight: 600,
     backgroundColor: '#1a1a1a',
     title: `Lichborne v${app.getVersion()} | DragonRealms`,
@@ -1192,7 +1221,21 @@ function setupMenu() {
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
+        // B176 (Binu): "Ctrl++ doesn't zoom in." The zoomIn role's built-in
+        // accelerator is CmdOrCtrl+Plus, but on most layouts `+` is SHIFT+`=`
+        // — so the chord users actually press (Ctrl with the =/+ key, or
+        // Ctrl with numpad +) sends `=` / `numadd` and never matches. Chrome
+        // accepts Ctrl+= and Ctrl+numpad+ for exactly this reason. These
+        // HIDDEN alias items register the missing accelerators while the
+        // visible role items above keep their stock labels/shortcuts (the
+        // "never override an Electron-reserved chord" guardrail is about
+        // REBINDING built-ins to Lichborne actions — these aliases point at
+        // the same built-in zoom behavior, matching how every browser acts).
+        // An invisible item's accelerator still registers in Electron.
+        { role: 'zoomIn',  accelerator: 'CommandOrControl+=',      visible: false },
+        { role: 'zoomIn',  accelerator: 'CommandOrControl+numadd', visible: false },
         { role: 'zoomOut' },
+        { role: 'zoomOut', accelerator: 'CommandOrControl+numsub', visible: false },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],

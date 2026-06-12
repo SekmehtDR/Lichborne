@@ -54,6 +54,14 @@ export const ALL_PANEL_TYPES: PanelType[] = [
   'room', 'thoughts', 'arrivals', 'conversation', 'deaths', 'spells', 'exp', 'familiar', 'inv', 'injuries', 'debug', 'log', 'map', 'lichScripts', 'combat',
 ]
 
+// B172: referentially STABLE fallbacks for renderPanel's optional props.
+// StreamPanel / RoomPanel / ExpPanel / MapPanel are memoized — a fresh
+// `?? []` / `?? new Set()` / `?? (() => {})` minted per render would defeat
+// every one of those memos. Keep all fallback values module-level.
+const EMPTY_ARRAY: never[] = []
+const EMPTY_SET: Set<string> = new Set()
+const NOOP = () => {}
+
 export function makeTab(type: PanelType): TabDef {
   return { id: type, type, label: PANEL_LABELS[type] }
 }
@@ -208,16 +216,16 @@ export default function PanelFrame({
       <div className="panel-frame-body" style={bodyStyle}>
         {activeTab && renderPanel(
           activeTab, streamLines, roomState, expSkills, rankUpSkills,
-          expFocus, pinnedSkills ?? new Set(), onFocusChange ?? (() => {}), onTogglePin ?? (() => {}),
+          expFocus, pinnedSkills ?? EMPTY_SET, onFocusChange ?? NOOP, onTogglePin ?? NOOP,
           onSendCommand,
-          debugEvents ?? [], onClearDebug ?? (() => {}),
-          rawXmlLines ?? [], onClearRawXml ?? (() => {}),
-          fireLog ?? [], onClearFireLog ?? (() => {}),
-          onClearStream ?? (() => {}), onHighlight, onTrigger, injuryState,
+          debugEvents ?? EMPTY_ARRAY, onClearDebug ?? NOOP,
+          rawXmlLines ?? EMPTY_ARRAY, onClearRawXml ?? NOOP,
+          fireLog ?? EMPTY_ARRAY, onClearFireLog ?? NOOP,
+          onClearStream ?? NOOP, onHighlight, onTrigger, injuryState,
           streamTimestamps, onToggleTimestamp, autoLinkUrls, webLinkSafety, lichMapVersion,
           lichScripts, lichLastUpdated, lichPending,
-          onLichPause ?? (() => {}), onLichResume ?? (() => {}),
-          onLichKill ?? (() => {}), onLichRefresh ?? (() => {}),
+          onLichPause ?? NOOP, onLichResume ?? NOOP,
+          onLichKill ?? NOOP, onLichRefresh ?? NOOP,
           mapAnimations,
         )}
         {activeTab && onAdjustPanelFontSize && (
@@ -393,33 +401,37 @@ function renderPanel(
   onLichRefresh: () => void = () => {},
   mapAnimations = true,
 ) {
-  const clr = (id: string) => () => onClearStream(id)
+  // B172: StreamPanel is memoized, so every prop must be referentially
+  // stable — onClear/onToggleTimestamp now take the streamId as an argument
+  // (the GameWindow callbacks pass through untouched) instead of the old
+  // per-render `() => onClearStream(id)` closures, and empty line-lists use
+  // the module-level EMPTY_ARRAY rather than a fresh `?? []`.
   const sp = (id: string, lines: TextLine[]) => (
-    <StreamPanel lines={lines} onClear={clr(id)} onHighlight={onHighlight} onTrigger={onTrigger}
+    <StreamPanel streamId={id} lines={lines} onClear={onClearStream} onHighlight={onHighlight} onTrigger={onTrigger}
       onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety} showTimestamp={!!streamTimestamps[id]}
-      onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(id) : undefined} />
+      onToggleTimestamp={onToggleTimestamp} />
   )
   switch (tab.type) {
     case 'room':          return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
-    case 'thoughts':      return sp('thoughts',      streamLines.thoughts      ?? [])
-    case 'arrivals':      return sp('arrivals',      streamLines.arrivals      ?? [])
-    case 'conversation':  return sp('conversation',  streamLines.conversation  ?? [])
-    case 'deaths':        return sp('deaths',        streamLines.deaths        ?? [])
-    case 'spells':        return sp('spells',        streamLines.spells        ?? [])
+    case 'thoughts':      return sp('thoughts',      streamLines.thoughts      ?? EMPTY_ARRAY)
+    case 'arrivals':      return sp('arrivals',      streamLines.arrivals      ?? EMPTY_ARRAY)
+    case 'conversation':  return sp('conversation',  streamLines.conversation  ?? EMPTY_ARRAY)
+    case 'deaths':        return sp('deaths',        streamLines.deaths        ?? EMPTY_ARRAY)
+    case 'spells':        return sp('spells',        streamLines.spells        ?? EMPTY_ARRAY)
     case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} focus={expFocus} pinnedSkills={pinnedSkills} onFocusChange={onFocusChange} onTogglePin={onTogglePin} />
     case 'injuries':      return <InjuriesPanel parts={injuryState} />
-    case 'familiar':      return sp('familiar',      streamLines.familiar      ?? [])
-    case 'inv':           return sp('inv',           streamLines.inv           ?? [])
+    case 'familiar':      return sp('familiar',      streamLines.familiar      ?? EMPTY_ARRAY)
+    case 'inv':           return sp('inv',           streamLines.inv           ?? EMPTY_ARRAY)
     case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} />
-    case 'log':           return sp('log',           streamLines.log           ?? [])
+    case 'log':           return sp('log',           streamLines.log           ?? EMPTY_ARRAY)
     case 'lichScripts':   return <ScriptListPanel scripts={lichScripts} lastUpdated={lichLastUpdated} pending={lichPending} onPause={onLichPause} onResume={onLichResume} onKill={onLichKill} onRefresh={onLichRefresh} />
-    case 'combat':        return sp('combat',        streamLines.combat        ?? [])
+    case 'combat':        return sp('combat',        streamLines.combat        ?? EMPTY_ARRAY)
     case 'map':           return <MapPanel roomTitle={roomState.title} roomDesc={roomState.desc} roomExits={roomState.exits} roomId={roomState.roomId} lichMapVersion={lichMapVersion} onSendCommand={onSendCommand} mapAnimations={mapAnimations} />
     case 'custom':        return (
-      <StreamPanel lines={streamLines[tab.id] ?? []} onClear={clr(tab.id)}
+      <StreamPanel streamId={tab.id} lines={streamLines[tab.id] ?? EMPTY_ARRAY} onClear={onClearStream}
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety}
         showTimestamp={!!streamTimestamps[tab.id]}
-        onToggleTimestamp={onToggleTimestamp ? () => onToggleTimestamp(tab.id) : undefined}
+        onToggleTimestamp={onToggleTimestamp}
         emptyMessage={`Waiting for content on stream "${tab.label}"…`} />
     )
   }

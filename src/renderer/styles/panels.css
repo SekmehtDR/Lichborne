@@ -198,6 +198,13 @@
   box-sizing: border-box;
   overflow: hidden;
   font-size: var(--panel-font-size, var(--game-font-size));
+  /* B177: size container — the @container rules below drop the row's
+     lowest-priority columns as the panel narrows, so the SKILL NAME (the
+     1fr column, the only flexible one) never collapses to nothing while
+     the fixed-width tail survives. Breakpoints are in em so they scale
+     with the per-panel font (em in a container query resolves against the
+     container's own font-size). */
+  container-type: inline-size;
 }
 
 .exp-ctrl-bar {
@@ -226,6 +233,10 @@
   font-family: inherit;
   color: var(--text-secondary);
   text-align: left;
+  /* B177: clip instead of painting over the neighbouring picker — the
+     "BadgingFocus None" overlap in narrow panels. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .exp-picker-btn:hover { background: var(--bg-deep); }
@@ -309,6 +320,11 @@
 .exp-picker-value {
   flex: 1;
   color: var(--text-primary);
+  /* B177 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .exp-picker-caret {
@@ -355,6 +371,9 @@
 .exp-panel-body {
   flex: 1;
   overflow-y: auto;
+  /* B177: never a horizontal scrollbar — at widths below even the narrowest
+     responsive tier the row tail clips instead (names ellipsize already). */
+  overflow-x: hidden;
   padding: 6px 8px 0;
 }
 
@@ -416,7 +435,11 @@
 
 .exp-line {
   display: grid;
-  grid-template-columns: 16px 1fr 20px 5ch 4ch 14ch 7ch;
+  /* B177: minmax guarantees the skill name at least 8ch — pre-fix the name
+     was plain 1fr, the only column that could give, so a narrow panel showed
+     ranks/%/mindstate with the NAME clipped to zero (Rakkor). Columns:
+     pin · name · badge · ranks · pct · mindstate · (n/34). */
+  grid-template-columns: 16px minmax(8ch, 1fr) 20px 5ch 4ch 14ch 7ch;
   align-items: baseline;
   column-gap: 4px;
   min-width: 0;
@@ -476,6 +499,28 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;
+}
+
+/* B177 (Rakkor): responsive degradation for narrow exp panels. The row's
+   information priority is name > ranks > % > mindstate word > (n/34)
+   fraction — the progress bar always carries the mindstate visually, so the
+   text forms are the first to go. Queried against .exp-panel (container-type
+   above); em thresholds scale with the per-panel font. Tier 1 (~26em): drop
+   the (n/34) fraction, shrink the mindstate column (it ellipsizes), hide the
+   picker captions ("Badging"/"Focus"/"Sort") and let the right-side pickers
+   shrink. Tier 2 (~19em): drop the mindstate word too — name/ranks/% + bar
+   remain readable down to very thin strips. */
+@container (max-width: 26em) {
+  .exp-line { grid-template-columns: 16px minmax(8ch, 1fr) 20px 5ch 4ch 9ch; }
+  .exp-mindstate-frac { display: none; }
+  .exp-picker-label { display: none; }
+  .exp-focus-mode-picker,
+  .exp-sort-picker { flex-shrink: 1; min-width: 0; }
+}
+
+@container (max-width: 19em) {
+  .exp-line { grid-template-columns: 16px minmax(8ch, 1fr) 20px 5ch 4ch; }
+  .exp-mindstate { display: none; }
 }
 
 .exp-bar-track {

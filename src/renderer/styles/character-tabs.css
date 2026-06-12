@@ -9,8 +9,15 @@
   min-height: 32px;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* B178: `scrollbar-width: thin` REMOVED — modern Chromium implements the
+     standard property, and per spec setting it DISABLES all ::-webkit-scrollbar
+     custom styling, so the tab strip's overflow scrollbar rendered as the
+     native thin bar instead of the themed track/thumb (the "scrollbar that
+     does not follow CSS"). The slim height now comes from the webkit rule
+     below; track/thumb colors inherit the global themed scrollbar rules. */
 }
+
+.character-tabs::-webkit-scrollbar { height: 5px; }
 
 .character-tab {
   display: flex;

@@ -85,6 +85,7 @@ EXPBRIEF works either way — on or off, the experience panel handles both corre
 | `Ctrl+1` … `Ctrl+9` | Switch to character tab by slot — focuses the command bar |
 | `Ctrl+Tab` | Cycle to the next character tab — focuses the command bar |
 | `Ctrl+Shift+Enter` | Open Quick-Send (target another character without switching tabs) — pre-fills with whatever you'd typed in the active command bar |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom the whole window in / out / reset (numpad `+`/`-` work too) |
 
 Plain `Home`/`End` edit the command box (where your cursor almost always is during play). Hold `Ctrl` to scroll the story window instead.
 

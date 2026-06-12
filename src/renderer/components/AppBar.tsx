@@ -69,11 +69,16 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
       <CharacterTabBar onAdd={onAdd} onClose={onClose} onReconnect={onReconnect} reconnectingIds={reconnectingIds} />
 
       <div className="app-bar-actions">
-        <button className={`btn-panel-manager${st?.panelManager ? ' btn-panel-manager--active' : ''}`} onClick={() => dispatchSessionAction('toggle-panels')}>Panels</button>
-        <button className={`btn-map${st?.panelMap ? ' btn-map--active' : ''}`}                       onClick={() => dispatchSessionAction('toggle-maps')}>Maps</button>
-        <button className={`btn-automations${st?.panelAutomations ? ' btn-automations--active' : ''}`} onClick={() => dispatchSessionAction('toggle-automations')}>Automations</button>
-        <button className={`btn-lich-dash${st?.panelLich ? ' btn-lich-dash--active' : ''}`}           onClick={() => dispatchSessionAction('toggle-lich')}>Lich</button>
-        <button className={`btn-settings${st?.panelSettings ? ' btn-settings--active' : ''}`}          onClick={() => dispatchSessionAction('toggle-settings')}>Settings</button>
+        {/* B178: `app-bar-collapsible` — these five inline buttons hide under
+            the narrow media tier (app-bar.css) and their actions re-surface as
+            the `--overflow` items inside the ⋯ More menu below. Both sets are
+            ALWAYS rendered; CSS decides which is visible (no width-measurement
+            JS, same stance as the static More grouping). */}
+        <button className={`app-bar-collapsible btn-panel-manager${st?.panelManager ? ' btn-panel-manager--active' : ''}`} onClick={() => dispatchSessionAction('toggle-panels')}>Panels</button>
+        <button className={`app-bar-collapsible btn-map${st?.panelMap ? ' btn-map--active' : ''}`}                       onClick={() => dispatchSessionAction('toggle-maps')}>Maps</button>
+        <button className={`app-bar-collapsible btn-automations${st?.panelAutomations ? ' btn-automations--active' : ''}`} onClick={() => dispatchSessionAction('toggle-automations')}>Automations</button>
+        <button className={`app-bar-collapsible btn-lich-dash${st?.panelLich ? ' btn-lich-dash--active' : ''}`}           onClick={() => dispatchSessionAction('toggle-lich')}>Lich</button>
+        <button className={`app-bar-collapsible btn-settings${st?.panelSettings ? ' btn-settings--active' : ''}`}          onClick={() => dispatchSessionAction('toggle-settings')}>Settings</button>
 
         <div className="app-bar-more" ref={moreRef}>
           <button
@@ -84,6 +89,14 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
           >⋯</button>
           {moreOpen && (
             <div className="app-bar-more-menu">
+              {/* B178: the collapsed inline buttons, visible only when the
+                  narrow tier hides them from the bar (CSS-gated). */}
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelManager ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-panels'); setMoreOpen(false) }}>Panels</button>
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelMap ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-maps'); setMoreOpen(false) }}>Maps</button>
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelAutomations ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-automations'); setMoreOpen(false) }}>Automations</button>
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelLich ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-lich'); setMoreOpen(false) }}>Lich</button>
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelSettings ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-settings'); setMoreOpen(false) }}>Settings</button>
+              <div className="app-bar-more-sep app-bar-more-item--overflow" aria-hidden="true" />
               <button className={`app-bar-more-item${st?.panelDebug ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-debug'); setMoreOpen(false) }}>Debug</button>
               <button className={`app-bar-more-item${st?.panelLogs ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-logs'); setMoreOpen(false) }}>Logs</button>
               <button className={`app-bar-more-item${st?.panelContacts ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-contacts'); setMoreOpen(false) }}>Contacts</button>

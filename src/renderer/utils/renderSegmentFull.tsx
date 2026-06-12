@@ -4,9 +4,53 @@ import type { CompiledRule } from '../HighlightsContext'
 import type { HighlightStyle } from '../highlights'
 import { renderSegment } from './renderSegment'
 
-type MatchRange =
+export type MatchRange =
   | { start: number; end: number; kind: 'contact'; contact: Contact; template: ContactTemplate | null }
   | { start: number; end: number; kind: 'highlight'; compiled: CompiledRule }
+
+// B172: the contact + match-rule scan over a full line, extracted so callers
+// that render a MULTI-SEGMENT line (TextLineRow, RoomPanel sections) can run
+// it ONCE per line and hand the ranges to each segment's renderSegmentFull
+// call. Before this, renderSegmentFull re-ran every rule against the full
+// lineText once PER SEGMENT (a B115 side effect — matching is line-wide but
+// was invoked per segment), so a 4-segment line paid the whole ruleset 4×.
+// Returns ranges in LINE coordinates.
+export function computeLineMatchRanges(
+  lineText: string,
+  contacts: Contact[],
+  templates: ContactTemplate[],
+  nameRegex: RegExp | null,
+  matchRules: CompiledRule[],
+): MatchRange[] {
+  const ranges: MatchRange[] = []
+  if (!lineText) return ranges
+
+  if (nameRegex) {
+    nameRegex.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = nameRegex.exec(lineText)) !== null) {
+      if (m[0].length === 0) { nameRegex.lastIndex++; continue }
+      const contact = contacts.find(c => c.name.toLowerCase() === m![0].toLowerCase()) ?? null
+      if (contact) {
+        const template = templates.find(t => t.id === contact.templateId) ?? null
+        ranges.push({ start: m.index, end: m.index + m[0].length, kind: 'contact', contact, template })
+      }
+    }
+  }
+
+  const lineTextLower = lineText.toLowerCase()
+  for (const compiled of matchRules) {
+    if (compiled.fastLower !== null && !lineTextLower.includes(compiled.fastLower)) continue
+    compiled.regex.lastIndex = 0
+    let m: RegExpExecArray | null
+    while ((m = compiled.regex.exec(lineText)) !== null) {
+      if (m[0].length === 0) { compiled.regex.lastIndex++; continue }
+      ranges.push({ start: m.index, end: m.index + m[0].length, kind: 'highlight', compiled })
+    }
+  }
+
+  return ranges
+}
 
 export function renderSegmentFull(
   seg: TextSegment,
@@ -31,48 +75,32 @@ export function renderSegmentFull(
   // per-segment behavior.
   lineText?: string,
   segOffset?: number,
+  // B172: ranges precomputed ONCE for the whole line via
+  // computeLineMatchRanges (line coordinates). When provided (with
+  // lineText/segOffset), the per-segment scan is skipped entirely — each
+  // segment just intersects the shared ranges with its own window.
+  precomputedLineRanges?: MatchRange[],
 ): React.ReactNode {
   const text = seg.text
   if (!text) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
   if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
 
-  const ranges: MatchRange[] = []
   const lineMode = lineText !== undefined && segOffset !== undefined
   const matchSource = lineMode ? lineText! : text
   const offset = lineMode ? segOffset! : 0
-  // Push a range only if its line-coords [s,e] intersect this segment's
-  // window [offset, offset + text.length]. Translate to segment-local
-  // coords on the way in. End-exclusive on both sides.
-  const pushIntersection = (lineStart: number, lineEnd: number, kind: 'contact' | 'highlight', extras: object) => {
-    const segStart = Math.max(0, lineStart - offset)
-    const segEnd = Math.min(text.length, lineEnd - offset)
-    if (segEnd > segStart) {
-      ranges.push({ start: segStart, end: segEnd, kind, ...extras } as MatchRange)
-    }
-  }
 
-  if (nameRegex) {
-    nameRegex.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = nameRegex.exec(matchSource)) !== null) {
-      if (m[0].length === 0) { nameRegex.lastIndex++; continue }
-      const contact = contacts.find(c => c.name.toLowerCase() === m![0].toLowerCase()) ?? null
-      if (contact) {
-        const template = templates.find(t => t.id === contact.templateId) ?? null
-        pushIntersection(m.index, m.index + m[0].length, 'contact', { contact, template })
-      }
-    }
-  }
+  // Scan (or reuse) line-coordinate ranges, then keep only those that
+  // intersect this segment's window [offset, offset + text.length],
+  // translated to segment-local coords. End-exclusive on both sides.
+  const lineRanges = (lineMode && precomputedLineRanges)
+    ? precomputedLineRanges
+    : computeLineMatchRanges(matchSource, contacts, templates, nameRegex, matchRules)
 
-  const matchSourceLower = matchSource.toLowerCase()
-  for (const compiled of matchRules) {
-    if (compiled.fastLower !== null && !matchSourceLower.includes(compiled.fastLower)) continue
-    compiled.regex.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = compiled.regex.exec(matchSource)) !== null) {
-      if (m[0].length === 0) { compiled.regex.lastIndex++; continue }
-      pushIntersection(m.index, m.index + m[0].length, 'highlight', { compiled })
-    }
+  const ranges: MatchRange[] = []
+  for (const r of lineRanges) {
+    const segStart = Math.max(0, r.start - offset)
+    const segEnd = Math.min(text.length, r.end - offset)
+    if (segEnd > segStart) ranges.push({ ...r, start: segStart, end: segEnd })
   }
 
   if (ranges.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)

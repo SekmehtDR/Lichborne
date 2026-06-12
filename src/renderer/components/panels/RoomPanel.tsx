@@ -1,7 +1,8 @@
+import { memo } from 'react'
 import type { RoomState, TextSegment } from '../../../shared/types'
 import { useContacts } from '../../ContactsContext'
 import { useHighlights } from '../../HighlightsContext'
-import { renderSegmentFull, getLineHighlightStyle } from '../../utils/renderSegmentFull'
+import { renderSegmentFull, getLineHighlightStyle, computeLineMatchRanges } from '../../utils/renderSegmentFull'
 
 interface Props {
   room: RoomState
@@ -22,7 +23,11 @@ const DIR_LABELS: Record<string, string> = {
   out: 'Out',
 }
 
-export default function RoomPanel({ room, onSendCommand }: Props) {
+// B172: memoized — RoomPanel re-runs its highlight/contact passes over every
+// section on each render, so it should render only when the room (or, via
+// context, the rules/contacts) actually changes — not on every GameWindow
+// render. Both consumed context values are useMemo'd in GameWindow.
+export default memo(function RoomPanel({ room, onSendCommand }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   // v0.8.8 (Rakkor): include lineRules so user line-mode highlights paint
   // the structured sections the same way they paint the main scroll's
@@ -59,6 +64,9 @@ export default function RoomPanel({ room, onSendCommand }: Props) {
   // container div.
   function renderSegments(segments: TextSegment[], keyBase: number) {
     const lineText = segments.map(s => s.text).join('')
+    // B172: scan the section's joined text ONCE and share the ranges across
+    // its segments (renderSegmentFull used to re-scan per segment).
+    const lineRanges = computeLineMatchRanges(lineText, contacts, templates, nameRegex, matchRules)
     let cursor = 0
     const nodes = segments.map((seg, i) => {
       const offset = cursor
@@ -69,7 +77,7 @@ export default function RoomPanel({ room, onSendCommand }: Props) {
         contacts, templates, nameRegex, matchRules,
         onContactClick, onSendCommand,
         false, false,
-        lineText, offset,
+        lineText, offset, lineRanges,
       )
     })
     const lineStyle = getLineHighlightStyle(segments, lineRules)
@@ -147,4 +155,4 @@ export default function RoomPanel({ room, onSendCommand }: Props) {
       })()}
     </div>
   )
-}
+})

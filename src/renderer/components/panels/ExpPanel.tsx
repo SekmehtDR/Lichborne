@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type SkillBadge } from '../../focusTemplates'
 import { scopedKey } from '../../characterScope'
 import { useCharacter } from '../../CharacterContext'
@@ -403,7 +403,11 @@ function sortEntries(
   })
 }
 
-export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin }: Props) {
+// B172: memoized — re-renders only when its own props (or consumed context
+// values, which GameWindow now useMemo's) change, not on every GameWindow
+// render. Parent must pass referentially stable callbacks/Sets (see
+// PanelFrame's renderPanel + the module-level fallback constants there).
+export default memo(function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin }: Props) {
   const character = useCharacter()
   const saveProfile = useProfileSaver()
   const [sortMode, setSortMode] = useState<SortMode>(() => {
@@ -489,4 +493,4 @@ export default function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, on
       <ExpFooter skills={skills} />
     </div>
   )
-}
+})

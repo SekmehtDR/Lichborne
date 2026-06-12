@@ -43,7 +43,20 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
   useEffect(() => {
     const el = layerRef.current
     if (!el) return
-    const measure = () => setSize({ w: el.clientWidth, h: el.clientHeight })
+    // B174: IGNORE 0×0 measurements — keep the last real size. An inactive
+    // character tab is display:none, so this layer measures 0×0 (pitfall
+    // #24); letting that through to `size` made the render gate below
+    // UNMOUNT every floating window on every character-tab switch — the
+    // hidden character's map / streams / main text were torn down and fully
+    // re-initialized (Lich DB + Genie maps reloading, text re-rendering) on
+    // every switch back. While hidden the whole subtree is invisible anyway
+    // (ancestor display:none), so stale px geometry is harmless; on re-show
+    // the observer fires with the real size before the user can interact.
+    const measure = () => {
+      const w = el.clientWidth
+      const h = el.clientHeight
+      if (w > 0 && h > 0) setSize({ w, h })
+    }
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     measure()
@@ -79,6 +92,9 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
 
   return (
     <div className="window-layer" ref={layerRef}>
+      {/* B174: this gate now means "never measured yet" (first mount only) —
+          `size` can no longer return to 0×0, so windows are NEVER unmounted
+          by a hidden (display:none) tab. Don't re-introduce a 0×0 bail. */}
       {size.w > 0 && size.h > 0 && windows.map(win => (
         <FloatingWindow
           key={win.id}

@@ -69,6 +69,32 @@ function isExpReadout(segments: TextSegment[]): boolean {
 }
 
 const MAX_LINES       = 2000
+// B171: scrollback trims use HYSTERESIS — the buffer grows past MAX_LINES and
+// is cut back to MAX_LINES in ONE slice every TRIM_CHUNK lines, instead of a
+// per-batch head-trim that held length exactly AT the cap. The per-batch trim
+// caused the long-unsolved "text hops at the bottom after a while" bug, via
+// two coupled mechanisms that only engage once the buffer is full:
+//   (1) react-virtuoso keys its row-size cache by INDEX (computeItemKey only
+//       stabilizes React keys); an uncompensated head-trim shifts every row's
+//       index each batch, so the size/offset tree goes stale and painted
+//       content visibly jumps BACKWARD (measured up to ~8 lines in the repro
+//       harness). Virtuoso's own fix (firstItemIndex) is NOT usable here —
+//       it issues a compensating scrollBy that races stickToBottom (tested:
+//       more off-bottom frames, pitfall #81).
+//   (2) with length pinned exactly at the cap, trim-N + append-N leaves the
+//       total height ~unchanged, so `totalListHeightChanged` — the ONLY
+//       per-batch stickToBottom trigger — often never fires (measured ~2.0
+//       calls/batch pre-cap collapsing to 0.7 at-cap): no correction, no
+//       suppress window, and late Virtuoso re-measures could then trip the
+//       40px deadband and un-pin ("stuck-to-bottom doesn't last").
+// Chunked trimming fixes both: between trims the count GROWS every batch (the
+// height callback keeps firing), and the rare big cut changes total height so
+// much the callback ALWAYS fires for it — the existing sync-write + settle
+// loop absorb it in the same frame (0 visible hops in the harness). It also
+// kills the at-cap per-batch index churn across all mounted rows (the "scroll
+// not smooth anymore" half of the report). DOM bound rises 2000 → ~2400 rows
+// peak (B152's "cap bounds total DOM" still holds).
+const TRIM_CHUNK      = 400
 const MAX_STREAM_LINES = 500
 // v0.8.2: bumped from 500 → 2000. Debug collection is gated on the panel
 // being open (showDebugRef), so the cost is zero unless the user is
@@ -76,6 +102,17 @@ const MAX_STREAM_LINES = 500
 // fires or XML quirks without scrolling out of view mid-event.
 const MAX_DEBUG_EVENTS = 2000
 const MAX_RAW_XML_LINES = 2000
+
+// B171: the ONE way to append to the main-window scrollback. Hysteresis trim
+// (see the TRIM_CHUNK comment above): grow freely until MAX_LINES + TRIM_CHUNK,
+// then cut back to MAX_LINES in a single slice. Returns `prev` unchanged when
+// there's nothing to add and no trim due (identity-stable — no re-render).
+// Do NOT replace any call site with a per-batch `prev.slice(-MAX_LINES)` —
+// that re-introduces the at-cap scroll hop this exists to fix.
+function appendTrimmed(prev: TextLine[], added: TextLine[]): TextLine[] {
+  const next = added.length > 0 ? [...prev, ...added] : prev
+  return next.length >= MAX_LINES + TRIM_CHUNK ? next.slice(next.length - MAX_LINES) : next
+}
 
 const ROOM_STREAMS = new Set([
   'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
@@ -319,16 +356,27 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [fireLog, setFireLog]         = useState<FireLogEntry[]>([])
   const clearFireLog = () => { fireLogBufRef.current = []; setFireLog([]) }
   const clearLines       = () => { pinnedRef.current = true; setLines([]) }
-  const clearStream      = (id: string) => setStreamLines(prev => ({ ...prev, [id]: [] }))
+  // B172: stable identities — these feed the memoized StreamPanel (via
+  // PanelFrame's renderPanel pass-through), so a fresh closure per render
+  // would defeat the panel memo.
+  const clearStream      = useCallback((id: string) => {
+    setStreamLines(prev => ({ ...prev, [id]: [] }))
+    // B173: clearing a stream's content also clears its unread dot — the
+    // content the dot pointed at is gone (matches the XML clear-stream path).
+    if (unreadRef.current.has(id)) {
+      unreadRef.current.delete(id)
+      setUnreadStreams(new Set(unreadRef.current))
+    }
+  }, [])
   const [streamTimestamps, setStreamTimestamps] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem(scopedKey(session.character, 'streamTimestamps')) ?? '{}') } catch { return {} }
   })
-  const toggleStreamTimestamp = (id: string) => setStreamTimestamps(prev => {
+  const toggleStreamTimestamp = useCallback((id: string) => setStreamTimestamps(prev => {
     const next = { ...prev, [id]: !prev[id] }
     localStorage.setItem(scopedKey(session.character, 'streamTimestamps'), JSON.stringify(next))
     saveProfile()
     return next
-  })
+  }), [session.character, saveProfile])
   const [mainCtxMenu, setMainCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
   const [vitals, setVitals] = useState<Record<string, { current: number; max: number }>>({})
@@ -828,10 +876,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (!dropped) return
     const now = new Date()
     const ts = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-    setLines(prev => [...prev.slice(-MAX_LINES),
+    setLines(prev => appendTrimmed(prev, [
       { id: lineId++, segments: [{ text: '' }], timestamp: Date.now() },
       { id: lineId++, segments: [{ text: `[${ts}] Connection closed.`, preset: 'internal-system' }], timestamp: Date.now() },
-    ])
+    ]))
   }, [dropped])
 
   // True whenever any modal is open — prevents macros firing into editor fields
@@ -1463,7 +1511,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             if (evt.stream === 'room-creatures') roomUpdates.creatures = []
             if (evt.stream === 'room-extra')     roomUpdates.extra     = []
             if (evt.stream === 'room-exits')     roomUpdates.exits     = []
-            if (!ROOM_STREAMS.has(evt.stream)) clearedStreams.add(evt.stream)
+            if (!ROOM_STREAMS.has(evt.stream)) {
+              clearedStreams.add(evt.stream)
+              // B175: a clear also drops lines accumulated EARLIER IN THIS
+              // BATCH for the stream. clearedStreams + newStream are batch-
+              // wide aggregates, so without this, a batch carrying multiple
+              // clear/write CYCLES (a pitfall-#60 replay delivers the whole
+              // history buffer as ONE batch; a clear+rewrite status stream
+              // like moonwatch has many cycles in it) coalesced to "clear
+              // once, append every cycle's lines" — the decoupled window
+              // showed N stale moonwatch lines until the next live refresh.
+              // Dropping the pre-clear lines preserves the interleaved
+              // semantics: only lines after the LAST clear survive the batch.
+              if (newStream[evt.stream]) newStream[evt.stream] = []
+            }
             break
           case 'injury-update':
             setInjuryState(evt.parts)
@@ -1543,8 +1604,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           // is short enough that scrollbar-drag unpinning stays responsive
           // between batches (B76).
           suppressUntilRef.current = Date.now() + 200
-          // Pinned: trim to MAX_LINES so auto-scroll follows the bottom.
-          setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+          // Pinned: hysteresis trim (B171 — never per-batch slice to the cap).
+          setLines(prev => appendTrimmed(prev, newMain))
         } else {
           // Unpinned: append without trimming so content at the top stays visible.
           newLineCountRef.current += newMain.length
@@ -1554,7 +1615,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             suppressUntilRef.current = Date.now() + 200
             newLineCountRef.current = 0
             setNewLineCount(0)
-            setLines(prev => [...prev.slice(-(MAX_LINES - newMain.length)), ...newMain])
+            setLines(prev => appendTrimmed(prev, newMain))
           } else {
             setNewLineCount(newLineCountRef.current)
             setLines(prev => [...prev, ...newMain])
@@ -1572,9 +1633,24 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           }
           return next
         })
-        // Mark streams with new content as unread if their tab is not currently active
+        // Mark streams with new content as unread if their tab is not currently active.
+        // B173 (Sekmeht): EXCEPT streams that were CLEARED in this same batch —
+        // the clear+rewrite pattern is the standard Lich "status window" idiom
+        // (moonwatch.lic: <clearStream/> + <pushStream/> back-to-back on every
+        // refresh), and marking those unread lit the dot permanently. A clear
+        // followed by content in one batch is a REFRESH, not new messages;
+        // genuine message streams (thoughts, deaths, …) never clear themselves.
+        // A clear also DROPS an existing dot (the content it pointed at is
+        // gone), which self-heals the rare split-batch refresh on its next cycle.
         let unreadDirty = false
+        for (const streamId of clearedStreams) {
+          if (unreadRef.current.has(streamId)) {
+            unreadRef.current.delete(streamId)
+            unreadDirty = true
+          }
+        }
         for (const streamId of Object.keys(newStream)) {
+          if (clearedStreams.has(streamId)) continue
           if (!activeIdsRef.current.has(streamId) && !unreadRef.current.has(streamId)) {
             unreadRef.current.add(streamId)
             unreadDirty = true
@@ -1837,7 +1913,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     pinnedRef.current = true
     newLineCountRef.current = 0
     setNewLineCount(0)
-    setLines(prev => prev.length > MAX_LINES ? prev.slice(-MAX_LINES) : prev)
+    setLines(prev => appendTrimmed(prev, []))
     // reindex=true (scrollToIndex({index:'LAST'})) instead of a `lines.length`
     // reference: the keydown listener captures this function once at mount
     // (deps []), when `lines` is still empty — a `lines.length` here is
@@ -2249,7 +2325,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   function sendCommandSequence(commands: string[], delayMs: number) {
     const echoCmd = (cmd: string) => {
-      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
+      setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
       window.api.sendCommand(session.sessionId,cmd)
       logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${cmd}` }])
     }
@@ -2296,7 +2372,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         }
       }
     } else {
-      setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${text}`, preset: 'command-echo' }], timestamp: Date.now() }])
+      setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${text}`, preset: 'command-echo' }], timestamp: Date.now() }]))
       window.api.sendCommand(session.sessionId, text)
       logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${text}` }])
     }
@@ -2361,8 +2437,30 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // user always sees what was sent — important for map walks where a
   // sequence of moves fires without any other UI feedback.
   const sendCommand = useCallback((cmd: string) => {
-    setLines(prev => [...prev.slice(-MAX_LINES), { id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
+    setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
     window.api.sendCommand(session.sessionId, cmd)
+  }, [])
+
+  // B172: stable identities (see clearStream note) — these feed the memoized
+  // StreamPanel through sharedFrameProps. Defined here (above their old
+  // declaration site) because sharedFrameProps captures them at render time.
+  const openHighlightEditor = useCallback((rule: HighlightRule, testText?: string) => {
+    setHighlightPrefill(rule)
+    setHighlightTestText(testText)
+    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state from prior open
+    setAutomationsTab('highlights')
+    setShowAutomations(true)
+  }, [])
+
+  const openTriggerEditor = useCallback((pattern: string) => {
+    setHighlightPrefill(undefined)
+    setTriggerPrefillPattern(pattern)
+    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state — otherwise
+                                // the TriggersPanel's openRuleId effect fires after
+                                // the prefillPattern effect and overwrites the new
+                                // trigger draft with the old goto target.
+    setAutomationsTab('triggers')
+    setShowAutomations(true)
   }, [])
 
   const sharedFrameProps = {
@@ -2608,13 +2706,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     return el?.closest('.text-line')?.textContent?.trim() || null
   }
 
-  function openHighlightEditor(rule: HighlightRule, testText?: string) {
-    setHighlightPrefill(rule)
-    setHighlightTestText(testText)
-    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state from prior open
-    setAutomationsTab('highlights')
-    setShowAutomations(true)
-  }
+  // openHighlightEditor / openTriggerEditor live ABOVE as useCallbacks (B172:
+  // they feed the memoized StreamPanel via sharedFrameProps, so they need
+  // stable identities — and sharedFrameProps is built before this point).
 
   function openMuteEditor(rule: MuteRule) {
     setHighlightPrefill(undefined)
@@ -2629,17 +2723,6 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     setTriggerPrefillPattern(undefined)
     setSubstitutePrefill(rule)
     setAutomationsTab('substitutes')
-    setShowAutomations(true)
-  }
-
-  function openTriggerEditor(pattern: string) {
-    setHighlightPrefill(undefined)
-    setTriggerPrefillPattern(pattern)
-    setTriggerOpenId(undefined) // v0.8.2: clear stale Fires-GOTO state — otherwise
-                                // the TriggersPanel's openRuleId effect fires after
-                                // the prefillPattern effect and overwrites the new
-                                // trigger draft with the old goto target.
-    setAutomationsTab('triggers')
     setShowAutomations(true)
   }
 
@@ -2846,9 +2929,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     </form>
   )
 
+  // B172: memoized context values. Inline object literals here minted a NEW
+  // context value identity on every GameWindow render, which re-rendered
+  // every useHighlights/useContacts consumer (StreamPanel, RoomPanel, …) on
+  // every batch regardless of their own memo()s. All fields are stable
+  // state/useMemo/useCallback identities.
+  const highlightsCtxValue = useMemo(
+    () => ({ rules: highlights, matchRules, lineRules }),
+    [highlights, matchRules, lineRules])
+  const contactsCtxValue = useMemo(
+    () => ({ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }),
+    [contacts, activeContactTemplates, nameRegex, handleContactClick])
+
   return (
-    <HighlightsContext.Provider value={{ rules: highlights, matchRules, lineRules }}>
-    <ContactsContext.Provider value={{ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }}>
+    <HighlightsContext.Provider value={highlightsCtxValue}>
+    <ContactsContext.Provider value={contactsCtxValue}>
     <div ref={gameLayoutRef} className={`game-layout${layoutMode === 'free' ? ' game-layout--free' : ''}`}>
       {/* The per-session toolbar row was folded into the app-level app-bar
           (AppBar.tsx) in the top-chrome redesign (Phase 2c) — its buttons now
