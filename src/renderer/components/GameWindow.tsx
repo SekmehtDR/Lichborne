@@ -2661,6 +2661,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         return (
           <PanelFrame
             {...sharedFrameProps}
+            // F46: tab drag-reorder follows the layout lock — Lock freezes
+            // window geometry, and tab order is part of the layout.
+            reorderTabs={!freeLayoutLocked}
             tabs={tabs}
             activeId={win.activeId && tabs.some(t => t.id === win.activeId) ? win.activeId : (tabs[0]?.id ?? '')}
             onTabsChange={t => updateWindow(win.id, {
@@ -2972,7 +2975,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             <>
               <div className="main-top-zone" style={{ height: mainTopHeight, flexShrink: 0 }}>
                 {mainTopTabs.length > 0
-                  ? <PanelFrame {...sharedFrameProps} tabs={mainTopTabs} activeId={mainTopActiveId}
+                  ? <PanelFrame {...sharedFrameProps} reorderTabs tabs={mainTopTabs} activeId={mainTopActiveId}
                       onTabsChange={setMainTopTabs} onActiveChange={handleMainTopActive} />
                   : <EmptyPanelSlot label="Main-Top" onOpenManager={() => setShowPanelManager(true)} />}
               </div>
@@ -3057,7 +3060,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                       )}
                       <div className={zoneClass} data-zone={z.key} style={zoneStyle}>
                         {z.tabs.length > 0
-                          ? <PanelFrame {...sharedFrameProps} tabs={z.tabs} activeId={z.activeId}
+                          ? <PanelFrame {...sharedFrameProps} reorderTabs tabs={z.tabs} activeId={z.activeId}
                               onTabsChange={z.setTabs} onActiveChange={z.onActive} />
                           : <EmptyPanelSlot label={z.label} onOpenManager={() => setShowPanelManager(true)} />}
                       </div>

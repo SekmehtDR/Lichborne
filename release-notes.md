@@ -1,3 +1,15 @@
+## What's new in v0.13.5
+
+### Reorder your stream tabs by dragging
+
+- **Drag a stream tab along its tab bar to reorder it.** The other tabs slide out of the way as you drag, and the dragged tab's slot is outlined so you can see exactly where it will land — release to drop it there. Works on every panel's tab bar in both layouts; in Windowed Panels a **locked** layout keeps tab order fixed too (locking means nothing moves by accident). The Panel Manager's reorder buttons still work if you prefer clicking. *(Requested by Sekmeht.)*
+
+### Small fix
+
+- **The ⋯ More menu no longer hides behind the game window.** A side effect of v0.13.4's narrow-window work could leave the More dropdown rendering as a tiny sliver behind the game pane — it now floats above the game content properly. *(Thanks to Sekmeht.)*
+
+---
+
 ## What's new in v0.13.4
 
 ### The scroll hop, finally caught
@@ -23,19 +35,3 @@
 ### Small fixes
 
 - **Ctrl + + zooms in now.** The zoom-in shortcut only matched the literal plus key (which needs Shift on most keyboards) — `Ctrl` with the `=`/`+` key and `Ctrl` with numpad `+`/`-` all work now, the same way browsers do it. *(Thanks to Binu.)*
-
----
-
-## What's new in v0.13.3
-
-### The hand-bar mystery, solved
-
-- **Found it: held items vanishing from the hand bar was Lich quietly eating the update.** Lich ships with a default filter that strips inventory-window data for front-ends that don't ask for it — and its pattern is greedy enough to also swallow the *hand update* when you take an item out of a container (which is why it hit random items, favored the right hand, and even survived restarts for players with the "display inventory windows" game flag turned on). Wrayth sidesteps this by sending a specific flag at startup; **Lichborne now sends the same flag**, so the filter stands down and your hand updates arrive intact. The flag never reaches the game itself, changes nothing about your account, and applies automatically — nothing to configure. The `glance` re-sync from v0.13.2 stays in place as a safety net for the few cases where the game genuinely doesn't send a hand update (spell-summoned items, for example). *(Huge thanks to JadedSoul — her screenshots cracked the case.)*
-
-### Macros that build on each other
-
-- **Macro-within-macro composition, the Wrayth way.** A "type and wait" macro (one with an `@` cursor marker) now **inserts at your cursor** when you're already composing a command — so you can fire `get @ from my backpack`, leave the cursor in the gap, then fire a second macro like `second ` and end up with `get second from my backpack`, exactly like Wrayth. Firing a template macro with an empty command bar still starts fresh, as before. *(Thanks to JadedSoul.)*
-
-### Profile Transfer keeps your session intact
-
-- **Importing settings to a logged-in character no longer resets the session view.** Applying a Profile Transfer to a character who's currently connected reloads that character's window to pick up the new settings — but it used to come back with blank scrollback and default status bars, and a held item could show as "Empty" until it changed hands. Now the reload restores everything: your scrollback, vitals, room, spell, roundtime — and your hands. *(Thanks to JadedSoul for the report and the detective work.)*

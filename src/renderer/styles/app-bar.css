@@ -18,6 +18,18 @@
      container's own font — so the collapse points track the user's font
      setting instead of firing too late at large fonts. */
   container-type: inline-size;
+  /* B179: container-type applies LAYOUT CONTAINMENT, which makes the bar its
+     own STACKING CONTEXT — the More ⋯ dropdown's z-index became internal to
+     the bar, and the game area below painted over it (the "tiny stub" menu).
+     Lift the bar's whole context above the content plane: game content and
+     the Windowed-Panels layer sit at z ≤ 60, overlays/modals start at 100 —
+     70 sits cleanly between. (Portaling the menu instead would break the
+     @container gating of the --overflow items: a portaled menu is no longer
+     a descendant of the bar.) Don't remove either property without the other
+     in mind. z-index works on flex items without `position`, but `relative`
+     makes the intent explicit. */
+  position: relative;
+  z-index: 70;
 }
 
 /* The tabs fill the middle and scroll horizontally when crowded. The app-bar

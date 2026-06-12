@@ -81,6 +81,13 @@
 
 ---
 
+**v0.13.5 — More-menu stacking-context fix + drag-to-reorder stream tabs ✅**
+
+- **B179 — the app-bar's More ⋯ menu rendered as a "tiny stub" behind the game content** (first build after B178; Sekmeht). Precise mechanism: `container-type: inline-size` (added for the B178 degradation tiers) applies layout containment, which forces `.app-bar` to become its own STACKING CONTEXT — the dropdown's `z-index: 9999` became internal, and the bar itself sat at `z: auto`, so the game pane painted over the menu. **Fix:** lift the bar's whole context — `position: relative; z-index: 70` (game content + WindowLayer ≤ 60, overlays/modals ≥ 100; verified against the full z-index inventory). Portaling the menu was REJECTED: the B178 `--overflow` items are gated by the bar's own `@container` query and a portal breaks descendance. General trap recorded: making an element a query container traps its absolute dropdowns — audit popovers (the tab ContextMenu is portaled = safe; the exp pickers are clipped by their panel either way).
+- **F46 — drag-to-reorder stream tabs** (Sekmeht). PanelFrame tabs are draggable behind a `reorderTabs` prop: HTML5 drag, LIVE reorder on sibling-midpoint crossing (with the vacancy adjustment + same-target bail so the strip doesn't jitter), committed through the SAME `onTabsChange` path add/close use — persistence came free in both modes (zone scopedKeys / window `tabs` → freeWindows → YAML). Windowed mode gates on `!freeLayoutLocked` (Lock freezes layout; tab order is layout — consistent with F44); static zones always allow (Panel Manager arrows remain). **Snappy-feedback polish:** neighbor tabs FLIP-slide (~120ms ease-out; a `useLayoutEffect` remembers per-tab left edges and animates mid-drag position changes only — add/close/tab-switch renders never animate; the dragged tab is excluded so its ghost snaps) and the ghost carries an accent dashed outline marking the landing slot. Scope: reorder WITHIN one strip; cross-window tab drag is a future feature. No profile-shape change.
+
+---
+
 **v0.13.4 — Scroll-hop root cause (line-cap hysteresis) + ruleset-scale performance + windowed tab-switch teardown + narrow-window support ✅**
 
 A heavy fix release driven by live tester sessions (Sekmeht, Binu, Morress, Rakkor) — eight B-numbers, three new pitfalls (#81–#83):

@@ -96,6 +96,16 @@
 .panel-tab-list::-webkit-scrollbar-track { background: var(--bg-sunken); }
 .panel-tab-list::-webkit-scrollbar-thumb { background: var(--bg-btn); border-radius: 2px; }
 
+/* F46: the tab being drag-reordered — ghosted in place with an accent dashed
+   outline marking the LANDING SLOT (the live reorder moves this ghost to
+   wherever release would put the tab; neighbors FLIP-slide around it — see
+   PanelFrame's tabLeftsRef effect). Theme-safe: var(--accent) + opacity. */
+.panel-tab--dragging {
+  opacity: 0.45;
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
 .panel-tab {
   display: flex;
   align-items: center;

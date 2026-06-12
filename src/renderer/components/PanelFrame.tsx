@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ContextMenu from './ContextMenu'
 import type { GameEvent, TextLine, RoomState, InjuryState, FireLogEntry } from '../../shared/types'
@@ -121,6 +121,14 @@ interface Props {
   // inherits the override via a CSS var on its wrapper.
   getPanelFontSize?:        (tabId: string) => number | undefined
   onAdjustPanelFontSize?:   (tabId: string, delta: number) => void
+  // F46: drag a tab along the strip to reorder it. The reordered array goes
+  // through the SAME onTabsChange path add/close use, so persistence is free
+  // in both layout modes (zone scopedKeys in Static Panels, the window's
+  // `tabs` in Windowed Panels). Windowed mode passes `!freeLayoutLocked`
+  // (Lock freezes layout, and tab order is layout); static zones pass true
+  // (no lock concept there — the Panel Manager's arrow buttons remain as the
+  // click alternative).
+  reorderTabs?: boolean
 }
 
 export default function PanelFrame({
@@ -136,8 +144,54 @@ export default function PanelFrame({
   lichScripts = [], lichLastUpdated = 0, lichPending = false,
   onLichPause, onLichResume, onLichKill, onLichRefresh,
   getPanelFontSize, onAdjustPanelFontSize,
+  reorderTabs = false,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
+  // F46: id of the tab currently being dragged (null when idle). Live
+  // reorder: crossing the midpoint of a sibling commits the new order via
+  // onTabsChange immediately, so the strip previews the result as you drag.
+  const [dragTabId, setDragTabId] = useState<string | null>(null)
+  const tabListRef = useRef<HTMLDivElement>(null)
+  // F46 polish: FLIP slide animation while dragging. The live reorder swaps
+  // DOM order instantly, which made the landing spot hard to track — so on
+  // each render we remember every tab's left edge, and when a tab's position
+  // CHANGES during a drag, we start it at its old offset (transform, no
+  // transition) and release it to slide into place. The dragged tab itself
+  // is excluded (the browser's native drag image follows the cursor; its
+  // in-strip ghost should snap so the accent outline marks the landing slot
+  // without lag). Animation is gated on an active drag so add/close/tab-
+  // switch renders never animate.
+  const tabLeftsRef = useRef<Map<string, number>>(new Map())
+  useLayoutEffect(() => {
+    // Measure ONLY while a drag is live — getBoundingClientRect forces layout,
+    // and PanelFrame re-renders on every game batch (it isn't memoized), so an
+    // ungated version taxed the B172-cleaned hot path with ~N×zones forced
+    // reflows per batch for nothing. The dragstart render seeds the baseline
+    // positions (it commits BEFORE any reorder), so the first mid-drag swap
+    // animates correctly.
+    if (dragTabId === null) {
+      if (tabLeftsRef.current.size > 0) tabLeftsRef.current.clear()
+      return
+    }
+    const list = tabListRef.current
+    if (!list) return
+    const els = list.querySelectorAll<HTMLElement>('.panel-tab')
+    els.forEach(el => {
+      const id = el.dataset.tabId
+      if (!id) return
+      const newLeft = el.getBoundingClientRect().left
+      const oldLeft = tabLeftsRef.current.get(id)
+      if (id !== dragTabId && oldLeft !== undefined && Math.abs(oldLeft - newLeft) > 1) {
+        el.style.transition = 'none'
+        el.style.transform = `translateX(${oldLeft - newLeft}px)`
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 120ms ease-out'
+          el.style.transform = ''
+        })
+      }
+      tabLeftsRef.current.set(id, newLeft)
+    })
+  })
   const [menuPos, setMenuPos] = useState({ bottom: 0, right: 0 })
   const [tabCtxMenu, setTabCtxMenu] = useState<{ x: number; y: number; tabId: string } | null>(null)
   const [showNameInput, setShowNameInput] = useState(false)
@@ -200,6 +254,33 @@ export default function PanelFrame({
     onTabsChange(next)
   }
 
+  // F46: live reorder while dragging over a sibling tab. Standard sortable
+  // midpoint rule: inserting BEFORE the hovered tab when the pointer is in
+  // its left half, AFTER in its right half; the `from < target` adjustment
+  // accounts for the dragged tab vacating its slot, and the `target ===
+  // from` bail keeps the strip stable (no flip-flop jitter at the boundary).
+  function handleTabDragOver(e: React.DragEvent, overTabId: string) {
+    if (!dragTabId) return
+    // preventDefault even over the dragged tab itself (and the strip's empty
+    // space — see the list-level handler) so the cursor reads "move"
+    // throughout the gesture instead of flashing no-drop.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragTabId === overTabId) return
+    const from = tabs.findIndex(t => t.id === dragTabId)
+    const to = tabs.findIndex(t => t.id === overTabId)
+    if (from < 0 || to < 0) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const before = e.clientX < rect.left + rect.width / 2
+    let target = before ? to : to + 1
+    if (from < target) target--
+    if (target === from) return
+    const next = tabs.slice()
+    const [moved] = next.splice(from, 1)
+    next.splice(target, 0, moved)
+    onTabsChange(next)
+  }
+
   const availableToAdd = ALL_PANEL_TYPES.filter(type => !tabs.some(t => t.type === type))
   const availableDiscovered = discoveredStreams.filter(id => !tabs.some(t => t.id === id))
   const activeTab = tabs.find(t => t.id === activeId)
@@ -247,16 +328,35 @@ export default function PanelFrame({
       </div>
 
       <div className="panel-frame-tabs">
-        <div className="panel-tab-list">
+        <div
+          className="panel-tab-list"
+          ref={tabListRef}
+          onDragOver={reorderTabs ? (e => {
+            if (!dragTabId) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+          }) : undefined}
+          onDrop={reorderTabs ? (e => { e.preventDefault(); setDragTabId(null) }) : undefined}
+        >
           {tabs.map(tab => {
             const isActive = activeId === tab.id
             const isUnread = !isActive && (unreadIds?.has(tab.id) ?? false)
             return (
               <div
                 key={tab.id}
-                className={`panel-tab${isActive ? ' panel-tab--active' : ''}${isUnread ? ' panel-tab--unread' : ''}`}
+                data-tab-id={tab.id}
+                className={`panel-tab${isActive ? ' panel-tab--active' : ''}${isUnread ? ' panel-tab--unread' : ''}${dragTabId === tab.id ? ' panel-tab--dragging' : ''}`}
                 onClick={() => onActiveChange(tab.id)}
                 onContextMenu={e => { e.preventDefault(); setTabCtxMenu({ x: e.clientX, y: e.clientY, tabId: tab.id }) }}
+                draggable={reorderTabs}
+                onDragStart={reorderTabs ? (e => {
+                  setDragTabId(tab.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', tab.id)
+                }) : undefined}
+                onDragOver={reorderTabs ? (e => handleTabDragOver(e, tab.id)) : undefined}
+                onDrop={reorderTabs ? (e => { e.preventDefault(); setDragTabId(null) }) : undefined}
+                onDragEnd={reorderTabs ? (() => setDragTabId(null)) : undefined}
               >
                 <span>{tab.label}</span>
                 {isUnread && <span className="panel-tab-unread-dot" title="New content" />}
