@@ -734,17 +734,23 @@ export class StormFrontParser {
     }
 
     if (name === 'compass') {
-      // Only emit the exits event when the compass block actually has
-      // dirs. The game sometimes ships an empty `<compass></compass>`
-      // in non-room-change contexts (intermediate stream updates,
-      // certain Lich-injected refreshes) — emitting `exits: []` there
-      // would blank the FloatingCompass until the player typed `look`
-      // to force a fresh compass with dirs. Trade-off: a genuinely
-      // exitless room (sealed cell) keeps showing the previous room's
-      // exits until next `look`. Acceptable — that case is rare, the
-      // spurious blanking is not.
+      // The compass is AUTHORITATIVE for the current room's directional exits.
+      // A non-empty compass always emits. An EMPTY `<compass></compass>` emits
+      // `exits: []` (clearing) — but ONLY on the real MAIN stream, not inside a
+      // pushStream block. Binu (v0.14.1): a genuinely exitless room kept showing
+      // the PREVIOUS room's exits because empty compasses were suppressed
+      // wholesale; the transition clear-stream ('room-exits') only fires on a
+      // room/nav change, so an exit change WITHOUT a transition (or a no-exit
+      // room reached without re-firing the title gate) never cleared. The
+      // original suppression existed to dodge spurious empty compasses from
+      // "intermediate stream updates / Lich-injected refreshes" — those live
+      // inside a pushStream, so the main-stream gate (same one the `Name:`
+      // detection uses, line ~232) keeps them out while honouring the real
+      // game compass. A genuine exitless room now clears immediately.
       if (this.compassDirs.length > 0) {
         this.events.push({ type: 'exits', directions: this.compassDirs })
+      } else if (this.activeStream === 'main' && this.streamStack.length === 0) {
+        this.events.push({ type: 'exits', directions: [] })
       }
       this.compassDirs = []
       return

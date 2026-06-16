@@ -2079,9 +2079,15 @@ export default function GenieMapView({
 
   // Locator ring radius — 1.3125× NODE_SIZE (was 1.75×; trimmed 25%
   // per tester feedback that the ring read too large around the room).
-  // Shared by the solid ring AND the sonar-ping base so the pings
-  // emanate flush from the solid ring's edge.
+  // Sonar-ping base radius. The PINGS keep this larger radius — they're
+  // translucent and fade as they expand, so they read through any text they
+  // sweep over (Sekmeht). The SOLID ring below uses SOLID_R instead.
   const INDICATOR_R = NODE_SIZE * 1.3125
+  // The opaque solid ring sits TIGHT on the node square (Sekmeht): at
+  // INDICATOR_R its stroke band sprawled ~6px past the node and crossed
+  // neighbouring room labels with no way to read through. Node-fitting radius
+  // confines that opaque band to the node itself.
+  const SOLID_R = NODE_SIZE * 0.5
   const currentIndicator = currentNode && (
     <g
       pointerEvents="none"
@@ -2118,23 +2124,25 @@ export default function GenieMapView({
         vectorEffect="non-scaling-stroke"
       />
       {/* Solid ring — dark backdrop stroke for contrast against bright
-          rooms, bright green stroke on top. Always crisp, never moves. */}
+          rooms, bright green stroke on top. Always crisp, never moves. Sized
+          to SOLID_R (the node square) + thinner strokes so it reads as a tight
+          ring ON the node rather than an opaque band sprawling over labels. */}
       <circle
         cx={0}
         cy={0}
-        r={INDICATOR_R}
+        r={SOLID_R}
         fill="none"
         stroke="rgba(0,0,0,0.55)"
-        strokeWidth={5}
+        strokeWidth={3}
         vectorEffect="non-scaling-stroke"
       />
       <circle
         cx={0}
         cy={0}
-        r={INDICATOR_R}
+        r={SOLID_R}
         fill="none"
         stroke="var(--map-current-color, #4caf50)"
-        strokeWidth={3}
+        strokeWidth={2}
         vectorEffect="non-scaling-stroke"
         opacity={1}
       />

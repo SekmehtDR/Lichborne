@@ -311,9 +311,12 @@ export default function MapImageView({
             // multi-tile room).
             const cx = (x1 + x2) / 2
             const cy = (y1 + y2) / 2
-            // Padding (image-coord units) so the ring sits just outside
-            // the rect rather than tracing its edge.
-            const ringR = Math.max(w, h) / 2 + 3
+            // The translucent PINGS sweep outward from just outside the rect —
+            // they fade, so they read through text. The opaque SOLID ring sits
+            // INSIDE the room rect (Sekmeht) so its band never sprawls over a
+            // neighbouring room's label with no way to read through it.
+            const ringR  = Math.max(w, h) / 2 + 3   // ping base
+            const solidR = Math.min(w, h) / 2        // solid ring — fits inside the rect
             return (
               <>
                 <circle className="genie-here-ping" cx={cx} cy={cy} r={ringR}
@@ -322,12 +325,12 @@ export default function MapImageView({
                 <circle className="genie-here-ping genie-here-ping--delayed" cx={cx} cy={cy} r={ringR}
                         fill="none" stroke="var(--lich-here-color, #00ff80)"
                         strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
-                <circle cx={cx} cy={cy} r={ringR}
+                <circle cx={cx} cy={cy} r={solidR}
                         fill="none" stroke="var(--lich-here-backdrop, rgba(0,0,0,0.55))"
-                        strokeWidth={5} vectorEffect="non-scaling-stroke" />
-                <circle cx={cx} cy={cy} r={ringR}
-                        fill="none" stroke="var(--lich-here-color, #00ff80)"
                         strokeWidth={3} vectorEffect="non-scaling-stroke" />
+                <circle cx={cx} cy={cy} r={solidR}
+                        fill="none" stroke="var(--lich-here-color, #00ff80)"
+                        strokeWidth={2} vectorEffect="non-scaling-stroke" />
                 {/* v0.8.2: bullseye centre dot — pins the exact room when
                     multiple rooms sit inside the ring radius (dense areas
                     like the Crossing market). Dark backdrop + bright accent

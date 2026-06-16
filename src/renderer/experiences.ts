@@ -59,10 +59,17 @@ export interface ExperienceProps {
   sceneCast: SceneCast
   speech: SceneSpeechItem[]
   moves: SceneMoveItem[]
+  // The player's own indicator states (hidden/invisible/bleeding/dead/… —
+  // lowercase ids, pitfall #15; the same state the Icon Bar renders) so the
+  // self figure can wear them.
+  indicators: Record<string, boolean>
   contacts: Contact[]
   contactTemplates: ContactTemplate[]
   settings: AppSettings
   isActive: boolean
+  // Open the contact CARD (the same ContactPopover in-text name clicks use)
+  // at the given screen position — contact figures in a scene are clickable.
+  onOpenContact?: (contactId: string, x: number, y: number) => void
 }
 
 export interface ExperienceDef {

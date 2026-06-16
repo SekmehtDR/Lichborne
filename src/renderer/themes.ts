@@ -251,7 +251,10 @@ export const darkBase: ThemeVars = {
   // --exp-* (taken by the experience-POINTS panel, e.g. --exp-bar-locked
   // above). Avatar fills are DATA colors (contact template / name-hash),
   // not theme vars.
-  '--experience-scene-bg':    'var(--bg-base)',
+  // --bg-app, NOT --bg-base: floating windows (.fl-window) sit on --bg-app,
+  // and the Tableau must read as the same surface family as its sibling
+  // panel windows (B186 — it stood out darker on the default theme).
+  '--experience-scene-bg':    'var(--bg-app)',
   '--experience-scene-text':  'var(--text-secondary)',
   '--experience-scene-muted': 'var(--text-dim)',
   '--experience-chip-border': 'var(--border)',

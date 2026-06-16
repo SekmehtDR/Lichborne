@@ -495,7 +495,11 @@
 
 .exp-mindstate-frac {
   font-size: 0.85em;
-  color: var(--text-dim);
+  /* The "(n/34)" fraction — wired to the Theme Editor's "Rate" control
+     (--exp-rate-color, which itself defaults to --text-dim, so no visual
+     change until a theme sets it). Before this it hardcoded --text-dim and
+     the editor's Rate swatch did nothing (Morress). */
+  color: var(--exp-rate-color);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;
@@ -525,7 +529,11 @@
 
 .exp-bar-track {
   height: 3px;
-  background: color-mix(in srgb, var(--border-faint) 80%, transparent);
+  /* The Theme Editor's "Bar background" control. Each theme already ships a
+     designed --exp-bar-bg (dark themes a near-black, light themes near-white),
+     so the track now follows it AND the control is live; before this the track
+     hardcoded --border-faint and the swatch did nothing. */
+  background: var(--exp-bar-bg);
   border-radius: 2px;
   overflow: hidden;
   margin: 2px 0 1px;
@@ -542,8 +550,10 @@
 .exp-bar-fill--high   { background: var(--exp-bar-high); }
 .exp-bar-fill--locked { background: var(--exp-bar-locked); }
 
-.exp-row--locked .exp-skill     { color: var(--exp-locked-skill); }
-.exp-row--locked .exp-mindstate { color: var(--exp-locked-mind); }
+.exp-row--locked .exp-skill        { color: var(--exp-locked-skill); }
+.exp-row--locked .exp-mindstate    { color: var(--exp-locked-mind); }
+/* Wires the editor's "Mind-locked rate" control (was orphaned). */
+.exp-row--locked .exp-mindstate-frac { color: var(--exp-locked-rate); }
 
 .exp-row--rank-up .exp-skill,
 .exp-row--rank-up .exp-rank,

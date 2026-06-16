@@ -174,7 +174,8 @@ function creaturesEqual(a: SceneCreature[], b: SceneCreature[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) {
     if (a[i].name !== b[i].name || !!a[i].dead !== !!b[i].dead
-      || (a[i].count ?? 1) !== (b[i].count ?? 1)) return false
+      || (a[i].count ?? 1) !== (b[i].count ?? 1)
+      || (a[i].deadCount ?? 0) !== (b[i].deadCount ?? 0)) return false
   }
   return true
 }

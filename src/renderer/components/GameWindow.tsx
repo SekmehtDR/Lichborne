@@ -779,7 +779,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   }, [])
 
   const triggerCallbacks = useMemo(() => ({
-    sendCommand:  (cmd: string) => window.api.sendCommand(session.sessionId,cmd),
+    sendCommand:  (cmd: string) => window.api.sendCommand(sessionIdRef.current,cmd),
     echoToStream,
     setVariable:  (name: string, value: string) => {
       triggerCtxRef.current.variables[name] = value
@@ -1060,7 +1060,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // totalListHeightChanged correction, etc.) so we never mis-unpin from
   // Virtuoso's own auto-scroll back to bottom.
   const handleVirtuosoScrollRef = useRef(() => {
-    if (Date.now() < suppressUntilRef.current) return
+    // Ignore scroll events while the window is HIDDEN/OCCLUDED (another app
+    // covering Lichborne counts — not just minimize; same state the room pump
+    // guards, pitfall #71). When occluded, rAF throttles, so stickToBottom's
+    // settle loop stalls and its +300ms suppress expires before Virtuoso's
+    // ASYNC last-row measurement grows scrollHeight — the resulting late scroll
+    // event would un-pin the ACTIVE char with no user involvement (the spurious
+    // "New Lines" badge after tabbing to another app; Sekmeht). A user can't
+    // scroll a hidden window, so any signal here is layout, not intent. Skip it;
+    // pinnedRef stays true and onRefocus re-snaps on return. (Background chars
+    // are display:none → dist≈0 → never tripped this, which matches the report.)
+    if (document.hidden || Date.now() < suppressUntilRef.current) return
     const el = scrollRef.current
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
@@ -2484,7 +2494,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   function sendCommandSequence(commands: string[], delayMs: number) {
     const echoCmd = (cmd: string) => {
       setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
-      window.api.sendCommand(session.sessionId,cmd)
+      window.api.sendCommand(sessionIdRef.current,cmd)
       logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${cmd}` }])
     }
     if (delayMs > 0) {
@@ -2523,15 +2533,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (resolved.passThrough) {
         const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
         if (delay > 0) {
-          const h = setTimeout(() => window.api.sendCommand(session.sessionId, text), delay)
+          const h = setTimeout(() => window.api.sendCommand(sessionIdRef.current, text), delay)
           macroTimersRef.current.add(h)
         } else {
-          window.api.sendCommand(session.sessionId, text)
+          window.api.sendCommand(sessionIdRef.current, text)
         }
       }
     } else {
       setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${text}`, preset: 'command-echo' }], timestamp: Date.now() }]))
-      window.api.sendCommand(session.sessionId, text)
+      window.api.sendCommand(sessionIdRef.current, text)
       logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${text}` }])
     }
     if (opts.clearInput) setCommand('')
@@ -2596,7 +2606,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // sequence of moves fires without any other UI feedback.
   const sendCommand = useCallback((cmd: string) => {
     setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
-    window.api.sendCommand(session.sessionId, cmd)
+    // Send to sessionIdRef.current, NOT a captured session.sessionId: this
+    // callback has []-deps (created once) so a captured id would go stale after
+    // a reconnect-in-place (pitfall #69 — new sessionId, no remount), dropping
+    // the command in main's getSession while the echo above still paints.
+    // sessionIdRef is synced every render, so it's always the live id.
+    window.api.sendCommand(sessionIdRef.current, cmd)
   }, [])
 
   // B172: stable identities (see clearStream note) — these feed the memoized
@@ -2841,10 +2856,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         sceneCast={sceneCast}
         speech={sceneSpeech}
         moves={sceneMoves}
+        indicators={indicators}
         contacts={contacts}
         contactTemplates={contactTemplates}
         settings={settings}
         isActive={isActive}
+        onOpenContact={(contactId, x, y) => setContactPopover({ contactId, x, y })}
       />
     )
   }
@@ -3507,7 +3524,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           initialTab={lichDashTab}
           onClose={() => setShowLichDash(false)}
           onSendCommand={cmd => { setCommand(cmd); inputRef.current?.focus() }}
-          onRunCommand={cmd => window.api.sendCommand(session.sessionId, cmd)}
+          onRunCommand={cmd => window.api.sendCommand(sessionIdRef.current, cmd)}
         />
       )}
 

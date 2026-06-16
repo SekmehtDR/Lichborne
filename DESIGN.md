@@ -306,7 +306,7 @@ The main text window has one job: never lose game text, never lose your place.
 - **Trim with HYSTERESIS while pinned (B171, v0.13.4)** — the buffer grows to `MAX_LINES + TRIM_CHUNK` (2400), then is cut back to MAX_LINES (2000) in ONE slice (`appendTrimmed()`, the single append/trim primitive every `setLines` site uses). A per-batch trim that held the length exactly AT the cap was the long-unsolved "text hops after a while": it shifted every virtuoso row index per batch (stale size cache → visible backward jumps) and, with the count constant, starved `totalListHeightChanged` — the only per-batch re-pin trigger. See §23 and CLAUDE.md pitfall #81.
 - **Keyboard scroll** — `PageUp`/`PageDown` scroll the text window by one screen; `Home` jumps to the top of history; `End` returns to the bottom and re-pins auto-scroll. All four keys are suppressed when any text field is focused so they don't interfere with typing.
 - **Scrollbar arrows** — up/down arrow buttons rendered via `::-webkit-scrollbar-button` with SVG data-URI triangles (Chromium removes native arrows by default). Clicking scrolls one line; hover darkens the button background for feedback.
-- **Scroll pinning implementation** — `pinnedRef` (a React ref, not state) tracks whether auto-scroll is active. `useLayoutEffect` fires synchronously after each DOM commit and calls `scrollIntoView` when `pinnedRef.current = true`. `overflow-anchor: none` on the scroll container prevents Chromium from competing with our manual scroll management. Re-pinning is exclusive to `scrollToBottom()` (badge click or End key) — `handleScroll` only un-pins, never re-pins. A stale-true guard re-reads the DOM position right before `setLines` when `pinnedRef` is already true, correcting any race where the ref was true but the user had already scrolled up.
+- **Scroll pinning implementation** — `pinnedRef` (a React ref, not state) tracks whether auto-scroll is active. `overflow-anchor: none` on the scroll container prevents Chromium from competing with our manual scroll management. **NOTE: the live auto-scroll engine was rewritten since this paragraph** (the `useLayoutEffect`/`scrollIntoView` model became `followOutput: false` + the single `stickToBottom()` rAF settle loop, v0.11.6–v0.11.8) — **CLAUDE.md pitfalls #68 (the settle-loop architecture) and #71 (rAF-throttled-while-hidden) are the current reference.** Re-pinning is via `scrollToBottom()` (badge click / End) and the refocus re-snap; `handleVirtuosoScroll` only un-pins. **B191 (v0.14.1): `handleVirtuosoScroll` skips entirely while `document.hidden`** — when the window is occluded (another app covering it, not just minimize) rAF throttles, the settle loop stalls, and an async-measurement scroll event would otherwise un-pin the active char with no user action (the spurious "New Lines" badge after tabbing away). A user can't scroll a hidden window, so any scroll signal there is layout, not intent.
 - **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line.
 
 ### 2.9 Link Rendering
@@ -6216,6 +6216,19 @@ gates** (procedural fallbacks always).
      interpretation — all opt-in; the procedural/flat-themed fallback remains the baseline forever
      (guardrail #3). Epilepsy-safe tames entrance/exit motion; the synchronized text equivalent is
      the game text itself, which Tableau augments and never replaces.
+   - **v0.14.1 (incremental):** a deliberately SMALL follow-up after a larger overhaul attempt
+     (engagement-field re-layout + verb-interaction arrows + a "calm-stage" stable-rows rewrite) was
+     tried and **parked** (Sekmeht/Morralles: "the 0.14.0 way it worked is good — make incremental
+     changes through the versions, not a major overhaul"; the work is preserved on the
+     `wip/tableau-overhaul` branch if any piece is wanted later). v0.14.1 keeps the v0.14.0 Tableau
+     and layers in only: **individual monsterbold creature figures** (one per critter, `deadCount`
+     greys exactly the corpses, >10 → "+N more"; supersedes the ×N chip); the **self figure wearing
+     its indicator states** (hidden/invisible shadow, dead grey, condition-colored ring + per-state
+     chips, from the new `indicators` Experience prop); **clickable contact figures** (✦ + the
+     `onOpenContact` prop opening the same ContactPopover as in-text name clicks); cross-layer
+     **window snapping** (Experience ↔ panel windows, B185); and the scene background matching the
+     floating-window surface (`--experience-scene-bg`→`--bg-app`, B186). **The lesson:** the Tableau
+     evolves in small reversible steps; resist big-bang re-layouts.
 3. **Combat HUD (G1) second:** Phase 1 on existing typed events only (readiness ring, CT ring,
    stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2 adds
    the **`CombatParser`** (range/target/facing as new typed events — the shared engine §32.4

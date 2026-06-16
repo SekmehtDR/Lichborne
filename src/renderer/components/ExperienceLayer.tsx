@@ -31,16 +31,19 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
 
   const openInstances = instances.filter(i => i.open)
 
-  // Snap targets: this layer's edges + the other open Experience windows.
-  // (Cross-layer snapping against §33 panel windows is deferred — each layer
-  // snaps within itself plus the shared container edges, which are identical.)
+  // Snap targets: container edges + EVERY floating window across BOTH layers
+  // (§34.4 "same snap targets" — Experiences snap flush against §33 panel
+  // windows and vice versa; B185). Both layers are absolute inset-0 over the
+  // same .game-layout root, so measuring from the root and offsetting against
+  // THIS layer's rect keeps every edge in this layer's coordinate space.
   function getSnapTargets(excludeId: string): { x: number[]; y: number[] } {
     const layer = layerRef.current
     const x: number[] = [0, size.w]
     const y: number[] = [0, size.h]
     if (layer) {
       const lr = layer.getBoundingClientRect()
-      layer.querySelectorAll<HTMLElement>('.fl-window').forEach(el => {
+      const root = (layer.closest('.game-layout') ?? layer) as HTMLElement
+      root.querySelectorAll<HTMLElement>('.fl-window').forEach(el => {
         if (el.dataset.winId === excludeId) return
         const r = el.getBoundingClientRect()
         x.push(r.left - lr.left, r.right - lr.left)

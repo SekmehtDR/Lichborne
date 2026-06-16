@@ -48,7 +48,14 @@ export function extractScenePlayers(segs: TextSegment[]): ScenePlayer[] {
       : LYING_DOWN.test(chunk) ? 'prone' : undefined
     const dead = BODY_OF.test(chunk)
     const cleaned = chunk.replace(BODY_OF, '').replace(PLAYER_STATUS, '').replace(/ \(.+\)/, '').trim()
-    const name = cleaned.match(/\w+$/)?.[0]
+    // The name is the last CAPITALIZED word — not the bare last word (Lich's
+    // PLAYER_NAME `\w+$`). Flavor tails without a "who is/has" anchor survive
+    // the status strip ("Alytte covered in autumn leaves") and the bare rule
+    // minted a player named "leaves" (Sekmeht's screenshot). DR names are
+    // always capitalized; a chunk with NO capitalized word is skipped
+    // entirely rather than guessed at.
+    const caps = cleaned.match(/[A-Z][\w']*/g)
+    const name = caps?.[caps.length - 1]
     if (!name || seen.has(name.toLowerCase())) continue
     seen.add(name.toLowerCase())
     out.push({ name, descriptor: cleaned, ...(posture ? { posture } : {}), ...(dead ? { dead: true } : {}) })
@@ -91,14 +98,19 @@ function pushCreature(out: SceneCreature[], raw: string, deadHint: boolean) {
     .replace(LEADING_ARTICLE, '')
   if (!cleaned) return
   // Identical creatures COUNT instead of collapsing (Sekmeht corpus: five
-  // "a lava drake" spans in one room — Lich ordinals them; we tally).
+  // "a lava drake" spans in one room — Lich ordinals them; we tally, and
+  // deadCount tracks HOW MANY are corpses so the Tableau can grey exactly
+  // that many individual figures).
   const existing = out.find(c => c.name.toLowerCase() === cleaned.toLowerCase())
   if (existing) {
     existing.count = (existing.count ?? 1) + 1
-    if (dead) existing.dead = true   // at least one of them is a corpse
+    if (dead) {
+      existing.dead = true
+      existing.deadCount = (existing.deadCount ?? 0) + 1
+    }
     return
   }
-  out.push({ name: cleaned, ...(dead ? { dead: true } : {}) })
+  out.push({ name: cleaned, ...(dead ? { dead: true, deadCount: 1 } : {}) })
 }
 
 export function mergeSceneCreatures(...lists: SceneCreature[][]): SceneCreature[] {
@@ -109,8 +121,9 @@ export function mergeSceneCreatures(...lists: SceneCreature[][]): SceneCreature[
       const key = c.name.toLowerCase()
       const existing = byKey.get(key)
       if (existing) {
-        // Same room seen through two components — take the larger tally.
+        // Same room seen through two components — take the larger tallies.
         if ((c.count ?? 1) > (existing.count ?? 1)) existing.count = c.count
+        if ((c.deadCount ?? 0) > (existing.deadCount ?? 0)) existing.deadCount = c.deadCount
         if (c.dead) existing.dead = true
         continue
       }

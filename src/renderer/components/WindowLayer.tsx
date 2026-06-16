@@ -23,14 +23,18 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
 
   // Snap targets for a window (§33.5): the container edges + every OTHER
   // window's edges, in px, measured LIVE from the DOM at gesture start so
-  // auto-height chrome windows report their true bottom edge.
+  // auto-height chrome windows report their true bottom edge. Measured from
+  // the .game-layout ROOT (not this layer) so panel windows also snap against
+  // open Experience windows in the sibling ExperienceLayer (§34.4 "same snap
+  // targets"; B185) — both layers are inset-0 over the same root.
   function getSnapTargets(excludeId: string): { x: number[]; y: number[] } {
     const layer = layerRef.current
     const x: number[] = [0, size.w]
     const y: number[] = [0, size.h]
     if (layer) {
       const lr = layer.getBoundingClientRect()
-      layer.querySelectorAll<HTMLElement>('.fl-window').forEach(el => {
+      const root = (layer.closest('.game-layout') ?? layer) as HTMLElement
+      root.querySelectorAll<HTMLElement>('.fl-window').forEach(el => {
         if (el.dataset.winId === excludeId) return
         const r = el.getBoundingClientRect()
         x.push(r.left - lr.left, r.right - lr.left)

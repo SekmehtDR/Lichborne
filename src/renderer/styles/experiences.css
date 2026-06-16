@@ -245,24 +245,70 @@
   outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: 1px;
 }
+/* Contacts read as SPECIAL: a small accent star by their name… */
+.tableau-figure--contact .tableau-name::after {
+  content: ' ✦';
+  color: var(--accent);
+}
+/* …and they're clickable (opens the contact card). */
+.tableau-figure--clickable { cursor: pointer; }
+.tableau-figure--clickable:hover .tableau-avatar {
+  outline-color: var(--accent);
+  filter: brightness(1.15);
+}
 
 .tableau-figure--self .tableau-avatar {
   width: 3.2em;
   height: 3.2em;
-  outline: 2px solid var(--accent);
+  /* The ring shows your most urgent condition (the Icon Bar's --ind-* color
+     family, set inline as --self-ring/--self-glow); healthy = accent. */
+  outline: 2px solid var(--self-ring, var(--accent));
   outline-offset: 2px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35), 0 0 10px var(--self-glow, transparent);
+}
+
+/* Your own stealth states mirror how the scene draws hiders/unseen folks. */
+.tableau-figure--self-hidden { opacity: 0.55; }
+.tableau-figure--self-hidden .tableau-avatar { border-style: dashed; filter: saturate(0.6); }
+.tableau-figure--self-invisible { opacity: 0.38; }
+.tableau-figure--self-invisible .tableau-avatar { border-style: dashed; filter: saturate(0.4); }
+
+/* Active status chips under your name — the Icon Bar's words in the Icon
+   Bar's colors (inline --ind-* vars per chip). */
+.tableau-self-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25em;
+  margin-top: 0.25em;
+  max-width: 12em;
+}
+.tableau-self-chip {
+  font-size: 0.6em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 0.2em 0.45em;
+  border: 1px solid;
+  border-radius: 0.7em;
+  background: color-mix(in srgb, var(--bg-raised) 80%, transparent);
 }
 
 .tableau-avatar--creature {
-  width: 2em;
-  height: 2em;
+  width: 2.2em;
+  height: 2.2em;
   border-radius: 30%;   /* squarer than players — the species line */
-  font-size: 0.8em;
-  /* NEUTRAL by default (Sekmeht: room creatures are usually pets following
-     their owners, not threats — and the room list can't tell the difference;
-     danger-red painted every tavern lynx like a boss fight). Real threat
-     coloring arrives with the CombatParser's engagement data (G1). */
-  background: color-mix(in srgb, var(--experience-scene-text) 30%, var(--experience-scene-bg));
+  font-size: 0.85em;
+  /* MONSTERBOLD (Sekmeht: "show me these guys"): creatures wear the SAME color
+     the main window bolds them with (--preset-bold, per-theme), glow included —
+     four blademasters in the text are four bold figures in the scene. DR bolds
+     pets too, so this mirrors the game's own visual language; true THREAT
+     coloring still arrives with the CombatParser's engagement data (G1). */
+  background: var(--preset-bold);
+  color: var(--bg-app);          /* dark-on-bold; flips with the theme */
+  text-shadow: none;
+  border-color: color-mix(in srgb, var(--preset-bold) 60%, var(--experience-chip-border));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--preset-bold) 45%, transparent);
 }
 
 .tableau-avatar--crowd {
@@ -298,7 +344,7 @@
 }
 
 .tableau-figure--creature .tableau-name {
-  color: var(--experience-scene-muted);
+  color: var(--preset-bold);   /* the name reads monsterbold, like the text */
   /* Creature names are long descriptors ("furry-footed snow lynx with a
      luscious white coat tipped in icy silver") — give them room: wider cap
      + two wrapped lines before the ellipsis (players keep the tight

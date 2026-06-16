@@ -129,11 +129,6 @@ const TABS: EditorTab[] = [
         c('--stance-sitting-border',  'Sitting border',      'Stance chip border while sitting.'),
         c('--stance-sitting-bg',      'Sitting background',  'Stance chip background while sitting.'),
       ]},
-      { label: 'Indicators (inactive)', fields: [
-        c('--ind-inactive-color',  'Inactive text',       'Status indicators that are NOT firing (e.g. you’re not bleeding, not webbed).'),
-        c('--ind-inactive-bg',     'Inactive background', 'Background for inactive indicator chips.'),
-        c('--ind-inactive-border', 'Inactive border',     'Border for inactive indicator chips.'),
-      ]},
       { label: 'Indicators (active)', fields: [
         c('--ind-dead-color',      'Dead text',      'Indicator chip text when you are dead.'),      r('--ind-dead-glow',      'Dead glow',      'Glow halo behind the DEAD indicator.'),
         c('--ind-stunned-color',   'Stunned text',   'Indicator chip text when stunned.'),           r('--ind-stunned-glow',   'Stunned glow',   'Glow behind the STUNNED indicator.'),
@@ -166,7 +161,6 @@ const TABS: EditorTab[] = [
         c('--compass-active-text',     'Active direction text',   'Arrow color in the floating compass when that direction IS a valid exit from the current room.'),
         r('--compass-active-glow',     'Active direction glow',   'Soft glow halo behind active arrows.'),
         c('--compass-inactive-text',   'Inactive direction text', 'Arrow color when that direction is NOT a valid exit (dimmer).'),
-        c('--compass-center-text',     'Center marker',           'Tiny center dot in the compass (currently unused — kept for theme compatibility).'),
       ]},
       { label: 'Hands & Spell', fields: [
         c('--hand-label-color',   'Hand label',        '"L" / "R" / "SPELL" labels in the top status strip. Falls back to --text-dim if unset.'),

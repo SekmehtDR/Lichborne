@@ -433,10 +433,13 @@ export interface ScenePlayer {
 
 export interface SceneCreature {
   name: string        // cleaned creature name, leading article stripped
-  dead?: boolean      // Lich DEAD_NPC: "(dead)" / "which appears dead"
+  dead?: boolean      // ANY of them dead (Lich DEAD_NPC: "(dead)" / "which appears dead")
   // ≥2 when the room holds multiple identical creatures (Sekmeht corpus:
   // five "a lava drake" bold spans — collapsing them to one chip hid four).
+  // The Tableau renders count INDIVIDUAL figures (Sekmeht: "show me these
+  // guys"), so deadCount says how many of them are corpses.
   count?: number
+  deadCount?: number
 }
 
 // The full current cast. STICKY state (snapshotted for window-handoff replay,

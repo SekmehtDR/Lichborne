@@ -1,3 +1,27 @@
+## What's new in v0.14.1
+
+A small, incremental follow-up to the Living Tableau — polish and fixes, not a redesign.
+
+### Living Tableau
+- **Monsters stand out like monsters.** Every creature in the room now gets its own figure — four blademasters are four figures, not one chip with a ×4 — drawn in the same **monsterbold color** the game text uses (glow included), with corpses greyed individually. Past ten critters, the rest tuck into a "+N more" chip. *(Sekmeht: "show me these guys!")*
+- **Your own figure shows your condition.** Hidden or invisible? Your avatar shadows out like the scene's other sneaks. Dead? Greyed with the ✕. Bleeding, stunned, webbed, poisoned, diseased, grouped — your avatar's ring takes the most urgent condition's color (the same colors as the status icon bar) and every active state gets a little labeled chip under your name. *(Requested by Sekmeht.)*
+- **Contacts are special — and clickable.** People on your Contacts list wear a ✦ by their name; click their figure to open their contact card, the same one you get clicking their name in game text. *(Requested by Sekmeht.)*
+- **The Tableau window snaps against your other windows** — drag it flush against any panel window (or the screen edges) and it clicks into place like everything else, and your panel windows snap against it too. **Its background now matches** your panel windows instead of standing out darker. *(Thanks to Sekmeht.)*
+- Fixed a phantom "leaves" person appearing in busy rooms.
+
+### Themes
+- **Theme Editor → Room & Exp → Experience colors now actually work.** Setting "Rate", "Mind-locked rate", or "Bar background" used to do nothing; they're now wired to the exp panel. A few dead controls that had no effect (inactive-indicator colors, the compass center marker) were removed so every swatch you see does something. *(Reported by Morress.)*
+
+### Maps
+- **The "you are here" marker no longer blocks the room labels around it.** Its solid ring now sits tightly on the current room instead of sprawling over neighboring names; the sonar pulse still radiates out (you can read right through it). Applies to both the Genie and Lich maps. *(Requested by Sekmeht.)*
+
+### Fixes
+- **Commands sent by macros, the automapper, room-exit buttons, and triggers now work after a reconnect.** They could echo (e.g. `>;t2`, or a map walk's `>west` / `>;go2 …`) but the command wouldn't actually reach the game if you'd reconnected the tab since launching — you'd see no `>` prompt come back. Typed commands always worked, which is the tell. All of these now send to the live session. *(Reported by Morress (macros) and Sekmeth (automapper right-click walking).)*
+- **The compass clears when a room has no exits.** Walking into an exitless room used to leave the previous room's exits showing on the compass; it now correctly shows none. *(Reported by Binu.)*
+- **No more phantom "New Lines" badge after tabbing away.** Switching to another Windows app that covered Lichborne (without minimizing) could leave the active character's story window showing a "New Lines" badge even though you were at the bottom; it now stays pinned and re-snaps when you return. *(Reported by Sekmeht.)*
+
+---
+
 ## What's new in v0.14.0
 
 ### Lichborne Experiences — and the first one: Living Tableau [Beta]
@@ -21,15 +45,3 @@ Accessibility carries through: the game text is always the source of truth (the 
 ### Small fix
 
 - **The Experience panel's Badging dropdown now finds your guild on its own.** Type `info` once (or set the guild on your character's card in the launcher) and the skill badging picks the right guild automatically — even fixing itself if a Transfer planted another character's badging on this one. Your own `info` is the authority; picking a badge by hand holds until your next `info`; an unrecognized guild changes nothing. *(Requested — and twice field-corrected within the hour — by Sekmeht.)*
-
----
-
-## What's new in v0.13.5
-
-### Reorder your stream tabs by dragging
-
-- **Drag a stream tab along its tab bar to reorder it.** The other tabs slide out of the way as you drag, and the dragged tab's slot is outlined so you can see exactly where it will land — release to drop it there. Works on every panel's tab bar in both layouts; in Windowed Panels a **locked** layout keeps tab order fixed too (locking means nothing moves by accident). The Panel Manager's reorder buttons still work if you prefer clicking. *(Requested by Sekmeht.)*
-
-### Small fix
-
-- **The ⋯ More menu no longer hides behind the game window.** A side effect of v0.13.4's narrow-window work could leave the More dropdown rendering as a tiny sliver behind the game pane — it now floats above the game content properly. *(Thanks to Sekmeht.)*

@@ -86,6 +86,24 @@ function initials(name: string): string {
 
 const POSTURE_LABEL: Record<string, string> = { sitting: 'sitting', prone: 'lying down', hiding: 'hiding' }
 
+// Self-figure status (Sekmeht: "the Tableau needs to show when I'M hidden,
+// invisible, dead, bleeding…"). Same indicator ids the Icon Bar renders
+// (lowercase, pitfall #15); each chip/ring reuses the Icon Bar's themed
+// --ind-* var family. The FIRST active entry of the ring set drives the
+// avatar's ring/glow color (the Icon Bar's own danger-first priority).
+const SELF_STATUSES: { key: string; label: string }[] = [
+  { key: 'bleeding', label: 'Bleeding' },
+  { key: 'stunned', label: 'Stunned' },
+  { key: 'dead', label: 'Dead' },
+  { key: 'webbed', label: 'Webbed' },
+  { key: 'poisoned', label: 'Poisoned' },
+  { key: 'diseased', label: 'Diseased' },
+  { key: 'hidden', label: 'Hidden' },
+  { key: 'invisible', label: 'Invisible' },
+  { key: 'joined', label: 'Grouped' },
+]
+const SELF_RING_KEYS = ['bleeding', 'stunned', 'dead', 'webbed', 'poisoned', 'diseased']
+
 // How long a bubble stays up. Long enough to read a sentence, short enough
 // that the scene doesn't wallpaper with stale chatter.
 const BUBBLE_TTL_MS = 14_000
@@ -113,7 +131,7 @@ const DIR_VECTOR: Record<string, [number, number]> = {
 // Tableau only needs to when its own inputs change (cast/speech/moves are
 // state objects with stable identities between changes). The default export
 // wraps this at the bottom of the file.
-function TableauExperience({ character, roomState, sceneCast, speech, moves, contacts, contactTemplates, settings }: ExperienceProps) {
+function TableauExperience({ character, roomState, sceneCast, speech, moves, indicators, contacts, contactTemplates, settings, onOpenContact }: ExperienceProps) {
   const players = sceneCast.players
   const creatures = sceneCast.creatures
 
@@ -400,20 +418,44 @@ function TableauExperience({ character, roomState, sceneCast, speech, moves, con
         </div>
       )}
 
-      {/* Creatures along the back of the scene */}
-      {creatures.slice(0, 8).map((c, i) => {
-        const n = Math.min(creatures.length, 8)
-        const x = 10 + ((i + 0.5) / n) * 80
+      {/* Creatures along the back of the scene — every individual gets its
+          OWN figure (Sekmeht: "show me these guys" — four blademasters are
+          four monsters, not a ×4 badge), in MONSTERBOLD (--preset-bold), the
+          same visual language the main window uses for them. Exactly deadCount
+          of each tally render as corpses; >10 overflow to a "+N more" chip. */}
+      {(() => {
+        const instances: { name: string; dead: boolean; ord: number; total: number }[] = []
+        for (const c of creatures) {
+          const total = c.count ?? 1
+          const deadN = c.deadCount ?? (c.dead ? total : 0)
+          for (let i = 0; i < total; i++) instances.push({ name: c.name, dead: i < deadN, ord: i + 1, total })
+        }
+        const shown = instances.slice(0, 10)
+        const extra = instances.length - shown.length
+        const slots = shown.length + (extra > 0 ? 1 : 0)
+        const top = isLarge ? '13%' : '22%'
         return (
-          <div key={c.name} className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}`} style={{ left: `${x}%`, top: isLarge ? '13%' : '22%' }} title={`${(c.count ?? 1) > 1 ? `${c.count}× ` : ''}${c.name}${c.dead ? ' (dead)' : ''}`}>
-            <div className="tableau-avatar tableau-avatar--creature">
-              {c.dead ? '✕' : initials(c.name)}
-              {(c.count ?? 1) > 1 && <span className="tableau-count">×{c.count}</span>}
-            </div>
-            <div className="tableau-name">{c.name}</div>
-          </div>
+          <>
+            {shown.map((c, i) => (
+              <div
+                key={`cr-${c.name}-${c.ord}`}
+                className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}`}
+                style={{ left: `${8 + ((i + 0.5) / Math.max(slots, 1)) * 84}%`, top }}
+                title={`${c.name}${c.total > 1 ? ` #${c.ord}` : ''}${c.dead ? ' (dead)' : ''}`}
+              >
+                <div className="tableau-avatar tableau-avatar--creature">{c.dead ? '✕' : initials(c.name)}</div>
+                <div className="tableau-name">{c.name}</div>
+              </div>
+            ))}
+            {extra > 0 && (
+              <div className="tableau-figure tableau-figure--creature" style={{ left: '94%', top }} title={`${extra} more creatures`}>
+                <div className="tableau-avatar tableau-avatar--creature">+{extra}</div>
+                <div className="tableau-name">more</div>
+              </div>
+            )}
+          </>
         )
-      })}
+      })()}
 
       {/* Departure ghosts — the figure lingers briefly, walking out toward
           its exit direction (or dissolving in place on a logoff). */}
@@ -457,7 +499,11 @@ function TableauExperience({ character, roomState, sceneCast, speech, moves, con
         const chatKey = p.name.toLowerCase()
         const pos = seatedPosByKey.get(chatKey) ?? seatPos(seats.get(p.name) ?? 0, seatCount)
         const { color, isContact } = avatarColor(p.name, contacts, contactTemplates)
-        const tip = `${p.posture ? `${p.descriptor} (${POSTURE_LABEL[p.posture]})` : p.descriptor}${p.dead ? ' (dead)' : ''}`
+        // Contacts are clickable: the figure opens their contact card (the same
+        // ContactPopover that in-text name clicks use).
+        const contact = isContact ? contacts.find(c => c.name && c.name.toLowerCase() === chatKey) : undefined
+        const clickable = !!(contact && onOpenContact)
+        const tip = `${p.posture ? `${p.descriptor} (${POSTURE_LABEL[p.posture]})` : p.descriptor}${p.dead ? ' (dead)' : ''}${clickable ? ' — click for contact card' : ''}`
         const bubble = bubbleFor(p.name)
         const sc = 0.8 + pos.depth * 0.25
         const entry = entrances.get(p.name.toLowerCase())
@@ -473,9 +519,10 @@ function TableauExperience({ character, roomState, sceneCast, speech, moves, con
         return (
           <div
             key={p.name}
-            className={`tableau-figure${isContact ? ' tableau-figure--contact' : ''}${p.posture ? ' tableau-figure--seated-posture' : ''}${p.posture === 'hiding' ? ' tableau-figure--hiding' : ''}${p.dead ? ' tableau-figure--player-dead' : ''}${bubble ? ' tableau-figure--speaking' : ''}${entry ? ' tableau-figure--enter' : ''}`}
+            className={`tableau-figure${isContact ? ' tableau-figure--contact' : ''}${clickable ? ' tableau-figure--clickable' : ''}${p.posture ? ' tableau-figure--seated-posture' : ''}${p.posture === 'hiding' ? ' tableau-figure--hiding' : ''}${p.dead ? ' tableau-figure--player-dead' : ''}${bubble ? ' tableau-figure--speaking' : ''}${entry ? ' tableau-figure--enter' : ''}`}
             style={style}
             title={tip}
+            onClick={clickable ? (e => onOpenContact!(contact!.id, e.clientX, e.clientY)) : undefined}
           >
             {renderCaption(bubble, sc)}
             <div className="tableau-avatar" style={{ background: color }}>{initials(p.name)}</div>
@@ -491,17 +538,46 @@ function TableauExperience({ character, roomState, sceneCast, speech, moves, con
         </div>
       )}
 
-      {/* You — foreground center. Own speech arrives as 'You'; own EMOTES
-          are third-person (actor = the character's name), so check both. */}
-      {(() => { const selfBubble = bubbleFor('you') ?? bubbleFor(character); return (
-      <div className={`tableau-figure tableau-figure--self${selfBubble ? ' tableau-figure--speaking' : ''}`} style={{ left: `${selfPos.x}%`, top: `${selfPos.y}%` }}>
-        {renderCaption(selfBubble)}
-        <div className="tableau-avatar tableau-avatar--self" style={{ background: avatarColor(character, contacts, contactTemplates).color }}>
-          {initials(character)}
-        </div>
-        <div className="tableau-name">{character}</div>
-      </div>
-      ) })()}
+      {/* You — foreground center, wearing your own indicator states (the Icon
+          Bar's data and its themed --ind-* colors): hidden/invisible shadow the
+          figure, dead greys it, the most urgent condition colors the avatar
+          ring, and every active state gets a labeled chip. Own speech arrives
+          as 'You'; own EMOTES are third-person (actor = the character's name),
+          so the bubble check covers both. */}
+      {(() => {
+        const selfBubble = bubbleFor('you') ?? bubbleFor(character)
+        const selfStatuses = SELF_STATUSES.filter(s => indicators[s.key])
+        const ringKey = SELF_RING_KEYS.find(k => indicators[k])
+        const selfCls = `tableau-figure tableau-figure--self`
+          + (selfBubble ? ' tableau-figure--speaking' : '')
+          + (indicators.dead ? ' tableau-figure--player-dead' : '')
+          + (indicators.hidden ? ' tableau-figure--self-hidden' : '')
+          + (indicators.invisible ? ' tableau-figure--self-invisible' : '')
+        const avatarStyle = {
+          background: avatarColor(character, contacts, contactTemplates).color,
+          ...(ringKey ? { '--self-ring': `var(--ind-${ringKey}-color)`, '--self-glow': `var(--ind-${ringKey}-glow)` } : {}),
+        } as React.CSSProperties
+        return (
+          <div className={selfCls} style={{ left: `${selfPos.x}%`, top: `${selfPos.y}%` }}>
+            {renderCaption(selfBubble)}
+            <div className="tableau-avatar tableau-avatar--self" style={avatarStyle}>
+              {indicators.dead ? '✕' : initials(character)}
+            </div>
+            <div className="tableau-name">{character}</div>
+            {selfStatuses.length > 0 && (
+              <div className="tableau-self-status">
+                {selfStatuses.map(s => (
+                  <span
+                    key={s.key}
+                    className="tableau-self-chip"
+                    style={{ color: `var(--ind-${s.key}-color)`, borderColor: `var(--ind-${s.key}-border)` } as React.CSSProperties}
+                  >{s.label}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* The bubble layer — constant game-font size, collision-spaced,
           speaker-named, newest on top. */}
