@@ -148,6 +148,18 @@ export class StormFrontParser {
 
   // Game state for computing the prompt indicator string — matches Genie's prompt logic
   private rtExpires = 0                        // ms timestamp; 0 = no roundtime
+  // RT/CT are anchored to the SERVER clock, not the local clock (B-clockskew):
+  // the server sends an absolute end-time in <roundTime value> / <castTime value>
+  // and its OWN current time in every <prompt time=…>. Comparing the end-time to
+  // the local Date.now() (the old approach) inflated the bar by the client/server
+  // clock skew (Aubrey's PC was ~minutes behind → RT bar maxed and counted down
+  // from a huge number). Frostbite (xmlparserthread.cpp) and Genie (Game.cs) both
+  // DEFER the duration calc to the next <prompt> and compute end − promptTime; we
+  // mirror that. `lastPromptTime` is the latest server time seen; pending* hold a
+  // <roundTime>/<castTime> end-value awaiting the next prompt to anchor it.
+  private lastPromptTime = 0                   // server Unix seconds; 0 = none seen yet
+  private pendingRtEnd: number | null = null
+  private pendingCtEnd: number | null = null
   private stance: '' | 's' | 'K' | 'P' = ''  // '' = standing (no prefix)
   private isHidden    = false
   private isInvisible = false
@@ -190,6 +202,9 @@ export class StormFrontParser {
     this.lastMainText      = ''
     this.lastRoomTitle     = ''
     this.rtExpires     = 0
+    this.lastPromptTime = 0
+    this.pendingRtEnd  = null
+    this.pendingCtEnd  = null
     this.stance        = ''
     this.isHidden      = false
     this.isInvisible   = false
@@ -473,15 +488,16 @@ export class StormFrontParser {
         break
       }
 
-      case 'roundtime': {
-        const expires = parseInt(attrs.value ?? '0', 10) * 1000
-        this.rtExpires = expires
-        this.events.push({ type: 'roundtime', expires })
+      case 'roundtime':
+        // Defer: store the server END-time, anchor it on the next <prompt>
+        // (see the lastPromptTime/pending* field note). The old code emitted
+        // value*1000 here and the renderer compared it to Date.now(), which
+        // inflated the bar by any client/server clock skew.
+        this.pendingRtEnd = parseInt(attrs.value ?? '0', 10)
         break
-      }
 
       case 'casttime':
-        this.events.push({ type: 'casttime', expires: parseInt(attrs.value ?? '0', 10) * 1000 })
+        this.pendingCtEnd = parseInt(attrs.value ?? '0', 10)
         break
 
       case 'streamwindow': {
@@ -684,11 +700,34 @@ export class StormFrontParser {
         }
         break
 
-      case 'prompt':
+      case 'prompt': {
+        // The prompt carries the SERVER's current time — anchor any pending
+        // RT/CT to it: duration = end − serverNow, expressed as a LOCAL-clock
+        // expiry (Date.now() + durationMs) so the renderer's countdown is
+        // correct regardless of client clock skew. Clamp to [0, 300s] — no real
+        // RT exceeds 5 min, and the clamp keeps a bad value from blowing up the
+        // bar (Frostbite's `t_to > 300000 ? 300000` cap; Genie does end − gametime
+        // too). Fall back to value*1000 only if no server time has ever been seen.
+        const t = parseInt(attrs.time ?? '0', 10)
+        if (t > 0) this.lastPromptTime = t
+        const anchor = t > 0 ? t : this.lastPromptTime
+        const anchoredExpiry = (end: number) =>
+          anchor > 0 ? Date.now() + Math.max(0, Math.min(300, end - anchor)) * 1000 : end * 1000
+        if (this.pendingRtEnd !== null) {
+          const expires = anchoredExpiry(this.pendingRtEnd)
+          this.rtExpires = expires
+          this.events.push({ type: 'roundtime', expires })
+          this.pendingRtEnd = null
+        }
+        if (this.pendingCtEnd !== null) {
+          this.events.push({ type: 'casttime', expires: anchoredExpiry(this.pendingCtEnd) })
+          this.pendingCtEnd = null
+        }
         this.captureCtx = { tag: 'prompt' }
         this.captureBuf = ''
         this.captureSegments = []
         break
+      }
 
       default:
         // Silently drop known protocol tags that carry no display content

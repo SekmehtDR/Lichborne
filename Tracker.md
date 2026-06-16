@@ -81,6 +81,12 @@
 
 ---
 
+**v0.14.2 — RT/CT clock-skew fix ✅**
+
+- **B192 (Aubrey) — RT/CT bar maxed out and counted down from a huge number.** Not a parse bug: the raw XML proved the server value was correct (`value − prompt time = 4 sec`). Root cause was **client/server clock skew** — the bar compared the server's absolute end-time to the LOCAL `Date.now()`, and Aubrey's PC clock was ~1–2 min behind (stale NTP), inflating `rt` by the skew. Confirmed by her clock check ("Sync now" fixed her). Robust fix: anchor RT/CT to the SERVER clock via `<prompt time>` — `<roundTime>/<castTime>` defer to the next prompt, `expires = Date.now() + clamp(end − promptTime, 0, 300s)*1000` (duration from the server, local clock only as the countdown anchor → skew cancels). **Verified Frostbite (`xmlparserthread.cpp`) and Genie (`Game.cs`) both do exactly this** before implementing — neither uses the local clock. Recorded as pitfall #87 with the client-quality framing: a server-vs-`Date.now()` comparison is a latent clock-skew bug, and a visibly-wrong timer reads as a broken client even when the fault is the user's PC.
+
+---
+
 **v0.14.1 — Living Tableau incremental pass + macro/compass fixes ✅**
 
 - **Tableau overhaul ATTEMPTED then PARKED.** A larger rework (engagement-field re-layout + verb-interaction arrows + a "calm-stage" stable-rows rewrite) was built, then reverted on Sekmeht/Morralles feedback ("the 0.14.0 way is good — make incremental changes, not a major overhaul"). The full overhaul is preserved on the **`wip/tableau-overhaul`** branch for cherry-picking. v0.14.1 keeps the v0.14.0 Tableau + five small keeps: individual **monsterbold creature figures** (one per critter, `deadCount` greys corpses, >10 → "+N more"), the **self figure wearing its indicator states** (hidden/invisible/dead/condition-ring + chips, via a new `indicators` Experience prop), **clickable contact figures** (✦ + `onOpenContact`), cross-layer **window snapping** (B185), and scene bg matching the panel surface (B186). Phantom-"leaves"-name fix kept (B187).

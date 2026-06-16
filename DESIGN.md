@@ -447,7 +447,7 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 
 **Vital values** are exact integers from the server, not bar-fill approximations. The numeric label on each bar displays the server's own value directly.
 
-**Roundtime** is an absolute Unix timestamp, not a countdown duration. The client calculates remaining time as `expiryTimestamp - Date.now()` and counts down precisely. No estimation required.
+**Roundtime** is an absolute Unix timestamp, not a countdown duration. **It is timed against the SERVER's clock, NOT the local one (B192, v0.14.2):** `<roundTime>`/`<castTime>` defer to the next `<prompt time=T>` (the server's current time) and the parser emits `expires = Date.now() + clamp(value − T, 0, 300s)*1000` — the DURATION comes from the server (`value − T`), the local clock is only the countdown anchor (compared against the same local clock in the renderer). The old `value*1000 − Date.now()` form compared the server's clock to the local one and inflated the bar by any client/server clock skew (a user whose PC clock was minutes behind saw the bar max out and drain too slowly). Frostbite and Genie both anchor to the prompt time the same way — see CLAUDE.md pitfall #87.
 
 **Experience components** are pushed by the server whenever a mindstate changes. The exp panel is a live view of a clean structured data feed — not a text scraper.
 
