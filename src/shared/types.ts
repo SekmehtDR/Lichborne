@@ -241,6 +241,7 @@ export type GameEvent =
   | VitalUpdateEvent
   | RoundtimeEvent
   | CastTimeEvent
+  | AimTimeEvent
   | IndicatorEvent
   | StanceEvent
   | SpellEvent
@@ -273,6 +274,11 @@ export interface StreamTextEvent {
   segments: TextSegment[]
   timestamp: number
   mono?: boolean
+  // true when this line is a server <prompt> ('>' or a statusprompt like 'H>').
+  // Lets the renderer collapse consecutive identical prompts that a mute
+  // orphaned (the parser's lastMainText dedup ran before the mute removed the
+  // content between them) — see GameWindow's prompt-collapse pass + pitfall #88.
+  prompt?: boolean
 }
 
 // Vitals — current and max both provided by the server text attribute ("72 100")
@@ -292,6 +298,16 @@ export interface RoundtimeEvent {
 export interface CastTimeEvent {
   type: 'casttime'
   expires: number  // Unix ms timestamp
+}
+
+// Aim Timer (DR's AimTimerDialog / firingTimer, toggled in-game by `toggle aim`).
+// Counts down to "You think you have your best shot possible now." Same absolute
+// server-END-time shape as roundtime/casttime — server-clock anchored on the next
+// <prompt> (pitfall #87). `expires: 0` clears the timer (best shot reached, focus
+// lost, or initial reset).
+export interface AimTimeEvent {
+  type: 'aimtime'
+  expires: number  // Unix ms timestamp; 0 = cleared
 }
 
 // Indicators — id is normalized (Icon prefix stripped, lowercased)
@@ -567,6 +583,8 @@ export interface TextLine {
   segments: TextSegment[]
   timestamp: number  // Date.now() at receive time; used for per-stream timestamp display
   mono?: boolean     // true when line was emitted inside <output class="mono"/> block
+  prompt?: boolean   // true for a server <prompt> line ('>' / 'H>'); used by the
+                     // renderer prompt-collapse pass (pitfall #88)
 }
 
 export interface RoomState {

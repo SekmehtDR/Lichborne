@@ -126,6 +126,12 @@ export const darkBase: ThemeVars = {
   '--ct-start': '#102070',
   '--ct-end':   '#3878c8',
   '--ct-glow':  'rgba(56, 120, 200, 0.7)',
+  // Aim Timer (DR firingTimer) — green; stacks under CT in the command bar.
+  // darkBase-only: every theme merges over this, so the green is consistent
+  // everywhere (no theme overrides it). Saturated fill, reads on all themes.
+  '--aim-start': '#1a6b2e',
+  '--aim-end':   '#2ea043',
+  '--aim-glow':  'rgba(46, 160, 67, 0.7)',
 
   '--stance-standing-color':  '#7eda7e',
   '--stance-standing-border': '#2a4a2a',

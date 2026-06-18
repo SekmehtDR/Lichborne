@@ -16,6 +16,9 @@ export interface AppSettings {
   // changes unexpectedly. Per-character; rides the Display & Accessibility
   // Transfer category automatically (it's a field on `settings`).
   compactVitals: boolean
+  // Compact, text-forward Experience panel (Rakkor/Morress) — Skill · Ranks · %
+  // · (n/34) with simplified top/bottom summary bars, no progress bars/pickers.
+  compactExp: boolean
   timerStyle: 'bar' | 'chips'
   autoLinkUrls: boolean
   // v0.8.1 (F23): when true, external URL clicks route through Simu's
@@ -68,6 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vitalsBarPosition: 'bottom',
   iconBarPosition: 'top',
   compactVitals: false,
+  compactExp: false,
   timerStyle: 'chips',
   autoLinkUrls: true,
   webLinkSafety: true,

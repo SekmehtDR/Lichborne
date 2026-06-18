@@ -173,7 +173,17 @@ const STREAM_FALLBACK: Record<string, string> = {
   combat:        'main',
   assess:        'main',
   atmospherics:  'main',
-  group:         'main',
+  // NO group fallback (Cherisse/Agan, v0.14.3). The `group` stream is a
+  // clears-and-rewrites ROSTER (every refresh is `<clearStream id='group'/>`
+  // then 3-4 `<pushStream id='group'/>` lines — "Members of your group: …"),
+  // i.e. STATE, not a message log — exactly like `percWindow`/`moonWindow`
+  // (which are deliberately NOT in this table). Falling it back to main meant
+  // the full roster re-spammed the story window on every group change (join,
+  // leave, hand-hold, health tick). It now routes only to its own `group`
+  // stream buffer; with no Group panel open it's silently held (viewable if
+  // the user adds the panel), never dumped to main. (DR sends group content
+  // ONLY inside the pushStream block — no native outside-copy — so dropping
+  // the fallback loses nothing in main, unlike the speech case in B136.)
 }
 
 const DEFAULT_PANEL_WIDTH = 280
@@ -240,13 +250,25 @@ function removeFromZone(
   if (activeId === tab.id && next.length > 0) setActiveId(next[Math.max(0, idx - 1)].id)
 }
 
-const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, timerStyle }: {
-  rtExpires: number; ctExpires: number; timerStyle: string
+const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, aimExpires, timerStyle }: {
+  rtExpires: number; ctExpires: number; aimExpires: number; timerStyle: string
 }) {
-  const { rt, ct, rtMax, ctMax, rtPct, ctPct } = useTimers(rtExpires, ctExpires)
+  const { rt, ct, aim, rtMax, ctMax, aimMax, rtPct, ctPct } = useTimers(rtExpires, ctExpires, aimExpires)
+  // Aim Timer (DR firingTimer) shares CT's spot at the BOTTOM edge, in green,
+  // rendered BEHIND CT (CT always wins — it's the PvP-critical one; aim is not).
+  // Same-second/seconds scale so "if aim is LONGER, green sticks out past CT;
+  // if CT is longer, you only see CT": chips are 1-per-second by nature, and the
+  // aim BAR is scaled to CT's max when CT is active (else its own) so the two
+  // bar widths are comparable in absolute seconds, not each as a % of its own
+  // max. Render order rt → aim → ct so CT paints on top of aim at equal z-index.
+  const aimScaleMax = ctMax > 0 ? ctMax : aimMax
+  const aimBarPct = aimScaleMax > 0 ? Math.min(100, (aim / aimScaleMax) * 100) : 0
   if (timerStyle === 'chips') return (<>
     {rt > 0 && <div className="cmd-chips cmd-chips--rt">
       {Array.from({ length: Math.min(Math.ceil(rt), Math.round(rtMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--rt" />)}
+    </div>}
+    {aim > 0 && <div className="cmd-chips cmd-chips--aim">
+      {Array.from({ length: Math.min(Math.ceil(aim), Math.round(aimMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--aim" />)}
     </div>}
     {ct > 0 && <div className="cmd-chips cmd-chips--ct">
       {Array.from({ length: Math.min(Math.ceil(ct), Math.round(ctMax)) }, (_, i) => <div key={i} className="cmd-chip cmd-chip--ct" />)}
@@ -254,6 +276,7 @@ const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, timerSty
   </>)
   return (<>
     {rt > 0 && <div className="cmd-bar cmd-bar--rt" style={{ width: `${rtPct}%` }} />}
+    {aim > 0 && <div className="cmd-bar cmd-bar--aim" style={{ width: `${aimBarPct}%` }} />}
     {ct > 0 && <div className="cmd-bar cmd-bar--ct" style={{ width: `${ctPct}%` }} />}
   </>)
 })
@@ -416,6 +439,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [vitalLabels, setVitalLabels] = useState<Record<string, string>>({})
   const [rtExpires, setRtExpires]   = useState(0)
   const [ctExpires, setCtExpires]   = useState(0)
+  const [aimExpires, setAimExpires] = useState(0)
   const [indicators, setIndicators] = useState<Record<string, boolean>>({})
 
   // Propagate vital/RT/indicator changes into the tab bar's session status.
@@ -643,6 +667,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Substitutes (DESIGN.md §31): compiled + group-gated, applied after mutes.
   const [substitutes, setSubstitutes] = useState<SubstituteRule[]>(() => loadSubstitutes(session.character))
   const activeSubsRef = useRef<CompiledSubstitute[]>([])
+  // Tracks the last main line actually COMMITTED to the display (text + whether
+  // it was a server prompt). The prompt-collapse pass (pitfall #88) uses it to
+  // drop consecutive identical prompts that a mute orphaned, mirroring the
+  // parser's lastMainText dedup at the display layer (after mutes run) — the
+  // way Genie/Frostbite gag before the prompt is committed so a gagged line
+  // never leaves a stray '>'.
+  const lastMainLineRef = useRef<{ text: string; isPrompt: boolean } | null>(null)
   useEffect(() => {
     activeSubsRef.current = compileSubstitutes(
       substitutes,
@@ -1444,6 +1475,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       let batchRoomDesc: string | null = null
       let newRt: number | null = null
       let newCt: number | null = null
+      let newAim: number | null = null
       let newStance: string | null = null
       let newSpell: string | null = null
       const logRecords: SessionLogRecord[] = []
@@ -1451,10 +1483,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       for (const evt of events) {
         switch (evt.type) {
           case 'stream-text': {
-            const { stream: rawStream, segments, mono } = evt as StreamTextEvent
+            const { stream: rawStream, segments, mono, prompt } = evt as StreamTextEvent
             const stream = rawStream
             const lineText = segments.map(s => s.text).join('')
-            const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}) })
+            const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}), ...(prompt ? { prompt: true } : {}) })
             // Session-log capture — skip room sub-streams (current state, not
             // history) and `raw`/blank lines. One record per non-empty line.
             if (stream !== 'raw' && !ROOM_STREAMS.has(stream) && lineText.trim()) {
@@ -1521,6 +1553,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             newCt = evt.expires
             triggerCtxRef.current.ctSeconds = Math.max(0, (evt.expires - Date.now()) / 1000)
             processVariableChangeRef.current('ct', String(Math.ceil(triggerCtxRef.current.ctSeconds)))
+            break
+          case 'aimtime':
+            newAim = evt.expires
             break
           case 'indicator':
             indicatorUpdates[evt.id] = evt.visible
@@ -1763,6 +1798,35 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         for (const key of Object.keys(newStream)) applyTextMods(newStream[key], key)
       }
 
+      // Prompt collapse (Cherisse, pitfall #88). DR fires a <prompt> after every
+      // server turn; the parser already suppresses a prompt identical to the
+      // last MAIN text (lastMainText). But a MUTE removes its matched line a
+      // layer later (here, in applyTextMods), so a turn like "<regen msg>" + ">"
+      // becomes just ">" — and several muted regens in a row pile up as bare
+      // ">>>" because the parser saw real text between each prompt. Genie and
+      // Frostbite avoid this by gagging at the display layer, BEFORE the prompt
+      // is committed; we do the same — replay the parser's identical-prompt
+      // dedup here, after mutes, so an orphaned/redundant prompt disappears.
+      // Tracked across batches via lastMainLineRef. Only collapses a prompt
+      // whose text matches the previous displayed prompt (statusprompt drift
+      // like "H>"→"R>" is preserved), and gating on .prompt means repeated real
+      // content is never collapsed. Runs whenever there's main content so the
+      // cross-batch ref stays current even when nothing is dropped.
+      if (newMain.length > 0) {
+        let prev = lastMainLineRef.current
+        for (let i = 0; i < newMain.length; ) {
+          const line = newMain[i]
+          const txt = line.segments.map(s => s.text).join('')
+          if (line.prompt && prev && prev.isPrompt && prev.text === txt) {
+            newMain.splice(i, 1)   // redundant consecutive prompt — drop, don't advance
+            continue
+          }
+          prev = { text: txt, isPrompt: !!line.prompt }
+          i++
+        }
+        lastMainLineRef.current = prev
+      }
+
       if (newMain.length > 0) {
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
@@ -1899,6 +1963,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       if (Object.keys(indicatorUpdates).length > 0) setIndicators(prev => ({ ...prev, ...indicatorUpdates }))
       if (newRt !== null)     setRtExpires(newRt)
       if (newCt !== null)     setCtExpires(newCt)
+      if (newAim !== null)    setAimExpires(newAim)
       if (newStance !== null) setStance(newStance)
       if (newSpell !== null)  setSpell(newSpell)
 
@@ -2643,9 +2708,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     autoLinkUrls: settings.autoLinkUrls,
     webLinkSafety: settings.webLinkSafety,
     mapAnimations: settings.mapAnimations,
+    compactExp: settings.compactExp,
     debugEvents, onClearDebug: clearDebugEvents,
     rawXmlLines, onClearRawXml: clearRawXmlLines,
-    fireLog, onClearFireLog: clearFireLog,
+    fireLog, onClearFireLog: clearFireLog, onGotoFireRule: gotoFireRule,
     onClearStream: clearStream,
     onHighlight: openHighlightEditor,
     lichMapVersion,
@@ -3138,7 +3204,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-quick-send'))}
       >&gt;</button>
       <div className="cmd-input-wrap">
-        <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} timerStyle={settings.timerStyle} />
+        <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} aimExpires={aimExpires} timerStyle={settings.timerStyle} />
         <input ref={inputRef} type="text" autoFocus value={command}
           onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
           onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />

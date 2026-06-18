@@ -100,7 +100,7 @@ const SELF_STATUSES: { key: string; label: string }[] = [
   { key: 'diseased', label: 'Diseased' },
   { key: 'hidden', label: 'Hidden' },
   { key: 'invisible', label: 'Invisible' },
-  { key: 'joined', label: 'Grouped' },
+  { key: 'joined', label: 'Joined' },
 ]
 const SELF_RING_KEYS = ['bleeding', 'stunned', 'dead', 'webbed', 'poisoned', 'diseased']
 

@@ -557,12 +557,19 @@ Two display styles are available (Settings → RT / CT Timer Style):
 
 - **RT**: amber/orange — top edge of the input box
 - **CT**: blue/purple — bottom edge of the input box
+- **Aim**: green — bottom edge, stacked UNDER CT (see Aim Timer below)
 - Both are completely hidden when inactive — no wasted space, no layout shift
 - Strips live inside `.cmd-input-wrap` (6px tall, `overflow: hidden` clips long chip rows naturally)
-- Colors are theme-aware (`--rt-end`, `--ct-end` from ThemeEditor HUD tab)
+- Colors are theme-aware (`--rt-end`, `--ct-end`, `--aim-end` from ThemeEditor HUD tab)
 - Chip gap: 6px; chip size: 8×6px; chips overflow-clip for very long RTs (30+ seconds)
 - Pulse animation: `brightness(1) → brightness(0.85)` at 1.1s ease-in-out
 - Respects Epilepsy Safe mode — pulse animation disabled, bar/chips still drain
+
+**Aim Timer (DR `firingTimer`, v0.14.3).** DragonRealms' aim-timer feature (toggled in-game by `toggle aim` — Disabled / Open / Closed) pushes `<dialogData id='AimTimerDialog'><timer id='firingTimer' value='N'/></dialogData>`, where `N` is the absolute Unix-seconds END time of "You think you have your best shot possible now." (`value='0'` clears it — best shot reached, focus lost, or initial). Lichborne shows it as a **green** bar/chips countdown in the **same spot as CT** (the bottom edge), painted **behind** CT so CT always wins — aim isn't PvP-critical (Rakkor), CT is. The aim layer only "sticks out" past CT when the aim timer is longer:
+- **Chips** are 1-per-second by nature, so extra green chips appear to the right of CT's blue ones when aim outlasts CT.
+- The **bar** is scaled to CT's max when CT is active (else its own), so the two bar widths are comparable in absolute seconds (not each a % of its own max) — "longer aim → green sticks out" reads true in real time.
+- Honors the same `timerStyle` (bar/chips) setting as RT/CT — no separate toggle (the in-game `toggle aim` is the on/off; disabled → no tag sent → nothing shows).
+- **Server-clock anchored** on the next `<prompt>` exactly like RT/CT — the END time is deferred and converted to a local-clock expiry via `end − promptTime`, so it's immune to client clock skew (see the v0.14.2 clock-skew fix). Pipeline: parser `<timer>` → `aimtime` event (snapshotted for window-takeover replay) → `aimExpires` state → `useTimers` → `TimerDisplay`. Color is theme-editable (`--aim-start/--aim-end/--aim-glow`, ThemeEditor HUD tab, green default).
 
 ### 5.5 Vitals Bar Position
 
@@ -686,6 +693,20 @@ The exp panel is a live skill tracker driven entirely by `<component id='exp Ski
   the per-character `detectedGuild` scopedKey (deliberately NOT transferable — guild is character
   identity) and seeds secondarily from the launcher profile's manually-set guild field (read-only,
   pitfall #26).
+
+**Compact mode (opt-in, `settings.compactExp`, default off — Rakkor/Morress, v0.14.3).** A text-forward alternate render of the SAME exp data — no progress bars, pins-as-buttons-only chrome, mindstate words, group headers, or Badging/Focus/Sort pickers. Inspired by how Frostbite shows its Experience window:
+```
+┌─ Experience ─────────────────────────────┐
+│ EXP   Learning 4   TDP 65057   Fav 40     │  ← summary top bar
+│ ◈ Evasion         656   71%   9/34        │  ← Skill · Ranks · % · (mindstate/34)
+│ ◈ Targeted Magic  412   88%  31/34        │     rows tinted by mindstate bucket
+│ ◈ Large Edged    1005   46%  18/34        │
+│ ↻ 2:20  RXP 5:51  Usable 32m              │  ← summary bottom bar (reset/RXP/usable)
+└──────────────────────────────────────────┘
+```
+- Rows are colored by the **mindstate bucket** (same `--exp-bar-{low,mid,high,locked}` palette the full panel's bars use: green→gold→orange→red), so compact and full read consistently.
+- **Pin-to-top** is preserved as a hover-reveal `◈` button per row (shares the full panel's `pinnedSkills`/`onTogglePin` — pins float to the top and are the same set in both modes). The Badging ★ was deliberately **dropped** in compact (every actively-trained skill is badged under a guild Focus, so it lit every row — noise).
+- It's a pure render switch inside `ExpPanel` (reuses every parsing helper); no new data path. Threaded `settings.compactExp → sharedFrameProps → PanelFrame → ExpPanel` (the B193 prop pattern), so it works in all three hosts (docked strip / static zone tab / windowed floating window). Per-character setting; transfers with the Display & Accessibility category. Anchored to the panel font (`var(--panel-font-size, var(--game-font-size))`), so the global font and per-panel A−/A+ both scale it.
 
 **expbrief mode:**
 

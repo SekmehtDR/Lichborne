@@ -94,6 +94,10 @@
   --ct-start: #102070;
   --ct-end:   #3878c8;
   --ct-glow:  rgba(56, 120, 200, 0.7);
+  /* Aim Timer (DR firingTimer) — green, stacks under CT. */
+  --aim-start: #1a6b2e;
+  --aim-end:   #2ea043;
+  --aim-glow:  rgba(46, 160, 67, 0.7);
 
   /* ── Stance ───────────────────────────────────────────────────── */
   --stance-standing-color:  #7eda7e;

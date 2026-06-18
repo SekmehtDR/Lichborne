@@ -90,6 +90,11 @@ interface Props {
   onClearRawXml?: () => void
   fireLog?: FireLogEntry[]
   onClearFireLog?: () => void
+  // Wired so the debug Fires-tab "Edit" button works when the debug panel is
+  // hosted IN a PanelFrame (a zone tab or a windowed-mode floating window) —
+  // the docked panels-mode strip got it directly, leaving the button greyed
+  // everywhere else (Sekmeht).
+  onGotoFireRule?: (kind: 'highlight' | 'trigger', ruleId: string) => void
   onClearStream?: (streamId: string) => void
   onHighlight?: (rule: HighlightRule, testText?: string) => void
   onTrigger?: (pattern: string) => void
@@ -105,6 +110,7 @@ interface Props {
   onToggleTimestamp?: (streamId: string) => void
   lichMapVersion?: number
   mapAnimations?: boolean
+  compactExp?: boolean
   // LichBridge script panel props
   lichScripts?:      ScriptRecord[]
   lichLastUpdated?:  number
@@ -135,12 +141,12 @@ export default function PanelFrame({
   streamLines, roomState, expSkills, rankUpSkills,
   expFocus = 'None', pinnedSkills, onFocusChange, onTogglePin,
   onSendCommand, autoLinkUrls = true, webLinkSafety = true,
-  debugEvents, onClearDebug, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onClearStream, onHighlight, onTrigger,
+  debugEvents, onClearDebug, rawXmlLines, onClearRawXml, fireLog, onClearFireLog, onGotoFireRule, onClearStream, onHighlight, onTrigger,
   injuryState = {},
   tabs, activeId, onTabsChange, onActiveChange,
   discoveredStreams = [], streamTitles = {}, unreadIds,
   streamTimestamps = {}, onToggleTimestamp, lichMapVersion,
-  mapAnimations = true,
+  mapAnimations = true, compactExp = false,
   lichScripts = [], lichLastUpdated = 0, lichPending = false,
   onLichPause, onLichResume, onLichKill, onLichRefresh,
   getPanelFontSize, onAdjustPanelFontSize,
@@ -301,13 +307,13 @@ export default function PanelFrame({
           onSendCommand,
           debugEvents ?? EMPTY_ARRAY, onClearDebug ?? NOOP,
           rawXmlLines ?? EMPTY_ARRAY, onClearRawXml ?? NOOP,
-          fireLog ?? EMPTY_ARRAY, onClearFireLog ?? NOOP,
+          fireLog ?? EMPTY_ARRAY, onClearFireLog ?? NOOP, onGotoFireRule,
           onClearStream ?? NOOP, onHighlight, onTrigger, injuryState,
           streamTimestamps, onToggleTimestamp, autoLinkUrls, webLinkSafety, lichMapVersion,
           lichScripts, lichLastUpdated, lichPending,
           onLichPause ?? NOOP, onLichResume ?? NOOP,
           onLichKill ?? NOOP, onLichRefresh ?? NOOP,
-          mapAnimations,
+          mapAnimations, compactExp,
         )}
         {activeTab && onAdjustPanelFontSize && (
           <div className="panel-font-controls" aria-label="Adjust panel font size">
@@ -483,6 +489,7 @@ function renderPanel(
   onClearRawXml: () => void,
   fireLog: FireLogEntry[],
   onClearFireLog: () => void,
+  onGotoFireRule: ((kind: 'highlight' | 'trigger', ruleId: string) => void) | undefined,
   onClearStream: (streamId: string) => void,
   onHighlight?: (rule: HighlightRule, testText?: string) => void,
   onTrigger?: (pattern: string) => void,
@@ -500,6 +507,7 @@ function renderPanel(
   onLichKill: (name: string) => void = () => {},
   onLichRefresh: () => void = () => {},
   mapAnimations = true,
+  compactExp = false,
 ) {
   // B172: StreamPanel is memoized, so every prop must be referentially
   // stable — onClear/onToggleTimestamp now take the streamId as an argument
@@ -518,11 +526,11 @@ function renderPanel(
     case 'conversation':  return sp('conversation',  streamLines.conversation  ?? EMPTY_ARRAY)
     case 'deaths':        return sp('deaths',        streamLines.deaths        ?? EMPTY_ARRAY)
     case 'spells':        return sp('spells',        streamLines.spells        ?? EMPTY_ARRAY)
-    case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} focus={expFocus} pinnedSkills={pinnedSkills} onFocusChange={onFocusChange} onTogglePin={onTogglePin} />
+    case 'exp':           return <ExpPanel skills={expSkills} rankUpSkills={rankUpSkills} focus={expFocus} pinnedSkills={pinnedSkills} onFocusChange={onFocusChange} onTogglePin={onTogglePin} compactExp={compactExp} />
     case 'injuries':      return <InjuriesPanel parts={injuryState} />
     case 'familiar':      return sp('familiar',      streamLines.familiar      ?? EMPTY_ARRAY)
     case 'inv':           return sp('inv',           streamLines.inv           ?? EMPTY_ARRAY)
-    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} />
+    case 'debug':         return <DebugPanel events={debugEvents} onClear={onClearDebug} rawXmlLines={rawXmlLines} onClearRawXml={onClearRawXml} fireLog={fireLog} onClearFireLog={onClearFireLog} onGotoFireRule={onGotoFireRule} />
     case 'log':           return sp('log',           streamLines.log           ?? EMPTY_ARRAY)
     case 'lichScripts':   return <ScriptListPanel scripts={lichScripts} lastUpdated={lichLastUpdated} pending={lichPending} onPause={onLichPause} onResume={onLichResume} onKill={onLichKill} onRefresh={onLichRefresh} />
     case 'combat':        return sp('combat',        streamLines.combat        ?? EMPTY_ARRAY)

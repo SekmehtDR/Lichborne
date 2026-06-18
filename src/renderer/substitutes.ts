@@ -11,6 +11,7 @@
 // the source clients use); a future phase could add them.
 
 import { scopedKey } from './characterScope'
+import type { TextSegment } from '../shared/types'
 
 export interface SubstituteRule {
   id: string
@@ -104,28 +105,81 @@ export function compileSubstitutes(
   return out
 }
 
-// Apply active substitutes to a line's segments, rewriting text per-segment
-// (so server styling survives; a match spanning segment boundaries isn't
-// caught — same limit as per-segment highlighting). Returns the same array
-// reference when nothing changed, otherwise a NEW array (now-empty segments
-// dropped). `segments` is any array of objects carrying a `text` string.
-export function applySubstitutesToSegments<T extends { text: string }>(
-  segments: T[],
+// Apply active substitutes to a line's segments.
+//
+// Substitutes are a LINE-level rewrite in every sibling client — Genie's
+// `ParseSubstitutions` and Frostbite's `alter->substitute` both run on the
+// whole plain-line text. DR fragments a STYLED line into multiple TextSegments:
+// a Gweth thought arrives as `<preset id='thought'>[Personal] Your mind hears
+// X thinking, </preset>"<to you>" "msg"` — i.e. TWO segments — so a regex that
+// spans the boundary (with capture groups, e.g. Cherisse's
+// `^\[(.*)\] Your mind hears (.*) thinking,"<to you>" (.*)`) can NEVER match if
+// we only test per-segment. (lnet thoughts come through Lich as one unbroken
+// segment, which is exactly why those "worked" and the game's own thoughts
+// didn't — B195.)
+//
+// Strategy (preserve styling where we can, match the line where we must):
+//  1. Run the per-segment pass first — an in-segment match (recolor a word, fix
+//     a name inside a monsterbold span) keeps every segment's styling, no
+//     regression.
+//  2. Run a JOINED-line pass. If the joined result differs from what the
+//     per-segment pass produced, the match crossed a segment boundary, so
+//     COLLAPSE the line to ONE segment carrying the joined-substituted text,
+//     styled like the first non-empty segment (the line's primary preset, e.g.
+//     'thought' / 'speech') — VISUAL fields only, never link fields, so a
+//     reshaped line can't inherit a stray click target. This mirrors how the
+//     siblings re-emit a substituted line as a single styled unit.
+// A single-segment line skips the joined pass entirely (no boundary to cross).
+// Returns the SAME array reference when nothing changed (so the caller's
+// identity check can skip the line rebuild). See CLAUDE.md pitfall #89.
+export function applySubstitutesToSegments(
+  segments: TextSegment[],
   subs: CompiledSubstitute[],
-): T[] {
+): TextSegment[] {
   if (subs.length === 0) return segments
-  let changed = false
-  const out: T[] = []
+
+  // (1) Per-segment pass — preserves styling for matches contained in one
+  // segment; drops a segment whose text a substitute emptied.
+  let perChanged = false
+  const perSeg: TextSegment[] = []
   for (const seg of segments) {
     let t = seg.text
     if (t) {
       for (const s of subs) {
         s.regex.lastIndex = 0
         const next = t.replace(s.regex, s.rule.replacement)
-        if (next !== t) { t = next; changed = true }
+        if (next !== t) { t = next; perChanged = true }
       }
     }
-    if (t.length > 0) out.push(t === seg.text ? seg : { ...seg, text: t })
+    if (t.length > 0) perSeg.push(t === seg.text ? seg : { ...seg, text: t })
   }
-  return changed ? out : segments
+
+  // A single segment can't have a cross-boundary match — the per-segment pass
+  // already saw the whole line.
+  if (segments.length <= 1) return perChanged ? perSeg : segments
+
+  // (2) Joined-line pass — catches a match the per-segment pass split apart.
+  const full = segments.map(s => s.text).join('')
+  let joined = full
+  for (const s of subs) {
+    s.regex.lastIndex = 0
+    joined = joined.replace(s.regex, s.rule.replacement)
+  }
+
+  // No line-level change → trust the per-segment result (styled or original).
+  if (joined === full) return perChanged ? perSeg : segments
+  // Per-segment already produced the joined text → every match was in-segment;
+  // keep the styled output.
+  if (perSeg.map(s => s.text).join('') === joined) return perSeg
+  // A match crossed a boundary → collapse to one styled segment.
+  if (joined.length === 0) return []   // a substitute emptied the whole line
+  const base = segments.find(s => s.text.length > 0)
+  const collapsed: TextSegment = { text: joined }
+  if (base) {
+    if (base.preset !== undefined) collapsed.preset = base.preset
+    if (base.bold) collapsed.bold = true
+    if (base.fg !== undefined) collapsed.fg = base.fg
+    if (base.bg !== undefined) collapsed.bg = base.bg
+  }
+  return [collapsed]
 }

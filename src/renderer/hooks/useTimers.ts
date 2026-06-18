@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function useTimers(rtExpires: number, ctExpires: number) {
+export function useTimers(rtExpires: number, ctExpires: number, aimExpires = 0) {
   const [now, setNow] = useState(Date.now())
   const rtMaxRef = useRef(0)
   const ctMaxRef = useRef(0)
+  const aimMaxRef = useRef(0)
 
   useEffect(() => {
     if (rtExpires > 0) rtMaxRef.current = (rtExpires - Date.now()) / 1000
@@ -16,17 +17,24 @@ export function useTimers(rtExpires: number, ctExpires: number) {
   }, [ctExpires])
 
   useEffect(() => {
-    if (rtExpires === 0 && ctExpires === 0) return
+    if (aimExpires > 0) aimMaxRef.current = (aimExpires - Date.now()) / 1000
+    else                aimMaxRef.current = 0
+  }, [aimExpires])
+
+  useEffect(() => {
+    if (rtExpires === 0 && ctExpires === 0 && aimExpires === 0) return
     const id = setInterval(() => setNow(Date.now()), 100)
     return () => clearInterval(id)
-  }, [rtExpires, ctExpires])
+  }, [rtExpires, ctExpires, aimExpires])
 
   const rt = rtExpires > 0 ? Math.max(0, (rtExpires - now) / 1000) : 0
   const ct = ctExpires > 0 ? Math.max(0, (ctExpires - now) / 1000) : 0
+  const aim = aimExpires > 0 ? Math.max(0, (aimExpires - now) / 1000) : 0
   const rtMax = rtMaxRef.current
   const ctMax = ctMaxRef.current
+  const aimMax = aimMaxRef.current
   const rtPct = rtMax > 0 ? (rt / rtMax) * 100 : 0
   const ctPct = ctMax > 0 ? (ct / ctMax) * 100 : 0
 
-  return { rt, ct, rtMax, ctMax, rtPct, ctPct }
+  return { rt, ct, aim, rtMax, ctMax, aimMax, rtPct, ctPct }
 }

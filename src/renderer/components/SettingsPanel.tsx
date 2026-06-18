@@ -410,6 +410,13 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
             onChange={v => set('compactVitals', v)}
           />
 
+          <Toggle
+            label="Compact Experience Panel"
+            description="Text-forward Exp panel: Skill · Ranks · % · learning-rate, with simple summary bars — no progress bars or pickers"
+            checked={settings.compactExp}
+            onChange={v => set('compactExp', v)}
+          />
+
           <RadioGroup
             label="Icon Bar Position"
             value={settings.iconBarPosition}

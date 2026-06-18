@@ -97,6 +97,7 @@ function snapshotKey(evt: GameEvent): string | null {
     case 'vital-update':  return `vital:${evt.id}`
     case 'roundtime':     return 'roundtime'
     case 'casttime':      return 'casttime'
+    case 'aimtime':       return 'aimtime'
     case 'indicator':     return `indicator:${evt.id}`
     case 'stance':        return 'stance'
     case 'spell':         return 'spell'

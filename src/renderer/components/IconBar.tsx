@@ -55,7 +55,12 @@ export default function IconBar({ stance, indicators, rightHand, leftHand, spell
     { key: 'stance',     text: stance || 'Standing',  cls: stanceCls,       active: true                   },
     { key: 'invisible',  text: 'Invisible',            cls: 'ind-invisible', active: !!indicators.invisible },
     { key: 'webbed',     text: 'Webbed',               cls: 'ind-webbed',    active: !!indicators.webbed    },
-    { key: 'joined',     text: 'Grouped',              cls: 'ind-joined',    active: !!indicators.joined    },
+    // "Joined", not "Grouped": DR's IconJOINED (and the `J>` statusprompt) marks
+    // the FOLLOWER (joined/following via hand-hold), NOT the group LEADER — the
+    // leader has members joined to them but isn't "joined" themselves, so they
+    // correctly get no chip. "Grouped" implied every group member should light
+    // up; "Joined" matches what the game actually signals (Cherisse/Agan).
+    { key: 'joined',     text: 'Joined',               cls: 'ind-joined',    active: !!indicators.joined    },
     { key: 'hidden',     text: 'Hidden',               cls: 'ind-hidden',    active: !!indicators.hidden    },
     { key: 'combat',     text: combatText ?? '',        cls: combatCls,       active: !!combatText           },
     { key: 'affliction', text: afflictionText ?? '',    cls: afflictionCls,   active: !!afflictionText       },

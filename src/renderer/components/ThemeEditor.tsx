@@ -115,6 +115,10 @@ const TABS: EditorTab[] = [
         g('CT bar',  '--ct-start', '--ct-end', 'Cast-time countdown bar shown when preparing a spell.'),
         r('--ct-glow', 'CT glow', 'Soft halo behind the CT bar / chip.'),
       ]},
+      { label: 'Aim Timer', fields: [
+        g('Aim bar', '--aim-start', '--aim-end', 'Aim Timer countdown (DR firingTimer), stacked UNDER the Cast Time bar/chips in the same spot — only shows past CT when the aim timer is longer.'),
+        r('--aim-glow', 'Aim glow', 'Soft halo behind the Aim Timer bar / chip.'),
+      ]},
       { label: 'Stance', fields: [
         c('--stance-standing-color',  'Standing text',       'Stance chip text in the top status strip when standing.'),
         c('--stance-standing-border', 'Standing border',     'Stance chip border while standing.'),

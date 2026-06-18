@@ -160,6 +160,7 @@ export class StormFrontParser {
   private lastPromptTime = 0                   // server Unix seconds; 0 = none seen yet
   private pendingRtEnd: number | null = null
   private pendingCtEnd: number | null = null
+  private pendingAimEnd: number | null = null  // AimTimerDialog firingTimer; 0 = clear
   private stance: '' | 's' | 'K' | 'P' = ''  // '' = standing (no prefix)
   private isHidden    = false
   private isInvisible = false
@@ -205,6 +206,7 @@ export class StormFrontParser {
     this.lastPromptTime = 0
     this.pendingRtEnd  = null
     this.pendingCtEnd  = null
+    this.pendingAimEnd = null
     this.stance        = ''
     this.isHidden      = false
     this.isInvisible   = false
@@ -500,6 +502,21 @@ export class StormFrontParser {
         this.pendingCtEnd = parseInt(attrs.value ?? '0', 10)
         break
 
+      case 'timer':
+        // DR's Aim Timer rides `<dialogData id='AimTimerDialog'><timer
+        // id='firingTimer' value='N'/></dialogData>`. `value` is an absolute
+        // Unix-seconds END time (when "You think you have your best shot
+        // possible now." fires); `value='0'` clears it (best shot reached,
+        // focus lost, or initial open). Defer + anchor on the next <prompt>
+        // exactly like roundtime/casttime (server-clock, pitfall #87). Only
+        // firingTimer is the aim timer — ignore any other timer id (no `unknown`
+        // noise). The toggle is in-game (`toggle aim`): disabled → no timer tag
+        // is sent → nothing to show.
+        if ((attrs.id ?? '').toLowerCase() === 'firingtimer') {
+          this.pendingAimEnd = parseInt(attrs.value ?? '0', 10)
+        }
+        break
+
       case 'streamwindow': {
         const id    = attrs.id ?? ''
         const lower = id.toLowerCase()
@@ -723,6 +740,13 @@ export class StormFrontParser {
           this.events.push({ type: 'casttime', expires: anchoredExpiry(this.pendingCtEnd) })
           this.pendingCtEnd = null
         }
+        if (this.pendingAimEnd !== null) {
+          // value 0 = clear (emit expires 0); else anchor the END time to the
+          // server clock just like RT/CT.
+          const expires = this.pendingAimEnd === 0 ? 0 : anchoredExpiry(this.pendingAimEnd)
+          this.events.push({ type: 'aimtime', expires })
+          this.pendingAimEnd = null
+        }
         this.captureCtx = { tag: 'prompt' }
         this.captureBuf = ''
         this.captureSegments = []
@@ -908,6 +932,7 @@ export class StormFrontParser {
             stream: 'main',
             segments: [{ text: prompt }],
             timestamp: Date.now(),
+            prompt: true,
           })
         }
         break

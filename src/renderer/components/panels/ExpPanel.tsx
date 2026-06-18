@@ -20,6 +20,10 @@ interface Props {
   pinnedSkills: Set<string>
   onFocusChange: (focus: string) => void
   onTogglePin: (skill: string) => void
+  // settings.compactExp (Rakkor/Morress): render the text-forward compact view
+  // instead of the full panel (bars/pickers/groups). A pure alternate render —
+  // reuses every parsing helper below.
+  compactExp?: boolean
 }
 
 const MINDSTATES = [
@@ -150,6 +154,16 @@ function formatRexpTime(min: number): string {
   return `${h}:${m.toString().padStart(2, '0')}h`
 }
 
+// Pull the three RXP times out of the `exp rexp` component text. Shared by the
+// full panel's RestExpWidget and the compact view's bottom bar.
+function parseRexp(rexp: string): { stored: number | null; usable: number | null; refresh: number | null } {
+  return {
+    stored:  parseRexpTime(rexp.match(/Stored:\s*(.*?)(?=\s{2,}|\s+Usable|$)/i)?.[1]),
+    usable:  parseRexpTime(rexp.match(/Usable[^:]*:\s*(.*?)(?=\s{2,}|\s+Cycle|$)/i)?.[1]),
+    refresh: parseRexpTime(rexp.match(/Refreshes:\s*(.*?)$/i)?.[1]),
+  }
+}
+
 // Dual-bar Rested-Experience widget. Renders three values from the `exp rexp`
 // component as two stacked progress bars (Stored, Usable This Cycle) plus a
 // "resets in …" caption for the refresh countdown. The bar cap is the largest
@@ -160,12 +174,7 @@ function formatRexpTime(min: number): string {
 // character so the calibration survives across sessions.
 function RestExpWidget({ rexp }: { rexp: string }) {
   const character = useCharacter()
-  const storedRaw  = rexp.match(/Stored:\s*(.*?)(?=\s{2,}|\s+Usable|$)/i)?.[1]
-  const usableRaw  = rexp.match(/Usable[^:]*:\s*(.*?)(?=\s{2,}|\s+Cycle|$)/i)?.[1]
-  const refreshRaw = rexp.match(/Refreshes:\s*(.*?)$/i)?.[1]
-  const stored  = parseRexpTime(storedRaw)
-  const usable  = parseRexpTime(usableRaw)
-  const refresh = parseRexpTime(refreshRaw)
+  const { stored, usable, refresh } = parseRexp(rexp)
 
   const capKey = scopedKey(character, 'rxpCapMin')
   const [capMin, setCapMin] = useState<number>(() => {
@@ -403,11 +412,80 @@ function sortEntries(
   })
 }
 
+// Compact, text-forward exp view (Rakkor/Morress; settings.compactExp). A pure
+// alternate render of the SAME data the full panel uses — reuses parseExp,
+// dotBucket, getSkillBadge, sortEntries, parseRexp, formatRexpTime and the
+// meta-key filter. No progress bars, pins, mindstate words, pickers, or group
+// headers: just Skill · Ranks · % · (n/34) tinted by mindstate, a summary top
+// bar (Learning count · TDP · Fav), and a bottom bar (reset · RXP · Usable).
+function CompactExpView({ skills, rankUpSkills, pinnedSkills, sortMode, sortDesc, onTogglePin }: {
+  skills: Record<string, string>; rankUpSkills?: Set<string>
+  pinnedSkills: Set<string>; sortMode: SortMode; sortDesc: boolean
+  onTogglePin: (skill: string) => void
+}) {
+  const active = Object.entries(skills).filter(([k, text]) =>
+    k !== 'rexp' && k !== 'tdp' && k !== 'favor' && k !== 'sleep' &&
+    parseExp(text).mindstateIdx > 0
+  )
+  const rows = sortEntries(active, pinnedSkills, sortMode, sortDesc)
+
+  const tdp   = (skills['tdp']   ?? '').match(/(\d+)/)?.[1]
+  const favor = (skills['favor'] ?? '').match(/(\d+)/)?.[1]
+  const rexp  = skills['rexp'] ?? ''
+  const { stored, usable, refresh } = parseRexp(rexp)
+  const sleepRaw = (skills['sleep'] ?? '').trim()
+  const deathsSting = rexp.startsWith("[Because of Death's Sting")
+  const hasBottom = (refresh ?? 0) > 0 || stored != null || usable != null || deathsSting || !!sleepRaw
+
+  return (
+    <div className="exp-compact">
+      <div className="exp-compact-top">
+        <span className="exp-compact-title">EXP</span>
+        <span className="exp-compact-stat"><span className="exp-compact-stat-label">Learning</span>{active.length}</span>
+        {tdp   && <span className="exp-compact-stat"><span className="exp-compact-stat-label">TDP</span>{tdp}</span>}
+        {favor && <span className="exp-compact-stat"><span className="exp-compact-stat-label">Fav</span>{favor}</span>}
+      </div>
+      <div className="exp-compact-rows">
+        {rows.length === 0 && <div className="exp-compact-empty">No skills actively training.</div>}
+        {rows.map(([skill, text]) => {
+          const { rank, pctStr, mindstateIdx } = parseExp(text)
+          const bucket = dotBucket(mindstateIdx)
+          const pinned = pinnedSkills.has(skill)
+          return (
+            <div key={skill}
+              className={`exp-compact-row exp-compact-row--${bucket}${rankUpSkills?.has(skill) ? ' exp-compact-row--rankup' : ''}${pinned ? ' exp-compact-row--pinned' : ''}`}>
+              <button
+                className={`exp-compact-pin${pinned ? ' exp-compact-pin--active' : ''}`}
+                onClick={() => onTogglePin(skill)}
+                title={pinned ? 'Unpin skill' : 'Pin to top'}
+                tabIndex={-1}
+              >◈</button>
+              <span className="exp-compact-name">{skill}</span>
+              <span className="exp-compact-rank">{rank}</span>
+              <span className="exp-compact-pct">{pctStr}</span>
+              <span className="exp-compact-rate">{mindstateIdx}/34</span>
+            </div>
+          )
+        })}
+      </div>
+      {hasBottom && (
+        <div className="exp-compact-bottom">
+          {(refresh ?? 0) > 0 && <span className="exp-compact-bstat" title="Cycle resets in"><span className="exp-compact-bicon">↻</span>{formatRexpTime(refresh!)}</span>}
+          {stored != null && <span className="exp-compact-bstat"><span className="exp-compact-stat-label">RXP</span>{formatRexpTime(stored)}</span>}
+          {usable != null && <span className="exp-compact-bstat"><span className="exp-compact-stat-label">Usable</span>{formatRexpTime(usable)}</span>}
+          {deathsSting && <span className="exp-compact-bstat exp-footer-sting">Death's Sting</span>}
+          {!deathsSting && sleepRaw && <span className="exp-compact-bstat">{/deep sleep/i.test(sleepRaw) ? 'Deep Sleep' : 'Resting'}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // B172: memoized — re-renders only when its own props (or consumed context
 // values, which GameWindow now useMemo's) change, not on every GameWindow
 // render. Parent must pass referentially stable callbacks/Sets (see
 // PanelFrame's renderPanel + the module-level fallback constants there).
-export default memo(function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin }: Props) {
+export default memo(function ExpPanel({ skills, rankUpSkills, focus, pinnedSkills, onFocusChange, onTogglePin, compactExp }: Props) {
   const character = useCharacter()
   const saveProfile = useProfileSaver()
   const [sortMode, setSortMode] = useState<SortMode>(() => {
@@ -444,6 +522,13 @@ export default memo(function ExpPanel({ skills, rankUpSkills, focus, pinnedSkill
     saveProfile()
   }
 
+  // Compact mode: a pure alternate render over the same data, using the
+  // character's existing sort preference. Branch AFTER the hooks (Rules of
+  // Hooks) so they always run regardless of mode.
+  if (compactExp) {
+    return <CompactExpView skills={skills} rankUpSkills={rankUpSkills}
+      pinnedSkills={pinnedSkills} sortMode={sortMode} sortDesc={sortDesc} onTogglePin={onTogglePin} />
+  }
 
   const active = Object.entries(skills).filter(([k, text]) =>
     k !== 'rexp' && k !== 'tdp' && k !== 'favor' && k !== 'sleep' &&

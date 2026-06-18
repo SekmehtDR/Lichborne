@@ -473,6 +473,15 @@
   background: var(--ct-end);
 }
 
+/* Aim Timer (DR firingTimer) — same BOTTOM edge as CT, green, painted BEHIND
+   CT (earlier in the DOM at equal z-index), so CT always covers it and the
+   green only "sticks out" past CT's right edge when the aim timer is longer.
+   Aim isn't PvP-critical; CT must dominate the strip. */
+.cmd-bar--aim {
+  bottom: 0;
+  background: var(--aim-end);
+}
+
 [data-epilepsy-safe="true"] .cmd-bar { animation: none; }
 
 /* RT / CT chip strips inside the input box. v0.8.4 (F30, Rakkor): chips
@@ -493,6 +502,10 @@
 
 .cmd-chips--rt { top: 0; }
 .cmd-chips--ct { bottom: 0; }
+/* Aim chips share CT's bottom edge; 1 chip/sec means extra green chips appear
+   to the RIGHT of CT's blue ones when the aim timer outlasts CT (CT chips,
+   later in the DOM, paint on top of the aligned green ones). */
+.cmd-chips--aim { bottom: 0; }
 
 .cmd-chip {
   width: 16px;
@@ -508,6 +521,10 @@
 
 .cmd-chip--ct {
   background: var(--ct-end);
+}
+
+.cmd-chip--aim {
+  background: var(--aim-end);
 }
 
 @keyframes chip-pulse {
