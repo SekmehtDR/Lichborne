@@ -135,3 +135,222 @@
   flex: 1;
   overflow: hidden;
 }
+
+/* ── Automation Analytics (v0.14.4) ─────────────────────────────────────────
+   Health/usage UI shown in every Automations tab when the master toggle is on.
+   Colors are theme vars / color-mix toward text so they stay legible on light
+   themes (pitfalls #34/#55/#63). */
+
+/* Header master toggle */
+.at-analytics-btn {
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.at-analytics-btn:hover { color: var(--text-primary); border-color: var(--border); }
+.at-analytics-btn--on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-sunken));
+}
+
+/* Full-width banner above the list+detail split, so it has room to read
+   (it used to be jammed into the ~210px sidebar). aa-host is the column wrapper
+   that puts the banner over the panel body. */
+.aa-host { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+.aa-host > .hp-body,
+.aa-host > .tp-body,
+.aa-host > .ma-body { flex: 1; min-height: 0; }
+
+.aa-review {
+  flex-shrink: 0;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* Clickable summary bar (collapse toggle) */
+.aa-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.aa-bar:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.aa-chevron { color: var(--text-faint); width: 1em; flex-shrink: 0; }
+.aa-title { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.aa-spacer { flex: 1; }
+.aa-since { color: var(--text-faint); white-space: nowrap; }
+.aa-reset {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.92em;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.aa-reset:hover { color: var(--text-primary); border-color: var(--border); }
+
+.aa-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.aa-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-secondary);
+}
+.aa-chip--broken,
+.aa-chip--conflict { background: color-mix(in srgb, #d9534f 22%, transparent); color: color-mix(in srgb, #d9534f 72%, var(--text-primary)); }
+.aa-chip--dup { background: color-mix(in srgb, #d0a020 22%, transparent); color: color-mix(in srgb, #d0a020 78%, var(--text-primary)); }
+.aa-chip--obsolete { background: color-mix(in srgb, #3d9aa0 22%, transparent); color: color-mix(in srgb, #3d9aa0 78%, var(--text-primary)); }
+.aa-chip--zero { background: color-mix(in srgb, var(--text-primary) 6%, transparent); color: var(--text-faint); }
+
+/* Expanded detail */
+.aa-body {
+  padding: 4px 10px 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
+}
+.aa-empty-msg, .aa-clean { color: var(--text-muted); padding: 4px 2px; }
+.aa-clean { color: color-mix(in srgb, var(--color-success, #5cb85c) 80%, var(--text-primary)); }
+
+/* Each category = a collapsed-by-default <details> section (one summary line). */
+.aa-sec { border-top: 1px solid color-mix(in srgb, var(--border-subtle) 45%, transparent); }
+.aa-sec:first-of-type { border-top: none; }
+.aa-sec-sum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.aa-sec-sum::-webkit-details-marker { display: none; }
+.aa-sec-sum::before {
+  content: '▸';
+  color: var(--text-faint);
+  font-size: 0.85em;
+  width: 0.9em;
+  flex-shrink: 0;
+  transition: transform 0.1s;
+}
+.aa-sec[open] > .aa-sec-sum::before { transform: rotate(90deg); }
+.aa-sec-sum:hover { background: color-mix(in srgb, var(--text-primary) 4%, transparent); }
+.aa-sec-icon { flex-shrink: 0; }
+.aa-sec-name { font-weight: 600; color: var(--text-secondary); }
+.aa-sec--warn .aa-sec-name { color: color-mix(in srgb, #d9534f 72%, var(--text-primary)); }
+.aa-sec-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  border-radius: 9px;
+  padding: 0 8px;
+  font-size: 0.92em;
+}
+.aa-sec-count--broken,
+.aa-sec-count--conflict { color: color-mix(in srgb, #d9534f 72%, var(--text-primary)); background: color-mix(in srgb, #d9534f 18%, transparent); }
+.aa-sec-count--dup { color: color-mix(in srgb, #d0a020 78%, var(--text-primary)); background: color-mix(in srgb, #d0a020 18%, transparent); }
+.aa-sec-count--obsolete { color: color-mix(in srgb, #3d9aa0 80%, var(--text-primary)); background: color-mix(in srgb, #3d9aa0 18%, transparent); }
+.aa-sec-body { padding: 2px 2px 8px 1.7em; }
+.aa-sec-desc { color: var(--text-faint); font-style: italic; margin-bottom: 5px; }
+.aa-sec-none { color: var(--text-faint); opacity: 0.7; }
+
+.aa-set {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  padding: 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 30%, transparent);
+}
+.aa-set:first-child { border-top: none; }
+.aa-action {
+  display: inline-block;
+  margin-bottom: 6px;
+  background: color-mix(in srgb, #d9534f 16%, var(--bg-base));
+  color: color-mix(in srgb, #d9534f 78%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, #d9534f 45%, transparent);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.aa-action:hover { background: color-mix(in srgb, #d9534f 26%, var(--bg-base)); }
+.aa-set-n { color: var(--text-faint); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.aa-set-by { color: var(--text-faint); font-style: italic; flex-shrink: 0; }
+.aa-top-row { padding: 2px 0; }
+.aa-more { color: var(--text-faint); font-style: italic; padding: 4px 0 0; }
+
+.aa-names { display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: baseline; }
+.aa-sep { color: var(--text-faint); margin-right: 2px; }
+
+.aa-jump {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.aa-jump:hover { text-decoration: underline; }
+.aa-fires-inline { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* Per-row badges (replace the scope chip when analytics is on) */
+.aa-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 0.7rem;
+}
+.aa-fires {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.aa-issue { font-size: 0.82rem; line-height: 1; }
+.aa-issue--broken,
+.aa-issue--conflict { color: color-mix(in srgb, #d9534f 75%, var(--text-primary)); }
+.aa-issue--duplicate { color: color-mix(in srgb, #d0a020 78%, var(--text-primary)); }
+.aa-issue--obsolete { color: color-mix(in srgb, #3d9aa0 80%, var(--text-primary)); }
+
+/* Polish: faint idle dash on clean/unfired rows; healthy chip; muted empty
+   category; the issues/usage divider label. */
+.aa-badges--idle { color: var(--text-faint); opacity: 0.45; padding-right: 2px; }
+.aa-chip--ok {
+  background: color-mix(in srgb, var(--color-success, #5cb85c) 18%, transparent);
+  color: color-mix(in srgb, var(--color-success, #5cb85c) 80%, var(--text-primary));
+}
+.aa-sec--empty > .aa-sec-sum { opacity: 0.5; }
+.aa-sec--empty > .aa-sec-sum .aa-sec-count {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-faint);
+}
+.aa-usage-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  margin-top: 6px;
+  padding: 5px 2px 1px;
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 55%, transparent);
+}
+.aa-issue--noop { color: var(--text-faint); }

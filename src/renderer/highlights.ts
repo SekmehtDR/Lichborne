@@ -21,7 +21,7 @@ export interface HighlightRule {
   soundFile?: string   // optional WAV/audio file path to play on match
 }
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 
 const storageKey = (character: string) => scopedKey(character, 'highlights')
 
@@ -71,7 +71,7 @@ export function loadHighlights(character: string): HighlightRule[] {
 }
 
 export function saveHighlights(character: string, rules: HighlightRule[]): void {
-  localStorage.setItem(storageKey(character), JSON.stringify(rules))
+  safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newHighlight(pattern = '', scope: 'match' | 'line' = 'line'): HighlightRule {

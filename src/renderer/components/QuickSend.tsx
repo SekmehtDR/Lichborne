@@ -50,9 +50,18 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
 
   // Focus and select-all on open so a prefilled value can be either edited
   // mid-text (immediate typing replaces it) or kept as-is (just hit Enter).
+  // DEFERRED to the next frame: a bare focus() in the mount effect can lose the
+  // race when the modal opens — focus may still be on the element that triggered
+  // the open (an AppBar button, the prompt ">" marker, a menu item), or the modal
+  // isn't the committed focus target yet, leaving the input unfocused so the user
+  // can't immediately type (Morress). rAF runs after paint/commit so the input is
+  // a reliable focus target; the cleanup cancels it if we unmount first.
   useEffect(() => {
-    inputRef.current?.focus()
-    inputRef.current?.select()
+    const id = requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+    return () => cancelAnimationFrame(id)
   }, [])
 
   function handleSend(e: React.FormEvent) {

@@ -20,11 +20,22 @@ export function renderSegment(
   onSendCommand?: (cmd: string) => void,
   autoLinkUrls = true,
   webLinkSafety = true,
+  // A highlight's text color that must WIN over this segment's own preset/fg
+  // color. Without it, a "Line — entire line is styled" highlight (and the
+  // non-matched runs of a line) can't recolor preset-colored text — thoughts /
+  // speech / lnet / monsterbold render their preset color on top of the line
+  // container's color and the highlight is invisible (Cherisse). We override
+  // ONLY the text color, inline (which beats the no-`!important` [data-preset]
+  // CSS color); the preset's background / italic and the segment's bold / links
+  // are kept. Plain segments inherit the line container's color, so wrapping
+  // them is just belt-and-suspenders.
+  overrideColor?: string,
 ): React.ReactNode {
   const preset = seg.preset ?? (seg.bold ? 'bold' : undefined)
+  const fgColor = overrideColor ?? (seg.fg ? '#' + seg.fg : undefined)
   const style: React.CSSProperties | undefined =
-    seg.fg || seg.bg
-      ? { ...(seg.fg ? { color: '#' + seg.fg } : {}), ...(seg.bg ? { backgroundColor: '#' + seg.bg } : {}) }
+    fgColor || seg.bg
+      ? { ...(fgColor ? { color: fgColor } : {}), ...(seg.bg ? { backgroundColor: '#' + seg.bg } : {}) }
       : undefined
 
   if (seg.href && (!seg.autoHref || autoLinkUrls)) {

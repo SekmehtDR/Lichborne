@@ -10,6 +10,7 @@ import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '
 import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
 import { loadSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
+import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, type AliasRule, type MacroRule } from '../macros'
@@ -403,6 +404,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // zone / floating window). Kept in sync by the `debugOpen` effect (B166).
   const showDebugRef                  = useRef(false)
   const debugEventsBufRef             = useRef<GameEvent[]>([])
+  // Automation Analytics (v0.14.4): when this app-wide toggle is on, the runtime
+  // hooks below tally per-rule usage via recordFire. Seeded on mount + kept fresh
+  // by a cross-window `storage` listener AND a same-window custom event the
+  // toggle dispatches (a `storage` event never fires in the window that wrote it).
+  const analyticsEnabledRef           = useRef(loadAnalyticsEnabled())
+  useEffect(() => {
+    const refresh = () => { analyticsEnabledRef.current = loadAnalyticsEnabled() }
+    const onStorage = (e: StorageEvent) => { if (e.key === 'lichborne.automationAnalytics') refresh() }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('lichborne:analytics-changed', refresh)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('lichborne:analytics-changed', refresh)
+    }
+  }, [])
   const rawXmlBufRef                  = useRef<string[]>([])
   const fireLogBufRef                 = useRef<FireLogEntry[]>([])
   const [debugEvents, setDebugEvents] = useState<GameEvent[]>([])
@@ -809,8 +825,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     }))
   }, [])
 
+  // Trigger command actions must ECHO ">cmd" like a typed command — Sekmeht: a
+  // trigger that sends `smile` showed only the game response, not `>smile`. The
+  // raw `window.api.sendCommand` this used to call skipped the echo (it's the
+  // canonical `sendCommand` useCallback, defined later in the file, that paints
+  // the `>cmd` line). Route through that one via a latest-closure ref (pitfall
+  // #31) so triggers match map-walk / exit-button / in-text-link commands — which
+  // is exactly the "trigger via triggerCallbacks → sendCommand" the command-send
+  // pipeline note already claims. sessionIdRef stays the live id (pitfall #86).
+  const sendCommandRef = useRef<(cmd: string) => void>(() => {})
+
   const triggerCallbacks = useMemo(() => ({
-    sendCommand:  (cmd: string) => window.api.sendCommand(sessionIdRef.current,cmd),
+    sendCommand:  (cmd: string) => sendCommandRef.current(cmd),
     echoToStream,
     setVariable:  (name: string, value: string) => {
       triggerCtxRef.current.variables[name] = value
@@ -824,6 +850,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     flashWindow:  () => window.api.flashWindow(),
     writeLog:     (file: string, content: string) => window.api.writeLog(file, content),
     onFire: (name: string, matched: string, detail: string, stream: string, ruleId: string) => {
+      // Analytics: count the fire even when the Debug panel is closed (the
+      // engine only calls onFire after gates/cooldown pass, and not on replay).
+      if (analyticsEnabledRef.current) recordFire(session.character, ruleId)
       if (!showDebugRef.current) return
       const entry: FireLogEntry = {
         id: fireLogId++,
@@ -878,7 +907,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   const logHighlightFiresRef = useRef((text: string, stream: string) => {
     if (replayingRef.current) return
-    if (!showDebugRef.current) return
+    // Run this scan when the Debug Fires tab is open OR analytics is tracking —
+    // analytics rides this same scan (no new per-line pass; pitfall #82).
+    const analytics = analyticsEnabledRef.current
+    if (!showDebugRef.current && !analytics) return
     const lower = text.toLowerCase()
     for (const cr of allHighlightRulesRef.current) {
       if (cr.fastLower && !lower.includes(cr.fastLower)) continue
@@ -899,6 +931,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         cr.regex.lastIndex++ // avoid infinite loop on zero-width match
       }
       if (firstMatch !== null) {
+        if (analytics) recordFire(session.character, cr.rule.id)
+        if (!showDebugRef.current) continue   // analytics-only: counted, skip building a log entry
         const { style, soundFile, pattern, name, mode, scope } = cr.rule
         const nameFallback = name || pattern.slice(0, 60)
         const parts = [
@@ -1776,20 +1810,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // per-event upstream, so this can never silently lose history. Mutates the
       // buffers in place so the commit blocks below are unchanged.
       if (activeMutesRef.current.length > 0 || activeSubsRef.current.length > 0) {
+        // Analytics (v0.14.4): tally each mute/sub that acts. Rides the existing
+        // match loop — only built when tracking is on.
+        const fired = analyticsEnabledRef.current ? (id: string) => recordFire(session.character, id) : undefined
         const applyTextMods = (buf: TextLine[], streamId: string) => {
           if (buf.length === 0) return
           const mu  = activeMutesRef.current.filter(m => !m.rule.stream || m.rule.stream === streamId)
           const sub = activeSubsRef.current.filter(s => !s.rule.stream || s.rule.stream === streamId)
           if (mu.length > 0) {
             for (let i = buf.length - 1; i >= 0; i--) {
-              const segs = applyMutesToSegments(buf[i].segments, mu)
+              const segs = applyMutesToSegments(buf[i].segments, mu, fired)
               if (segs === null) buf.splice(i, 1)
               else if (segs !== buf[i].segments) buf[i] = { ...buf[i], segments: segs }
             }
           }
           if (sub.length > 0) {
             for (let i = 0; i < buf.length; i++) {
-              const segs = applySubstitutesToSegments(buf[i].segments, sub)
+              const segs = applySubstitutesToSegments(buf[i].segments, sub, fired)
               if (segs !== buf[i].segments) buf[i] = { ...buf[i], segments: segs }
             }
           }
@@ -2234,6 +2271,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         }
         const activeMacros = macrosRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
         const resolved = resolveMacro(e, activeMacros, buildMacroVars())
+        if (resolved && analyticsEnabledRef.current) recordFire(session.character, resolved.ruleId)
         if (resolved && resolved.commands.length > 0) {
           e.preventDefault()
           // v0.8.3: expand {RepeatLast} / {RepeatSecondToLast} /
@@ -2594,6 +2632,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
     const resolved = resolveAlias(text, activeAliases, buildMacroVars())
     if (resolved) {
+      if (analyticsEnabledRef.current) recordFire(session.character, resolved.ruleId)
       sendCommandSequence(resolved.commands, resolved.delayMs)
       if (resolved.passThrough) {
         const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
@@ -2678,6 +2717,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // sessionIdRef is synced every render, so it's always the live id.
     window.api.sendCommand(sessionIdRef.current, cmd)
   }, [])
+  // Mirror the canonical echoing sendCommand into the ref the trigger callbacks
+  // reach (declared above their useMemo, before this definition — so the ref
+  // bridges the ordering). sendCommand is []-deps stable, so this runs once.
+  useEffect(() => { sendCommandRef.current = sendCommand }, [sendCommand])
 
   // B172: stable identities (see clearStream note) — these feed the memoized
   // StreamPanel through sharedFrameProps. Defined here (above their old
@@ -3171,6 +3214,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                       onSendCommand={sendCommand}
                       autoLinkUrls={settings.autoLinkUrls}
                       webLinkSafety={settings.webLinkSafety}
+                      showTimestamp={!!streamTimestamps['main']}
                     />
                   </div>
                 )}
@@ -3406,6 +3450,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         const logGroup = mainCtxMenu.lineText
           ? [{ label: 'Show in Log', onClick: () => { setSessionLogSearch(mainCtxMenu.lineText!); setSessionLogKey(k => k + 1); setShowSessionLog(true) } }]
           : []
+        // Per-character timestamp toggle for the MAIN stream — same mechanism the
+        // panels use (streamTimestamps map → toggleStreamTimestamp), keyed 'main'.
+        // Default OFF (the map is empty on a new character) and persisted to YAML
+        // via toggleStreamTimestamp's saveProfile (Morress). Always available,
+        // like Clear — not gated on word/lineText.
+        const tsGroup = [{ label: streamTimestamps['main'] ? 'Disable Timestamps' : 'Enable Timestamps', onClick: () => toggleStreamTimestamp('main') }]
         const clGroup = [{ label: 'Clear', onClick: clearLines }]
         // Two sibling submenus: "Modify Text" (Highlight / Mute / Substitute —
         // change how text displays) and "Trigger" (automation off the text),
@@ -3415,7 +3465,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           return ne.flatMap((g, i) => i < ne.length - 1 ? [...g, sep] : g)
         }
         const modifyItems = join([hlGroup, muGroup, subGroup])
-        const tail = [...logGroup, ...clGroup]
+        const tail = [...logGroup, ...tsGroup, ...clGroup]
         const items: CtxItem[] = [
           ...(modifyItems.length ? [{ label: 'Modify Text', submenu: modifyItems }] : []),
           ...(trGroup.length     ? [{ label: 'Trigger',     submenu: trGroup }]     : []),

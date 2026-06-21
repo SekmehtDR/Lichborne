@@ -80,10 +80,15 @@ export function renderSegmentFull(
   // lineText/segOffset), the per-segment scan is skipped entirely — each
   // segment just intersects the shared ranges with its own window.
   precomputedLineRanges?: MatchRange[],
+  // A LINE-scope highlight's text color that overrides preset/fg color on the
+  // non-match-highlighted parts of the line (see renderSegment). Match-scope
+  // highlighted runs already carry their own overriding color (hl-match below),
+  // so this only flows to the plain/preset runs.
+  overrideColor?: string,
 ): React.ReactNode {
   const text = seg.text
-  if (!text) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
-  if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
+  if (!text) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety, overrideColor)
+  if (!nameRegex && matchRules.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety, overrideColor)
 
   const lineMode = lineText !== undefined && segOffset !== undefined
   const matchSource = lineMode ? lineText! : text
@@ -103,7 +108,7 @@ export function renderSegmentFull(
     if (segEnd > segStart) ranges.push({ ...r, start: segStart, end: segEnd })
   }
 
-  if (ranges.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety)
+  if (ranges.length === 0) return renderSegment(seg, segKey, onSendCommand, autoLinkUrls, webLinkSafety, overrideColor)
 
   // B116 (v0.8.5): priority-based overlay. The earlier algorithm sorted
   // ranges by start position with contacts winning ties, then dropped any
@@ -198,8 +203,9 @@ export function renderSegmentFull(
 
     if (s === null) {
       // No highlight/contact covers this run — render via renderSegment so it
-      // picks up the segment's preset / fg / bg as plain text.
-      parts.push(renderSegment({ ...seg, text: matchText }, k(), onSendCommand, autoLinkUrls, webLinkSafety))
+      // picks up the segment's preset / fg / bg as plain text (with a line-scope
+      // override color winning over them, if one is active).
+      parts.push(renderSegment({ ...seg, text: matchText }, k(), onSendCommand, autoLinkUrls, webLinkSafety, overrideColor))
       continue
     }
 

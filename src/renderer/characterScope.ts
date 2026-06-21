@@ -15,3 +15,32 @@ export function normalizeCharacter(character: string): string {
 export function scopedKey(character: string, suffix: string): string {
   return `lichborne.${normalizeCharacter(character)}.${suffix}`
 }
+
+// Quota-safe localStorage write. A character with thousands of imported rules
+// (× several characters in ONE localStorage) can exceed the ~5MB origin quota —
+// a bare setItem then THROWS and the write is silently lost, which reads back as
+// "I deleted a rule but it came back on reopen" (the YAML/cache still has the old
+// list). Returns false + surfaces a one-shot warning instead of throwing, so a
+// save failure is visible rather than silent. JadedSoul: delete-recreates bug.
+let storageWarned = false
+export function safeSetItem(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch (e) {
+    console.error('[storage] write failed (quota exceeded?):', key, e)
+    if (!storageWarned) {
+      storageWarned = true
+      try {
+        window.alert(
+          'Lichborne could not save — your browser storage for this app is full.\n\n' +
+          'This usually means you have a very large number of automation rules ' +
+          '(often from importing duplicates). Open Automations → turn on Analytics → ' +
+          '“Remove duplicate copies” to free space, then try again.\n\n' +
+          'Your YAML profile backups are unaffected.',
+        )
+      } catch { /* alert may be unavailable in some contexts */ }
+    }
+    return false
+  }
+}

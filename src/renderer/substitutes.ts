@@ -10,7 +10,7 @@
 // (`$health`, …) are NOT interpolated here (capture groups only — that's what
 // the source clients use); a future phase could add them.
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 import type { TextSegment } from '../shared/types'
 
 export interface SubstituteRule {
@@ -69,7 +69,7 @@ export function loadSubstitutes(character: string): SubstituteRule[] {
 }
 
 export function saveSubstitutes(character: string, rules: SubstituteRule[]): void {
-  localStorage.setItem(storageKey(character), JSON.stringify(rules))
+  safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newSubstitute(pattern = '', replacement = ''): SubstituteRule {
@@ -132,11 +132,17 @@ export function compileSubstitutes(
 // A single-segment line skips the joined pass entirely (no boundary to cross).
 // Returns the SAME array reference when nothing changed (so the caller's
 // identity check can skip the line rebuild). See CLAUDE.md pitfall #89.
+// `onFired` (Automation Analytics, v0.14.4) reports each substitute that acted on
+// the line, ONCE per line — a `fired` Set dedups the per-segment + joined double
+// pass. Wired only when analytics is on.
 export function applySubstitutesToSegments(
   segments: TextSegment[],
   subs: CompiledSubstitute[],
+  onFired?: (ruleId: string) => void,
 ): TextSegment[] {
   if (subs.length === 0) return segments
+  const fired = onFired ? new Set<string>() : null
+  const flush = () => { if (fired && onFired) fired.forEach(onFired) }
 
   // (1) Per-segment pass — preserves styling for matches contained in one
   // segment; drops a segment whose text a substitute emptied.
@@ -148,7 +154,7 @@ export function applySubstitutesToSegments(
       for (const s of subs) {
         s.regex.lastIndex = 0
         const next = t.replace(s.regex, s.rule.replacement)
-        if (next !== t) { t = next; perChanged = true }
+        if (next !== t) { t = next; perChanged = true; fired?.add(s.rule.id) }
       }
     }
     if (t.length > 0) perSeg.push(t === seg.text ? seg : { ...seg, text: t })
@@ -156,18 +162,20 @@ export function applySubstitutesToSegments(
 
   // A single segment can't have a cross-boundary match — the per-segment pass
   // already saw the whole line.
-  if (segments.length <= 1) return perChanged ? perSeg : segments
+  if (segments.length <= 1) { if (perChanged) flush(); return perChanged ? perSeg : segments }
 
   // (2) Joined-line pass — catches a match the per-segment pass split apart.
   const full = segments.map(s => s.text).join('')
   let joined = full
   for (const s of subs) {
     s.regex.lastIndex = 0
-    joined = joined.replace(s.regex, s.rule.replacement)
+    const next = joined.replace(s.regex, s.rule.replacement)
+    if (next !== joined) { joined = next; fired?.add(s.rule.id) }
   }
 
   // No line-level change → trust the per-segment result (styled or original).
-  if (joined === full) return perChanged ? perSeg : segments
+  if (joined === full) { if (perChanged) flush(); return perChanged ? perSeg : segments }
+  flush()
   // Per-segment already produced the joined text → every match was in-segment;
   // keep the styled output.
   if (perSeg.map(s => s.text).join('') === joined) return perSeg

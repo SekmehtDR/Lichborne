@@ -67,6 +67,11 @@ export default memo(function RoomPanel({ room, onSendCommand }: Props) {
     // B172: scan the section's joined text ONCE and share the ranges across
     // its segments (renderSegmentFull used to re-scan per segment).
     const lineRanges = computeLineMatchRanges(lineText, contacts, templates, nameRegex, matchRules)
+    // Computed BEFORE rendering so a line-scope highlight's text color can be
+    // passed down to override preset/fg segment colors (Cherisse — see
+    // renderSegment), matching the main scroll / stream panels.
+    const lineStyle = getLineHighlightStyle(segments, lineRules)
+    const lineOverrideColor = lineStyle?.color as string | undefined
     let cursor = 0
     const nodes = segments.map((seg, i) => {
       const offset = cursor
@@ -77,10 +82,9 @@ export default memo(function RoomPanel({ room, onSendCommand }: Props) {
         contacts, templates, nameRegex, matchRules,
         onContactClick, onSendCommand,
         false, false,
-        lineText, offset, lineRanges,
+        lineText, offset, lineRanges, lineOverrideColor,
       )
     })
-    const lineStyle = getLineHighlightStyle(segments, lineRules)
     return { nodes, style: lineStyle ?? undefined }
   }
 

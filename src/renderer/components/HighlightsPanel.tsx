@@ -7,6 +7,8 @@ import {
 } from '../highlights'
 import { playWavFile } from '../hooks/useTriggerEngine'
 import { useCharacter } from '../CharacterContext'
+import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
+import { analyzeHighlights } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
 import '../styles/groups.css'
@@ -29,12 +31,14 @@ interface Props {
   prefill?: HighlightRule
   initialTestText?: string
   inline?: boolean
+  analyticsOn?: boolean
 }
 
-export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, inline = false }: Props) {
+export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, inline = false, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]       = useState<HighlightRule[]>(() => loadHighlights(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const an = useRuleAnalytics(character, rules, analyzeHighlights, analyticsOn, onSaved)
   const [draft, setDraft]       = useState<HighlightRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -234,7 +238,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                   />
                   <span className="hp-list-swatch" style={listItemSwatch(r)} />
                   <span className="hp-list-label">{r.name || r.pattern || <em className="hp-unnamed">Unnamed</em>}</span>
-                  <span className="hp-list-scope">{r.scope}</span>
+                  {an.on ? <RuleBadges ruleId={r.id} report={an.report} stats={an.stats} /> : <span className="hp-list-scope">{r.scope}</span>}
                   <button
                     className="list-item-delete"
                     title="Delete"
@@ -258,6 +262,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
             {!draft ? (
               <div className="hp-no-selection">Select a rule or create a new one.</div>
             ) : (
+              <>
               <div className="hp-form">
 
                 <div className="hp-field">
@@ -480,7 +485,9 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                   />
                 </div>
 
-                <div className="hp-actions">
+              </div>{/* /hp-form — Delete/Revert/Save pinned below as a fixed footer */}
+
+              <div className="hp-actions">
                   {deleteConfirm ? (
                     <>
                       <span className="hp-confirm-text">Delete this rule?</span>
@@ -499,16 +506,31 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                         disabled={!draft.pattern.trim()}>Save</button>
                     </>
                   )}
-                </div>
-
               </div>
+              </>
             )}
           </div>
 
         </div>
   )
 
-  if (inline) return body
+  const content = an.on ? (
+    <div className="aa-host">
+      <AnalyticsReview rules={rules} report={an.report} stats={an.stats}
+        nameOf={r => r.name || r.pattern}
+        onJump={id => { const r = rules.find(x => x.id === id); if (r) selectRule(r) }}
+        onReset={an.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = rules.filter(r => !s.has(r.id))
+          setRules(u); saveHighlights(character, u)
+          setSelectedId(null); setDraft(null); setIsPendingNew(false)
+          onSaved?.()
+        }} />
+      {body}
+    </div>
+  ) : body
+
+  if (inline) return content
 
   const modal = (
     <div className="hp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -517,7 +539,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
           <span className="hp-title">Highlights</span>
           <button className="hp-close" onClick={onClose}>✕</button>
         </div>
-        {body}
+        {content}
       </div>
     </div>
   )

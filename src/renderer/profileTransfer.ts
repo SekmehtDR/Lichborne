@@ -64,8 +64,10 @@ export interface TransferCategory {
 // THE allowlist. Verified against every scopedKey(...) call in the renderer.
 // Deliberately EXCLUDED (never transferred): seededRepeatMacros / mainTopMigrated
 // (internal seed/migration bookkeeping), discoveredStreams (ephemeral, not
-// persisted), and activeGroupStates/activeModeId outside Replace (would dangle
-// when rule ids are regenerated on Append).
+// persisted), activeGroupStates/activeModeId outside Replace (would dangle
+// when rule ids are regenerated on Append), and automationStats (v0.14.4 —
+// per-character usage HISTORY, not config; meaningless on another character,
+// and its ruleIds wouldn't match a target's regenerated ones anyway).
 export const TRANSFER_CATEGORIES: TransferCategory[] = [
   {
     id: 'display', label: 'Display & Accessibility', kind: 'config',
@@ -543,6 +545,10 @@ function subKey(it: unknown): string {
 
 export function defaultExportFilename(sourceCharacter: string): string {
   const slug = (sourceCharacter || 'lichborne').replace(/[^\w-]+/g, '_').toLowerCase()
-  const date = new Date().toISOString().slice(0, 10)
+  // LOCAL date, not `toISOString()` (which is UTC). For a user west of UTC in the
+  // evening the UTC calendar date is already tomorrow, so the export landed with
+  // the NEXT day's date stamped on it (B198). Build YYYY-MM-DD from local parts.
+  const d = new Date()
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return `${slug}-profile-${date}.lb.yaml`
 }

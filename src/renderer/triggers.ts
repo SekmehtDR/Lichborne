@@ -68,7 +68,7 @@ export interface TriggerRule {
   allGroups: boolean
 }
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 
 const storageKey = (character: string) => scopedKey(character, 'triggers')
 
@@ -115,7 +115,7 @@ export function loadTriggers(character: string): TriggerRule[] {
 }
 
 export function saveTriggers(character: string, rules: TriggerRule[]): void {
-  localStorage.setItem(storageKey(character), JSON.stringify(rules))
+  safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newTriggerAction(type: ActionType = 'command'): TriggerAction {

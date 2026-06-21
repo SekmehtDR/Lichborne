@@ -1028,7 +1028,17 @@ ipcMain.handle('profile-transfer:export', (_e, filename: string, yamlText: strin
   // Sanitize the filename to a bare basename so a malicious/odd name can't
   // escape the Exports folder.
   const safe = path.basename(String(filename)).replace(/[^\w.\-]+/g, '_')
-  const target = path.join(dir, safe)
+  // Non-destructive: don't silently overwrite a same-named export (two exports
+  // of one character on one day collide on the date-stamped name). Insert -2/-3/…
+  // before the `.lb.yaml` double-extension so a prior export is never clobbered
+  // (Principle #3, B198). The returned full path is what the modal shows the user.
+  const m = safe.match(/^(.*?)(\.lb\.ya?ml)$/i)
+  const base = m ? m[1] : safe
+  const ext = m ? m[2] : ''
+  let target = path.join(dir, safe)
+  for (let n = 2; fs.existsSync(target) && n < 1000; n++) {
+    target = path.join(dir, `${base}-${n}${ext}`)
+  }
   fs.writeFileSync(target, yamlText, 'utf8')
   return target
 })

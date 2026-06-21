@@ -33,6 +33,12 @@ export const TextLineRow = memo(function TextLineRow({
 }: TextLineRowProps) {
   const lineStyle = getLineHighlightStyle(line.segments, lineRules)
   const monoStyle = line.mono ? { ...lineStyle, whiteSpace: 'pre-wrap' as const } : lineStyle
+  // A line-scope highlight that sets a text color must WIN over preset/fg
+  // segment colors (thoughts/speech/lnet/substituted lines), not just tint the
+  // container behind them — Cherisse. Pass it down so non-match runs recolor;
+  // match-scope runs still punch through with their own color. (bg-only line
+  // highlights leave `color` undefined → segments keep their own text color.)
+  const lineOverrideColor = lineStyle?.color as string | undefined
   const hasExtras = !!nameRegex || matchRules.length > 0
   // B115: build the joined line text once per render and pass it down with
   // each segment's offset, so match-scope regexes and contact-name lookups
@@ -53,10 +59,10 @@ export const TextLineRow = memo(function TextLineRow({
         <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
       )}
       {line.segments.map((seg, i) => {
-        if (!hasExtras) return renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety)
+        if (!hasExtras) return renderSegment(seg, i, onSendCommand, autoLinkUrls, webLinkSafety, lineOverrideColor)
         const offset = cursor
         cursor += seg.text.length
-        return renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety, lineText, offset, lineRanges)
+        return renderSegmentFull(seg, i, contacts, templates, nameRegex, matchRules, onContactClick, onSendCommand, autoLinkUrls, webLinkSafety, lineText, offset, lineRanges, lineOverrideColor)
       })}
     </div>
   )

@@ -453,8 +453,15 @@ select.hp-input { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-top: 2px;
   flex-shrink: 0;
+  /* Pinned footer OUTSIDE the scrolling .hp-form. It used to live inside the form,
+     where the flex:1 preview field shoved Delete/Revert/Save into odd positions
+     whenever the pane got short (e.g. with the Analytics banner open). Now it's a
+     sibling of .hp-form in the flex-column .hp-detail, so it always sits in one
+     clean row at the bottom. Match the form's horizontal padding. */
+  padding: 8px 18px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-base);
 }
 
 .hp-confirm-text {

@@ -32,7 +32,7 @@ export interface MacroRule {
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 
 const aliasKey = (character: string) => scopedKey(character, 'aliases')
 const macroKey = (character: string) => scopedKey(character, 'macros')
@@ -46,7 +46,7 @@ export function loadAliases(character: string): AliasRule[] {
 }
 
 export function saveAliases(character: string, rules: AliasRule[]): void {
-  localStorage.setItem(aliasKey(character), JSON.stringify(rules))
+  safeSetItem(aliasKey(character), JSON.stringify(rules))
 }
 
 export function loadMacros(character: string): MacroRule[] {
@@ -58,7 +58,7 @@ export function loadMacros(character: string): MacroRule[] {
 }
 
 export function saveMacros(character: string, rules: MacroRule[]): void {
-  localStorage.setItem(macroKey(character), JSON.stringify(rules))
+  safeSetItem(macroKey(character), JSON.stringify(rules))
 }
 
 // ── Factories ─────────────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ export function resolveAlias(
   rawInput: string,
   aliases: AliasRule[],
   gameVars: Record<string, string>,
-): { commands: string[]; delayMs: number; passThrough: boolean } | null {
+): { commands: string[]; delayMs: number; passThrough: boolean; ruleId: string } | null {
   const trimmed = rawInput.trim()
   if (!trimmed) return null
 
@@ -210,7 +210,7 @@ export function resolveAlias(
     const vars     = { ...gameVars, ...argVars }
     const commands = alias.commands.map(c => interpolate(c, vars).trim()).filter(Boolean)
 
-    return { commands, delayMs: alias.delayMs, passThrough: alias.passThrough }
+    return { commands, delayMs: alias.delayMs, passThrough: alias.passThrough, ruleId: alias.id }
   }
   return null
 }
@@ -221,12 +221,12 @@ export function resolveMacro(
   e: KeyboardEvent,
   macros: MacroRule[],
   gameVars: Record<string, string>,
-): { commands: string[]; delayMs: number } | null {
+): { commands: string[]; delayMs: number; ruleId: string } | null {
   for (const macro of macros) {
     if (!macro.enabled || !macro.key) continue
     if (matchKeyCombo(macro.key, e)) {
       const commands = macro.commands.map(c => interpolate(c, gameVars).trim()).filter(Boolean)
-      return { commands, delayMs: macro.delayMs }
+      return { commands, delayMs: macro.delayMs, ruleId: macro.id }
     }
   }
   return null

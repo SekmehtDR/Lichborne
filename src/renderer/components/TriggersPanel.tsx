@@ -11,6 +11,8 @@ import {
 } from '../triggers'
 import { playWavFile } from '../hooks/useTriggerEngine'
 import { useCharacter } from '../CharacterContext'
+import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
+import { analyzeTriggers } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/triggers.css'
 import '../styles/groups.css'
@@ -35,6 +37,7 @@ interface Props {
   prefillPattern?: string
   openRuleId?: string // v0.8.2: open an existing trigger for edit (Fires GOTO)
   inline?: boolean
+  analyticsOn?: boolean
 }
 
 // ── VarPicker ─────────────────────────────────────────────────────────────────
@@ -377,10 +380,11 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRuleId, inline = false }: Props) {
+export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRuleId, inline = false, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]       = useState<TriggerRule[]>(() => loadTriggers(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const an = useRuleAnalytics(character, rules, analyzeTriggers, analyticsOn, onSaved)
   const [draft, setDraft]       = useState<TriggerRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -609,6 +613,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     ))}
                     {r.actions.length > 3 && <span className="tp-badge">+{r.actions.length - 3}</span>}
                   </div>
+                  {an.on && <RuleBadges ruleId={r.id} report={an.report} stats={an.stats} />}
                   <button
                     className="list-item-delete"
                     title="Delete"
@@ -911,7 +916,23 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
         </div>
   )
 
-  if (inline) return body
+  const content = an.on ? (
+    <div className="aa-host">
+      <AnalyticsReview rules={rules} report={an.report} stats={an.stats}
+        nameOf={r => r.name || r.pattern}
+        onJump={id => { const r = rules.find(x => x.id === id); if (r) selectRule(r) }}
+        onReset={an.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = rules.filter(r => !s.has(r.id))
+          setRules(u); saveTriggers(character, u)
+          setSelectedId(null); setDraft(null); setIsPendingNew(false)
+          onSaved?.()
+        }} />
+      {body}
+    </div>
+  ) : body
+
+  if (inline) return content
 
   const modal = (
     <div className="tp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -920,7 +941,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
           <span className="tp-title">Triggers</span>
           <button className="tp-close" onClick={onClose}>✕</button>
         </div>
-        {body}
+        {content}
       </div>
     </div>
   )

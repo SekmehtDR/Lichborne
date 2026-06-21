@@ -411,6 +411,29 @@
   color: var(--color-danger);
 }
 
+/* Heartbeat — ONLY the favorited hearts pinned in the top Favorites section
+   beat (a favorited character also shows a static filled ♥ in its account/game
+   section below; that one stays still). A cute nod to the Genie map's Auto-Healer
+   marker: same ECG double-beat RHYTHM (lub-dub at 8%/28%, then a longer rest,
+   1.2s loop — mirrors @keyframes genie-heartbeat in map-panel.css) but expressed
+   as a SCALE pulse so the heart visibly *beats* rather than just fading. */
+@keyframes launcher-heartbeat {
+  0%   { transform: scale(1); }
+  8%   { transform: scale(1.28); }  /* beat 1 (lub) */
+  18%  { transform: scale(1.0); }
+  28%  { transform: scale(1.16); }  /* beat 2 (dub) */
+  38%  { transform: scale(1.0); }
+  100% { transform: scale(1.0); }   /* rest */
+}
+.launcher-section--favorites .launcher-card-favorite--on {
+  transform-origin: center;
+  animation: launcher-heartbeat 1.2s ease-in-out infinite;
+}
+/* NOT gated on prefers-reduced-motion — the Genie map Auto-Healer heartbeat this
+   mirrors isn't either (it respects the in-app map-animations/epilepsy toggles,
+   not the OS pref), and a gate here silently hid the beat when Windows "animation
+   effects" are off. This is a single gentle decorative pulse on a small icon. */
+
 .launcher-card-favorite:disabled {
   cursor: default;
 }

@@ -8,6 +8,8 @@ import {
   ALIAS_VARS, MACRO_VARS, MACRO_TOKENS,
 } from '../macros'
 import { useCharacter } from '../CharacterContext'
+import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
+import { analyzeMacros, analyzeAliases } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/macros.css'
 import '../styles/groups.css'
@@ -19,6 +21,7 @@ interface Props {
   onSaved?:     () => void
   inline?:      boolean
   initialTab?:  'aliases' | 'macros'
+  analyticsOn?: boolean
 }
 
 // ── Var Picker ────────────────────────────────────────────────────────────────
@@ -205,11 +208,13 @@ export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab }: Props) {
+export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab, analyticsOn = false }: Props) {
   const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
   const character = useCharacter()
   const [aliases, setAliases]   = useState<AliasRule[]>(() => loadAliases(character))
   const [macros,  setMacros]    = useState<MacroRule[]>(() => loadMacros(character))
+  const anAlias = useRuleAnalytics(character, aliases, analyzeAliases, analyticsOn, onSaved)
+  const anMacro = useRuleAnalytics(character, macros,  analyzeMacros,  analyticsOn, onSaved)
 
   const [selectedId,   setSelectedId]   = useState<string | null>(null)
   const [aliasDraft,   setAliasDraft]   = useState<AliasRule | null>(null)
@@ -418,7 +423,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         onClick={e => { e.stopPropagation(); toggleAlias(r.id) }}
                       />
                       <span className="ma-list-label">{r.name || r.input || <em className="ma-unnamed">Unnamed</em>}</span>
-                      <span className="ma-list-arrow">→</span>
+                      {anAlias.on ? <RuleBadges ruleId={r.id} report={anAlias.report} stats={anAlias.stats} /> : <span className="ma-list-arrow">→</span>}
                       <button
                         className="list-item-delete"
                         title="Delete"
@@ -600,6 +605,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         : <span className="ma-key-badge ma-key-badge--unset">—</span>
                       }
                       <span className="ma-list-label">{r.name || r.commands[0] || <em className="ma-unnamed">Unnamed</em>}</span>
+                      {anMacro.on && <RuleBadges ruleId={r.id} report={anMacro.report} stats={anMacro.stats} />}
                       <button
                         className="list-item-delete"
                         title="Delete"
@@ -719,7 +725,29 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
         </div>
   )
 
-  if (inline) return body
+  // Analytics banner for the ACTIVE tab (aliases vs key-bindings).
+  const review = tab === 'aliases'
+    ? (anAlias.on && <AnalyticsReview rules={aliases} report={anAlias.report} stats={anAlias.stats}
+        nameOf={r => r.name || r.input}
+        onJump={id => { const r = aliases.find(x => x.id === id); if (r) selectAlias(r) }}
+        onReset={anAlias.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = aliases.filter(r => !s.has(r.id))
+          setAliases(u); saveAliases(character, u)
+          setSelectedId(null); setAliasDraft(null); setIsPendingNew(false); onSaved?.()
+        }} />)
+    : (anMacro.on && <AnalyticsReview rules={macros} report={anMacro.report} stats={anMacro.stats}
+        nameOf={r => r.name || r.key}
+        onJump={id => { const r = macros.find(x => x.id === id); if (r) selectMacro(r) }}
+        onReset={anMacro.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = macros.filter(r => !s.has(r.id))
+          setMacros(u); saveMacros(character, u)
+          setSelectedId(null); setMacroDraft(null); setIsPendingNew(false); onSaved?.()
+        }} />)
+  const content = review ? <div className="aa-host">{review}{body}</div> : body
+
+  if (inline) return content
 
   const modal = (
     <div className="ma-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -742,7 +770,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
           </div>
           <button className="ma-close" onClick={onClose}>✕</button>
         </div>
-        {body}
+        {content}
       </div>
     </div>
   )

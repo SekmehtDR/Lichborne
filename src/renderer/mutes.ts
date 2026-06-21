@@ -5,7 +5,7 @@
 // `isRuleActive`. See DESIGN.md §31. Phase 1 applies to the main story window;
 // the optional `stream` scope is stored now and honored in Phase 2.
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 
 export interface MuteRule {
   id: string
@@ -82,7 +82,7 @@ export function loadMutes(character: string): MuteRule[] {
 }
 
 export function saveMutes(character: string, rules: MuteRule[]): void {
-  localStorage.setItem(storageKey(character), JSON.stringify(rules))
+  safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newMute(pattern = '', mode: MuteRule['mode'] = 'phrase'): MuteRule {
@@ -131,9 +131,13 @@ export function compileMutes(
 // read/rewritten). `match`-scope strips per-segment (within-segment is the
 // common case; a match spanning segment boundaries isn't caught — same limit as
 // per-segment highlighting). Blank lines never mute.
+// `onFired` (Automation Analytics, v0.14.4) is invoked with a mute's ruleId each
+// time it actually removes/strips text — wired only when analytics is on, so it
+// rides the existing match loop at ~no cost.
 export function applyMutesToSegments<T extends { text: string }>(
   segments: T[],
   mutes: CompiledMute[],
+  onFired?: (ruleId: string) => void,
 ): T[] | null {
   if (mutes.length === 0) return segments
   const lineText = segments.map(s => s.text).join('')
@@ -143,7 +147,7 @@ export function applyMutesToSegments<T extends { text: string }>(
   for (const m of mutes) {
     if (m.rule.scope === 'line') {
       m.regex.lastIndex = 0
-      if (m.regex.test(lineText)) return null
+      if (m.regex.test(lineText)) { onFired?.(m.rule.id); return null }
     }
   }
 
@@ -159,7 +163,7 @@ export function applyMutesToSegments<T extends { text: string }>(
     for (const m of matchMutes) {
       m.regex.lastIndex = 0
       const next = t.replace(m.regex, '')
-      if (next !== t) { t = next; touched = true }
+      if (next !== t) { t = next; touched = true; onFired?.(m.rule.id) }
     }
     if (!touched) return seg
     changed = true

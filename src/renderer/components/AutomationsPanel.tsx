@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { type HighlightRule } from '../highlights'
-import { type MuteRule } from '../mutes'
-import { type SubstituteRule } from '../substitutes'
+import { type HighlightRule, loadHighlights } from '../highlights'
+import { loadTriggers } from '../triggers'
+import { loadMacros, loadAliases } from '../macros'
+import { type MuteRule, loadMutes } from '../mutes'
+import { type SubstituteRule, loadSubstitutes } from '../substitutes'
 import HighlightsPanel from './HighlightsPanel'
 import TriggersPanel from './TriggersPanel'
 import MacrosPanel from './MacrosPanel'
@@ -10,6 +12,8 @@ import MutePanel from './MutePanel'
 import SubstitutesPanel from './SubstitutesPanel'
 import GroupsModesTab from './GroupsModesTab'
 import ImportWizard from './ImportWizard'
+import { useCharacter } from '../CharacterContext'
+import { loadAnalyticsEnabled, saveAnalyticsEnabled, pruneStats } from '../automationStats'
 import '../styles/automations.css'
 
 // v0.10.0: Lichborne→Lichborne export/import moved out of this panel into the
@@ -45,7 +49,40 @@ export default function AutomationsPanel({
   // import bumps it — a panel's own edits don't, so editing never resets the
   // panel's UI state. Fixes "imported list is empty until you tab away + back".
   const [importNonce, setImportNonce] = useState(0)
+  // Automation Analytics (v0.14.4): app-wide master toggle. Persisted to the
+  // shared profile; the custom event tells every GameWindow's analyticsEnabledRef
+  // to re-read (a `storage` event never fires in the window that wrote it).
+  const [analyticsOn, setAnalyticsOn] = useState(loadAnalyticsEnabled())
+  const character = useCharacter()
+  const toggleAnalytics = () => {
+    const next = !analyticsOn
+    setAnalyticsOn(next)
+    saveAnalyticsEnabled(next)
+    document.dispatchEvent(new CustomEvent('lichborne:analytics-changed'))
+  }
   useEffect(() => { setTab(initialTab) }, [initialTab])
+
+  // Bound the usage-stats store: when Analytics is on, drop stats for rules that
+  // no longer exist (deleted/re-imported). recordFire keys by ruleId and never
+  // removes an entry on its own, so without this the map would slowly bloat in
+  // localStorage AND the profile YAML as rules churn (Sekmeht: "I don't want this
+  // to bloat anywhere"). Opening this window is the natural, low-frequency moment
+  // to reconcile — and exactly when accurate stats matter. Build the live id set
+  // from all six rule types (the stats map is one flat map across them all).
+  useEffect(() => {
+    if (!analyticsOn) return
+    const liveIds = new Set<string>([
+      ...loadHighlights(character).map(r => r.id),
+      ...loadTriggers(character).map(r => r.id),
+      ...loadMacros(character).map(r => r.id),
+      ...loadAliases(character).map(r => r.id),
+      ...loadMutes(character).map(r => r.id),
+      ...loadSubstitutes(character).map(r => r.id),
+    ])
+    // If anything was orphaned, persist the cleaned map to YAML (onSaved →
+    // scheduled profile save) so the orphans don't re-seed from YAML next launch.
+    if (pruneStats(character, liveIds) > 0) onSaved?.()
+  }, [analyticsOn, character])
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'highlights', label: 'Highlights' },
@@ -75,6 +112,15 @@ export default function AutomationsPanel({
             ))}
           </div>
           <button
+            className={`at-analytics-btn${analyticsOn ? ' at-analytics-btn--on' : ''}`}
+            onClick={toggleAnalytics}
+            title={analyticsOn
+              ? 'Automation Analytics is ON — usage is being tracked. Turn off to stop tracking (preserves performance).'
+              : 'Automation Analytics is OFF. Turn on to track which rules fire and surface duplicates / broken / unused rules.'}
+          >
+            {'\u{1F4CA}'} Analytics: {analyticsOn ? 'On' : 'Off'}
+          </button>
+          <button
             className="at-import-btn"
             onClick={() => setShowImport(true)}
             title="Import highlights, macros, and colors from Wrayth, Genie, or Frostbite. To copy a setup between Lichborne characters, use the Transfer button on the launcher."
@@ -97,6 +143,7 @@ export default function AutomationsPanel({
               prefill={highlightPrefill}
               initialTestText={highlightTestText}
               onSaved={onSaved}
+              analyticsOn={analyticsOn}
             />
           )}
           {tab === 'triggers' && (
@@ -106,12 +153,13 @@ export default function AutomationsPanel({
               prefillPattern={triggerPrefillPattern}
               openRuleId={triggerOpenId}
               onSaved={onSaved}
+              analyticsOn={analyticsOn}
             />
           )}
-          {tab === 'macros'   && <MacrosPanel key={`macros-${importNonce}`} onClose={() => {}} inline initialTab="macros"   onSaved={onSaved} />}
-          {tab === 'aliases'  && <MacrosPanel key={`aliases-${importNonce}`} onClose={() => {}} inline initialTab="aliases"  onSaved={onSaved} />}
-          {tab === 'mutes'    && <MutePanel key={`mutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={mutePrefill} />}
-          {tab === 'substitutes' && <SubstitutesPanel key={`substitutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={substitutePrefill} />}
+          {tab === 'macros'   && <MacrosPanel key={`macros-${importNonce}`} onClose={() => {}} inline initialTab="macros"   onSaved={onSaved} analyticsOn={analyticsOn} />}
+          {tab === 'aliases'  && <MacrosPanel key={`aliases-${importNonce}`} onClose={() => {}} inline initialTab="aliases"  onSaved={onSaved} analyticsOn={analyticsOn} />}
+          {tab === 'mutes'    && <MutePanel key={`mutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={mutePrefill} analyticsOn={analyticsOn} />}
+          {tab === 'substitutes' && <SubstitutesPanel key={`substitutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={substitutePrefill} analyticsOn={analyticsOn} />}
           {tab === 'groups'   && <GroupsModesTab key={`groups-${importNonce}`} />}
         </div>
 

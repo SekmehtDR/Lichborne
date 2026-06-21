@@ -45,6 +45,7 @@ export function buildSharedProfile(): SharedProfile {
     myThemes:  loadMyThemes(),
     sessionLog: loadSessionLogSettings(),
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
+    automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
   }
 }
 
@@ -178,6 +179,10 @@ export async function importSharedProfile(): Promise<void> {
 
   if (data.bulkConnectSeparateWindows !== undefined) {
     localStorage.setItem('lichborne.bulkConnectSeparateWindows', String(data.bulkConnectSeparateWindows))
+  }
+
+  if (data.automationAnalytics !== undefined) {
+    localStorage.setItem('lichborne.automationAnalytics', String(data.automationAnalytics))
   }
 }
 

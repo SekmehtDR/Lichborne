@@ -3,6 +3,8 @@ import { loadSubstitutes, saveSubstitutes, newSubstitute, type SubstituteRule } 
 import { STREAM_OPTIONS } from '../mutes'
 import { isValidRegex } from '../highlights'
 import { useCharacter } from '../CharacterContext'
+import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
+import { analyzeSubstitutes } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
 import '../styles/groups.css'
@@ -17,12 +19,14 @@ interface Props {
   onSaved?: () => void
   inline?:  boolean
   prefill?: SubstituteRule   // from the game-window right-click "Substitute …"
+  analyticsOn?: boolean
 }
 
-export default function SubstitutesPanel({ onSaved, prefill }: Props) {
+export default function SubstitutesPanel({ onSaved, prefill, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]   = useState<SubstituteRule[]>(() => loadSubstitutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const an = useRuleAnalytics(character, rules, analyzeSubstitutes, analyticsOn, onSaved)
   const [draft, setDraft]   = useState<SubstituteRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -97,7 +101,7 @@ export default function SubstitutesPanel({ onSaved, prefill }: Props) {
 
   const regexInvalid = !!draft && draft.mode === 'regex' && !!draft.pattern && !isValidRegex(draft.pattern)
 
-  return (
+  const subBody = (
     <div className="hp-body">
       {/* Sidebar */}
       <div className="hp-sidebar">
@@ -128,7 +132,7 @@ export default function SubstitutesPanel({ onSaved, prefill }: Props) {
                 onClick={e => { e.stopPropagation(); toggleEnabled(r.id) }}
               />
               <span className="hp-list-label">{r.name || r.pattern || <em className="hp-unnamed">Unnamed</em>}</span>
-              <span className="hp-list-scope">{r.mode}</span>
+              {an.on ? <RuleBadges ruleId={r.id} report={an.report} stats={an.stats} /> : <span className="hp-list-scope">{r.mode}</span>}
               <button
                 className="list-item-delete"
                 title="Delete"
@@ -259,6 +263,21 @@ export default function SubstitutesPanel({ onSaved, prefill }: Props) {
           </div>
         )}
       </div>
+    </div>
+  )
+
+  if (!an.on) return subBody
+  return (
+    <div className="aa-host">
+      <AnalyticsReview rules={rules} report={an.report} stats={an.stats}
+        nameOf={r => r.name || r.pattern}
+        onJump={id => { const r = rules.find(x => x.id === id); if (r) selectRule(r) }}
+        onReset={an.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = rules.filter(r => !s.has(r.id))
+          persist(u); setSelectedId(null); setDraft(null); setIsPendingNew(false)
+        }} />
+      {subBody}
     </div>
   )
 }

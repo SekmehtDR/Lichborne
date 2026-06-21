@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { loadMutes, saveMutes, newMute, STREAM_OPTIONS, type MuteRule } from '../mutes'
 import { isValidRegex } from '../highlights'
 import { useCharacter } from '../CharacterContext'
+import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
+import { analyzeMutes } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
 import '../styles/groups.css'
@@ -18,12 +20,14 @@ interface Props {
   onSaved?: () => void
   inline?:  boolean
   prefill?: MuteRule   // from the game-window right-click "Mute …"
+  analyticsOn?: boolean
 }
 
-export default function MutePanel({ onSaved, prefill }: Props) {
+export default function MutePanel({ onSaved, prefill, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]   = useState<MuteRule[]>(() => loadMutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const an = useRuleAnalytics(character, rules, analyzeMutes, analyticsOn, onSaved)
   const [draft, setDraft]   = useState<MuteRule | null>(null)
   const [isPendingNew, setIsPendingNew] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -98,7 +102,7 @@ export default function MutePanel({ onSaved, prefill }: Props) {
 
   const regexInvalid = !!draft && draft.mode === 'regex' && !!draft.pattern && !isValidRegex(draft.pattern)
 
-  return (
+  const muteBody = (
     <div className="hp-body">
       {/* Sidebar */}
       <div className="hp-sidebar">
@@ -129,7 +133,7 @@ export default function MutePanel({ onSaved, prefill }: Props) {
                 onClick={e => { e.stopPropagation(); toggleEnabled(r.id) }}
               />
               <span className="hp-list-label">{r.name || r.pattern || <em className="hp-unnamed">Unnamed</em>}</span>
-              <span className="hp-list-scope">{r.scope}</span>
+              {an.on ? <RuleBadges ruleId={r.id} report={an.report} stats={an.stats} /> : <span className="hp-list-scope">{r.scope}</span>}
               <button
                 className="list-item-delete"
                 title="Delete"
@@ -267,6 +271,21 @@ export default function MutePanel({ onSaved, prefill }: Props) {
           </div>
         )}
       </div>
+    </div>
+  )
+
+  if (!an.on) return muteBody
+  return (
+    <div className="aa-host">
+      <AnalyticsReview rules={rules} report={an.report} stats={an.stats}
+        nameOf={r => r.name || r.pattern}
+        onJump={id => { const r = rules.find(x => x.id === id); if (r) selectRule(r) }}
+        onReset={an.reset}
+        onBulkRemove={ids => {
+          const s = new Set(ids); const u = rules.filter(r => !s.has(r.id))
+          persist(u); setSelectedId(null); setDraft(null); setIsPendingNew(false)
+        }} />
+      {muteBody}
     </div>
   )
 }

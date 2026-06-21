@@ -36,6 +36,11 @@ export interface SharedProfile {
   // Bulk Connect "open each character in its own window" preference (v0.11.0).
   // App-wide, persisted here. Optional → older files default it to false.
   bulkConnectSeparateWindows?: boolean
+  // Automation Analytics master toggle (v0.14.4). App-wide, off by default —
+  // when on, per-rule usage tracking runs + the health UI appears in the
+  // Automations panel. Optional → older files default it to false. The stats
+  // DATA is per-character (state.automationStats); only this enable flag is shared.
+  automationAnalytics?: boolean
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────
