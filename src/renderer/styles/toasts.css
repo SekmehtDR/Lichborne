@@ -1,0 +1,52 @@
+/* Toast notifications (DESIGN.md §37.6). Theme-safe by construction: surfaces
+   from the general vars, semantic hue stripes via color-mix toward the theme's
+   own colors (pitfall #55 pattern) so they read on light AND dark themes.
+   The dark drop-shadow literal is one of the sanctioned exceptions
+   (Principle #4 — dark shadows read fine on light themes too). */
+
+.toast-stack {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 200; /* above WindowLayer (60) / ExperienceLayer (61) / overlays (>=100) */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+  pointer-events: none; /* the stack itself never blocks clicks; toasts re-enable */
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  font-size: 0.8rem; /* app chrome — deliberately NOT game-font scaled (Principle #9 exception) */
+  color: var(--text-primary);
+  animation: toast-in 160ms ease-out;
+}
+
+.toast--success { border-left-color: color-mix(in srgb, #3fae5a 75%, var(--text-primary)); }
+.toast--error   { border-left-color: color-mix(in srgb, #e04a3f 75%, var(--text-primary)); }
+
+.toast-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  line-height: 1.25;
+}
+
+.toast-message {
+  color: var(--text-muted);
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

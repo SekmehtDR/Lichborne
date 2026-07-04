@@ -1,0 +1,106 @@
+/* Slash-command palette (DESIGN.md §37.3). Theme-safe: general vars only;
+   the dark drop-shadow literal is a sanctioned exception (Principle #4).
+   Portaled to body, so it sizes off var(--game-font-size) directly
+   (pitfall #45b) rather than inheriting a game-area anchor. Rows pin
+   line-height (polish standard #7 — strips read as text-height). */
+
+.slash-palette {
+  position: fixed;
+  z-index: 130; /* above WindowLayer (60) / ExperienceLayer (61) / overlays (>=100) */
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  font-size: calc(var(--game-font-size, 12px) * 0.95);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.slash-palette-head {
+  padding: 4px 10px;
+  font-size: 0.85em;
+  line-height: 1.3;
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.slash-palette-hint { color: var(--text-dim); }
+
+.slash-palette-list {
+  max-height: 16em;
+  overflow-y: auto;
+  padding: 3px 0;
+}
+
+.slash-palette-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8em;
+  padding: 3px 10px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.slash-palette-row--sel {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.slash-palette-cmd {
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.slash-palette-desc {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-palette-empty {
+  padding: 8px 10px;
+  color: var(--text-muted);
+}
+
+/* ── Argument-hint mode ── */
+
+.slash-palette-args { padding: 6px 10px 7px; }
+
+.slash-palette-sig {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+.slash-palette-desc-line {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  line-height: 1.3;
+}
+
+.slash-palette-example { color: var(--text-secondary); font-style: italic; }
+
+.slash-palette-preview {
+  margin-top: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-base);
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+.slash-palette-valid {
+  margin-top: 5px;
+  font-size: 0.9em;
+  line-height: 1.3;
+  color: var(--text-dim);
+}
+
+/* Semantic status hues via color-mix toward theme text (pitfall #55 pattern). */
+.slash-palette-valid--ok  { color: color-mix(in srgb, #3fae5a 70%, var(--text-primary)); }
+.slash-palette-valid--err { color: color-mix(in srgb, #e04a3f 70%, var(--text-primary)); }

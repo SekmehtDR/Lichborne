@@ -33,7 +33,7 @@ export interface Contact {
   lastEncounterAt?: number  // timestamp of the most recent counted encounter, for the cooldown gate
 }
 
-import { scopedKey } from './characterScope'
+import { scopedKey, safeSetItem } from './characterScope'
 
 const storageContacts  = (character: string) => scopedKey(character, 'contacts')
 const storageTemplates = (character: string) => scopedKey(character, 'contact-templates')
@@ -58,7 +58,10 @@ export function loadContacts(character: string): Contact[] {
 }
 
 export function saveContacts(character: string, contacts: Contact[]): void {
-  localStorage.setItem(storageContacts(character), JSON.stringify(contacts))
+  // Quota-safe (B197 family, v0.14.5): contact lists get big via imports
+  // (a single Frostbite names import minted 151) — a bare setItem at quota
+  // throws and silently loses the write.
+  safeSetItem(storageContacts(character), JSON.stringify(contacts))
 }
 
 function normalizeTemplate(t: Partial<ContactTemplate> & { id: string; name: string }): ContactTemplate {
@@ -91,7 +94,8 @@ export function loadContactTemplates(character: string): ContactTemplate[] {
 }
 
 export function saveContactTemplates(character: string, templates: ContactTemplate[]): void {
-  localStorage.setItem(storageTemplates(character), JSON.stringify(templates))
+  // Quota-safe (B197 family, v0.14.5) — see saveContacts.
+  safeSetItem(storageTemplates(character), JSON.stringify(templates))
 }
 
 export function newContact(): Contact {

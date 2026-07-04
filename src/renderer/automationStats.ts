@@ -108,7 +108,12 @@ export function resetStats(character: string): void {
   const s: AutomationStats = { trackingSince: Date.now(), rules: {} }
   cache.set(character, s)
   dirty.delete(character)
-  localStorage.setItem(statsKey(character), JSON.stringify(s))
+  // Same never-throw rule as flushNow: a full origin (B197's 3400-highlight
+  // scenario) must not turn the Reset click into an error. Writing a tiny empty
+  // map over an existing key is a net shrink, so failure is near-impossible —
+  // and the in-memory cache above is already reset either way.
+  try { localStorage.setItem(statsKey(character), JSON.stringify(s)) }
+  catch (e) { console.warn('[analytics] stats reset write skipped (storage full?)', e) }
 }
 
 /**

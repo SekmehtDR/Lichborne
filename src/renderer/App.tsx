@@ -8,6 +8,7 @@ import GameWindow from './components/GameWindow'
 import AppBar from './components/AppBar'
 import QuickSend from './components/QuickSend'
 import BulkConnectPicker from './components/BulkConnectPicker'
+import ToastHost from './components/ToastHost'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
 import { RosterProvider, useRoster } from './RosterContext'
@@ -755,6 +756,9 @@ function AppShell() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      {/* Toast stack (DESIGN §37.6) — one host per BrowserWindow; any module
+          surfaces a notice via showToast() (e.g. safeSetItem's quota warning). */}
+      <ToastHost />
       {(updateState !== 'idle' && !updateDismissed) && (
         <div className="update-banner">
           {updateState === 'available' && (

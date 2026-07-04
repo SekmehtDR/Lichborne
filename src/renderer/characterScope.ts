@@ -8,6 +8,8 @@
 // YAML files (profiles/{character}.yaml) remain authoritative. localStorage is
 // just a fast cache that gets repopulated from YAML on each login.
 
+import { showToast } from './toasts'
+
 export function normalizeCharacter(character: string): string {
   return character.trim().toLowerCase() || '_'
 }
@@ -31,15 +33,19 @@ export function safeSetItem(key: string, value: string): boolean {
     console.error('[storage] write failed (quota exceeded?):', key, e)
     if (!storageWarned) {
       storageWarned = true
-      try {
-        window.alert(
-          'Lichborne could not save — your browser storage for this app is full.\n\n' +
-          'This usually means you have a very large number of automation rules ' +
+      // Non-blocking toast (v0.14.5, DESIGN §37.6) — was a window.alert, which
+      // froze the whole renderer mid-play. Same one-shot semantics; the
+      // console.error above still fires on EVERY failed write.
+      showToast({
+        kind: 'error',
+        durationMs: 15000,
+        title: 'Lichborne could not save — storage is full',
+        message:
+          'This usually means a very large number of automation rules ' +
           '(often from importing duplicates). Open Automations → turn on Analytics → ' +
-          '“Remove duplicate copies” to free space, then try again.\n\n' +
+          '“Remove duplicate copies” to free space, then try again. ' +
           'Your YAML profile backups are unaffected.',
-        )
-      } catch { /* alert may be unavailable in some contexts */ }
+      })
     }
     return false
   }

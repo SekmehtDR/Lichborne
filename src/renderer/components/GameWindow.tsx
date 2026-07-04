@@ -6,10 +6,12 @@ import { TextLineRow } from './TextLineRow'
 import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
 import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
-import { loadContacts, loadContactTemplates, saveContacts, type Contact } from '../contacts'
-import { loadHighlights, newHighlight, type HighlightRule } from '../highlights'
-import { loadMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
-import { loadSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
+import { loadContacts, loadContactTemplates, saveContacts, saveContactTemplates, type Contact } from '../contacts'
+import { loadHighlights, saveHighlights, newHighlight, type HighlightRule } from '../highlights'
+import { loadMutes, saveMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
+import { loadSubstitutes, saveSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
+import { runSlash, type SlashContext } from '../slashCommands'
+import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
@@ -396,6 +398,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => { commandRef.current = command }, [command])
   const historyRef    = useRef<string[]>([])
   const historyIdxRef = useRef(-1)
+  // Slash-command palette (DESIGN §37) — shown while the input holds a '/'
+  // line; Esc dismisses it until the input CHANGES (any edit reopens it, the
+  // Discord model). The ref forwards ↑/↓/Tab/Esc from handleCommandKey.
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const slashPaletteRef = useRef<SlashPaletteHandle>(null)
   const [disconnecting, setDisconnecting] = useState(false)
   const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
@@ -2612,6 +2619,40 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Command bar ───────────────────────────────────────────────────────────
 
+  // Slash-command execution (DESIGN §37). The context wraps the SAME rails a
+  // panel save uses — saveX (quota-safe via safeSetItem) + setState (recompiles
+  // through the existing memos) + the debounced profile save — so a slash-
+  // created rule is byte-compatible with an editor-created one. Result lines
+  // render as client text (preset 'internal-system', the "Connection closed."
+  // pattern) and log to the Session Log under [sys].
+  function runSlashLine(text: string) {
+    const ctx: SlashContext = {
+      character: session.character,
+      getHighlights: () => highlights,
+      applyHighlights: rules => { saveHighlights(session.character, rules); setHighlights(rules); saveProfile() },
+      getMutes: () => mutes,
+      applyMutes: rules => { saveMutes(session.character, rules); setMutes(rules); saveProfile() },
+      getSubstitutes: () => substitutes,
+      applySubstitutes: rules => { saveSubstitutes(session.character, rules); setSubstitutes(rules); saveProfile() },
+      // Contacts go through the pitfall-#36 blessed path — save + set TOGETHER,
+      // so the B119 cleanup effect drops any in-flight room-tracking buffer.
+      getContacts: () => contacts,
+      applyContacts: next => { saveContacts(session.character, next); setContacts(next); saveProfile() },
+      getContactTemplates: () => contactTemplates,
+      applyContactTemplates: next => { saveContactTemplates(session.character, next); setContactTemplates(next); saveProfile() },
+      getMainTimestamps: () => !!streamTimestamps['main'],
+      toggleMainTimestamps: () => toggleStreamTimestamp('main'),
+    }
+    const result = runSlash(text, ctx)
+    const marker = result.ok ? '— ' : '✕ '
+    setLines(prev => appendTrimmed(prev, result.lines.map((l, i) => ({
+      id: lineId++,
+      segments: [{ text: (i === 0 ? marker : '  ') + l, preset: 'internal-system' }],
+      timestamp: Date.now(),
+    }))))
+    logToSession(result.lines.map(l => ({ ts: Date.now(), stream: 'sys', text: l })))
+  }
+
   // Dispatches a single user-input string through the same path the command
   // bar uses: alias resolution + echo + send + log. Extracted from
   // handleCommand so the {RepeatLast} / {RepeatSecondToLast} /
@@ -2628,6 +2669,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (opts.pushToHistory) {
       if (historyRef.current[0] !== text) historyRef.current = [text, ...historyRef.current].slice(0, 200)
       historyIdxRef.current = -1
+    }
+    // Slash commands (DESIGN §37): a '/'-leading line is a CLIENT command — it
+    // executes locally and NEVER reaches the game (unknown commands fail closed
+    // with a hint, so a typo can't leak to DR). '//' escapes: send the rest as
+    // a normal game command. Runs BEFORE alias resolution and after the history
+    // push (↑ recalls a slash command). History push above is unchanged.
+    if (text.startsWith('/')) {
+      if (text.startsWith('//')) {
+        text = text.slice(1)
+      } else {
+        runSlashLine(text)
+        if (opts.clearInput) setCommand('')
+        return
+      }
     }
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
     const resolved = resolveAlias(text, activeAliases, buildMacroVars())
@@ -2663,6 +2718,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   useEffect(() => { dispatchUserTextRef.current = dispatchUserText })
 
   function handleCommandKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Slash palette first (DESIGN §37.3): while it's open, ↑/↓ move its
+    // selection, Tab completes, Esc dismisses — consumed keys never reach the
+    // history logic. Enter is deliberately NOT consumed (submits as typed).
+    if (slashPaletteRef.current?.handleKey(e)) { e.preventDefault(); return }
     const h = historyRef.current
     if (e.key === 'ArrowUp') {
       e.preventDefault()
@@ -2716,6 +2775,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // the command in main's getSession while the echo above still paints.
     // sessionIdRef is synced every render, so it's always the live id.
     window.api.sendCommand(sessionIdRef.current, cmd)
+    // Session Log: record the echo like dispatchUserText/sendCommandSequence do,
+    // so map walks / exit clicks / in-text links / trigger commands appear in the
+    // log the same way they appear on screen (the log otherwise shows the game's
+    // response with no command). logToSession reads only refs + fresh settings +
+    // the immutable session.character, so the first-render capture is safe here.
+    logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${cmd}` }])
   }, [])
   // Mirror the canonical echoing sendCommand into the ref the trigger callbacks
   // reach (declared above their useMemo, before this definition — so the ref
@@ -3250,8 +3315,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       <div className="cmd-input-wrap">
         <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} aimExpires={aimExpires} timerStyle={settings.timerStyle} />
         <input ref={inputRef} type="text" autoFocus value={command}
-          onChange={e => { historyIdxRef.current = -1; setCommand(e.target.value) }}
+          onChange={e => { historyIdxRef.current = -1; setSlashDismissed(false); setCommand(e.target.value) }}
           onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+        {/* Slash palette (DESIGN §37) — mounted only while the input holds a
+            client command; portals itself above the input, so it works in the
+            skeleton AND a floating command window. */}
+        {command.startsWith('/') && !command.startsWith('//') && !slashDismissed && (
+          <SlashPalette
+            ref={slashPaletteRef}
+            input={command}
+            anchor={inputRef.current}
+            onComplete={text => { setCommand(text); inputRef.current?.focus() }}
+            onDismiss={() => setSlashDismissed(true)}
+          />
+        )}
       </div>
       <button type="submit" className="btn-send">Send</button>
     </form>

@@ -3993,7 +3993,7 @@ Lich5 exposes `lib/common/reusable_tcp_server.rb` — a TCP server for richer bi
 - **`connectWithRetry()`** — retries the real connection (250ms cadence, ≥30s cap) until the port accepts. The first success IS the session socket; no throwaway probe sockets (Lich's listener takes one front-end then closes — a connect-then-disconnect probe could confuse it). `launch()` resolves on the child's `spawn` event and watches `exit`, so a Lich that dies on startup fails fast with a real message (its launch-log tail) instead of a vague timeout.
 - **Serialized launch queue** — `serializeLichLaunch()`, a module-level promise chain shared across every per-session `ConnectionManager`. Because each Lich serves one front-end then frees port 11024, multiple characters reuse the port *sequentially*; the chain keeps only one character in the spawn→connect window at a time, so concurrent logins never race the bind or cross-wire under Windows `SO_REUSEADDR`. SGE/eaccess auth runs *outside* the chain (overlaps the wait) and resolves *before* the spawn, so a failed login never orphans a Lich. A failed launch `killProcess()`es its Lich so it can't squat the port.
 
-**GTK-friendly spawn shape (v0.9.x).** The connect model above is unchanged, but the *process spawn* was reworked so Ruby/GTK scripts (`;vars setup`, kill-counter, …) get a normal Windows GUI-subsystem context — the community-standard shape (matches how Frostbite/Genie launch Lich). The pre-v0.9.x shape (`ruby.exe` console interpreter + `windowsHide: true` + stderr piped) was the suspected cause of GTK widget-pump flakiness. The new shape: (1) **`rubyw.exe`** (GUI subsystem) derived from the configured ruby path by `resolveRubyw()` (`/ruby\.exe$/i` → `rubyw.exe`, fall back to the given path if absent); (2) **no `windowsHide`**; (3) **stdout+stderr → a per-character log file** `{userData}/Logs/lich-launch/{Character}.log` (truncated per launch) instead of a pipe — `describeExit()` reads its tail for the error banner. `detached` + `unref()` + the child handle are retained (Lich must outlive the front-end; the handle still fails a dead launch fast). The configured/default ruby path stays `ruby.exe`; derivation happens at launch time, so no settings migration. This reverses the earlier "do not support GTK" stance (see §24 / CLAUDE.md); GTK support is expected-working pending empirical verification.
+**GTK-friendly spawn shape (v0.9.x).** The connect model above is unchanged, but the *process spawn* was reworked so Ruby/GTK scripts (`;vars setup`, kill-counter, …) get a normal Windows GUI-subsystem context — the community-standard shape (matches how Frostbite/Genie launch Lich). The pre-v0.9.x shape (`ruby.exe` console interpreter + `windowsHide: true` + stderr piped) was the suspected cause of GTK widget-pump flakiness. The new shape: (1) **`rubyw.exe`** (GUI subsystem) derived from the configured ruby path by `resolveRubyw()` (`/ruby\.exe$/i` → `rubyw.exe`, fall back to the given path if absent); (2) **no `windowsHide`**; (3) **stdout+stderr → a per-character log file** `{userData}/Logs/lich-launch/{Character}.log` (truncated per launch) instead of a pipe — `describeExit()` reads its tail for the error banner. `detached` + `unref()` + the child handle are retained (Lich must outlive the front-end; the handle still fails a dead launch fast). The configured/default ruby path stays `ruby.exe`; derivation happens at launch time, so no settings migration. This reverses the earlier "do not support GTK" stance (see §24 / CLAUDE.md); GTK support was empirically verified working on 2026-07-03 (GTK script windows paint and behave correctly under the new spawn).
 
 #### The Gray Zone — Keep Thin, Freeze Scope
 
@@ -5065,7 +5065,7 @@ Captures every event that crosses the wire for each connected character — game
 - `[main]` — game text
 - `[thoughts]`, `[conversations]`, `[deaths]`, `[arrivals]`, `[spells]`, etc. — all named streams
 - `[combat]`, `[atmospherics]`, `[group]`, `[log]`, `[LichScripts]`, custom Lich-script streams
-- `[cmd]` — command echo (`>command`)
+- `[cmd]` — command echo (`>command`). As of v0.14.5 this covers EVERY command path that echoes on screen — typed, macro/alias sequences, AND panel-sourced/clicked sends (map walks, room-exit buttons, in-text command links, trigger `command` actions): all three GameWindow send funnels (`dispatchUserText`, `sendCommandSequence`, the canonical `sendCommand`) log the echo, so the log reads exactly like the screen did. Pre-v0.14.5 the canonical `sendCommand` echoed without logging, leaving clicked/triggered commands out of the log.
 - `[sys]` — Connected/Disconnected/errors
 
 **Off by default (opt-in for debugging):**
@@ -6523,3 +6523,59 @@ A **self-tuning** layer over the player's OWN native automations (highlights, tr
 **Rejected / deferred:** shadowed-highlight detection (a rule perpetually overridden under the v0.11.3 specificity model) and group-gated-never-active detection (both harder). The same shape generalizes to Contacts later.
 
 See CLAUDE.md (Automations architecture note + pitfalls #82 / #90).
+
+---
+
+## 37. Slash Commands ("Client Commands") — designed 2026-07-03; Phase 1 built v0.14.5
+
+Keyboard-speed client control from the command bar: typing `/` opens a completion **palette**, and `/highlight add "goblin" red` creates a highlight without a modal round-trip. Origin: a tester asked for a command-line way to add highlights; Sekmeht proposed the `/`-prefix + command list. The panels remain the place to *craft* rules; slash commands are the way to *capture* them mid-play.
+
+### 37.1 Why `/` and the product frame
+
+Every sibling client owns a client-command prefix — Lich `;`, Genie `#`, Profanity `.` — and **`/` is unclaimed** in this ecosystem, with modern muscle memory (Discord/Slack). The feature is squarely display/configuration layer (Principle #2-safe): it configures Lichborne's OWN native rule layer, needs no Lich, and duplicates nothing Lich does. A `/`-leading line NEVER reaches the game: known commands execute, unknown commands **fail closed** with a hint (never silently leak a typo to DR), and `//text` escapes to send a literal `/text` to the game.
+
+### 37.2 Syntax
+
+```
+/<noun> <verb> "required arg" [one positional sugar] [option=value ...] [flags]
+```
+
+- **Noun-first** — everything about highlights starts `/highlight` (alias `/hl`). Nouns have aliases (`/gag` → mute, `/substitute` → sub, `/ts` → timestamps).
+- **One positional sugar per command** — the argument you always want rides positionally (highlight's COLOR: `/highlight add "goblin" red`). Everything else is `key=value` so the syntax never becomes order-dependent soup.
+- **Colors** — a curated named set (red, green, blue, yellow, orange, purple, pink, cyan, teal, gold, white, black, gray/grey, brown, magenta, lime) mapped to readable hexes, plus raw `#RGB`/`#RRGGBB`.
+- **Quoting** — `"..."` with `\"` escape; single-word args can go bare.
+- **Flags** — bare booleans (`bold`, `glow`).
+
+Phase 1 command set: `/help [command]`, `/highlight add|remove|list`, `/mute add|remove|list`, `/sub add|remove|list`, `/contact add|remove|list`, `/template add|remove|list`, `/timestamps [on|off]`. Defaults on `add` come from the SAME `newX()` factories the editors/right-click use (so a slash-created rule is byte-compatible), with one override: slash highlights default `scope=match` (you're highlighting a word/phrase you just saw, not the whole line).
+
+**Contacts & templates (added to Phase 1 same pass, Sekmeht) — four decided behaviors:** (1) `/contact add "Bob" Enemies` on an EXISTING Bob **updates** him (moves to Enemies; guild/notes options update too) — "add a name to a template" is the same gesture whether or not he's already a contact; existing + nothing to change = error. (2) **The template must exist** — a typo'd template name fails closed listing the available names; creating templates is the explicit `/template add "Watchlist" orange [tag="[W]"] [bold]` (a typed typo must never silently mint an empty template — the import wizard's find-or-create is right for bulk, wrong for typing). (3) `/template remove` **mirrors ContactsPanel.deleteTemplate**: the template goes, member contacts keep their entries with a dangling `templateId` (harmless — renderer lookups tolerate it), the output reports the member count, and removing a built-in (Friends/Enemies) notes that `loadContactTemplates` resurrects defaults next session. (4) **Names normalize**: one word (letters/apostrophe/hyphen), first letter capitalized, duplicate-checked case-insensitively. `/template` is its own noun (aliases `tpl`, `templates`) rather than a nested `/contact template …` — the registry is one-noun-one-verb by design, and discoverability survives via ranking (its descriptions say "contact template", so typing `/contact` surfaces them below the `/contact` entries). Contact applies go through the **pitfall-#36 blessed path** (`saveContacts` + `setContacts` together → the B119 cleanup effect drops any in-flight room-tracking buffer). `saveContacts`/`saveContactTemplates` were also quota-hardened with `safeSetItem` in the same pass (B197 family — contact imports run to 150+ names).
+
+### 37.3 The palette (the UX heart)
+
+Typing `/` as the first character of the command bar opens a completion palette above the input:
+
+1. **Command-list mode** — every registered command with its one-line description, **RANKED as you type** (Sekmeht's `/highlight l`→Tab-gave-`add` report): `scoreEntry` scores each typed word by match QUALITY — exact noun/alias/verb (100) > **verb prefix** (80 — the `l`→`list` case) > noun prefix (60) > verb substring (30) > noun substring (20) > description (10) — the list sorts best-first (stable sort keeps registry order on ties, so bare `/t` resolves to `/template add` by registry position while `/ts` stays deterministic via timestamps' exact alias), and the selection resets to the top match on every edit. **Tab (or click) completes the top/selected match — i.e. what the user was typing, never registry order**; ↑/↓ move the selection, **Enter always submits the input as typed**, Esc dismisses (until the input changes). Enter-submits/Tab-completes is deliberate — Enter must stay predictable for muscle-memory users who type the full command blind. Every-word-must-match still applies (a word matching nothing excludes the entry); mere-presence matching without ranking was the original bug — the letter `l` is a substring of "high·l·ight" itself, so all three verbs "matched" equally.
+2. **Argument-hint mode** — once a noun+verb resolve, the palette shows the signature + description + one example, with **live validation** of the current parse ("`#FF000` isn't a valid color") and — for `highlight add` — a **live preview chip** rendering sample text in the parsed color/bg/bold.
+3. Palette rows follow the polish standards: theme vars only, `em` sizing off the game-font anchor, `line-height: 1` rows, portal to body (z above the WindowLayer/ExperienceLayer) so it works identically in Static and Windowed Panels (the command bar can live in a floating window).
+
+Feedback for executed commands is a client-styled line in the main window (`preset: 'internal-system'`, the "Connection closed." pattern) — quiet, in-flow, and captured by the Session Log under `[sys]`.
+
+### 37.4 Architecture
+
+- **Interception** at the top of `dispatchUserText` (the canonical typed-input path, CLAUDE.md pitfall #31), BEFORE alias resolution — a slash line executes and returns (no `>cmd` echo, no send, no game round-trip). History push still happens (↑ recalls a slash command).
+- **Registry, not if-chain** — [slashCommands.ts](src/renderer/slashCommands.ts) holds a declarative `SLASH_COMMANDS` registry (noun, aliases, verb, positional arg schema, options, flags, description, examples, executor). ONE registry drives the parser, the palette's list + signatures + validation, and `/help` — the §35 capturer-registry philosophy. Adding a command = one entry.
+- **Executors mutate through the existing rails** — GameWindow builds a `SlashContext` whose setters do exactly what a panel save does: `saveHighlights(character, next)` (quota-safe via `safeSetItem`) + `setHighlights(next)` (recompiles via the existing memos) + `saveProfile()` (debounced YAML). No new persistence, no profile-shape change, `allGroups: true` defaults preserved.
+- **Per-session by construction** — the palette + context live in GameWindow (the command bar's home), so per-character state and contexts are all in reach (pitfall #57).
+- **Scope: the main command bar only.** QuickSend deliberately does NOT interpret `/` (it targets OTHER characters' sessions; a client command there is ambiguous about which character it configures).
+
+### 37.5 Phasing
+
+- **Phase 1 (v0.14.5, BUILT):** framework (tokenizer/parser/registry/executor), palette (both modes + validation + highlight preview), toasts as the companion feedback surface, commands: help / highlight / mute / sub / timestamps.
+- **Phase 2 (planned):** `alias add`, trigger quick-form (`/trigger add "pattern" do "command"`), `edit` verbs that open the panel prefilled (the `highlightPrefill` infra), sub before→after preview in the palette, and palette value-completion from live data (e.g. `template=` completing from the user's actual template names — needs a small context feed into the palette, which is registry-pure today). (`contact`/`template` moved UP into Phase 1 — shipped.)
+- **Phase 3 (planned):** client control — `/mode <name>`, `/group on|off`, `/panel open|close <stream>`, `/theme <name>`, `/log search "text"`, `/clear`.
+
+**Open calls (Sekmeht):** `key=value` vs `key:value` (built as `=`); whether trigger creation is Phase 2 or panel-only; tester confirmation that no one's speech habitually starts with `/`.
+
+### 37.6 Toast notifications (companion feature, built same pass)
+
+A small themed toast stack ([toasts.ts](src/renderer/toasts.ts) + [ToastHost.tsx](src/renderer/components/ToastHost.tsx), mounted once per window at the App root): `showToast({kind, title, message})` dispatches a `lichborne:toast` CustomEvent; the host renders bottom-right, auto-dismissing (info/success ~4s, error ~10s), click to dismiss, capped stack. Theme-safe by construction (surface vars + `color-mix` semantic hue stripes, pitfall #55 pattern). First consumer: `safeSetItem`'s quota warning — previously a blocking `window.alert`, now a non-blocking error toast (same one-shot semantics). Future consumers: Transfer/import completions, slash-command errors that deserve more than an in-flow line.
