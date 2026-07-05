@@ -3,6 +3,7 @@ import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter } from './characterScope'
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
+import { loadCustomColors, saveCustomColors } from './colors'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -46,6 +47,7 @@ export function buildSharedProfile(): SharedProfile {
     sessionLog: loadSessionLogSettings(),
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
+    customColors: loadCustomColors(),
   }
 }
 
@@ -183,6 +185,10 @@ export async function importSharedProfile(): Promise<void> {
 
   if (data.automationAnalytics !== undefined) {
     localStorage.setItem('lichborne.automationAnalytics', String(data.automationAnalytics))
+  }
+
+  if (Array.isArray(data.customColors)) {
+    saveCustomColors(data.customColors.filter(c => c && typeof c.name === 'string' && typeof c.hex === 'string'))
   }
 }
 

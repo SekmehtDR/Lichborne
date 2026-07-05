@@ -104,3 +104,35 @@
 /* Semantic status hues via color-mix toward theme text (pitfall #55 pattern). */
 .slash-palette-valid--ok  { color: color-mix(in srgb, #3fae5a 70%, var(--text-primary)); }
 .slash-palette-valid--err { color: color-mix(in srgb, #e04a3f 70%, var(--text-primary)); }
+
+/* Phase 2 value-completion chips (e.g. template names for /contact add). */
+.slash-palette-chips {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.slash-palette-chips-label {
+  color: var(--text-dim);
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.slash-palette-chip {
+  font: inherit;
+  font-size: 0.9em;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.slash-palette-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

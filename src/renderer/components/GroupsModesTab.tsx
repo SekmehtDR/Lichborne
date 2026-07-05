@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { type RuleGroup, type GameMode, newGroup, newMode } from '../groups'
 import { useGroups } from './GroupsContext'
 import { KeyBindingField } from './MacrosPanel'
+import { normalizeColorInput, COLOR_INPUT_TITLE } from '../colors'
 import '../styles/groups.css'
 
 export default function GroupsModesTab() {
@@ -143,7 +144,9 @@ export default function GroupsModesTab() {
                 <input
                   className="gm-input gm-color-hex"
                   value={groupDraft.color}
+                  title={COLOR_INPUT_TITLE}
                   onChange={e => setGroupDraft({ ...groupDraft, color: e.target.value })}
+                  onBlur={e => setGroupDraft({ ...groupDraft, color: normalizeColorInput(e.target.value) })}
                 />
               </div>
             </div>

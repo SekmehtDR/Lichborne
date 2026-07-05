@@ -16,6 +16,8 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SLASH_COMMANDS, parseSlash, resolveColor, signatureOf, type SlashCommandSpec } from '../slashCommands'
+import { CURATED_COLORS, loadCustomColors, contrastBackingFor } from '../colors'
+import { buildSubstituteRegex, type SubstituteRule } from '../substitutes'
 import '../styles/slash-palette.css'
 
 export interface SlashPaletteHandle {
@@ -23,9 +25,23 @@ export interface SlashPaletteHandle {
   handleKey(e: React.KeyboardEvent<HTMLInputElement>): boolean
 }
 
+// Live per-character data the palette can offer as VALUE completions (Phase 2;
+// Phase 3 added modes/groups/themes/streams). The registry stays pure — this
+// rides in as a prop from GameWindow. Theme entries are IDS (unique — two
+// built-ins can share a display name, pitfall #35).
+export interface SlashLiveData {
+  templateNames: string[]
+  modeNames: string[]
+  groupNames: string[]
+  themeIds: string[]
+  openableStreams: string[]
+  openPanels: string[]
+}
+
 interface Props {
   input: string                       // current command-bar value (starts with '/')
   anchor: HTMLInputElement | null
+  live?: SlashLiveData
   onComplete: (text: string) => void  // replace the input with a completion
   onDismiss: () => void
 }
@@ -92,7 +108,7 @@ function resolveCommand(body: string): SlashCommandSpec | null {
 }
 
 const SlashPalette = forwardRef<SlashPaletteHandle, Props>(function SlashPalette(
-  { input, anchor, onComplete, onDismiss }, ref,
+  { input, anchor, live, onComplete, onDismiss }, ref,
 ) {
   const body = input.replace(/^\//, '')
   const cmd = useMemo(() => resolveCommand(body), [body])
@@ -150,8 +166,65 @@ const SlashPalette = forwardRef<SlashPaletteHandle, Props>(function SlashPalette
       }
       return <>{tag && <span style={{ color }}>{tag}{' '}</span>}<span style={nameStyle}>Bob</span> just arrived.</>
     }
+    // Phase 2: /sub add — before → after, via the REAL buildSubstituteRegex.
+    // Only for text/phrase modes (the pattern itself is the sample); a regex
+    // pattern has no synthesizable sample text, so no preview there.
+    if (cmd.noun === 'sub' && cmd.verb === 'add') {
+      const [pattern, replacement] = parse.parsed.args
+      const mode = (parse.parsed.options.mode as SubstituteRule['mode']) ?? 'phrase'
+      if (!pattern || replacement === undefined || mode === 'regex') return null
+      const rule: SubstituteRule = {
+        id: '', name: '', enabled: true, pattern, mode,
+        caseSensitive: parse.parsed.options.case === 'on',
+        replacement, groupIds: [], allGroups: true,
+      }
+      const regex = buildSubstituteRegex(rule)
+      if (!regex) return null
+      const after = pattern.replace(regex, replacement)
+      return <>“{pattern}” → “{after === '' ? <em>(removed)</em> : after}”</>
+    }
     return null
   }, [cmd, parse])
+
+  // Value completion (Phase 2 templates; Phase 3 modes/groups/panels/themes;
+  // colors): when the resolved command's next slot wants a name the character
+  // actually HAS, offer the real values as click-to-fill chips. Color chips
+  // carry their color so the picker doubles as a swatch row.
+  const valueChips = useMemo((): { label: string; values: { v: string; color?: string }[] } | null => {
+    if (!cmd || !parse?.parsed || !live) return null
+    const p = parse.parsed
+    const slotOpen = p.args[0] === undefined
+    const plain = (vs: string[]) => vs.map(v => ({ v }))
+    // A color slot is next → curated + custom names, each drawn in its color.
+    const nextArg = cmd.args[p.args.length]
+    if (nextArg?.kind === 'color') {
+      const values = [
+        ...Object.entries(CURATED_COLORS).filter(([n]) => n !== 'grey').map(([n, hex]) => ({ v: n, color: hex })),
+        ...loadCustomColors().map(c => ({ v: c.name, color: c.hex })),
+      ]
+      return { label: 'Colors (/colors for more):', values }
+    }
+    if (cmd.noun === 'contact' && cmd.verb === 'add' && p.args[0] && p.args[1] === undefined && !p.options.template && live.templateNames.length)
+      return { label: 'Your templates:', values: plain(live.templateNames) }
+    if (cmd.noun === 'template' && cmd.verb === 'remove' && slotOpen && live.templateNames.length)
+      return { label: 'Your templates:', values: plain(live.templateNames) }
+    if (cmd.noun === 'mode' && slotOpen && live.modeNames.length)
+      return { label: 'Your modes:', values: plain([...live.modeNames, 'none']) }
+    if (cmd.noun === 'group' && (cmd.verb === 'on' || cmd.verb === 'off') && slotOpen && live.groupNames.length)
+      return { label: 'Your groups:', values: plain(live.groupNames) }
+    if (cmd.noun === 'panel' && cmd.verb === 'open' && slotOpen && live.openableStreams.length)
+      return { label: 'Streams:', values: plain(live.openableStreams) }
+    if (cmd.noun === 'panel' && cmd.verb === 'close' && slotOpen && live.openPanels.length)
+      return { label: 'Open panels:', values: plain(live.openPanels) }
+    if (cmd.noun === 'theme' && slotOpen && live.themeIds.length)
+      return { label: 'Themes:', values: plain(live.themeIds) }
+    return null
+  }, [cmd, parse, live])
+
+  const fillValue = (name: string) => {
+    const quoted = /\s/.test(name) ? `"${name}"` : name
+    onComplete(`${input.replace(/\s+$/, '')} ${quoted} `)
+  }
 
   useImperativeHandle(ref, () => ({
     handleKey(e) {
@@ -202,6 +275,24 @@ const SlashPalette = forwardRef<SlashPaletteHandle, Props>(function SlashPalette
           <div className="slash-palette-sig">{signatureOf(cmd)}</div>
           <div className="slash-palette-desc-line">{cmd.description} — e.g. <span className="slash-palette-example">{cmd.example}</span></div>
           {preview && <div className="slash-palette-preview">{preview}</div>}
+          {valueChips && (
+            <div className="slash-palette-chips">
+              <span className="slash-palette-chips-label">{valueChips.label}</span>
+              {valueChips.values.slice(0, 24).map(({ v, color }) => {
+                // Theme contrast (pitfall #34 family): a chip drawn in its own
+                // color can vanish against the popover surface — white on a
+                // light theme, black on dark. Back just those chips neutrally.
+                const backing = color ? contrastBackingFor(color, '--bg-raised') : null
+                return (
+                  <button
+                    key={v} type="button" className="slash-palette-chip"
+                    style={color ? { color, borderColor: color, ...(backing ? { background: backing } : {}) } : undefined}
+                    onClick={() => fillValue(v)}
+                  >{v}</button>
+                )
+              })}
+            </div>
+          )}
           {validation
             ? <div className={`slash-palette-valid${validationIsSoft ? '' : ' slash-palette-valid--err'}`}>{validation}</div>
             : <div className="slash-palette-valid slash-palette-valid--ok">✓ Enter to run</div>}

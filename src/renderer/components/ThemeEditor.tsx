@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { applyCustomTheme, type ThemeVars } from '../themes'
 import type { CustomTheme } from '../myThemes'
+import { resolveColor, COLOR_INPUT_TITLE } from '../colors'
 import '../styles/theme-editor.css'
 
 // ── Field type definitions ─────────────────────────────────────────────────
@@ -213,18 +214,45 @@ function hexOpacityToRgba(hex: string, opacity: number): string {
 
 function ColorRow({ field, vars, onChange }: { field: ColorField; vars: ThemeVars; onChange: (k: string, v: string) => void }) {
   const value = vars[field.key] ?? '#000000'
+  // v0.14.6: the text field accepts NAMED colors too (red, lime, ember — the
+  // /colors palette), resolved to hex on COMMIT (blur/Enter). A local draft
+  // lets the user type freely ("emb…" isn't valid yet); live #hex edits still
+  // apply as-you-type like before. Theme vars always STORE hex — a theme must
+  // never depend on the palette existing.
+  const [draft, setDraft] = useState<string | null>(null)
+  // If the stored value changes from OUTSIDE this field (the picker swatch, a
+  // reset) while a name is half-typed, drop the draft so it can't mask the
+  // new value. (A committed full-hex edit produces value === what was typed,
+  // so this never interrupts hex typing.)
+  useEffect(() => { setDraft(null) }, [value])
+  const commit = (raw: string) => {
+    const t = raw.trim()
+    const resolved = t.startsWith('#')
+      ? (/^#[0-9a-fA-F]{6}$/.test(t) ? t : null)
+      : resolveColor(t)
+    if (resolved) onChange(field.key, resolved)
+    setDraft(null) // revert to the stored value when unresolvable
+  }
   return (
     <div className="te-row">
       <span className="te-row-label" title={field.desc}>{field.label}{field.desc && <span className="te-row-info" aria-hidden> ⓘ</span>}</span>
       <div className="te-row-inputs">
         <input
           type="color" value={value}
-          onChange={e => onChange(field.key, e.target.value)}
+          onChange={e => { setDraft(null); onChange(field.key, e.target.value) }}
           className="te-color-swatch"
         />
         <input
-          type="text" value={value} maxLength={7}
-          onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) onChange(field.key, e.target.value) }}
+          type="text" value={draft ?? value} maxLength={24}
+          title={COLOR_INPUT_TITLE}
+          onChange={e => {
+            const v = e.target.value
+            setDraft(v)
+            // live-apply complete hex edits (the pre-v0.14.6 behavior)
+            if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(field.key, v)
+          }}
+          onBlur={e => commit(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') commit((e.target as HTMLInputElement).value) }}
           className="te-hex-text"
         />
       </div>

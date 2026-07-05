@@ -36,11 +36,18 @@ interface Props {
   triggerOpenId?:       string
   mutePrefill?:         MuteRule
   substitutePrefill?:   SubstituteRule
+  // v0.14.6: open an existing rule for edit (slash `edit` verbs) — the
+  // triggerOpenId pattern extended to the other rule tabs.
+  highlightOpenId?:     string
+  muteOpenId?:          string
+  substituteOpenId?:    string
+  aliasOpenId?:         string
 }
 
 export default function AutomationsPanel({
   onClose, onSaved, onThemeSaved, initialTab = 'highlights',
   highlightPrefill, highlightTestText, triggerPrefillPattern, triggerOpenId, mutePrefill, substitutePrefill,
+  highlightOpenId, muteOpenId, substituteOpenId, aliasOpenId,
 }: Props) {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [showImport, setShowImport] = useState(false)
@@ -142,6 +149,7 @@ export default function AutomationsPanel({
               onClose={() => {}} inline
               prefill={highlightPrefill}
               initialTestText={highlightTestText}
+              openRuleId={highlightOpenId}
               onSaved={onSaved}
               analyticsOn={analyticsOn}
             />
@@ -157,9 +165,9 @@ export default function AutomationsPanel({
             />
           )}
           {tab === 'macros'   && <MacrosPanel key={`macros-${importNonce}`} onClose={() => {}} inline initialTab="macros"   onSaved={onSaved} analyticsOn={analyticsOn} />}
-          {tab === 'aliases'  && <MacrosPanel key={`aliases-${importNonce}`} onClose={() => {}} inline initialTab="aliases"  onSaved={onSaved} analyticsOn={analyticsOn} />}
-          {tab === 'mutes'    && <MutePanel key={`mutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={mutePrefill} analyticsOn={analyticsOn} />}
-          {tab === 'substitutes' && <SubstitutesPanel key={`substitutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={substitutePrefill} analyticsOn={analyticsOn} />}
+          {tab === 'aliases'  && <MacrosPanel key={`aliases-${importNonce}`} onClose={() => {}} inline initialTab="aliases"  openAliasId={aliasOpenId} onSaved={onSaved} analyticsOn={analyticsOn} />}
+          {tab === 'mutes'    && <MutePanel key={`mutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={mutePrefill} openRuleId={muteOpenId} analyticsOn={analyticsOn} />}
+          {tab === 'substitutes' && <SubstitutesPanel key={`substitutes-${importNonce}`} onClose={() => {}} inline onSaved={onSaved} prefill={substitutePrefill} openRuleId={substituteOpenId} analyticsOn={analyticsOn} />}
           {tab === 'groups'   && <GroupsModesTab key={`groups-${importNonce}`} />}
         </div>
 

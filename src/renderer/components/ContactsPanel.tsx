@@ -11,6 +11,7 @@ import {
 import { useCharacter } from '../CharacterContext'
 import GroupPicker from './GroupPicker'
 import '../styles/contacts.css'
+import { normalizeColorInput, COLOR_INPUT_TITLE } from '../colors'
 import '../styles/groups.css'
 
 type Tab = 'contacts' | 'templates'
@@ -364,14 +365,18 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                           <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.textColor)}
                             onChange={e => setTplDraft({ ...tplDraft!, textColor: e.target.value })} />
                           <input className="cp-input cp-input--hex" value={tplDraft!.textColor}
-                            onChange={e => setTplDraft({ ...tplDraft!, textColor: e.target.value })} />
+                            title={COLOR_INPUT_TITLE}
+                            onChange={e => setTplDraft({ ...tplDraft!, textColor: e.target.value })}
+                            onBlur={e => setTplDraft({ ...tplDraft!, textColor: normalizeColorInput(e.target.value) })} />
                         </div>
                         <div className="cp-tpl-edit-row">
                           <label className="cp-label">BG color</label>
                           <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.bgColor)}
                             onChange={e => setTplDraft({ ...tplDraft!, bgColor: e.target.value })} />
                           <input className="cp-input cp-input--hex" value={tplDraft!.bgColor}
+                            title={COLOR_INPUT_TITLE}
                             onChange={e => setTplDraft({ ...tplDraft!, bgColor: e.target.value })}
+                            onBlur={e => setTplDraft({ ...tplDraft!, bgColor: normalizeColorInput(e.target.value) })}
                             placeholder="none" />
                         </div>
                         <div className="cp-tpl-edit-row">
@@ -393,14 +398,18 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                           <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.tagColor)}
                             onChange={e => setTplDraft({ ...tplDraft!, tagColor: e.target.value })} />
                           <input className="cp-input cp-input--hex" value={tplDraft!.tagColor}
-                            onChange={e => setTplDraft({ ...tplDraft!, tagColor: e.target.value })} />
+                            title={COLOR_INPUT_TITLE}
+                            onChange={e => setTplDraft({ ...tplDraft!, tagColor: e.target.value })}
+                            onBlur={e => setTplDraft({ ...tplDraft!, tagColor: normalizeColorInput(e.target.value) })} />
                         </div>
                         <div className="cp-tpl-edit-row">
                           <label className="cp-label">Tag BG</label>
                           <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.tagBgColor)}
                             onChange={e => setTplDraft({ ...tplDraft!, tagBgColor: e.target.value })} />
                           <input className="cp-input cp-input--hex" value={tplDraft!.tagBgColor}
+                            title={COLOR_INPUT_TITLE}
                             onChange={e => setTplDraft({ ...tplDraft!, tagBgColor: e.target.value })}
+                            onBlur={e => setTplDraft({ ...tplDraft!, tagBgColor: normalizeColorInput(e.target.value) })}
                             placeholder="none" />
                         </div>
                         <div className="cp-tpl-edit-row">

@@ -41,6 +41,9 @@ export interface SharedProfile {
   // Automations panel. Optional → older files default it to false. The stats
   // DATA is per-character (state.automationStats); only this enable flag is shared.
   automationAnalytics?: boolean
+  // User-defined named colors (v0.14.6, `/colors add`). App-wide — a color
+  // vocabulary is shared like themes. Optional → older files default to [].
+  customColors?: { name: string; hex: string }[]
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

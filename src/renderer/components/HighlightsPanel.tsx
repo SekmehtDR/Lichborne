@@ -11,6 +11,7 @@ import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnaly
 import { analyzeHighlights } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/highlights.css'
+import { normalizeColorInput, COLOR_INPUT_TITLE } from '../colors'
 import '../styles/groups.css'
 
 const PREVIEW_TEXT = "You notice Torgin has a deep cut that is bleeding profusely."
@@ -30,11 +31,12 @@ interface Props {
   onSaved?: () => void
   prefill?: HighlightRule
   initialTestText?: string
+  openRuleId?: string // v0.14.6: open an existing rule for edit (slash /highlight edit)
   inline?: boolean
   analyticsOn?: boolean
 }
 
-export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, inline = false, analyticsOn = false }: Props) {
+export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, openRuleId, inline = false, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]       = useState<HighlightRule[]>(() => loadHighlights(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -53,6 +55,17 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
     setIsPendingNew(true)
     setTimeout(() => nameInputRef.current?.focus(), 0)
   }, [prefill?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v0.14.6: open an EXISTING rule by id (slash `/highlight edit`) — the
+  // TriggersPanel openRuleId pattern. No-op if the rule was deleted since.
+  useEffect(() => {
+    if (!openRuleId) return
+    const r = rules.find(x => x.id === openRuleId)
+    if (!r) return
+    setDraft({ ...r })
+    setSelectedId(r.id)
+    setIsPendingNew(false)
+  }, [openRuleId, rules])
 
   // ── Live preview ─────────────────────────────────────────────────────────
 
@@ -367,7 +380,9 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                           className="hp-input hp-input--hex"
                           value={draft.style.textColor}
                           placeholder="transparent"
+                          title={COLOR_INPUT_TITLE}
                           onChange={e => setDraft({ ...draft, style: { ...draft.style, textColor: e.target.value } })}
+                          onBlur={e => setDraft({ ...draft, style: { ...draft.style, textColor: normalizeColorInput(e.target.value) } })}
                         />
                       </div>
                     </div>
@@ -390,7 +405,9 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                           className="hp-input hp-input--hex"
                           value={draft.style.bgColor}
                           placeholder="transparent"
+                          title={COLOR_INPUT_TITLE}
                           onChange={e => setDraft({ ...draft, style: { ...draft.style, bgColor: e.target.value } })}
+                          onBlur={e => setDraft({ ...draft, style: { ...draft.style, bgColor: normalizeColorInput(e.target.value) } })}
                         />
                       </div>
                     </div>
@@ -417,7 +434,9 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                           className="hp-input hp-input--hex"
                           value={draft.style.glowColor}
                           disabled={!draft.style.glow}
+                          title={COLOR_INPUT_TITLE}
                           onChange={e => setDraft({ ...draft, style: { ...draft.style, glowColor: e.target.value } })}
+                          onBlur={e => setDraft({ ...draft, style: { ...draft.style, glowColor: normalizeColorInput(e.target.value) } })}
                         />
                       </div>
                     </div>

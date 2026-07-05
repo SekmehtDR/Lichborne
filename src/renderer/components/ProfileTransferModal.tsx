@@ -152,9 +152,10 @@ export default function ProfileTransferModal({ sessions, reloadSession, onClose 
         if (cid) reloadSession(cid)
       }
     }
-    // Persist _shared.yaml so any custom theme added to the shared myThemes
-    // during a Theme import survives to disk (custom themes are shared, not
-    // per-character).
+    // Persist _shared.yaml so any SHARED data an import touched survives to
+    // disk — custom themes added to myThemes (Theme category) and custom
+    // named colors merged into the palette (Named Colors category) are
+    // app-wide, not per-character.
     await exportSharedProfile().catch(() => {})
     setImportResults(results)
     setImportBusy(false)

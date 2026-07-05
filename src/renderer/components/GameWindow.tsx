@@ -10,7 +10,8 @@ import { loadContacts, loadContactTemplates, saveContacts, saveContactTemplates,
 import { loadHighlights, saveHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadMutes, saveMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
 import { loadSubstitutes, saveSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
-import { runSlash, type SlashContext } from '../slashCommands'
+import { runSlash, slashLineText, type SlashContext, type SlashEditorTab } from '../slashCommands'
+import { loadCustomColors, saveCustomColors, contrastBackingFor } from '../colors'
 import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
@@ -403,6 +404,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // Discord model). The ref forwards ↑/↓/Tab/Esc from handleCommandKey.
   const [slashDismissed, setSlashDismissed] = useState(false)
   const slashPaletteRef = useRef<SlashPaletteHandle>(null)
+  // Phase 2 `edit` verbs: which rule the Automations panel should open with
+  // (tab + rule id). Cleared when the panel closes, like the prefill states.
+  const [slashOpenRule, setSlashOpenRule] = useState<{ tab: SlashEditorTab; id: string } | null>(null)
   const [disconnecting, setDisconnecting] = useState(false)
   const [dropped, setDropped]         = useState(false)
   const [showDebug, setShowDebug]     = useState(false)
@@ -660,7 +664,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates(session.character))
   const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
   const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights(session.character))
-  const { activeGroupStates, modes, applyMode, activeModeId } = useGroups()
+  const { activeGroupStates, modes, applyMode, activeModeId, groups, toggleGroup, clearMode } = useGroups()
   const activeContactTemplates = useMemo(
     () => contactTemplates.filter(t => isRuleActive(t.groupIds ?? [], activeGroupStates, t.allGroups ?? true)),
     [contactTemplates, activeGroupStates]
@@ -2619,6 +2623,61 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   // ── Command bar ───────────────────────────────────────────────────────────
 
+  // Phase 3 `/panel open|close` (DESIGN §37.5) — MUST branch on layoutMode
+  // (pitfall #79: the zone arrays are deliberately-stale state in free mode).
+  // Free mode mirrors toggleFreeDebugWindow's add/remove shape, generalized by
+  // stream id; panels mode goes through addToZone/removeTab (zone default:
+  // bottom-right — the Panel Manager is the place to relocate it after).
+  function slashPanelTab(id: string): TabDef {
+    return ALL_PANEL_TYPES.includes(id as PanelType)
+      ? makeTab(id as PanelType)
+      : { id, type: 'custom', label: id.charAt(0).toUpperCase() + id.slice(1) }
+  }
+  function slashOpenPanel(id: string): 'opened' | 'focused' {
+    if (layoutMode === 'free') {
+      const has = (w: FloatWindow) => w.kind === 'panel' && (w.tabs ?? []).some(t => t.id === id)
+      const maxZ = freeWindows.reduce((m, w) => Math.max(m, w.z), 0)
+      if (freeWindows.some(has)) {
+        handleWindowsChange(freeWindows.map(w => has(w) ? { ...w, activeId: id, z: maxZ + 1 } : w))
+        return 'focused'
+      }
+      const C = gameLayoutRef.current?.getBoundingClientRect()
+      const size = C && C.width > 0 ? { w: C.width, h: C.height } : { w: 1200, h: 800 }
+      const tab = slashPanelTab(id)
+      const win = newFloatWindow('panel', size, freeWindows.length, { title: tab.label, tabs: [tab], activeId: id })
+      handleWindowsChange([...freeWindows, { ...win, z: maxZ + 1 }])
+      return 'opened'
+    }
+    // Static Panels: focus if a zone already holds it (gated on *Added), else
+    // land it in the bottom-right zone (addToZone flips the Added flag on).
+    if (mainTopAdded && mainTopTabs.some(t => t.id === id)) { setMainTopActiveId(id); return 'focused' }
+    if (topAdded && topTabs.some(t => t.id === id))         { setTopActiveId(id);     return 'focused' }
+    if (midAdded && midTabs.some(t => t.id === id))         { setMidActiveId(id);     return 'focused' }
+    if (bottomAdded && bottomTabs.some(t => t.id === id))   { setBottomActiveId(id);  return 'focused' }
+    addToZone(id, 'bottom')
+    return 'opened'
+  }
+  function slashClosePanel(id: string): boolean {
+    if (layoutMode === 'free') {
+      const has = (w: FloatWindow) => w.kind === 'panel' && (w.tabs ?? []).some(t => t.id === id)
+      if (!freeWindows.some(has)) return false
+      const next: FloatWindow[] = []
+      for (const w of freeWindows) {
+        if (!has(w)) { next.push(w); continue }
+        const tabs = (w.tabs ?? []).filter(t => t.id !== id)
+        if (tabs.length === 0) continue  // window held only this tab → close it
+        next.push({ ...w, tabs, activeId: w.activeId === id ? tabs[0].id : w.activeId })
+      }
+      handleWindowsChange(next)
+      return true
+    }
+    const all = [...mainTopTabs, ...topTabs, ...midTabs, ...bottomTabs]
+    const tab = all.find(t => t.id === id)
+    if (!tab) return false
+    removeTab(tab)
+    return true
+  }
+
   // Slash-command execution (DESIGN §37). The context wraps the SAME rails a
   // panel save uses — saveX (quota-safe via safeSetItem) + setState (recompiles
   // through the existing memos) + the debounced profile save — so a slash-
@@ -2640,17 +2699,79 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       applyContacts: next => { saveContacts(session.character, next); setContacts(next); saveProfile() },
       getContactTemplates: () => contactTemplates,
       applyContactTemplates: next => { saveContactTemplates(session.character, next); setContactTemplates(next); saveProfile() },
+      getAliases: () => aliases,
+      applyAliases: rules => { saveAliases(session.character, rules); setAliases(rules); saveProfile() },
+      getTriggers: () => triggers,
+      applyTriggers: rules => { saveTriggers(session.character, rules); setTriggers(rules); saveProfile() },
       getMainTimestamps: () => !!streamTimestamps['main'],
       toggleMainTimestamps: () => toggleStreamTimestamp('main'),
+      // Phase 2 `edit` verbs — open the Automations panel with the rule selected.
+      openRuleEditor: (tab, ruleId) => {
+        setAutomationsTab(tab)
+        setSlashOpenRule({ tab, id: ruleId })
+        setShowAutomations(true)
+      },
+      // ── Phase 3: client control (DESIGN §37.5) ──
+      getModes: () => modes.map(m => ({ id: m.id, name: m.name })),
+      getActiveModeId: () => activeModeId,
+      applyMode,
+      clearMode,
+      getGroups: () => groups.map(g => ({ id: g.id, name: g.name, on: !!activeGroupStates[g.id] })),
+      setGroupOn: (id, on) => { if (!!activeGroupStates[id] !== on) toggleGroup(id) },
+      getThemes: () => [
+        ...THEMES.map(t => ({ id: t.id, name: t.name })),
+        ...myThemes.map(t => ({ id: t.id, name: t.name })),
+      ],
+      // Fresh localStorage read, NOT the currentThemeId state: a theme switched
+      // in ANOTHER window applies cross-window via the storage listener without
+      // updating this window's state (by design), so the state can be stale —
+      // localStorage is written by applyTheme on every switch and is the truth.
+      getCurrentThemeId: () => localStorage.getItem('lichborne.theme') ?? currentThemeId,
+      // Exactly what ThemePicker's onThemeChange does — the theme-apply effect
+      // runs applyTheme (which persists lichborne.theme + storage-syncs other
+      // windows) and re-applies accessibility overlays via the hook.
+      applyThemeId: id => setCurrentThemeId(id),
+      getOpenableStreams: () => [...ALL_PANEL_TYPES, ...discoveredStreams],
+      getOpenPanels: () => layoutMode === 'free'
+        ? freeWindows.filter(w => w.kind === 'panel').flatMap(w => (w.tabs ?? []).map(t => t.id))
+        : [
+            ...(mainTopAdded ? mainTopTabs : []),
+            ...(topAdded ? topTabs : []),
+            ...(midAdded ? midTabs : []),
+            ...(bottomAdded ? bottomTabs : []),
+          ].map(t => t.id),
+      openPanel: slashOpenPanel,
+      closePanel: slashClosePanel,
+      // The "Show in Log" / find-in-log pattern: query + remount nonce + open.
+      openLogSearch: q => { setSessionLogSearch(q); setSessionLogKey(k => k + 1); setShowSessionLog(true) },
+      clearMain: clearLines,
+      // Custom named colors are APP-WIDE (like themes) → _shared.yaml.
+      getCustomColors: loadCustomColors,
+      applyCustomColors: list => { saveCustomColors(list); scheduleSharedProfileSave() },
     }
     const result = runSlash(text, ctx)
     const marker = result.ok ? '— ' : '✕ '
-    setLines(prev => appendTrimmed(prev, result.lines.map((l, i) => ({
-      id: lineId++,
-      segments: [{ text: (i === 0 ? marker : '  ') + l, preset: 'internal-system' }],
-      timestamp: Date.now(),
-    }))))
-    logToSession(result.lines.map(l => ({ ts: Date.now(), stream: 'sys', text: l })))
+    setLines(prev => appendTrimmed(prev, result.lines.map((l, i) => {
+      const lead = i === 0 ? marker : '  '
+      // Rich lines (/colors) carry per-run colors: fg is hex-without-# on
+      // TextSegment, and the inline color wins over the preset's CSS (B200).
+      // THEME CONTRAST: a name drawn in its own color can vanish against the
+      // game background (black on dark themes, white/ivory on light ones) —
+      // contrastBackingFor adds a neutral chip bg behind just those segments.
+      const segments: TextSegment[] = typeof l === 'string'
+        ? [{ text: lead + l, preset: 'internal-system' }]
+        : [{ text: lead, preset: 'internal-system' },
+           ...l.rich.map(s => {
+             if (!s.color) return { text: s.text, preset: 'internal-system' }
+             const backing = contrastBackingFor(s.color, '--bg-app')
+             return {
+               text: s.text, preset: 'internal-system', fg: s.color.replace('#', ''),
+               ...(backing ? { bg: backing.replace('#', '') } : {}),
+             }
+           })]
+      return { id: lineId++, segments, timestamp: Date.now() }
+    })))
+    logToSession(result.lines.map(l => ({ ts: Date.now(), stream: 'sys', text: slashLineText(l) })))
   }
 
   // Dispatches a single user-input string through the same path the command
@@ -3325,6 +3446,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             ref={slashPaletteRef}
             input={command}
             anchor={inputRef.current}
+            live={{
+              templateNames: contactTemplates.map(t => t.name),
+              modeNames: modes.map(m => m.name),
+              groupNames: groups.map(g => g.name),
+              themeIds: [...THEMES.map(t => t.id), ...myThemes.map(t => t.id)],
+              openableStreams: [...ALL_PANEL_TYPES, ...discoveredStreams],
+              openPanels: layoutMode === 'free'
+                ? freeWindows.filter(w => w.kind === 'panel').flatMap(w => (w.tabs ?? []).map(t => t.id))
+                : [
+                    ...(mainTopAdded ? mainTopTabs : []),
+                    ...(topAdded ? topTabs : []),
+                    ...(midAdded ? midTabs : []),
+                    ...(bottomAdded ? bottomTabs : []),
+                  ].map(t => t.id),
+            }}
             onComplete={text => { setCommand(text); inputRef.current?.focus() }}
             onDismiss={() => setSlashDismissed(true)}
           />
@@ -3671,9 +3807,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           highlightPrefill={highlightPrefill}
           highlightTestText={highlightTestText}
           triggerPrefillPattern={triggerPrefillPattern}
-          triggerOpenId={triggerOpenId}
+          triggerOpenId={triggerOpenId ?? (slashOpenRule?.tab === 'triggers' ? slashOpenRule.id : undefined)}
           mutePrefill={mutePrefill}
           substitutePrefill={substitutePrefill}
+          highlightOpenId={slashOpenRule?.tab === 'highlights' ? slashOpenRule.id : undefined}
+          muteOpenId={slashOpenRule?.tab === 'mutes' ? slashOpenRule.id : undefined}
+          substituteOpenId={slashOpenRule?.tab === 'substitutes' ? slashOpenRule.id : undefined}
+          aliasOpenId={slashOpenRule?.tab === 'aliases' ? slashOpenRule.id : undefined}
           onThemeSaved={(themeId) => {
             const updated = loadMyThemes()
             setMyThemes(updated)
@@ -3700,6 +3840,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             setTriggerPrefillPattern(undefined)
             setMutePrefill(undefined)
             setSubstitutePrefill(undefined)
+            setSlashOpenRule(null)
             setHighlights(loadHighlights(session.character))
             setTriggers(loadTriggers(session.character))
             setAliases(loadAliases(session.character))

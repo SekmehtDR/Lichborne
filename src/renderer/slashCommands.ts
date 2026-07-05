@@ -16,6 +16,12 @@ import { newHighlight, type HighlightRule } from './highlights'
 import { newMute, type MuteRule } from './mutes'
 import { newSubstitute, type SubstituteRule } from './substitutes'
 import { newContact, newTemplate, formatLastSeen, DR_GUILDS, type Contact, type ContactTemplate } from './contacts'
+import { newAlias, type AliasRule } from './macros'
+import { newTrigger, type TriggerRule } from './triggers'
+
+// Automations-panel tabs an `edit` verb can open (Phase 2). Matches the
+// AutomationsPanel Tab union for the tabs that support open-by-rule-id.
+export type SlashEditorTab = 'highlights' | 'triggers' | 'mutes' | 'substitutes' | 'aliases'
 
 // ── Context the GameWindow provides ─────────────────────────────────────────
 
@@ -34,40 +40,66 @@ export interface SlashContext {
   applyContacts: (contacts: Contact[]) => void
   getContactTemplates: () => ContactTemplate[]
   applyContactTemplates: (templates: ContactTemplate[]) => void
+  getAliases: () => AliasRule[]
+  applyAliases: (rules: AliasRule[]) => void
+  getTriggers: () => TriggerRule[]
+  applyTriggers: (rules: TriggerRule[]) => void
   getMainTimestamps: () => boolean
   toggleMainTimestamps: () => void
+  // Phase 2 `edit` verbs: open the Automations panel at `tab` with the rule
+  // selected in its detail pane (the TriggersPanel openRuleId pattern).
+  openRuleEditor: (tab: SlashEditorTab, ruleId: string) => void
+  // ── Phase 3: client control (DESIGN §37.5). These drive UI STATE, so the
+  // integration lives in GameWindow's implementations; executors stay dumb
+  // matchers + messengers. ──
+  getModes: () => { id: string; name: string }[]
+  getActiveModeId: () => string | null
+  applyMode: (id: string) => void
+  clearMode: () => void
+  getGroups: () => { id: string; name: string; on: boolean }[]
+  setGroupOn: (id: string, on: boolean) => void
+  getThemes: () => { id: string; name: string }[]     // built-ins + custom
+  getCurrentThemeId: () => string
+  applyThemeId: (id: string) => void
+  getOpenableStreams: () => string[]                  // builtin panel types + discovered
+  getOpenPanels: () => string[]                       // mode-appropriate (pitfall #79)
+  openPanel: (id: string) => 'opened' | 'focused'
+  closePanel: (id: string) => boolean                 // false = wasn't open
+  openLogSearch: (query: string) => void
+  clearMain: () => void
+  // Managed named colors (v0.14.6): customs are APP-WIDE (a color vocabulary
+  // is shared, like themes) — apply = saveCustomColors + scheduleSharedProfileSave.
+  getCustomColors: () => CustomColor[]
+  applyCustomColors: (list: CustomColor[]) => void
 }
+
+// A result line is usually a plain string (rendered as internal-system text).
+// A RICH line carries colored runs — e.g. /colors renders each name in its own
+// color. `color` is a '#hex'; GameWindow maps it onto TextSegment.fg (inline
+// color wins over the preset's CSS, the B200 mechanics).
+export interface SlashRichSeg { text: string; color?: string }
+export type SlashLine = string | { rich: SlashRichSeg[] }
 
 export interface SlashResult {
   ok: boolean
-  lines: string[]   // client-styled lines echoed into the main window
+  lines: SlashLine[]   // client-styled lines echoed into the main window
+}
+
+/** Plain text of a result line (for the Session Log + tests). */
+export function slashLineText(l: SlashLine): string {
+  return typeof l === 'string' ? l : l.rich.map(s => s.text).join('')
 }
 
 // ── Colors ───────────────────────────────────────────────────────────────────
+// The palette lives in colors.ts (curated 16 > user customs > the standard web
+// set — Genie's vocabulary). Re-exported so palette/consumers keep one import.
 
-// Curated named colors → readable hexes (user data is stored as hex, exactly
-// like a color picked in the Highlights editor).
-export const NAMED_COLORS: Record<string, string> = {
-  red: '#ff5050', green: '#4caf50', blue: '#4f9cff', yellow: '#e8c840',
-  orange: '#ff9040', purple: '#b070ff', pink: '#ff70b0', cyan: '#40d0e0',
-  teal: '#2fb0a0', gold: '#ffd700', white: '#ffffff', black: '#000000',
-  gray: '#909090', grey: '#909090', brown: '#a06a40', magenta: '#e050e0',
-  lime: '#a0e040',
-}
-
-const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
-
-/** Resolve a color token (named or #hex) to a hex string, or null if invalid. */
-export function resolveColor(token: string): string | null {
-  const t = token.trim().toLowerCase()
-  if (NAMED_COLORS[t]) return NAMED_COLORS[t]
-  if (HEX_RE.test(t)) return t
-  return null
-}
+import { CURATED_COLORS, WEB_COLORS, loadCustomColors, resolveColor, isHexColor, validateCustomColorName, type CustomColor } from './colors'
+export { resolveColor }
 
 /** True when a token was probably MEANT as a color (for targeted error text). */
 function looksLikeColor(token: string): boolean {
-  return token.startsWith('#') || token.toLowerCase() in NAMED_COLORS
+  return token.startsWith('#') || resolveColor(token) !== null
 }
 
 // ── Tokenizer ────────────────────────────────────────────────────────────────
@@ -146,8 +178,8 @@ export interface ParsedSlash {
   flags: Set<string>
 }
 
-const err = (...lines: string[]): SlashResult => ({ ok: false, lines })
-const ok = (...lines: string[]): SlashResult => ({ ok: true, lines })
+const err = (...lines: SlashLine[]): SlashResult => ({ ok: false, lines })
+const ok = (...lines: SlashLine[]): SlashResult => ({ ok: true, lines })
 
 // Shared summary formatters (also used by /list output).
 const hlSummary = (r: HighlightRule) =>
@@ -164,6 +196,18 @@ function removeRules<T extends { pattern: string; name: string }>(
   const t = target.toLowerCase()
   const removed = rules.filter(r => r.pattern.toLowerCase() === t || (r.name && r.name.toLowerCase() === t))
   return { kept: rules.filter(r => !removed.includes(r)), removed }
+}
+
+// Phase 2 `edit` verb body, shared by every editable rule type: find by the
+// noun's match field (pattern/input) or name, open the editor, report.
+function editRule<T extends { id: string; name: string }>(
+  ctx: SlashContext, tab: SlashEditorTab, kind: string, rules: T[], target: string, fieldOf: (r: T) => string,
+): SlashResult {
+  const t = target.toLowerCase()
+  const matches = rules.filter(r => fieldOf(r).toLowerCase() === t || (r.name && r.name.toLowerCase() === t))
+  if (matches.length === 0) return err(`No ${kind} matches "${target}" (by ${kind === 'alias' ? 'input' : 'pattern'} or name) — /${kind === 'substitute' ? 'sub' : kind} list to see them.`)
+  ctx.openRuleEditor(tab, matches[0].id)
+  return ok(`Opened "${fieldOf(matches[0])}" in the editor${matches.length > 1 ? ` (first of ${matches.length} matches)` : ''}.`)
 }
 
 function listRules<T>(kind: string, rules: T[], filter: string | undefined, summarize: (r: T) => string, patternOf: (r: T) => string, where = 'the Automations panel'): SlashResult {
@@ -185,7 +229,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     noun: 'highlight', nounAliases: ['hl'], verb: 'add',
     args: [
       { name: '"pattern"', required: true, kind: 'string', hint: 'the text to highlight' },
-      { name: 'color', required: false, kind: 'color', hint: 'named color or #hex (default gold)' },
+      { name: 'color', required: false, kind: 'color', hint: 'named color or #hex (default gold) — /colors shows them' },
     ],
     options: [
       { key: 'bg', hint: 'background color (named or #hex)' },
@@ -242,6 +286,14 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     example: '/highlight list gob',
     run: (ctx, p) => listRules('highlight', ctx.getHighlights(), p.args[0], hlSummary, r => r.pattern),
   },
+  {
+    noun: 'highlight', nounAliases: ['hl'], verb: 'edit',
+    args: [{ name: '"pattern"', required: true, kind: 'string', hint: 'pattern or name of the highlight to edit' }],
+    options: [], flags: [],
+    description: 'Open a highlight in the Automations editor',
+    example: '/highlight edit "goblin"',
+    run: (ctx, p) => editRule(ctx, 'highlights', 'highlight', ctx.getHighlights(), p.args[0].trim(), r => r.pattern),
+  },
 
   // ── /mute ───────────────────────────────────────────────────────────────
   {
@@ -287,6 +339,14 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     example: '/mute list',
     run: (ctx, p) => listRules('mute', ctx.getMutes(), p.args[0], muteSummary, r => r.pattern),
   },
+  {
+    noun: 'mute', nounAliases: ['gag'], verb: 'edit',
+    args: [{ name: '"pattern"', required: true, kind: 'string', hint: 'pattern or name of the mute to edit' }],
+    options: [], flags: [],
+    description: 'Open a mute in the Automations editor',
+    example: '/mute edit "swirling fog"',
+    run: (ctx, p) => editRule(ctx, 'mutes', 'mute', ctx.getMutes(), p.args[0].trim(), r => r.pattern),
+  },
 
   // ── /sub ────────────────────────────────────────────────────────────────
   {
@@ -329,6 +389,158 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     description: 'List substitutes (optionally filtered)',
     example: '/sub list',
     run: (ctx, p) => listRules('substitute', ctx.getSubstitutes(), p.args[0], subSummary, r => r.pattern),
+  },
+  {
+    noun: 'sub', nounAliases: ['substitute'], verb: 'edit',
+    args: [{ name: '"pattern"', required: true, kind: 'string', hint: 'pattern or name of the substitute to edit' }],
+    options: [], flags: [],
+    description: 'Open a substitute in the Automations editor',
+    example: '/sub edit "a musty odor"',
+    run: (ctx, p) => editRule(ctx, 'substitutes', 'substitute', ctx.getSubstitutes(), p.args[0].trim(), r => r.pattern),
+  },
+
+  // ── /alias ──────────────────────────────────────────────────────────────
+  {
+    noun: 'alias', nounAliases: ['aliases'], verb: 'add',
+    args: [
+      { name: '"input"', required: true, kind: 'string', hint: 'what you type (the first word(s) of a command)' },
+      { name: '"commands"', required: true, kind: 'string', hint: 'what gets sent — separate multiple with ; ($1 $rest args ok)' },
+    ],
+    options: [
+      { key: 'delay', hint: 'ms between each command (e.g. delay=500)' },
+      { key: 'name', hint: 'a label for the rule' },
+    ],
+    flags: ['passthrough'],
+    description: 'Create a typed-command alias',
+    example: '/alias add "hh" "health;heal"',
+    run: (ctx, p) => {
+      const input = p.args[0].trim()
+      const aliases = ctx.getAliases()
+      if (aliases.some(a => a.input.toLowerCase() === input.toLowerCase()))
+        return err(`An alias "${input}" already exists — /alias edit "${input}" to change it, or /alias remove first.`)
+      const commands = p.args[1].split(';').map(c => c.trim()).filter(Boolean)
+      if (commands.length === 0) return err('The alias needs at least one command to send.')
+      let delayMs = 0
+      if (p.options.delay !== undefined) {
+        delayMs = Number(p.options.delay)
+        if (!Number.isFinite(delayMs) || delayMs < 0) return err(`delay= must be a number of milliseconds — not "${p.options.delay}".`)
+      }
+      const rule = newAlias(input)
+      rule.commands = commands
+      rule.delayMs = delayMs
+      if (p.options.name) rule.name = p.options.name
+      if (p.flags.has('passthrough')) rule.passThrough = true
+      ctx.applyAliases([...aliases, rule])
+      return ok(`Alias added: "${input}" → ${commands.join('; ')}${delayMs ? ` (${delayMs}ms between)` : ''}`)
+    },
+  },
+  {
+    noun: 'alias', nounAliases: ['aliases'], verb: 'remove',
+    args: [{ name: '"input"', required: true, kind: 'string', hint: 'input or name of the alias(es) to remove' }],
+    options: [], flags: [],
+    description: 'Remove alias(es) by input or name',
+    example: '/alias remove "hh"',
+    run: (ctx, p) => {
+      const t = p.args[0].trim().toLowerCase()
+      const aliases = ctx.getAliases()
+      const removed = aliases.filter(a => a.input.toLowerCase() === t || (a.name && a.name.toLowerCase() === t))
+      if (removed.length === 0) return err(`No alias matches "${p.args[0]}" (by input or name).`)
+      ctx.applyAliases(aliases.filter(a => !removed.includes(a)))
+      return ok(`Removed ${removed.length} alias${removed.length === 1 ? '' : 'es'}: ${removed.map(a => `"${a.input}"`).join(', ')}`)
+    },
+  },
+  {
+    noun: 'alias', nounAliases: ['aliases'], verb: 'list',
+    args: [{ name: 'filter', required: false, kind: 'string', hint: 'only show inputs containing this' }],
+    options: [], flags: [],
+    description: 'List aliases (optionally filtered)',
+    example: '/alias list',
+    run: (ctx, p) => listRules('alias', ctx.getAliases(), p.args[0],
+      a => `"${a.input}" → ${a.commands.join('; ')}${a.delayMs ? ` (${a.delayMs}ms)` : ''}${a.passThrough ? ' +passthrough' : ''}`,
+      a => a.input),
+  },
+  {
+    noun: 'alias', nounAliases: ['aliases'], verb: 'edit',
+    args: [{ name: '"input"', required: true, kind: 'string', hint: 'input or name of the alias to edit' }],
+    options: [], flags: [],
+    description: 'Open an alias in the Automations editor',
+    example: '/alias edit "hh"',
+    run: (ctx, p) => editRule(ctx, 'aliases', 'alias', ctx.getAliases(), p.args[0].trim(), a => a.input),
+  },
+
+  // ── /trigger (quick-form) ───────────────────────────────────────────────
+  {
+    noun: 'trigger', nounAliases: ['triggers'], verb: 'add',
+    args: [
+      { name: '"pattern"', required: true, kind: 'string', hint: 'the game text to react to' },
+      { name: 'do', required: false, kind: 'word', hint: 'the word "do" (reads nicely; optional)' },
+      { name: '"command"', required: false, kind: 'string', hint: 'the command to send when it fires' },
+    ],
+    options: [
+      MODE_OPT,
+      CASE_OPT,
+      { key: 'cooldown', hint: 'seconds before it can fire again (e.g. cooldown=10)' },
+      { key: 'name', hint: 'a label for the rule' },
+    ],
+    flags: ['once'],
+    description: 'Quick trigger: when text matches, send a command (gates/multi-action in the editor)',
+    example: '/trigger add "You feel fully rested" do "stand"',
+    run: (ctx, p) => {
+      // Accept both `"pattern" do "command"` and `"pattern" "command"` — the
+      // literal `do` is readable sugar, not load-bearing.
+      const [pattern, a, b] = p.args
+      const command = (a === 'do' ? b : a)?.trim()
+      if (!command) return err(`Missing the command to send — e.g. ${'`'}/trigger add "You feel fully rested" do "stand"${'`'}`)
+      const rule = newTrigger(pattern)
+      if (p.options.mode) rule.mode = p.options.mode as TriggerRule['mode']
+      if (p.options.case) rule.caseSensitive = p.options.case === 'on'
+      if (p.options.name) rule.name = p.options.name
+      if (p.options.cooldown !== undefined) {
+        const cd = Number(p.options.cooldown)
+        if (!Number.isFinite(cd) || cd < 0) return err(`cooldown= must be a number of seconds — not "${p.options.cooldown}".`)
+        rule.cooldownSeconds = cd
+      }
+      if (p.flags.has('once')) rule.oneShot = true
+      if (rule.mode === 'regex') { try { new RegExp(rule.pattern) } catch { return err(`"${rule.pattern}" isn't a valid regex.`) } }
+      rule.actions[0].command = command   // newTrigger ships with one command action
+      ctx.applyTriggers([...ctx.getTriggers(), rule])
+      return ok(`Trigger added: "${pattern}" → ${command}${rule.cooldownSeconds ? ` (cooldown ${rule.cooldownSeconds}s)` : ''}${rule.oneShot ? ' (once)' : ''} — gates/more actions in the editor (/trigger edit).`)
+    },
+  },
+  {
+    noun: 'trigger', nounAliases: ['triggers'], verb: 'remove',
+    args: [{ name: '"pattern"', required: true, kind: 'string', hint: 'pattern or name of the trigger(s) to remove' }],
+    options: [], flags: [],
+    description: 'Remove trigger(s) by pattern or name',
+    example: '/trigger remove "You feel fully rested"',
+    run: (ctx, p) => {
+      const { kept, removed } = removeRules(ctx.getTriggers(), p.args[0])
+      if (removed.length === 0) return err(`No trigger matches "${p.args[0]}" (by pattern or name).`)
+      ctx.applyTriggers(kept)
+      return ok(`Removed ${removed.length} trigger${removed.length === 1 ? '' : 's'}: ${removed.map(r => `"${r.pattern}"`).join(', ')}`)
+    },
+  },
+  {
+    noun: 'trigger', nounAliases: ['triggers'], verb: 'list',
+    args: [{ name: 'filter', required: false, kind: 'string', hint: 'only show patterns containing this' }],
+    options: [], flags: [],
+    description: 'List triggers (optionally filtered)',
+    example: '/trigger list',
+    run: (ctx, p) => listRules('trigger', ctx.getTriggers(), p.args[0],
+      r => {
+        const act = r.actions[0]
+        const what = act?.type === 'command' && act.command ? act.command : `${r.actions.length} action${r.actions.length === 1 ? '' : 's'}`
+        return `"${r.pattern}" → ${what} (${r.watchStream}, ${r.mode}${r.cooldownSeconds ? `, cd ${r.cooldownSeconds}s` : ''}${r.oneShot ? ', once' : ''})`
+      },
+      r => r.pattern),
+  },
+  {
+    noun: 'trigger', nounAliases: ['triggers'], verb: 'edit',
+    args: [{ name: '"pattern"', required: true, kind: 'string', hint: 'pattern or name of the trigger to edit' }],
+    options: [], flags: [],
+    description: 'Open a trigger in the Automations editor',
+    example: '/trigger edit "You feel fully rested"',
+    run: (ctx, p) => editRule(ctx, 'triggers', 'trigger', ctx.getTriggers(), p.args[0].trim(), r => r.pattern),
   },
 
   // ── /contact ────────────────────────────────────────────────────────────
@@ -424,7 +636,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     noun: 'template', nounAliases: ['tpl', 'templates'], verb: 'add',
     args: [
       { name: '"name"', required: true, kind: 'string', hint: 'the template name (e.g. Watchlist)' },
-      { name: 'color', required: false, kind: 'color', hint: 'name color — named color or #hex' },
+      { name: 'color', required: false, kind: 'color', hint: 'name color — named color or #hex (/colors shows them)' },
     ],
     options: [
       { key: 'bg', hint: 'background color behind the name' },
@@ -496,6 +708,279 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     },
   },
 
+  // ── Phase 3: client control ─────────────────────────────────────────────
+  {
+    noun: 'mode', nounAliases: ['modes'], verb: '',
+    args: [{ name: 'name', required: false, kind: 'string', hint: 'the mode to switch to; "none" clears; omit to list' }],
+    options: [], flags: [],
+    description: 'Switch Group Mode (bare /mode lists them)',
+    example: '/mode Hunting',
+    run: (ctx, p) => {
+      const modes = ctx.getModes()
+      const target = p.args[0]?.trim()
+      const m = target ? modes.find(x => x.name.toLowerCase() === target.toLowerCase()) : undefined
+      // Bare `/mode` lists — and so does the literal `list` (users type it by
+      // analogy with the other nouns). A REAL mode named "list" wins the match
+      // above, so the sugar can't shadow it.
+      if (!target || (!m && target.toLowerCase() === 'list')) {
+        if (modes.length === 0) return ok('No modes defined — create them in Automations → Groups.')
+        const activeId = ctx.getActiveModeId()
+        return ok('Modes (● = active · /mode <name> to switch, /mode none to clear):',
+          ...modes.map(x => `  ${x.id === activeId ? '●' : '·'} ${x.name}`))
+      }
+      if (!m && target.toLowerCase() === 'none') { ctx.clearMode(); return ok('Mode cleared — ungrouped rules only.') }
+      if (!m) return err(`No mode "${target}". You have: ${modes.map(x => x.name).join(', ') || '(none)'}.`)
+      ctx.applyMode(m.id)
+      return ok(`Mode: ${m.name}`)
+    },
+  },
+  {
+    noun: 'group', nounAliases: ['groups'], verb: 'on',
+    args: [{ name: '"name"', required: true, kind: 'string', hint: 'the group to turn on' }],
+    options: [], flags: [],
+    description: 'Turn a rule group ON',
+    example: '/group on Hunting',
+    run: (ctx, p) => {
+      const g = ctx.getGroups().find(x => x.name.toLowerCase() === p.args[0].trim().toLowerCase())
+      if (!g) return err(`No group "${p.args[0]}". You have: ${ctx.getGroups().map(x => x.name).join(', ') || '(none)'}.`)
+      if (g.on) return ok(`Group ${g.name} is already on.`)
+      ctx.setGroupOn(g.id, true)
+      return ok(`Group ON: ${g.name}`)
+    },
+  },
+  {
+    noun: 'group', nounAliases: ['groups'], verb: 'off',
+    args: [{ name: '"name"', required: true, kind: 'string', hint: 'the group to turn off' }],
+    options: [], flags: [],
+    description: 'Turn a rule group OFF',
+    example: '/group off Roleplay',
+    run: (ctx, p) => {
+      const g = ctx.getGroups().find(x => x.name.toLowerCase() === p.args[0].trim().toLowerCase())
+      if (!g) return err(`No group "${p.args[0]}". You have: ${ctx.getGroups().map(x => x.name).join(', ') || '(none)'}.`)
+      if (!g.on) return ok(`Group ${g.name} is already off.`)
+      ctx.setGroupOn(g.id, false)
+      return ok(`Group OFF: ${g.name}`)
+    },
+  },
+  {
+    noun: 'group', nounAliases: ['groups'], verb: 'list',
+    args: [], options: [], flags: [],
+    description: 'List rule groups and their on/off state',
+    example: '/group list',
+    run: (ctx) => {
+      const gs = ctx.getGroups()
+      if (gs.length === 0) return ok('No groups defined — create them in Automations → Groups.')
+      return ok('Groups (● = on · /group on|off <name>):', ...gs.map(g => `  ${g.on ? '●' : '·'} ${g.name}`))
+    },
+  },
+  {
+    noun: 'panel', nounAliases: ['panels', 'stream'], verb: 'open',
+    args: [{ name: 'stream', required: true, kind: 'string', hint: 'a panel/stream name (thoughts, deaths, a Lich stream, …)' }],
+    options: [], flags: [],
+    description: 'Open a stream panel (focuses it if already open)',
+    example: '/panel open thoughts',
+    run: (ctx, p) => {
+      const target = p.args[0].trim()
+      const avail = ctx.getOpenableStreams()
+      // Stream ids preserve case (Principle #5) — match case-insensitively but
+      // OPEN with the canonical id so a Lich stream like `LichScripts` routes.
+      const id = avail.find(s => s.toLowerCase() === target.toLowerCase())
+      if (!id) return err(`No stream "${target}". Available: ${avail.join(', ')}. (Lich-script streams appear once the script pushes to them.)`)
+      const result = ctx.openPanel(id)
+      return ok(result === 'focused' ? `${id} is already open — focused it.` : `Panel opened: ${id}`)
+    },
+  },
+  {
+    noun: 'panel', nounAliases: ['panels', 'stream'], verb: 'close',
+    args: [{ name: 'stream', required: true, kind: 'string', hint: 'the open panel to close' }],
+    options: [], flags: [],
+    description: 'Close an open stream panel',
+    example: '/panel close deaths',
+    run: (ctx, p) => {
+      const target = p.args[0].trim()
+      const open = ctx.getOpenPanels()
+      const id = open.find(s => s.toLowerCase() === target.toLowerCase())
+      if (!id) return err(`"${target}" isn't open. Open panels: ${open.join(', ') || '(none)'}.`)
+      return ctx.closePanel(id) ? ok(`Panel closed: ${id}`) : err(`Couldn't close "${id}".`)
+    },
+  },
+  {
+    noun: 'panel', nounAliases: ['panels', 'stream'], verb: 'list',
+    args: [], options: [], flags: [],
+    description: 'List open panels and available streams',
+    example: '/panel list',
+    run: (ctx) => {
+      const open = ctx.getOpenPanels()
+      const avail = ctx.getOpenableStreams().filter(s => !open.some(o => o.toLowerCase() === s.toLowerCase()))
+      if (open.length === 0 && avail.length === 0) return ok('No streams known yet.')
+      return ok('Streams (● = open · /panel open|close <name>):',
+        ...open.map(s => `  ● ${s}`),
+        ...avail.map(s => `  · ${s}`))
+    },
+  },
+  {
+    noun: 'theme', nounAliases: ['themes'], verb: '',
+    args: [{ name: 'name', required: false, kind: 'string', hint: 'a theme name or id; omit to list' }],
+    options: [], flags: [],
+    description: 'Switch theme (bare /theme lists them)',
+    example: '/theme parchment',
+    run: (ctx, p) => {
+      const themes = ctx.getThemes()
+      const target = p.args[0]?.trim()
+      // Bare `/theme` lists — and so does the literal `list` (typed by analogy
+      // with the other nouns), unless a theme is actually named/id'd "list".
+      const isListSugar = !!target && target.toLowerCase() === 'list'
+        && !themes.some(x => x.id.toLowerCase() === 'list' || x.name.toLowerCase() === 'list')
+      if (!target || isListSugar) {
+        const cur = ctx.getCurrentThemeId()
+        return ok('Themes (● = current · /theme <name>):', ...themes.map(t => `  ${t.id === cur ? '●' : '·'} ${t.name}${t.name.toLowerCase() !== t.id ? ` (${t.id})` : ''}`))
+      }
+      const t = target.toLowerCase()
+      // Id match first (unique); then name — two built-ins can SHARE a display
+      // name (pitfall #35: dark "Classic" + light "Classic"), so an ambiguous
+      // name errors with the ids instead of guessing.
+      const byId = themes.find(x => x.id.toLowerCase() === t)
+      const byName = themes.filter(x => x.name.toLowerCase() === t)
+      const pick = byId ?? (byName.length === 1 ? byName[0] : null)
+      if (!pick) {
+        if (byName.length > 1) return err(`Two themes are named "${target}" — use the id: ${byName.map(x => x.id).join(' or ')}.`)
+        return err(`No theme "${target}". You have: ${themes.map(x => x.name).join(', ')}.`)
+      }
+      ctx.applyThemeId(pick.id)
+      return ok(`Theme: ${pick.name}${pick.name.toLowerCase() !== pick.id ? ` (${pick.id})` : ''}`)
+    },
+  },
+  {
+    noun: 'log', nounAliases: ['logs'], verb: 'search',
+    args: [{ name: '"text"', required: false, kind: 'string', hint: 'what to search for; omit to open Search empty' }],
+    options: [], flags: [],
+    description: 'Open the Session Log in Quick Search',
+    example: '/log search "wedding"',
+    run: (ctx, p) => {
+      const q = p.args[0] ?? ''
+      ctx.openLogSearch(q)
+      return ok(q ? `Searching the Session Log for "${q}"…` : 'Session Log search opened.')
+    },
+  },
+  {
+    noun: 'clear', nounAliases: [], verb: '',
+    args: [], options: [], flags: [],
+    description: 'Clear the main game window (the Session Log keeps everything)',
+    example: '/clear',
+    run: (ctx) => {
+      ctx.clearMain()
+      return ok('Main window cleared.')
+    },
+  },
+  {
+    noun: 'colors', nounAliases: ['color', 'colours', 'colour'], verb: '',
+    args: [], options: [], flags: [],
+    description: 'Show the named colors, each in its own color',
+    example: '/colors',
+    run: (ctx) => {
+      // grey is an alias spelling of gray — one row, both spellings shown.
+      const curated = Object.entries(CURATED_COLORS).filter(([n]) => n !== 'grey')
+      const custom = ctx.getCustomColors()
+      const row = (name: string, hex: string) => ({ rich: [
+        { text: '  ' },
+        { text: '██ ', color: hex },
+        { text: name.padEnd(14), color: hex },
+        { text: hex },
+      ] })
+      return ok(
+        'Named colors — use them anywhere a color is accepted (name or #hex like #FF8800):',
+        ...curated.map(([name, hex]) => row(name === 'gray' ? 'gray / grey' : name, hex)),
+        ...(custom.length ? ['Yours (/colors add "name" #hex · /colors remove "name"):'] : []),
+        ...custom.map(c => row(c.name, c.hex)),
+        'All standard web color names work too (Lime, DodgerBlue, Crimson, …) — /colors list shows every one.',
+        `e.g. /highlight add "goblin" orange · /template add "Watchlist" #8800ff${custom.length ? '' : ' · add your own: /colors add "ember" #ff6a30'}`,
+      )
+    },
+  },
+  {
+    noun: 'colors', nounAliases: ['color', 'colours', 'colour'], verb: 'list',
+    args: [], options: [], flags: [],
+    description: 'The FULL color list — curated, yours, and every web name',
+    example: '/colors list',
+    run: (ctx) => {
+      // Compact colored GRID (4 names per row) — 148 one-per-line rows would
+      // drown the scrollback. Names only; bare /colors shows hex for the
+      // curated/custom sets (web names are used BY name, not copied as hex).
+      const grid = (entries: [string, string][]): SlashLine[] => {
+        const rows: SlashLine[] = []
+        for (let i = 0; i < entries.length; i += 4) {
+          rows.push({ rich: [
+            { text: '  ' },
+            ...entries.slice(i, i + 4).map(([name, hex]) => ({ text: name.padEnd(22), color: hex })),
+          ] })
+        }
+        return rows
+      }
+      const custom = ctx.getCustomColors()
+      // Platform categories, EACH always shown (consistent shape — an empty
+      // Custom section still teaches that the category exists and how to fill
+      // it, UX polish standard #2/#8).
+      return ok(
+        'Managed named colors — every category; every name works anywhere a color is accepted:',
+        '(Names too close to your theme\'s background sit on a small light/dark contrast bar — that\'s just a reading aid for this list, not part of the color.)',
+        `■ Curated (${Object.keys(CURATED_COLORS).length - 1}) — Lichborne's readable core; these win when a web name overlaps:`,
+        ...grid(Object.entries(CURATED_COLORS).filter(([n]) => n !== 'grey')),
+        `■ Custom (${custom.length}) — yours, app-wide, managed with /colors add|remove:`,
+        ...(custom.length
+          ? grid(custom.map(c => [c.name, c.hex] as [string, string]))
+          : ['  (none yet — /colors add "ember" #ff6a30)']),
+        `■ Web (${Object.keys(WEB_COLORS).length}) — the standard web/CSS names (the Genie set):`,
+        ...grid(Object.entries(WEB_COLORS)),
+        '/colors shows the short list with hex values · /help colors explains the commands.',
+      )
+    },
+  },
+  {
+    noun: 'colors', nounAliases: ['color', 'colours', 'colour'], verb: 'add',
+    args: [
+      { name: '"name"', required: true, kind: 'string', hint: 'the new color\'s name (one word)' },
+      { name: '#hex', required: true, kind: 'word', hint: 'its value, e.g. #ff6a30' },
+    ],
+    options: [], flags: [],
+    description: 'Add your own named color (app-wide, works everywhere)',
+    example: '/colors add "ember" #ff6a30',
+    run: (ctx, p) => {
+      const name = p.args[0].trim().toLowerCase()
+      const nameErr = validateCustomColorName(name)
+      if (nameErr) return err(nameErr)
+      if (!isHexColor(p.args[1])) return err(`"${p.args[1]}" isn't a #hex value — e.g. /colors add "${name}" #ff6a30. (Name a color BY a color: /colors shows the hex to copy.)`)
+      const hex = p.args[1].trim().toLowerCase()
+      const custom = ctx.getCustomColors()
+      const existing = custom.find(c => c.name.toLowerCase() === name)
+      if (existing) {
+        // Re-adding an existing name UPDATES it. Resolve-at-entry semantics:
+        // already-created rules keep the hex they stored — only future uses
+        // pick up the new value (say so, or the "update" looks broken).
+        ctx.applyCustomColors(custom.map(c => c === existing ? { name, hex } : c))
+        return ok({ rich: [{ text: 'Color updated: ' }, { text: `██ ${name}`, color: hex }, { text: ` ${hex} — new uses get this value; existing rules keep what they stored.` }] })
+      }
+      ctx.applyCustomColors([...custom, { name, hex }])
+      return ok({ rich: [{ text: 'Color added: ' }, { text: `██ ${name}`, color: hex }, { text: ` ${hex} — use it anywhere a color is accepted.` }] })
+    },
+  },
+  {
+    noun: 'colors', nounAliases: ['color', 'colours', 'colour'], verb: 'remove',
+    args: [{ name: '"name"', required: true, kind: 'string', hint: 'the custom color to remove' }],
+    options: [], flags: [],
+    description: 'Remove one of your custom named colors',
+    example: '/colors remove "ember"',
+    run: (ctx, p) => {
+      const name = p.args[0].trim().toLowerCase()
+      if (Object.prototype.hasOwnProperty.call(CURATED_COLORS, name))
+        return err(`"${name}" is a built-in color — built-ins can't be removed.`)
+      const custom = ctx.getCustomColors()
+      const removed = custom.filter(c => c.name.toLowerCase() === name)
+      if (removed.length === 0) return err(`No custom color "${name}". Yours: ${custom.map(c => c.name).join(', ') || '(none yet — /colors add "name" #hex)'}.`)
+      ctx.applyCustomColors(custom.filter(c => !removed.includes(c)))
+      return ok(`Removed color "${name}" — rules that used it keep the hex they stored.`)
+    },
+  },
+
   // ── /timestamps ─────────────────────────────────────────────────────────
   {
     noun: 'timestamps', nounAliases: ['ts'], verb: '',
@@ -514,30 +999,92 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
   },
 ]
 
+// Noun-level blurbs for the bare /help listing — one PLAIN-LANGUAGE line per
+// noun (38 per-command lines is a wall; a novice needs "what is this FOR").
+// NEW NOUN ⇒ add a line here (pre-merge check #5 covers it); a missing noun
+// falls back to its first entry's description, so /help never omits a command.
+const NOUN_HELP: Record<string, string> = {
+  highlight:  'Color text that matters (a creature, your name, a rare drop)',
+  mute:       'Hide lines you never want to see (spam, weather, a chatty NPC)',
+  sub:        'Rewrite matching text into something shorter or clearer',
+  alias:      'Typed shortcuts — one word expands into full commands',
+  trigger:    'React to game text automatically (text matches → command sends)',
+  contact:    'Track players — their names get colored everywhere they appear',
+  template:   'Reusable name styles (like Friends/Enemies) to file contacts under',
+  mode:       'Switch which rule groups are active, all at once',
+  group:      'Turn a single rule group on or off',
+  panel:      'Open or close stream panels (thoughts, deaths, combat, …)',
+  theme:      'Change how the whole app looks',
+  log:        'Search everything that happened in your saved session history',
+  timestamps: 'Show the time next to each line in the main window',
+  clear:      'Wipe the main window (your Session Log still keeps everything)',
+  colors:     'The named colors — see them, add your own (/colors add "ember" #ff6a30)',
+  help:       'This list — /help <command> explains one in detail',
+}
+
 // /help is registry-driven but self-referential, so it's built after the array.
 SLASH_COMMANDS.push({
   noun: 'help', nounAliases: ['?'], verb: '',
-  args: [{ name: 'command', required: false, kind: 'word', hint: 'a command to explain (e.g. highlight)' }],
+  args: [
+    { name: 'command', required: false, kind: 'word', hint: 'a command to explain (e.g. highlight)' },
+    { name: 'verb', required: false, kind: 'word', hint: 'narrow to one verb (e.g. add)' },
+  ],
   options: [], flags: [],
   description: 'List client commands, or explain one',
   example: '/help highlight',
   run: (_ctx, p) => {
     const topic = p.args[0]?.toLowerCase().replace(/^\//, '')
     if (topic) {
-      const matches = SLASH_COMMANDS.filter(c => c.noun === topic || c.nounAliases.includes(topic))
+      // ── Detail view: every verb of the noun (optionally narrowed), with the
+      // per-arg and per-option HINTS spelled out — the palette shows these
+      // while typing, but /help is where a novice reads them at leisure.
+      const verbFilter = p.args[1]?.toLowerCase()
+      let matches = SLASH_COMMANDS.filter(c => c.noun === topic || c.nounAliases.includes(topic))
       if (matches.length === 0) return err(`No client command "/${topic}". Type /help for the list.`)
-      return ok(...matches.flatMap(c => [`${signatureOf(c)} — ${c.description}`, `    e.g. ${c.example}`]))
+      if (verbFilter) {
+        const narrowed = matches.filter(c => c.verb === verbFilter)
+        if (narrowed.length === 0) return err(`/${matches[0].noun} has no "${verbFilter}" — its verbs: ${matches.map(c => c.verb || '(none)').join(', ')}.`)
+        matches = narrowed
+      }
+      const lines: string[] = []
+      for (const c of matches) {
+        lines.push(`${signatureOf(c)}`)
+        lines.push(`    ${c.description} — e.g. ${c.example}`)
+        const argHints = c.args.filter(a => a.hint).map(a => `${a.name}: ${a.hint}`)
+        if (argHints.length) lines.push(`    ${argHints.join(' · ')}`)
+        const optHints = [
+          ...c.options.map(o => `${o.key}=: ${o.hint}`),
+          ...(c.flags.length ? [`flags: ${c.flags.join(', ')}`] : []),
+        ]
+        if (optHints.length) lines.push(`    ${optHints.join(' · ')}`)
+      }
+      lines.push('Reminder: <angle brackets> = required, [square brackets] = optional, "quotes" around multi-word text.')
+      return ok(...lines)
     }
-    const seen = new Set<string>()
-    const lines: string[] = ['Client commands (they configure Lichborne — nothing is sent to the game):']
+    // ── Overview: ONE line per noun, plain language, then a syntax primer.
+    const seenNouns = new Set<string>()
+    const rows: { label: string; what: string }[] = []
     for (const c of SLASH_COMMANDS) {
-      const label = c.verb ? `/${c.noun} ${c.verb}` : `/${c.noun}`
-      if (seen.has(label)) continue
-      seen.add(label)
-      lines.push(`  ${label.padEnd(20)} ${c.description}`)
+      if (seenNouns.has(c.noun)) continue
+      seenNouns.add(c.noun)
+      const all = SLASH_COMMANDS.filter(x => x.noun === c.noun)
+      const verbs = all.map(x => x.verb).filter(Boolean)
+      const hasBare = all.some(x => x.verb === '')
+      // A noun can have a bare form AND verbs (/colors lists; /colors add|remove
+      // manage) — bracket the verbs so the bare form reads as the default.
+      const label = verbs.length
+        ? (hasBare ? `/${c.noun} [${verbs.join('|')}]` : `/${c.noun} ${verbs.join('|')}`)
+        : `/${c.noun}${c.args[0] ? ` [${c.args[0].name}]` : ''}`
+      rows.push({ label, what: NOUN_HELP[c.noun] ?? c.description })
     }
-    lines.push('Type "//" to send a literal "/" line to the game. /help <command> for details.')
-    return ok(...lines)
+    const width = Math.max(...rows.map(r => r.label.length)) + 2
+    return ok(
+      'Client commands — these control Lichborne itself; nothing here is ever sent to the game.',
+      ...rows.map(r => `  ${r.label.padEnd(width)}${r.what}`),
+      'How to type them: put multi-word text in "quotes" · extras are key=value (mode=regex) · colors are names (/colors shows them) or #hex.',
+      'Tip: just type / to browse — Tab completes, Enter runs, Esc closes. A typo can never reach the game; type "//" to send a literal "/" line.',
+      '/help <command> explains one in detail (e.g. /help highlight).',
+    )
   },
 })
 
@@ -555,11 +1102,16 @@ function findCommand(noun: string, verb: string | undefined): { cmd?: SlashComma
   const n = noun.toLowerCase()
   const forNoun = SLASH_COMMANDS.filter(c => c.noun === n || c.nounAliases.includes(n))
   if (forNoun.length === 0) return { nounKnown: false }
-  // Noun-only command (verb='')
+  // A noun can have BOTH verb entries and a noun-only entry (/colors lists,
+  // /colors add creates). Verb match wins; the noun-only form is the fallback,
+  // so its first ARGUMENT can't be mistaken for a verb (`/mode Hunting` — no
+  // verb "hunting" exists → falls to the noun-only /mode).
+  const v = verb?.toLowerCase()
+  const verbMatch = v ? forNoun.find(c => c.verb === v) : undefined
+  if (verbMatch) return { cmd: verbMatch, nounKnown: true }
   const nounOnly = forNoun.find(c => c.verb === '')
   if (nounOnly) return { cmd: nounOnly, nounKnown: true }
-  const v = verb?.toLowerCase()
-  return { cmd: v ? forNoun.find(c => c.verb === v) : undefined, nounKnown: true }
+  return { cmd: undefined, nounKnown: true }
 }
 
 export interface SlashParse {

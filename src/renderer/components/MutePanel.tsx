@@ -20,10 +20,11 @@ interface Props {
   onSaved?: () => void
   inline?:  boolean
   prefill?: MuteRule   // from the game-window right-click "Mute …"
+  openRuleId?: string  // v0.14.6: open an existing rule for edit (slash /mute edit)
   analyticsOn?: boolean
 }
 
-export default function MutePanel({ onSaved, prefill, analyticsOn = false }: Props) {
+export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]   = useState<MuteRule[]>(() => loadMutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -43,6 +44,17 @@ export default function MutePanel({ onSaved, prefill, analyticsOn = false }: Pro
     setDeleteConfirm(false)
     setTimeout(() => nameInputRef.current?.focus(), 0)
   }, [prefill?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v0.14.6: open an EXISTING rule by id (slash `/mute edit`) — the
+  // TriggersPanel openRuleId pattern. No-op if the rule was deleted since.
+  useEffect(() => {
+    if (!openRuleId) return
+    const r = rules.find(x => x.id === openRuleId)
+    if (!r) return
+    setDraft({ ...r })
+    setSelectedId(r.id)
+    setIsPendingNew(false)
+  }, [openRuleId, rules])
 
   function selectRule(r: MuteRule) {
     setSelectedId(r.id)

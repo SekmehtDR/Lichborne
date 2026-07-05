@@ -15,6 +15,7 @@ import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnaly
 import { analyzeTriggers } from '../automationHealth'
 import GroupPicker from './GroupPicker'
 import '../styles/triggers.css'
+import { normalizeColorInput, COLOR_INPUT_TITLE } from '../colors'
 import '../styles/groups.css'
 
 const ACTION_LABELS: Record<ActionType, string> = {
@@ -183,7 +184,9 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
               <input
                 className="tp-input tp-input--hex"
                 value={action.echoColor ?? ''}
+                title={COLOR_INPUT_TITLE}
                 onChange={e => up({ echoColor: e.target.value })}
+                onBlur={e => up({ echoColor: normalizeColorInput(e.target.value) })}
                 placeholder="(default color)"
               />
             </div>

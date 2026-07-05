@@ -21,6 +21,7 @@ interface Props {
   onSaved?:     () => void
   inline?:      boolean
   initialTab?:  'aliases' | 'macros'
+  openAliasId?: string // v0.14.6: open an existing alias for edit (slash /alias edit)
   analyticsOn?: boolean
 }
 
@@ -208,7 +209,7 @@ export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab, analyticsOn = false }: Props) {
+export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab, openAliasId, analyticsOn = false }: Props) {
   const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
   const character = useCharacter()
   const [aliases, setAliases]   = useState<AliasRule[]>(() => loadAliases(character))
@@ -234,6 +235,18 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
     setDeleteConfirm(false)
     setSearch('')
   }
+
+  // v0.14.6: open an EXISTING alias by id (slash `/alias edit`) — the
+  // TriggersPanel openRuleId pattern. The host passes initialTab='aliases'
+  // alongside, so `tab` is already right. No-op if the alias was deleted.
+  useEffect(() => {
+    if (!openAliasId) return
+    const r = aliases.find(x => x.id === openAliasId)
+    if (!r) return
+    setSelectedId(r.id)
+    setAliasDraft({ ...r })
+    setIsPendingNew(false)
+  }, [openAliasId, aliases])
 
   // ── Alias CRUD ──────────────────────────────────────────────────────────────
 

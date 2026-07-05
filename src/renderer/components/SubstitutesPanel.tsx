@@ -19,10 +19,11 @@ interface Props {
   onSaved?: () => void
   inline?:  boolean
   prefill?: SubstituteRule   // from the game-window right-click "Substitute …"
+  openRuleId?: string        // v0.14.6: open an existing rule for edit (slash /sub edit)
   analyticsOn?: boolean
 }
 
-export default function SubstitutesPanel({ onSaved, prefill, analyticsOn = false }: Props) {
+export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyticsOn = false }: Props) {
   const character = useCharacter()
   const [rules, setRules]   = useState<SubstituteRule[]>(() => loadSubstitutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -42,6 +43,17 @@ export default function SubstitutesPanel({ onSaved, prefill, analyticsOn = false
     setDeleteConfirm(false)
     setTimeout(() => nameInputRef.current?.focus(), 0)
   }, [prefill?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v0.14.6: open an EXISTING rule by id (slash `/sub edit`) — the
+  // TriggersPanel openRuleId pattern. No-op if the rule was deleted since.
+  useEffect(() => {
+    if (!openRuleId) return
+    const r = rules.find(x => x.id === openRuleId)
+    if (!r) return
+    setDraft({ ...r })
+    setSelectedId(r.id)
+    setIsPendingNew(false)
+  }, [openRuleId, rules])
 
   function selectRule(r: SubstituteRule) {
     setSelectedId(r.id)
