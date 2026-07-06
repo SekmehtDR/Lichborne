@@ -70,6 +70,20 @@ export interface ExperienceProps {
   // Open the contact CARD (the same ContactPopover in-text name clicks use)
   // at the given screen position — contact figures in a scene are clickable.
   onOpenContact?: (contactId: string, x: number, y: number) => void
+  // v0.14.7: content layers the user toggled OFF via the window's ⚙ popover
+  // (option-id → true; see ExperienceDef.options). Absent = show everything.
+  hidden?: Record<string, boolean>
+}
+
+// A user-toggleable content layer of an Experience (v0.14.7, Sekmeht: "click
+// checkboxes for data they want to see, for example Thoughts on/off").
+// Registry-driven like everything else: the ExperienceLayer's ⚙ popover
+// renders one checkbox per entry; the component gates on
+// `hidden[option.id]`. All layers default VISIBLE (hidden map empty).
+export interface ExperienceOptionDef {
+  id: string
+  label: string
+  desc: string   // tooltip — the UI explains itself (polish standard #8)
 }
 
 export interface ExperienceDef {
@@ -84,6 +98,8 @@ export interface ExperienceDef {
   // Optional maturity/status badge shown on the shelf row and in the window
   // title — e.g. 'Beta' while an Experience is still under tester iteration.
   badge?: string
+  // Toggleable content layers (the ⚙ popover). Omit for none.
+  options?: ExperienceOptionDef[]
   // REQUIRED (§32.4 accessibility contract): what existing text/state surface
   // carries the same information. Shown on the shelf row.
   textEquivalent: string
@@ -99,6 +115,15 @@ export const EXPERIENCES: ExperienceDef[] = [
     defaultRect: { x: 0.22, y: 0.08, w: 0.52, h: 0.58 },
     chrome: 'standard',
     badge: 'Beta',
+    options: [
+      { id: 'speech',    label: 'Speech bubbles', desc: 'Says and OOC as comic bubbles by each speaker.' },
+      { id: 'yells',     label: 'Yells',          desc: 'Yelled speech (bigger, louder bubbles).' },
+      { id: 'whispers',  label: 'Whispers',       desc: 'Whispers as dotted, private bubbles.' },
+      { id: 'thoughts',  label: 'Thoughts',       desc: 'Gweth/telepathy as wisps drifting at the edges.' },
+      { id: 'emotes',    label: 'Emotes',         desc: 'Action captions under the acting figure.' },
+      { id: 'creatures', label: 'Creatures',      desc: 'Creature figures lining the back of the scene.' },
+      { id: 'moves',     label: 'Arrivals & departures', desc: 'Walk-ins from their direction and fading ghosts on the way out.' },
+    ],
     textEquivalent: 'The main window and Room panel: "Also here:" players, "You also see" creatures, and the comms streams carry everything the scene shows.',
   },
 ]
@@ -118,6 +143,13 @@ export interface ExperienceInstance {
   z: number
   showTitle: boolean
   open: boolean
+  // v0.14.7 per-instance view options — both OPTIONAL (older saved instances
+  // load unchanged; rides the same scopedKey → YAML → Transfer for free).
+  // fontSize: the A+/A− override in px (absent = the global game font, the
+  // F31 model). hidden: option-id → true for content layers toggled OFF via
+  // the ⚙ popover (absent/empty = everything visible).
+  fontSize?: number
+  hidden?: Record<string, boolean>
 }
 
 export function loadExperiences(key: string): ExperienceInstance[] {

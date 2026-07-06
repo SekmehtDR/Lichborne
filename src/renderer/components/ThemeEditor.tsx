@@ -148,19 +148,18 @@ const TABS: EditorTab[] = [
   {
     id: 'room', label: 'Room & Exp',
     groups: [
+      // v0.14.7 prose redesign: the section-label and exit-BUTTON controls
+      // were retired with the labeled sections + buttons (a control with no
+      // consumer is the B188 bug class). --exit-text/--exit-text-hover live
+      // on as the "Obvious paths:" link colors.
       { label: 'Room Text', fields: [
-        c('--room-title-color',   'Room title',       'Heading at the top of the Room panel (e.g. "Tower of Shadows, Air Gallery").'),
+        c('--room-title-color',   'Room title',       'Heading at the top of the Room panel (e.g. "[Tower of Shadows, Air Gallery]").'),
         c('--room-desc-color',    'Room description', 'The descriptive paragraph at the top of the Room panel.'),
-        c('--room-section-color', 'Section labels',   'Section headings inside Room panel ("Players", "Objects", "Creatures"). Falls back to --text-dim if unset.'),
-        c('--room-content-color', 'Content text',     'Body text for Players / Objects / Creatures / Extra sections. Falls back to --text-muted if unset.'),
+        c('--room-content-color', 'Content text',     'The room’s prose lines ("You also see …", "Also here: …"). Falls back to --text-muted if unset.'),
       ]},
       { label: 'Exits', fields: [
-        c('--exit-bg',           'Exit background',       'Background fill of the directional exit buttons in the Room panel.'),
-        c('--exit-border',       'Exit border',           'Border around the exit buttons.'),
-        c('--exit-text',         'Exit text',             'Direction labels (North, Southeast, climb tree…) on exit buttons.'),
-        c('--exit-bg-hover',     'Exit hover background', 'Exit button background on hover.'),
-        c('--exit-border-hover', 'Exit hover border',     'Exit button border on hover.'),
-        c('--exit-text-hover',   'Exit hover text',       'Exit button label color on hover.'),
+        c('--exit-text',         'Exit links',       'The clickable direction words on the "Obvious paths:" line (click to walk).'),
+        c('--exit-text-hover',   'Exit link hover',  'Direction word color while hovered.'),
       ]},
       { label: 'Compass', fields: [
         c('--compass-active-text',     'Active direction text',   'Arrow color in the floating compass when that direction IS a valid exit from the current room.'),

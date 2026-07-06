@@ -1635,6 +1635,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             triggerCtxRef.current.exits = evt.directions
             processVariableChangeRef.current('exits', evt.directions.join(', '))
             break
+          // v0.14.7 (F52): the game's own exits SENTENCE from the room exits
+          // component ("Obvious exits: none.") — Genie shows this verbatim in
+          // its room window; we were discarding it, so exitless rooms showed
+          // nothing and "paths" vs "exits" wording was guessed.
+          case 'room-exits-text':
+            roomUpdates.exitsText = evt.text
+            break
           case 'room-title':
             roomUpdates.title = evt.title
             roomUpdates.roomId = evt.roomId
@@ -1677,7 +1684,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             if (evt.stream === 'room-players')   roomUpdates.players   = []
             if (evt.stream === 'room-creatures') roomUpdates.creatures = []
             if (evt.stream === 'room-extra')     roomUpdates.extra     = []
-            if (evt.stream === 'room-exits')     roomUpdates.exits     = []
+            if (evt.stream === 'room-exits')     { roomUpdates.exits = []; roomUpdates.exitsText = '' }
             if (!ROOM_STREAMS.has(evt.stream)) {
               clearedStreams.add(evt.stream)
               // B175: a clear also drops lines accumulated EARLIER IN THIS
@@ -3157,6 +3164,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         settings={settings}
         isActive={isActive}
         onOpenContact={(contactId, x, y) => setContactPopover({ contactId, x, y })}
+        hidden={inst.hidden}
       />
     )
   }

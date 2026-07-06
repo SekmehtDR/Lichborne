@@ -254,6 +254,7 @@ export type GameEvent =
   | ClearStreamEvent
   | StreamDeclareEvent
   | ExitsEvent
+  | RoomExitsTextEvent
   | InjuryUpdateEvent
   | PlayerInfoEvent
   | LaunchUrlEvent
@@ -392,6 +393,18 @@ export interface StreamDeclareEvent {
 export interface ExitsEvent {
   type: 'exits'
   directions: string[]  // abbreviated: 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw', 'up', 'dn', 'out'
+}
+
+// v0.14.7 (F52 follow-up): the GAME'S OWN exits sentence from the
+// `<component id='room exits'>` — "Obvious paths: north, east." /
+// "Obvious exits: none." / "Obvious exits: out." — so the Room panel shows
+// the exact wording (paths vs exits, the "none." case, named exits) the main
+// scroll shows. The compass ExitsEvent above stays authoritative for the
+// DIRECTION TOKENS (map matching + which words are clickable); this is the
+// display sentence.
+export interface RoomExitsTextEvent {
+  type: 'room-exits-text'
+  text: string  // '' when the component arrives empty (clears a stale sentence)
 }
 
 export interface BodyPartState {
@@ -601,6 +614,9 @@ export interface RoomState {
   creatures: TextSegment[]
   extra: TextSegment[]
   exits: string[]
+  // v0.14.7: the game's own exits sentence ("Obvious exits: none.") from the
+  // room exits component — display wording; `exits` stays the token truth.
+  exitsText?: string
   roomId?: number
 }
 

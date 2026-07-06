@@ -24,6 +24,74 @@
   overflow: hidden;
 }
 
+/* ── Per-instance view controls (v0.14.7) ─────────────────────────────────
+   A−/A+ font override + ⚙ content-layer popover, hosted inside each
+   Experience's FloatingWindow. Buttons reuse .panel-font-btn (panel-frame.css)
+   and mirror its hover-quiet pattern: near-invisible until the window is
+   hovered (quiet by default, polish standard #1). */
+
+.exp-content-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.exp-inst-controls {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  opacity: 0.15;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.fl-window:hover .exp-inst-controls { opacity: 0.6; pointer-events: auto; }
+.exp-inst-controls:hover { opacity: 1; pointer-events: auto; }
+
+.exp-inst-options {
+  position: absolute;
+  top: 26px;
+  right: 4px;
+  z-index: 7;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  padding: 6px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.72rem; /* window chrome — deliberately not scene-font scaled */
+  color: var(--text-primary);
+}
+
+.exp-inst-options-title {
+  color: var(--text-dim);
+  font-size: 0.9em;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.exp-inst-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.exp-inst-option:hover { color: var(--text-primary); }
+.exp-inst-option input { margin: 0; }
+
 /* ── The shelf (§34.5) ────────────────────────────────────────────────────
    Canonical modal chrome recipe (pitfall #55): body --bg-base, header band
    --bg-hover, title --accent. A compact picker, not a full-size modal. */

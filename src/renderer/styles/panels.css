@@ -130,6 +130,14 @@
   padding: 12px;
 }
 
+/* v0.14.7 prose redesign: the panel reads like the game writes it — title,
+   desc, then the component sentences verbatim ("You also see …", "Also
+   here: …"), and a clickable "Obvious paths:" line last. The old labeled
+   sections + full-word exit BUTTONS are gone (tester feedback: read as an
+   over-engineered form; every sibling client renders room prose). The old
+   --exit-bg/--exit-border/--room-section-color vars are inert; --exit-text /
+   --exit-text-hover live on as the exits-line link colors. */
+
 .room-panel-title {
   color: var(--room-title-color);
   /* B113: use the cascading bold weight so the title scales with the
@@ -139,6 +147,29 @@
   margin-bottom: 6px;
   padding-bottom: 5px;
   border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.room-panel-title-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Creature-count chip (⚔ N) — rendered only when creatures are present
+   (quiet by default). Fixed semantic hue mixed toward theme text so it reads
+   on light AND dark themes (pitfall #55 pattern); line-height pinned so the
+   chip can't balloon the title row (pitfall #75b). */
+.room-creature-chip {
+  font-size: 0.78em;
+  line-height: 1;
+  font-weight: var(--ui-bold-weight);
+  color: color-mix(in srgb, #e0a030 70%, var(--text-primary));
+  border: 1px solid color-mix(in srgb, #e0a030 40%, var(--border));
+  border-radius: 9px;
+  padding: 2px 7px;
+  white-space: nowrap;
 }
 
 .room-panel-desc {
@@ -147,44 +178,27 @@
   margin-bottom: 8px;
 }
 
-.room-panel-exits {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.room-exit-btn {
-  background: var(--exit-bg);
-  border: 1px solid var(--exit-border);
-  color: var(--exit-text);
-  padding: 3px 9px;
-  font-size: 0.96em;
-  border-radius: 3px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.room-exit-btn:hover {
-  background: var(--exit-bg-hover);
-  border-color: var(--exit-border-hover);
-  color: var(--exit-text-hover);
-}
-
-.room-panel-section-label {
-  color: var(--room-section-color);
-  font-size: 0.88em;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: 8px;
-  margin-bottom: 3px;
-}
-
-.room-panel-objects,
-.room-panel-players {
+.room-panel-line {
   color: var(--room-content-color);
   font-size: 1.01em;
+  margin-bottom: 4px;
+}
+
+.room-exits-line {
+  margin-top: 6px;
+}
+
+.room-exit-link {
+  color: var(--exit-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--exit-text) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.room-exit-link:hover {
+  color: var(--exit-text-hover);
+  text-decoration-color: var(--exit-text-hover);
 }
 
 /* ============================================================

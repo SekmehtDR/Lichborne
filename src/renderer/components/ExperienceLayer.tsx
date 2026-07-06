@@ -97,6 +97,32 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
     onInstancesChange(instances.map(i => (i.id === id ? { ...i, open: false } : i)))
   }
 
+  // ── Per-instance view controls (v0.14.7) ──────────────────────────────────
+  // A−/A+ adjust the instance's font override (the F31 per-panel model,
+  // brought to Experiences — Sekmeht: "Living Tableau needs the font sizer");
+  // ⚙ opens a checkbox popover of the def's content-layer options ("data they
+  // want to see, e.g. Thoughts on/off"). Both persist on the instance
+  // (scopedKey `experiences` → YAML → Transfer, no new plumbing).
+  const [optionsFor, setOptionsFor] = useState<string | null>(null)
+
+  function adjustFont(id: string, delta: number) {
+    onInstancesChange(instances.map(i => {
+      if (i.id !== id) return i
+      // Seed the first adjustment from the LIVE global game font so A+ from
+      // "no override" always grows (a fixed 12 seed would shrink for users
+      // running a larger global font).
+      const base = i.fontSize
+        ?? (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--game-font-size')) || 12)
+      return { ...i, fontSize: Math.max(8, Math.min(24, base + delta)) }
+    }))
+  }
+
+  function toggleOption(id: string, optId: string) {
+    onInstancesChange(instances.map(i => (i.id === id
+      ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: !i.hidden?.[optId] } }
+      : i)))
+  }
+
   return (
     <div className="experience-layer" ref={layerRef}>
       {size.w > 0 && size.h > 0 && openInstances.map(inst => {
@@ -120,7 +146,40 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
             guideRefs={{ v: guideVRef, h: guideHRef }}
             locked={locked}
           >
-            {renderContent(inst)}
+            {/* Font override: shadow --game-font-size for this window's
+                subtree — every Experience sizes its text off that var
+                (B182/B184), so one local re-declaration scales it all. */}
+            <div
+              className="exp-content-host"
+              style={inst.fontSize ? ({ ['--game-font-size' as string]: `${inst.fontSize}px` } as React.CSSProperties) : undefined}
+            >
+              {renderContent(inst)}
+            </div>
+            <div className="exp-inst-controls" aria-label={`${def.label} view controls`}>
+              <button type="button" className="panel-font-btn" title="Smaller text in this window"
+                onClick={() => adjustFont(inst.id, -1)}>A−</button>
+              <button type="button" className="panel-font-btn" title="Larger text in this window"
+                onClick={() => adjustFont(inst.id, 1)}>A+</button>
+              {(def.options?.length ?? 0) > 0 && (
+                <button type="button" className="panel-font-btn" title="Choose what this scene shows"
+                  onClick={() => setOptionsFor(o => (o === inst.id ? null : inst.id))}>⚙</button>
+              )}
+            </div>
+            {optionsFor === inst.id && def.options && (
+              <div className="exp-inst-options">
+                <div className="exp-inst-options-title">Show in this scene</div>
+                {def.options.map(opt => (
+                  <label key={opt.id} className="exp-inst-option" title={opt.desc}>
+                    <input
+                      type="checkbox"
+                      checked={!inst.hidden?.[opt.id]}
+                      onChange={() => toggleOption(inst.id, opt.id)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </FloatingWindow>
         )
       })}

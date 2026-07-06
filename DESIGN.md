@@ -423,11 +423,11 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<component id='exp Evasion' text="Evasion: 3 (2%)">` | Skill name, rank, mindstate per skill trained | Experience panel |
 | `<component id='room name'>...</component>` | Room title string | Room panel |
 | `<component id='room desc'>...</component>` | Room description prose | Room panel |
-| `<compass><dir value="n"/><dir value="sw"/></compass>` | Exit directions as abbreviated values (n/ne/e/se/s/sw/w/nw/up/dn/out) | Room panel — clickable buttons |
+| `<compass><dir value="n"/><dir value="sw"/></compass>` | Exit directions as abbreviated values (n/ne/e/se/s/sw/w/nw/up/dn/out) | Room panel — the clickable "Obvious paths:" line (full direction words; v0.14.7) |
 | `<component id='room objs'>...</component>` | Objects in the room | Room panel |
 | `<component id='room players'>...</component>` | Players in the room | Room panel |
-| `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel — shown under "Creatures" section when non-empty |
-| `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel — shown under "Extra" section when non-empty |
+| `<component id='room creatures'>...</component>` | Creatures/NPCs in the room | Room panel — its own prose line when non-empty (v0.14.7) |
+| `<component id='room extra'>...</component>` | Extra room annotations (e.g. forageable items) | Room panel — its own prose line when non-empty (v0.14.7) |
 | `<component id='exp rexp'>Rested EXP Stored: 4:01 hours Usable This Cycle: 35 minutes Cycle Refreshes: 3:31 hours</component>` | Rested EXP pool — stored hours, usable this cycle in **minutes** (small pool) or **hours** (large pool), cycle refresh time | Exp panel footer — `RXP 35m / 4:01h` (minutes format) or `RXP 5:56h / 4:20h` (hours format); unit auto-detected; refresh time dropped from display; ExpBrief mode sends empty component — RXP row hidden |
 | `<component id='exp tdp'> TDPs: 59616</component>` | Total Development Points available | Exp panel footer — `TDP 59616` |
 | `<component id='exp favor'> Favors: 37</component>` | Immortal favor balance | Exp panel footer — `Fav 37` |
@@ -441,7 +441,7 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<dialogData id="injuries"><progressBar id="health2" …/>` | Secondary health bar within the injury diagram UI | Parsed but currently not displayed separately (main health bar is authoritative) |
 | `<nav/>` | Frame marker sent before room-change data arrives | Silently consumed — room state updates when new component data arrives |
 
-**The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it use the same abbreviations the room panel buttons display (n, ne, e, se, s, sw, w, nw, up, dn, out).
+**The `<compass>` block** is the authoritative source for directional exits. `<dir value="n"/>` tags inside it carry abbreviated tokens (n, ne, e, se, s, sw, w, nw, up, dn, out); the room panel's exits line renders them as full direction words (which are also what a click SENDS — the raw token `dn` isn't a valid DR command).
 
 **Inline color** is applied via `<color fg="ff0000" bg="000000">text</color>` — the parser maintains a color stack and attaches fg/bg hex values to text segments.
 
@@ -594,21 +594,27 @@ This is a single setting toggle: **Vitals Bar Position — Top / Bottom**. The l
 
 ### 5.6 Room Panel
 
-The room panel is **structured output**, not a text dump. Each component arrives as a separate XML element and is rendered independently.
+**REDESIGNED v0.14.7 (F52) — the panel reads like the game writes it.** The original design below rendered the room as *structured output*: labeled sections ("Objects" / "Creatures" / "Extra") + a row of full-word exit buttons. Tester feedback called it hard to understand / over-engineered, and sibling research agreed — **all three of Genie / Frostbite / Profanity render their room window as the game's own prose reassembled** (Genie prints the component text verbatim, color-coded by the roomname/roomdesc presets; Frostbite prints desc+objs+players+exits as plain text with the title in the dock title bar; Profanity keeps the native `<d>` exit links clickable). Nobody uses buttons or invented labels: a DR player expects to *read a room*.
+
+The current design:
 
 ```
-┌─ The Crossing, Town Square ──────────────┐
-│ You are standing in the heart of the     │
-│ town square...                           │
-│                                          │
-│ Exits:  [north]  [east]  [southwest]     │
-│                                          │
-│ Objects: a silver coin, a broken shield  │
-│ Players: Muse, Thrak                     │
-└──────────────────────────────────────────┘
+┌─ Room ───────────────────────────────────────────┐
+│ [The Crossing, Town Square]                 ⚔ 2  │  ← title + creature-count chip
+│ You are standing in the heart of the town        │  ← desc (roomdesc color)
+│ square...                                        │
+│ You also see a silver coin and a musk hog.       │  ← room objs verbatim (monsterbold kept)
+│ Also here: Muse, Thrak.                          │  ← room players verbatim (contact paint)
+│ Obvious paths: north, east, southwest.           │  ← clickable words, LAST (game order)
+└──────────────────────────────────────────────────┘
 ```
 
-Exit buttons are rendered from `<d>` tags in the exits component. Clicking `[north]` sends `north` to the game. This is what the StormFront protocol was designed for — the server already marks exits as interactive.
+- **Prose lines are the component sentences VERBATIM** — DR's own lead-ins ("You also see …", "Also here: …") are the labels. Order matches the game: title, desc, objs/creatures/players/extra, exits last.
+- **The exits line is the GAME'S OWN sentence** from the `<component id='room exits'>` — shown verbatim like Genie's room window, with the compass-confirmed direction words linkified (clicking sends the **full direction word** — `down`, never the compass token `dn`, which is not a valid DR command; the old buttons had that latent bug). The parser (which used to SKIP this component) now emits it as `room-exits-text` → `RoomState.exitsText` (replay-snapshotted; cleared by the B121 room-transition clear). **Genie's normalization is adopted verbatim** (Game.cs `UpdateRoom` 978–988, verified in source per Sekmeht's "don't invent new ways" direction): DR sends the BARE label (`Obvious exits:`) for an exitless room, so the panel appends `" none."` itself and a trailing period when missing — Sekmeht's Weaving Room screenshots (game/Genie showing "Obvious exits: none." while our panel showed nothing) drove this. Compass tokens remain authoritative for map matching and linkification; a compass-composed "Obvious paths: …" line is the fallback only when the component hasn't arrived. Parser capture verified by harness (dirs / bare label / empty-clears).
+- **The ⚔ N creature-count chip** on the title row appears only when creatures are present (quiet by default) — one count per monsterbold span, the same approximation as Genie's `$monstercount`; hover explains it.
+- **The uniquely-Lichborne part is the PAINT, and it's unchanged** (pitfall #44): contact colors/templates + click-for-contact-card, user match/line highlights and mutes, and monsterbold apply to the prose exactly as in the main scroll.
+- **Theme vars:** `--room-title-color`, `--room-desc-color`, `--room-content-color` (prose lines), `--exit-text`/`--exit-text-hover` (exit links). The old section-label + exit-button chrome vars are inert (Theme Editor controls removed in lockstep — B188 class; old custom themes carrying them load fine).
+- **Deferred pending tester reaction:** dead-creature dimming; a "compact room" hunter option (title/creatures/players/exits, no desc — the `compactExp` render-switch pattern).
 
 ### 5.7 Icon Bar (HUD Strip)
 
@@ -1285,7 +1291,7 @@ A layout is defined as an **N-column × M-row grid**. Each cell is addressed by 
 | Type | Description |
 |---|---|
 | Game Window | The main story text area. Owns Icon Bar, Vitals Bar, and Input Bar internally. Always exactly one per layout. |
-| Room | Structured room panel (name, desc, exits, objects, players) |
+| Room | Room panel — game-prose view (title + ⚔ count, desc, component sentences verbatim, clickable exits line; v0.14.7) |
 | Experience | Exp tracker with mindstate bars |
 | Stream | Any named stream (Thoughts, Arrivals, Deaths, Conversations, etc.) |
 | Empty | Unused cell — renders blank |
@@ -6190,6 +6196,19 @@ their rects + per-Experience prefs. It rides the dynamic `state:` pipeline into 
 **no profile-shape change** (Principle #1; pre-merge check #4 answer: "new optional state suffix").
 Add a new **"Experiences"** category to `TRANSFER_CATEGORIES` (pitfall #56's allowlist) so setups
 travel via Profile Transfer; per-Experience settings default to NOT transferred until listed.
+
+**Per-window view controls (v0.14.7, Sekmeht).** Every Experience window carries hover-quiet
+**A−/A+** buttons (a per-instance font override — applied by shadowing `--game-font-size` on the
+window's subtree, since every Experience sizes its text off that var; seeds from the live global
+font, clamps 8–24) and, when the registry def declares `options`, a **⚙ "Show in this scene"
+popover** of content-layer checkboxes (`ExperienceOptionDef { id, label, desc }` — the desc is the
+tooltip, polish standard #8). The component gates layers off the `hidden` map at its single prop
+entry point (Tableau: speech/yells/whispers/thoughts/emotes/creatures/moves — filtered arrays are
+useMemo'd because effects key on their identities). Both persist as OPTIONAL `ExperienceInstance`
+fields (`fontSize`, `hidden`) — old saves load unchanged, and they ride this section's scopedKey →
+YAML → Transfer with no new plumbing. **Slash surface: no command by design** (pre-merge check #5)
+— per-window visual controls whose surface is the window itself; an `/experience` noun stays a
+future consideration.
 
 ### 34.7 Theming, accessibility & guardrails
 

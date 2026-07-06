@@ -1,30 +1,41 @@
-## What's new in v0.14.4
+## What's new in v0.14.7
 
 ### New
 
-- **Timestamps in the main window.** Right-click the main game text and choose **Enable Timestamps** to prefix each line with the time (like the side-stream panels already do). It's off by default and remembered per character. *(Requested by Morress.)*
-- **Automation Analytics — find the cruft in your highlights/triggers/macros.** Turn on **Analytics** in the Automations panel (off by default) and each tab shows you, per rule: what's **broken**, exact **duplicates**, **conflicts** (two macros on the same key — only one fires), rules that do **nothing**, your **most-used**, and which have been **quiet** (never fired) since tracking began. A one-click **"Remove duplicate copies"** clears them out, and clicking any rule jumps to it. It tracks nothing until you switch it on — zero cost when off. *(Inspired by Sekmeht & JadedSoul's import-duplicate cleanup.)*
+- **The Room window now reads like the game writes it.** Tester feedback said the old labeled sections ("Objects / Creatures / Extra") and rows of exit buttons were hard to follow — so the Room window is now the room's own prose, the way every DR client you've used shows it: `[Title]`, the description, "You also see…", "Also here:", and the game's own **"Obvious paths: north, east."** line last — with each direction still clickable to walk (clicks now send full words like `down`, fixing a quiet bug where the old buttons sent `dn`, which isn't a real command). Exitless rooms correctly show **"Obvious exits: none."**, exactly like the game and Genie. Your contact colors, highlights, mutes, and monsterbold still paint the room text just like the main window — click a player's name for their contact card. New: a small **⚔ creature count** on the title row whenever something's in the room with you. *(Tester feedback via Sekmeht.)*
+- **The Living Tableau gets its own view controls.** Hover the scene's window: **A− / A+** resize all the scene's text (bubbles, captions, name plates), and **⚙ "Show in this scene"** gives you checkboxes for exactly what you want — speech bubbles, yells, whispers, thoughts, emotes, creatures, arrivals & departures. Remembered per window, and they travel with Transfer. *(Requested by Sekmeht.)*
 
 ### Fixes
 
-- **Deleted automation rules no longer "come back."** With a very large rule list (usually from importing duplicates), Lichborne could quietly hit the browser's storage limit, so a delete or edit silently didn't save and the rule reappeared on reopen. Lichborne now detects a full-storage write and tells you — pointing you at **"Remove duplicate copies"** to free space, which clears enough room that normal deletes stick again. *(Reported by JadedSoul & Sekmeht.)*
-- **Profile exports are stamped with the correct (local) date and never overwrite each other.** A late-evening export could be filed under tomorrow's date, and a second export of the same character on the same day silently replaced the first. Exports now use your local date, and a repeat export is saved alongside the first (`…-2.lb.yaml`) instead of clobbering it. *(Reported by JadedSoul.)*
-- **Triggers that send a command now show what was sent.** A trigger sending e.g. `smile` used to show only the game's response; it now echoes `>smile` first, just like typing the command yourself. *(Reported by Sekmeht.)*
-- **"Line" highlights now recolor already-colored lines.** A whole-line highlight on thoughts, speech, Lnet, or a substituted line used to do nothing (the line's existing color showed through). It now paints the entire line your highlight color, the way Genie does — so you can color-code Lnet vs Gweth at a glance. *(Reported by Cherisse.)*
+- **The per-panel A+ / A− font buttons now work on the Maps panel** — the Genie map's room labels, hover tooltip, and legend all follow the panel's font override (the global Settings font size always worked; the panel-local buttons silently didn't). The same check-up found the **Debug panel** ignored both the global font *and* A+/A− — it scales properly now too. *(Reported by Sekmeht.)*
 
 ---
 
-## What's new in v0.14.3
+## What's new in v0.14.6
 
-### New
+*(This release also includes everything from the unpublished v0.14.5.)*
 
-- **Compact Experience panel.** A new text-forward Experience view — just Skill · Ranks · % · learning-rate per row (colored by mindstate), with a simple summary bar up top (skills learning · TDP · Favors) and bottom (cycle reset · Rested XP · usable). No progress bars or pickers. Turn it on in **Settings → Compact Experience Panel**; pin-to-top still works. *(Requested by Rakkor & Morress.)*
-- **Aim Timer support.** DragonRealms' new aim timer (`toggle aim`) now shows as a **green** countdown in the command bar, in the same spot as the cast-time bar and stacked underneath it — cast time always shows on top, and the green only peeks out when your aim timer is the longer of the two. It follows your existing bar/chips timer style, and its color is customizable in the Theme Editor.
+### New — Slash Commands: control Lichborne from the command bar
+
+- **Type `/` in the command bar** and a completion palette opens listing everything Lichborne can do — with descriptions, live hints as you type, and your real template/mode/group/stream/theme names appearing as clickable chips. **Tab completes, Enter runs, Esc closes.** A typo can never reach the game (unknown commands stop with a hint), and `//` sends a literal `/` line if you ever need one.
+- **Create rules mid-hunt, no editor round-trip:** `/highlight add "goblin" red` (with a live color preview as you type), `/mute add "swirling fog"`, `/sub add "a musty odor" "STINK"` (live before→after preview), `/alias add "hh" "health;heal"`, `/trigger add "You feel fully rested" do "stand"`, `/contact add "Bob" Friends`, `/template add "Watchlist" orange tag="[W]"`. Everything you create is identical to editor-made rules — they respect Groups & Modes and show up in the Automations panel.
+- **Fine-tune fast:** `/highlight edit "goblin"` (or mute/sub/alias/trigger) jumps straight to that rule in its editor, already selected. `remove` and `list` verbs work everywhere too.
+- **Drive the client itself:** `/mode Hunting` switches Group Mode mid-run (bare `/mode` lists yours with the active one marked ●), `/group on Combat`, `/panel open thoughts` (works in both Static and Windowed layouts), `/theme parchment`, `/log search "wedding"`, `/timestamps on`, `/clear`.
+- **`/help` speaks plain language:** a one-line "what is this for" per command plus a syntax primer; `/help highlight` (or any command) spells out every argument and option.
+
+### New — Named colors: a real palette, yours to grow
+
+- **`/colors`** shows Lichborne's named colors, each drawn in its own color with its hex. **`/colors add "ember" #ff6a30`** adds your own (app-wide, saved with your shared profile, and portable via a new **Named Colors** category in Transfer). **`/colors list`** shows the full catalog by category — Curated, Custom, and all ~148 standard web color names (`Lime`, `DodgerBlue`, `Crimson`, … — the same names Genie accepts, so your muscle memory carries over).
+- **Names work everywhere colors are typed:** slash commands, the color fields in the Highlights / Contacts / Triggers / Groups editors (type `ember`, it converts when you leave the field), and the Theme Editor. Hex always works too.
+- Names too close to your theme's background show on a small contrast bar in the listings so they stay readable — that's a reading aid only, never part of the color.
+
+### New — quieter notices
+
+- App notices (like the storage-full warning) now appear as a **corner toast** instead of a pop-up that froze the window mid-play.
 
 ### Fixes
 
-- **Muted lines no longer leave stray `>` prompts.** If you muted a frequently-repeating message (e.g. mana regen), each muted line used to leave behind a bare `>` that piled up. Muted text now disappears cleanly, prompts and all — matching how Wrayth/Genie behave. *(Reported by Cherisse.)*
-- **Substitutes now work on the game's own thoughts/Gweth (not just lnet).** A substitute with capture groups (e.g. reshaping `Your mind hears X thinking, "..."`) wasn't matching native thoughts because the line is split internally; substitutes now match across the whole line, so you can match against what you see on screen. *(Reported by Cherisse & Elly.)*
-- **Group roster no longer spams the main window.** When you're in a group without a Group panel open, the "Members of your group" list was re-dumping into the story window on every change; it's now quiet (open a Group panel to see it). The status chip is also renamed **"Grouped" → "Joined"** so it correctly reflects that only a follower — not the group leader — is shown as joined. *(Reported by Cherisse & Agan.)*
-- **The Debug panel's "Edit" button works in Windowed Panels mode.** Under the Fires tab, the "Edit →" button (which opens the highlight/trigger that fired) was greyed out when the Debug panel was in a floating window; it now works the same as in Static Panels. *(Reported by Sekmeht.)*
+- **The Session Log now records every command you send, not just typed ones.** Map walks, room-exit clicks, in-text command links, and trigger-fired commands used to appear on screen but not in the log — a logged walk read like the game narrating rooms at you. The log now reads exactly like your screen did.
+- **Transfer's "Experiences" category actually imports now.** Since v0.14.0 it exported and showed as a checkbox, but silently applied nothing on import.
+- **Ruby GTK script windows confirmed working.** The v0.9.1 launch rework is now verified — Lich scripts that open their own windows (`;vars setup`, kill counters) paint and behave correctly. If one misbehaves, it's a reportable bug, not a known limitation.
 

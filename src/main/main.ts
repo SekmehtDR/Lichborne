@@ -113,6 +113,9 @@ function snapshotKey(evt: GameEvent): string | null {
     case 'scene-cast':    return 'scene-cast'
     case 'character-guild': return 'character-guild'
     case 'exits':         return 'exits'
+    // v0.14.7: the game's exits SENTENCE ("Obvious exits: none.") is sticky
+    // room state like the tokens — a window takeover must repaint it.
+    case 'room-exits-text': return 'room-exits-text'
     case 'player-info':   return 'player-info'
     default:              return null
   }

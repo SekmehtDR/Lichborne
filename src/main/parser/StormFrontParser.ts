@@ -872,9 +872,15 @@ export class StormFrontParser {
         if (id.startsWith('exp ')) {
           this.events.push({ type: 'exp-component', skill: id.slice(4), text, ...(ctx.hasBold ? { rankUp: true } : {}) })
         } else if (id === 'room exits') {
-          // Compass XML is authoritative for directional exits.
-          // Named exits like "go gate, climb ladder" don't map to direction buttons,
-          // so we skip this component and let compass data drive the exits event.
+          // Compass XML stays authoritative for the direction TOKENS (map
+          // matching, which words are clickable). But the component carries
+          // the GAME'S display sentence — "Obvious paths: north." /
+          // "Obvious exits: none." / named exits like "out" — which the Room
+          // panel shows verbatim (v0.14.7, F52 follow-up: Genie/Profanity
+          // print exactly this line; composing from tokens mislabeled
+          // paths-vs-exits and dropped the "none." case entirely). Emitted
+          // even when empty so a stale sentence clears.
+          this.events.push({ type: 'room-exits-text', text })
         } else {
           const stream = COMPONENT_STREAM[id]
           if (stream) {

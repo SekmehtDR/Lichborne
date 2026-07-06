@@ -1,6 +1,12 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Contact, ContactTemplate } from '../../contacts'
 import type { ExperienceProps, SceneSpeechItem, SceneMoveItem } from '../../experiences'
+import type { SceneCreature } from '../../../shared/types'
+
+// Stable empties for the v0.14.7 ⚙ content-layer toggles — a fresh [] per
+// render would defeat the effects keyed on these arrays' identities.
+const EMPTY_MOVES: SceneMoveItem[] = []
+const EMPTY_CREATURES: SceneCreature[] = []
 
 // Living Tableau (X1, DESIGN.md §32.2 / §34.9) — Phase 1 CAST KERNEL.
 // A PURE VIEW over the typed scene state: the cast arrives as `scene-cast`
@@ -131,9 +137,23 @@ const DIR_VECTOR: Record<string, [number, number]> = {
 // Tableau only needs to when its own inputs change (cast/speech/moves are
 // state objects with stable identities between changes). The default export
 // wraps this at the bottom of the file.
-function TableauExperience({ character, roomState, sceneCast, speech, moves, indicators, contacts, contactTemplates, settings, onOpenContact }: ExperienceProps) {
+function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech, moves: rawMoves, indicators, contacts, contactTemplates, settings, onOpenContact, hidden }: ExperienceProps) {
   const players = sceneCast.players
-  const creatures = sceneCast.creatures
+  // v0.14.7 content-layer toggles (the window's ⚙ popover, ExperienceDef
+  // options): gate each layer HERE, at the single entry point, so every
+  // downstream consumer (bubbles, wisps, captions, choreography, figures)
+  // inherits the filter. useMemo keeps the filtered arrays' identities stable
+  // per input — several effects key on `speech`/`moves`, and a fresh array
+  // every render would re-run them continuously (this component is memo'd;
+  // its internal effects deserve the same discipline).
+  const speech = useMemo(() => {
+    if (!hidden) return rawSpeech
+    const layerOf: Record<string, string> = { say: 'speech', ooc: 'speech', yell: 'yells', whisper: 'whispers', thought: 'thoughts', emote: 'emotes' }
+    const filtered = rawSpeech.filter(s => !hidden[layerOf[s.channel] ?? 'speech'])
+    return filtered.length === rawSpeech.length ? rawSpeech : filtered
+  }, [rawSpeech, hidden])
+  const moves = hidden?.moves ? EMPTY_MOVES : rawMoves
+  const creatures = hidden?.creatures ? EMPTY_CREATURES : sceneCast.creatures
 
   // Scene px size — the bubble layer lays out in pixels (collision spacing
   // needs real geometry). Pitfall-#83 guard: ignore 0×0 (hidden tab).

@@ -27,6 +27,12 @@ import { noteAliases, COLOR_LEGEND, normalizeDesc, normalizeMatchKey } from './m
 //   sequentially. Cross-zone walks are out of scope for v1; clicking a
 //   cross-zone exit just switches the visible zone.
 
+// Panel-font anchor for the map's READING surfaces (hover tooltip, legend) —
+// the per-panel A+/A− chain with the global game font as fallback (pitfall
+// #58). ×0.9 keeps them a touch smaller than game text (≈11px at default 12).
+// SVG node GLYPHS (↗, tool markers) deliberately stay geometry-sized.
+const PANEL_FONT = 'calc(var(--panel-font-size, var(--game-font-size, 12px)) * 0.9)'
+
 interface Props {
   zones:        Map<string, GenieZone>     // zoneId → GenieZone
   roomTitle:    string                      // current Lich room title
@@ -1266,17 +1272,20 @@ export default function GenieMapView({
         fill="var(--map-text-muted, #aaa)"
         textAnchor="start"
         dominantBaseline="text-before-edge"
-        // Pull font-size from the same CSS var the game text uses
-        // (`--game-font-size`, set by settings.ts when the user changes
-        // their font size), then scale to 80%. Genie's XML positions
-        // labels assuming a specific text width — at scales much below
-        // 80% the visibly narrower labels appear left-shifted relative
-        // to their target clusters (because the same top-left anchor
-        // gives the smaller text less rightward extent). 0.8 stays
-        // close to Genie's calibrated width while still being a touch
-        // smaller than game text. Falls back to 12px when the var is
-        // unset (× 0.8 = ~9.6px).
-        style={{ userSelect: 'none', fontSize: 'calc(var(--game-font-size, 12px) * 0.8)' }}
+        // Pull font-size from the panel-font chain (pitfall #58): the
+        // per-panel A+/A− override (`--panel-font-size`, set on the
+        // panel-frame-body wrapper and inherited into this SVG) falls back
+        // to the global game font (`--game-font-size`, set by settings.ts).
+        // Skipping the panel var was the bug behind "A+/A− does nothing on
+        // Genie Maps while the global setting works" (Sekmeht, v0.14.7).
+        // Then scale to 80%: Genie's XML positions labels assuming a
+        // specific text width — at scales much below 80% the visibly
+        // narrower labels appear left-shifted relative to their target
+        // clusters (because the same top-left anchor gives the smaller
+        // text less rightward extent). 0.8 stays close to Genie's
+        // calibrated width while still being a touch smaller than game
+        // text. Falls back to 12px when both vars are unset (× 0.8 = ~9.6px).
+        style={{ userSelect: 'none', fontSize: 'calc(var(--panel-font-size, var(--game-font-size, 12px)) * 0.8)' }}
         pointerEvents="none"
       >
         {l.text}
@@ -2472,7 +2481,7 @@ export default function GenieMapView({
                 background: 'var(--map-chrome-bg, rgba(20, 20, 22, 0.95))',
                 border: '1px solid var(--map-border, #555)',
                 borderRadius: 4,
-                fontSize: 11,
+                fontSize: PANEL_FONT,
                 color: 'var(--map-text, #ddd)',
                 pointerEvents: 'none',
                 zIndex: 10,
@@ -2487,7 +2496,7 @@ export default function GenieMapView({
               {/* Map / room ID — Genie's per-zone numeric ID; useful for
                   scripts that target specific rooms. Zone ID is the Genie
                   XML zone attribute (e.g., 67 for Shard). */}
-              <div style={{ color: 'var(--map-text-muted, #888)', fontSize: 10, marginBottom: 2 }}>
+              <div style={{ color: 'var(--map-text-muted, #888)', fontSize: '0.91em', marginBottom: 2 }}>
                 Map {hoveredNode.zoneId || '?'}: {hoveredNode.zoneName || '?'} · Room #{hoveredNode.id}
               </div>
 
@@ -2496,7 +2505,7 @@ export default function GenieMapView({
                   the tooltip with the regular click-to-walk hint, so this
                   line stays purely descriptive. */}
               {stub && (
-                <div style={{ color: 'var(--map-arc-special, #ffb74d)', fontSize: 10, marginBottom: 2 }}>
+                <div style={{ color: 'var(--map-arc-special, #ffb74d)', fontSize: '0.91em', marginBottom: 2 }}>
                   ↗ Cross-zone exit{stubZone ? ` → ${stubZone.name}` : stubXml ? ` → ${stubXml}` : ''}
                 </div>
               )}
@@ -2505,7 +2514,7 @@ export default function GenieMapView({
                   convention says this room is (shop, healer, etc.). Only
                   shown when the room has a recognized legend color. */}
               {colorEntry && (
-                <div style={{ fontSize: 10, marginBottom: 2 }}>
+                <div style={{ fontSize: '0.91em', marginBottom: 2 }}>
                   <span style={{
                     display: 'inline-block', width: 8, height: 8,
                     background: hoveredNode.color, marginRight: 5,
@@ -2521,7 +2530,7 @@ export default function GenieMapView({
                   These are the alternate names Genie indexes the room by
                   ("First Land Herald|Herald|newspaper|news stand"). */}
               {aliasNotes.length > 0 && (
-                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: 10, marginBottom: 2 }}>
+                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: '0.91em', marginBottom: 2 }}>
                   Aliases: {aliasNotes.join(', ')}
                 </div>
               )}
@@ -2530,7 +2539,7 @@ export default function GenieMapView({
                   hidden arcs (they're walkable; we just don't draw their
                   lines on the canvas). */}
               {exitsLine && (
-                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: 10 }}>
+                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: '0.91em' }}>
                   Exits: {exitsLine}
                 </div>
               )}
@@ -2541,7 +2550,7 @@ export default function GenieMapView({
                   view across zone boundaries either — the auto-zone-switch
                   on title change is the authoritative trigger. */}
               {currentLocation && currentLocation.zone.id === currentZoneId && currentLocation.node.id !== hoveredNode.id && (
-                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: 10, marginTop: 2, fontStyle: 'italic' }}>
+                <div style={{ color: 'var(--map-text-muted, #888)', fontSize: '0.91em', marginTop: 2, fontStyle: 'italic' }}>
                   {stub
                     ? <>Left-click: go to {stubZone?.name ?? stubXml ?? 'next zone'}<br/>Right-click: walk to boundary</>
                     : <>Left-click: pin path<br/>Right-click: walk here</>}
@@ -2562,7 +2571,7 @@ export default function GenieMapView({
               background: 'var(--map-chrome-bg, rgba(20, 20, 22, 0.95))',
               border: '1px solid var(--map-border, #555)',
               borderRadius: 4,
-              fontSize: 11,
+              fontSize: PANEL_FONT,
               color: 'var(--map-text, #ddd)',
               zIndex: 5,
               overflowY: 'auto',              // scroll when content exceeds available height
@@ -2577,7 +2586,7 @@ export default function GenieMapView({
             {/* Room colors */}
             {zoneColors.length > 0 && (
               <>
-                <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '0.91em', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   Room colors
                 </div>
                 {zoneColors.map(color => {
@@ -2604,7 +2613,7 @@ export default function GenieMapView({
             {arcCategories.length > 0 && (
               <>
                 <div style={{
-                  fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5,
+                  fontWeight: 'bold', fontSize: '0.91em', textTransform: 'uppercase', letterSpacing: 0.5,
                   marginTop: zoneColors.length > 0 ? 8 : 0, marginBottom: 4,
                 }}>
                   Arc types
@@ -2633,7 +2642,7 @@ export default function GenieMapView({
             {hasStubs && (
               <>
                 <div style={{
-                  fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5,
+                  fontWeight: 'bold', fontSize: '0.91em', textTransform: 'uppercase', letterSpacing: 0.5,
                   marginTop: (zoneColors.length > 0 || arcCategories.length > 0) ? 8 : 0, marginBottom: 4,
                 }}>
                   Cross-zone exits
@@ -2663,7 +2672,7 @@ export default function GenieMapView({
               return (
                 <>
                   <div style={{
-                    fontWeight: 'bold', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5,
+                    fontWeight: 'bold', fontSize: '0.91em', textTransform: 'uppercase', letterSpacing: 0.5,
                     marginTop: headerTop, marginBottom: 4,
                   }}>
                     Room glyphs
