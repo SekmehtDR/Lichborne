@@ -351,6 +351,11 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
+    // Packaged builds take the window/taskbar icon from the exe (build/icon.ico
+    // baked in by electron-builder); this only matters for DEV (`npm start`),
+    // where the exe is node_modules' electron.exe (the atom). Missing file
+    // fails soft → default icon.
+    ...(app.isPackaged ? {} : { icon: path.join(app.getAppPath(), 'build', 'icon.ico') }),
     // B178 (Morress): was 900 — users tile multiple windows side by side
     // (4 columns on a 1920 monitor = 480 each), and the old floor hard-stopped
     // the resize drag at ~half screen. The app-bar degrades for narrow widths
@@ -1357,6 +1362,12 @@ function setupMenu() {
   ])
   Menu.setApplicationMenu(menu)
 }
+
+// Windows taskbar identity (v0.14.7 packaging pass): matches build.appId so
+// pinned taskbar icons, notifications, and jump lists group under ONE app
+// identity instead of the generic Electron one. Must be set before any
+// window is created; harmless on other platforms.
+app.setAppUserModelId('com.lichborne.app')
 
 app.whenReady().then(() => {
   // Electron's permission enum doesn't include 'local-fonts' in current type
