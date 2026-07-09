@@ -213,10 +213,18 @@ function readValue(s: ParseState): MarshalValue {
     }
 
     case 0x49: { // 'I' object with instance variables (UTF-8 string annotation etc.)
-      // We must register a placeholder first so nested object links resolve.
-      // Ruby does the same — the object is registered before ivars are read.
-      const startIdx = s.objects.length
-      s.objects.push(null)  // placeholder
+      // Ruby does NOT give the ivar wrapper its own object-table slot — only
+      // the INNER value registers (marshal.c TYPE_IVAR has no r_entry; the
+      // inner TYPE_STRING/etc. branch does it). The old code pushed a
+      // placeholder AND let the inner register: one EXTRA table entry per
+      // I-wrapped value, shifting every subsequent '@' object link — which is
+      // how a linked hash key like moonwatch's "timer" decoded as some other
+      // var's name (found via the Weather & Moons sun-seed, 2026-07-08,
+      // verified against 22 real uservars blobs). We remember where the inner
+      // registered and REPLACE that entry with the refined value, so later
+      // links resolve to the UTF-8/Time-formatted result — same table shape
+      // as Ruby's.
+      const before = s.objects.length
 
       // Clear the Time stash before reading the inner value. If the inner is a
       // Time, decodeRubyTime will set s.lastTime as a side effect and we'll
@@ -248,7 +256,10 @@ function readValue(s: ParseState): MarshalValue {
       } else {
         result = obj
       }
-      s.objects[startIdx] = result
+      // The inner value's own entry (index `before` — the outermost thing it
+      // registered; nested children sit later). A linked/immediate inner
+      // registers nothing, and then there's nothing to refine.
+      if (s.objects.length > before) s.objects[before] = result
       return result
     }
 
@@ -337,9 +348,17 @@ function readValue(s: ParseState): MarshalValue {
     }
 
     case 0x55: { // 'U' MarshalObject (class uses marshal_load)
+      // Ruby registers the object BEFORE reading its payload (r_entry, then
+      // marshal_load) — registering after (the old shape) put the payload's
+      // entries at the wrong indices for any later '@' link. Same bug family
+      // as the 'I' branch above.
       const cls = readValue(s)
+      const idx = s.objects.length
+      s.objects.push(null)  // placeholder at Ruby's slot
       const data = readValue(s)
-      return register(s, { _class: String(cls), _data: data as MarshalValue })
+      const v: MarshalValue = { _class: String(cls), _data: data }
+      s.objects[idx] = v
+      return v
     }
 
     case 0x65: { // 'e' extended object (module mixed in)

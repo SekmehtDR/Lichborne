@@ -16,6 +16,98 @@ import type { AppSettings } from './settings'
 import type { Contact, ContactTemplate } from './contacts'
 import type { FloatRect } from './freeLayout'
 import TableauExperience from './components/experiences/TableauExperience'
+import MoonsExperience from './components/experiences/MoonsExperience'
+
+// ── Weather & Moons state (Experience #2, v0.15.0) ─────────────────────────
+// Source of truth: the community `moonwatch.lic` script (read 2026-07-07,
+// C:/Ruby4Lich5/Lich5/scripts/moonwatch.lic). It crowd-sources moon events via
+// a shared Firebase and pushes ONE line into the `moonWindow` stream whenever
+// state changes: `[k]+(90) [y]-(59) [x]-(88)` — always all three moons, order
+// Katamba/Yavash/Xibar; `+(N)` = up, sets in N MINUTES (real minutes);
+// `-(N)` = down, rises in N minutes. The script also detects sunrise/sunset
+// from GAME PROSE (regexes mirrored in SUN_RISE_RE/SUN_SET_RE below) — we
+// capture those lines natively, so day/night works without Lich.
+
+export interface MoonInfo {
+  up: boolean
+  minutes: number   // remaining minutes AT reportedAt (display = minutes − elapsed)
+}
+
+export interface MoonsState {
+  katamba?: MoonInfo
+  yavash?: MoonInfo
+  xibar?: MoonInfo
+  reportedAt: number          // when the moonWindow line arrived (countdown anchor)
+  // Most recent OBSERVED sunrise / sunset moments (ms epoch). The sun cycle is
+  // periodic in real time (SUN_CYCLE_MINUTES), so one observed transition
+  // anchors the phase indefinitely — computeSunPhase() derives live day/night
+  // + sun position from these.
+  sun?: { riseAt?: number; setAt?: number }
+}
+
+// The sun's full cycle is 360 REAL MINUTES rise-to-rise — moonwatch.lic's own
+// constant (`minutes_to_next_sun_event`, line 138: `360 - delta - elapsed`).
+// Day length is derived from the observed rise→set gap, exactly as the script
+// derives it from its two Firebase timestamps; with only one transition
+// observed we assume an even 180/180 split until the other lands.
+export const SUN_CYCLE_MINUTES = 360
+
+export interface SunPhase {
+  day: boolean
+  progress: number      // 0..1 through the CURRENT phase (day: rise→set; night: set→rise)
+  toNextMin: number     // minutes until the next transition
+  assumed: boolean      // true when the day length is the 180/180 assumption
+}
+
+/** Live sun phase from the observed anchors, or null if nothing observed yet. */
+export function computeSunPhase(sun: { riseAt?: number; setAt?: number }, now: number): SunPhase | null {
+  const cycleMs = SUN_CYCLE_MINUTES * 60_000
+  let dayMs = cycleMs / 2
+  let assumed = true
+  if (sun.riseAt != null && sun.setAt != null) {
+    const gap = ((sun.setAt - sun.riseAt) % cycleMs + cycleMs) % cycleMs
+    if (gap > 0) { dayMs = gap; assumed = false }
+  }
+  // Normalize to a rise anchor: a set observation IS the phase point `dayMs`.
+  const anchor = sun.riseAt != null
+    ? sun.riseAt
+    : sun.setAt != null ? sun.setAt - dayMs : null
+  if (anchor == null || now < anchor) return null
+  const phase = ((now - anchor) % cycleMs + cycleMs) % cycleMs
+  const day = phase < dayMs
+  const progress = day ? phase / dayMs : (phase - dayMs) / (cycleMs - dayMs)
+  const toNextMin = Math.max(0, Math.round(((day ? dayMs - phase : cycleMs - phase)) / 60_000))
+  return { day, progress: Math.min(1, progress), toNextMin, assumed }
+}
+
+// Orbital constants from moonwatch.lic (Settings['rise']/'set', in minutes) —
+// each moon's time below / above the horizon. Used to POSITION a moon along
+// the sky arc from its remaining minutes (progress = 1 − remaining/duration).
+export const MOON_UP_MINUTES:   Record<string, number> = { katamba: 177, yavash: 177, xibar: 174 }
+export const MOON_DOWN_MINUTES: Record<string, number> = { katamba: 174, yavash: 175, xibar: 172 }
+
+const MOON_BY_LETTER: Record<string, 'katamba' | 'yavash' | 'xibar'> = { k: 'katamba', y: 'yavash', x: 'xibar' }
+
+/** Parse a moonwatch stream line (`[k]+(90) [y]-(59) [x]-(88)`), or null.
+ * The count can be NEGATIVE: moonwatch's timer is `(predicted event − now)`,
+ * so in the gap between the predicted and the OBSERVED transition it reports
+ * e.g. `[x]-(-2)` ("overdue to rise"). A parser that rejects the minus drops
+ * that moon from the report — the original "Xibar vanishes just before it
+ * rises" bug. Consumers treat negative remaining as 0 ("any moment"). */
+export function parseMoonLine(text: string): Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> | null {
+  const re = /\[([kyx])\]([+-])\((-?\d+)\)/g
+  let m: RegExpExecArray | null
+  const out: Partial<Record<'katamba' | 'yavash' | 'xibar', MoonInfo>> = {}
+  while ((m = re.exec(text)) !== null) {
+    out[MOON_BY_LETTER[m[1]]] = { up: m[2] === '+', minutes: parseInt(m[3], 10) }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+// Sunrise / sunset prose — VERBATIM from moonwatch.lic's own detection (lines
+// 210–219); these are the DR ambient lines that announce the transitions.
+export const SUN_RISE_RE = /heralding another fine day|rises to create the new day|as the sun rises, hidden|as the sun rises behind it|faintest hint of the rising sun|The rising sun slowly|Night slowly turns into day as the horizon/
+export const SUN_SET_RE = /The sun sinks below the horizon|night slowly drapes its starry banner|sun slowly sinks behind the scattered clouds and vanishes|grey light fades into a heavy mantle of black/
 
 // The typed cast from main's SceneParser (§35) — GameWindow accumulates the
 // scene-cast events into this shape and hands it to every Experience.
@@ -73,6 +165,9 @@ export interface ExperienceProps {
   // v0.14.7: content layers the user toggled OFF via the window's ⚙ popover
   // (option-id → true; see ExperienceDef.options). Absent = show everything.
   hidden?: Record<string, boolean>
+  // v0.15.0 (Weather & Moons): the parsed moonwatch state + observed sun
+  // transitions. Absent until a moonWindow line has arrived this session.
+  moons?: MoonsState
 }
 
 // A user-toggleable content layer of an Experience (v0.14.7, Sekmeht: "click
@@ -125,6 +220,31 @@ export const EXPERIENCES: ExperienceDef[] = [
       { id: 'moves',     label: 'Arrivals & departures', desc: 'Walk-ins from their direction and fading ghosts on the way out.' },
     ],
     textEquivalent: 'The main window and Room panel: "Also here:" players, "You also see" creatures, and the comms streams carry everything the scene shows.',
+  },
+  {
+    // Renamed "Weather & Moons" → "Moons" (Sekmeht, 2026-07-08). The id stays
+    // 'moons' (persisted instances + `exp:moons` tabs reference it). Distinct
+    // from moonwatch's "Moons" STREAM by the [e] badge (+ menu AND tab strip).
+    id: 'moons',
+    label: 'Moons',
+    kind: 'instrument',
+    desc: 'Elanthia\'s sky as a living dial — soot-black Katamba, blood-red Yavash and silvery-blue Xibar arc across the heavens with live rise/set countdowns (fed by the community moonwatch script), and the backdrop follows day and night. Weather is the planned next layer (§34.9).',
+    component: MoonsExperience,
+    defaultRect: { x: 0.3, y: 0.05, w: 0.4, h: 0.34 },
+    chrome: 'standard',
+    badge: 'Beta',
+    // One option per visual LAYER, each accurate about exactly what it hides
+    // (v0.15.1, Sekmeht: "why would I want sun & sky?" — the old combined
+    // toggle conflated hiding the sun with flattening the backdrop).
+    options: [
+      { id: 'sun',        label: 'The Sun',           desc: 'The sun itself — riding the sky arc by day, waiting below the horizon by night — plus its countdowns in the footer.' },
+      { id: 'sky',        label: 'Living sky',        desc: 'The backdrop that follows the day: bright at noon, warm at sunrise and sunset, starry at night. Off = a neutral dusk sky.' },
+      { id: 'countdowns', label: 'Countdown labels',  desc: 'The "sets in 88m" / "rises in 152m" chips under each body.' },
+      { id: 'names',      label: 'Name labels',       desc: 'The Katamba / Yavash / Xibar / Sun name plates on each body.' },
+      { id: 'horizon',    label: 'Horizon silhouette', desc: 'The mountain ridgeline along the horizon.' },
+      { id: 'effects',    label: 'Rise & set effects', desc: 'The gentle horizon rings while a body rises or sets. (The epilepsy-safe accessibility setting also disables these.)' },
+    ],
+    textEquivalent: 'The Moons stream panel (moonwatch\'s own window) and `perceive moons`; sunrise/sunset announce themselves in the main window.',
   },
 ]
 

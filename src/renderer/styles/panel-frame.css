@@ -238,6 +238,45 @@
   margin: 2px 0;
 }
 
+/* §34 dual-hosting: the + menu's Experiences section — separated from the
+   stream list above and [e]-badged (Sekmeht's spec). */
+.panel-add-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 6px;
+}
+.panel-add-item--exp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8em;
+}
+.panel-add-exp-badge {
+  font-size: 0.85em;
+  color: var(--accent-dim);
+  letter-spacing: 0.02em;
+}
+/* The tab-strip twin of the + menu badge — marks a hosted Experience tab. */
+.panel-tab-exp-badge {
+  font-size: 0.8em;
+  color: var(--accent-dim);
+  margin-left: 0.35em;
+}
+.panel-add-item--exp:hover .panel-add-exp-badge { color: var(--accent); }
+
+/* Tab-hosted Experience content fills the panel body like any panel root.
+   The inline --game-font-size re-map (F31 override) is set by renderPanel. */
+.exp-tab-host {
+  height: 100%;
+  overflow: hidden;
+}
+.exp-tab-missing {
+  padding: 1.2em;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 .panel-add-name-row {
   display: flex;
   align-items: center;

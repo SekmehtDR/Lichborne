@@ -921,6 +921,40 @@ ipcMain.handle('genie-cache:save', (_e, dir: string, zones: unknown[]): boolean 
   }
 })
 
+// ── Weather & Moons: community sun anchors ────────────────────────────────────
+// The dr-scripts Firebase (`moon_data_v2.json`) is the SAME public read-only
+// feed moonwatch.lic itself polls — its `s` node carries the most recent
+// community-OBSERVED sunrise (`r`) / sunset (`s`) unix epochs, which are
+// exactly the two anchors computeSunPhase wants (true day length + phase, no
+// 180/180 assumption). Read-only GET, ~once per experience-open (renderer is
+// ref-guarded), 10-min cache here as a backstop; every failure path returns
+// null and the renderer degrades to the UserVars/observed-prose seeds.
+const MOON_DATA_URL = 'https://dr-scripts.firebaseio.com/moon_data_v2.json'
+let sunDataCache: { at: number; data: { sunRiseAt: number; sunSetAt: number } | null } | null = null
+
+ipcMain.handle('moons:fetch-sun-data', async (): Promise<{ sunRiseAt: number; sunSetAt: number } | null> => {
+  if (sunDataCache && Date.now() - sunDataCache.at < 10 * 60_000) return sunDataCache.data
+  try {
+    const ctl = new AbortController()
+    const timer = setTimeout(() => ctl.abort(), 6000)
+    const res = await fetch(MOON_DATA_URL, { signal: ctl.signal })
+    clearTimeout(timer)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json() as { s?: { r?: number; s?: number } }
+    const r = json?.s?.r
+    const st = json?.s?.s
+    const data = (typeof r === 'number' && typeof st === 'number' && r > 0 && st > 0)
+      ? { sunRiseAt: r * 1000, sunSetAt: st * 1000 }
+      : null
+    sunDataCache = { at: Date.now(), data }
+    return data
+  } catch (e) {
+    console.warn('[moons] sun-data fetch failed:', e)
+    sunDataCache = { at: Date.now(), data: null }  // don't hammer on failure
+    return null
+  }
+})
+
 // ── Lich file-system helpers ──────────────────────────────────────────────────
 
 function lichDirFrom(lichPath: string): string {

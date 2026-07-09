@@ -6127,12 +6127,25 @@ Recorded so the reasoning isn't re-litigated later:
    failed HUD; (b) touches the mature panel system (PanelType union, discovery filter, Panel Manager
    filters, pitfall #27 logic) for no user benefit; (c) requires namespace bookkeeping forever. The
    Experiences model gets the same features with zero panel-system risk.
-3. **DISCARDED — the "v2" conversion revision (drafted 2026-06-11, deliberately dropped 2026-06-12).**
+3. **DISCARDED — the "v2" conversion revision (drafted 2026-06-11, deliberately dropped 2026-06-12);
+   its DUAL-HOSTING half was later SUPERSEDED (Sekmeht, 2026-07-08).**
    A revision that converted the structured panels (exp/room/injuries/map/lichScripts) into
    Experiences with dual hosting (floating surface OR an `[e]`-badged tab) was drafted, partially
-   built, and then **discarded on purpose** along with its code. This v1 architecture stands:
-   Experiences are floating surfaces only; panels and streams stay byte-identical. Recorded so the
-   discarded draft isn't mistaken for lost work to restore.
+   built, and then **discarded on purpose** along with its code. Two halves, two fates:
+   - **Panel→Experience CONVERSION stays discarded.** exp/room/injuries/map/lichScripts remain
+     panels forever; the panel/stream system stays byte-identical.
+   - **Experience-as-tab dual hosting SHIPPED in v0.15.1** at Sekmeht's explicit, screen-estate-
+     motivated ask ("Experiences… selectable in the + button… separator… [e] badge"), built fresh
+     (not restored from the v2 draft) with the §34.1 collision-safety guarantee intact: hosted
+     tabs use the `exp:<id>` namespaced id + a dedicated `type: 'experience'` (NOT in
+     ALL_PANEL_TYPES — never a generic builtin row), the + menu's [e]-badged section below a
+     separator is the only add path, `renderExperienceTab` rides `sharedFrameProps` (B193) so
+     both hostings render one content builder, tab-hosted experiences share the floating
+     instance's ⚙ `hidden` prefs, take the panel's F31 A+/A− (re-mapped onto `--game-font-size`),
+     count toward the §35.6 scene-work gate via a pitfall-#79 per-mode aggregation (`expTabIds`),
+     and are EXCLUDED from `watchedStreamsRef` (they consume typed state, not stream text).
+     Known edge: the Experiences shelf reflects floating instances only — a tab-hosted copy
+     doesn't light its row. No slash surface (the + menu is the surface; pre-merge check #5).
 
 **Why Experiences win:** the engine already exists. The Maps overlay (`showMapOverlay` →
 `.map-overlay-window`, opened from the app bar) is the shipped precedent for a graphical surface
@@ -6269,12 +6282,82 @@ gates** (procedural fallbacks always).
      **window snapping** (Experience ↔ panel windows, B185); and the scene background matching the
      floating-window surface (`--experience-scene-bg`→`--bg-app`, B186). **The lesson:** the Tableau
      evolves in small reversible steps; resist big-bang re-layouts.
-3. **Combat HUD (G1) second:** Phase 1 on existing typed events only (readiness ring, CT ring,
+3. **Experience #2 — Moons (SHIPPED v0.15.1, Beta; Sekmeht 2026-07-08; renamed from "Weather &
+   Moons" same day — the id stays `moons`, and the [e] badge in the + menu AND the tab strip keeps
+   it distinct from moonwatch's "Moons" STREAM):** a sky-dial
+   *instrument* over the community **moonwatch.lic** feed — proof that an Experience can ride a
+   LICH SCRIPT's stream (the script pushes ` [k]±(N) [y]±(N) [x]±(N)` into `moonWindow` ~once a
+   real minute; `+` = up/sets-in-N-minutes, `-` = down/rises-in; order Katamba/Yavash/Xibar).
+   - **Positioning math:** the script's own orbital constants (up durations katamba/yavash/xibar =
+     177/177/174 min; below-horizon waits 174/175/172) turn a remaining-minutes countdown into an
+     arc position (`progress = 1 − remaining/upDuration` on a half-ellipse). Down moons rest dimmed
+     below the horizon with "rises in Nm" chips. Countdowns tick locally (30s interval) between
+     reports; the footer ALWAYS shows data age ("moonwatch: 3m ago") — the feed is crowd-sourced,
+     so stale data must never masquerade as live.
+   - **Sun is native — observed, anchored, then self-running:** sunrise/sunset are detected from
+     DR's ambient prose (the 11 rise/set patterns mirrored VERBATIM from moonwatch.lic's own
+     detection — `SUN_RISE_RE`/`SUN_SET_RE` in [experiences.ts](src/renderer/experiences.ts)),
+     captured in GameWindow's main-stream branch behind a substring pre-gate (pitfall #82a). The
+     sun's cycle is **360 real minutes rise-to-rise** (moonwatch's own constant,
+     `minutes_to_next_sun_event`) and real-time periodic, so ONE observed transition anchors the
+     phase indefinitely: `computeSunPhase` derives live day/night + arc position from the stored
+     `riseAt`/`setAt` anchors (day length = the observed rise↔set gap, 180/180 assumed — flagged
+     `≈` in the UI — until both are seen), a golden sun rides the moon arc by day with a "sets in
+     Nm" countdown (and travels the underground return arc by night, dimmed like the waiting
+     moons), the backdrop auto-advances day/night/twilight (dusk gradient = the ~12 min
+     around a transition, or nothing-observed-yet), and the anchors persist per-character
+     (`moonSun` scopedKey → YAML; deliberately NOT transferable — observation telemetry, and any
+     character re-anchors in one transition). Anchor sources, in priority order: locally-OBSERVED
+     prose transitions (exact + freshest; provenance-flagged) > the **dr-scripts Firebase**
+     (`moon_data_v2.json`, the same public read-only feed moonwatch itself polls — its `s` node
+     carries the community-observed rise/set EPOCHS = both anchors exactly, true day length, no
+     assumption; fetched via main's `moons:fetch-sun-data`, 10-min cached, works direct-SGE) >
+     the `UserVars.sun` lich.db3 synth (180/180-assumed, ≈-flagged; only runs when the fetch
+     FAILED). The sky itself is CONTINUOUS: sun-elevation blend weights crossfade stacked
+     gradient layers (night base → day → noon zenith → horizon twilight), stars fade with the
+     night weight, and bodies within ~7% of a transition breathe slow horizon rings (expanding =
+     rising, contracting = setting) — all motion suppressed under epilepsy-safe AND by the
+     "Rise & set effects" ⚙ layer. All of this works direct-SGE (Principle #2); the
+     moon feed itself needs Lich + `;moonwatch window` — the empty state teaches exactly that
+     (graceful degradation, not a wall). **Moons stay STREAM-driven by the script — the Firebase
+     moon-position fallback was proposed and DECLINED (Sekmeht, 2026-07-08); only the sun reads
+     the feed.**
+   - **Fantasy presentation (Sekmeht's UX-review picks):** a deterministic two-ridge **horizon
+     silhouette** (fixed height table — same W in, same mountains out; drawn before the bodies so
+     rises emerge in front); **hover lore-cards** on every body (`<title>`: the in-game moon
+     descriptions + "Rises/Sets at ~H:MM (Nm)" local clock); a footer **"next" chip** (soonest
+     MOON transition — a sun-next would duplicate the sun's own chip); and **countdown-chip
+     collision avoidance** (per-render `placeChip` claims in draw order, estimated widths — sky
+     chips step down, underground chips flip above their disc). Parked from the same review:
+     constellations (real names live in `base-constellations.yaml`), empty-state-as-scene,
+     small-caps names, Moon Mage castable cues, and three telemetry asks (`perceive moons` phase
+     prose, TIME-verb Elanthian calendar, weather corpus).
+   - **Boundaries:** `parseMoonLine` / `computeSunPhase` are pure exported functions (harness: 56
+     cases against the real bundle, incl. moonwatch's NEGATIVE overdue timers `[x]-(-2)`); the
+     stream-id match is read-only (routing/discovery untouched — the `moonWindow` stream stays
+     addable as a plain text panel, which IS the text equivalent). Geometry: the viewBox WIDTH
+     derives from the drawing area's measured aspect (ResizeObserver, 0×0-guarded per pitfall
+     #83) so single-axis resizes widen the horizon instead of letterboxing; SVG text sizes via
+     `calc(var(--game-font-size) * k)` — CSS px are SVG user units, so it lives in drawing space
+     AND tracks Settings font + the per-window A−/A+ override (the B201 map-LABEL approach); HTML
+     chrome anchors to the var + em. ⚙ options are ONE PER VISUAL LAYER, each accurate
+     about exactly what it hides (The Sun / Living sky / Countdown labels / Name labels / Horizon
+     silhouette / Rise & set effects — the original combined "Sun & sky" conflated hiding the sun
+     with flattening the backdrop, Sekmeht's call to split; `sunPhase` computes regardless of the
+     sun toggle because the SKY needs it) via `ExperienceDef.options` — zero new UI. No slash
+     command by design (the shelf is the surface; pre-merge check #5, the F53 precedent). No
+     profile-shape change (`moonSun` is a new optional per-character state suffix).
+   - **Phase 2 (recorded ambition, not scheduled):** WEATHER — Genie was researched at Sekmeht's
+     ask and tracks NO weather anywhere in its source (only `$gametime` from `<prompt time=>`,
+     which we already parse per pitfall #87), so there is nothing to borrow: weather means
+     classifying DR's ambient weather prose ourselves (a corpus problem, §35-style capturer
+     registry). Noon/game-time readouts from the prompt clock are the other natural layer.
+4. **Combat HUD (G1) second:** Phase 1 on existing typed events only (readiness ring, CT ring,
    stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2 adds
    the **`CombatParser`** (range/target/facing as new typed events — the shared engine §32.4
    wants for X2/AI7, the `SceneParser`'s sibling). Corpus capture of real fight Raw-XML precedes
    the parser.
-4. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
+5. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
    center figure or standalone, G4 radar, G6 buffs board, X-series scenes on X1's engine as their
    parsers come online — X6 Scene Composer is the natural follow-on, compositing X1's rendered
    scene into the shareable comic panel).

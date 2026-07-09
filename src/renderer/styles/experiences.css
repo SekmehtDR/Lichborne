@@ -642,3 +642,201 @@
   font-style: italic;
   font-size: 0.85em;
 }
+
+/* ── Weather & Moons (Experience #2, v0.15.1) ───────────────────────────────
+   The sky backdrop is a FIXED semantic hue set (day / night / dusk-unknown)
+   — game state, not chrome, so it deliberately does not follow the theme
+   (the vital-bar-fill exception in Principle #4). All text drawn OVER the
+   sky therefore takes its color from the scene modifier, never a theme var;
+   only the HTML chrome (empty state, footer strip) uses theme vars. SVG text
+   sizes off the game-font chain (the B201 map-LABEL precedent): CSS px in SVG
+   are user units, so calc(var(--game-font-size) * k) both lives in the
+   drawing's coordinate space AND tracks Settings font + the per-window A−/A+
+   override (which shadows --game-font-size on the window subtree). */
+.moons-scene {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Anchor for the em-sized HTML chrome below (footer, empty state) so it
+     tracks the font setting + A−/A+ too (Principle #9 / pitfall #58). */
+  font-size: var(--game-font-size, 12px);
+  /* The continuous contrast color (inline, elevation-lerped) steps every
+     30s tick — smooth it like the sky layers. */
+  transition: color 2.5s linear;
+}
+.moons-scene--night {
+  background: linear-gradient(180deg, #0a0e1e, #1a2238 68%, #232840);
+  color: #cfd8ec;
+}
+.moons-scene--day {
+  background: linear-gradient(180deg, #5f9ed2, #b8d4ea 68%, #cfe0c0);
+  color: #1d3048;
+}
+.moons-scene--dusk {
+  background: linear-gradient(180deg, #232946, #4e4266 68%, #8a5f52);
+  color: #e0d8e8;
+}
+/* The measured drawing area — its aspect drives the viewBox width, so the
+   SVG fills it exactly (see MoonsExperience geometry note). min-height: 0 is
+   the flex-child scroll-container rule (pitfall #68a). */
+.moons-sky {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.moons-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;   /* above the gradient layer stack */
+  z-index: 1;
+}
+
+/* Continuous-sky gradient stack — opacity-crossfaded by the sun-elevation
+   weights computed in MoonsExperience (night base always on; day/zenith/
+   twilight fade over it). The 2.5s transition smooths the 30s tick steps.
+   Fixed hues by design (game sky state, the Principle #4 exception). */
+.moons-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 2.5s linear;
+}
+.moons-layer--night {
+  background: linear-gradient(180deg, #070a18, #141c34 65%, #1c2340);
+}
+.moons-layer--day {
+  background: linear-gradient(180deg, #4f94cf, #a8cce8 60%, #c8dff0);
+}
+.moons-layer--zenith {
+  background: linear-gradient(180deg, #69aede, #c2e0f4 55%, #eaf5fc);
+}
+.moons-layer--twilight {
+  background: linear-gradient(180deg, rgba(38, 42, 82, 0.9), rgba(122, 74, 104, 0.8) 55%, rgba(228, 138, 70, 0.85));
+}
+
+/* Rising / setting horizon rings: slow (3.2s), soft, two staggered rings —
+   expanding for a rise, contracting for a set. Chromium animates the CSS `r`
+   geometry property on SVG circles. Suppressed under epilepsy-safe at the
+   render site (the `anim` gate), so no CSS override is needed here. */
+.moons-ring-rise,
+.moons-ring-set {
+  stroke-width: 1.2;
+  animation: 3.2s linear infinite;
+}
+.moons-ring-rise { animation-name: moons-ring-rise; }
+.moons-ring-set  { animation-name: moons-ring-set; }
+@keyframes moons-ring-rise {
+  0%   { r: var(--ring-r); opacity: 0.5; }
+  100% { r: var(--ring-R); opacity: 0; }
+}
+@keyframes moons-ring-set {
+  0%   { r: var(--ring-R); opacity: 0; }
+  30%  { opacity: 0.45; }
+  100% { r: var(--ring-r); opacity: 0; }
+}
+.moons-arc-guide {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  opacity: 0.22;
+}
+.moons-horizon {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.45;
+}
+/* The earth: a translucent ground veil below the horizon. Underground
+   bodies draw BENEATH it, so they read as traveling under the ground
+   (Sekmeht's layering); their text renders in a later pass, above. */
+.moons-ground {
+  fill: #05070d;
+  opacity: 0.32;
+}
+/* Horizon silhouette — near-black fixed hue (a landscape in shadow reads
+   correctly against every sky state; the twilight glow shows through the
+   fainter far ridge). Drawn AFTER the bodies, so a setting sun or moon
+   sinks behind the peaks. */
+.moons-ridge {
+  stroke: none;
+}
+.moons-ridge--far {
+  fill: #0d1018;
+  opacity: 0.45;
+}
+.moons-ridge--near {
+  fill: #0a0c12;
+  opacity: 0.88;
+}
+.moons-name {
+  /* 11 viewBox units at the default 12px game font; tracks A−/A+ */
+  font-size: calc(var(--game-font-size, 12px) * 0.917);
+  fill: currentColor;
+  opacity: 0.9;
+}
+.moons-chip {
+  /* 9.5 units at default */
+  font-size: calc(var(--game-font-size, 12px) * 0.792);
+  fill: currentColor;
+  opacity: 0.65;
+}
+/* Footer provenance strip — text-height + minimal padding (polish #7), a
+   faint darkened band so it reads as a deliberate bar over any sky, and
+   thin dividers between the facts (polish #5). */
+.moons-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 3px 8px 4px;
+  font-size: 0.78em;
+  line-height: 1;
+  color: inherit;
+  background: color-mix(in srgb, #000 16%, transparent);
+}
+.moons-footer-item {
+  line-height: 1;
+  opacity: 0.78;
+  white-space: nowrap;
+}
+.moons-footer-item + .moons-footer-item {
+  margin-left: 0.8em;
+  padding-left: 0.8em;
+  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+}
+.moons-sun-chip {
+  opacity: 0.95;
+}
+/* The feed-name label reads as a key, its value as the fact. */
+.moons-footer-label {
+  opacity: 0.65;
+  text-transform: uppercase;
+  font-size: 0.9em;
+  letter-spacing: 0.06em;
+}
+.moons-empty {
+  padding: 1.4em 1.2em;
+  text-align: center;
+  color: var(--experience-scene-muted);
+  font-size: var(--game-font-size, 12px);  /* renders outside .moons-scene — own anchor */
+}
+.moons-empty-title {
+  font-style: italic;
+  font-size: 0.9em;
+  margin-bottom: 0.6em;
+}
+.moons-empty-body {
+  font-size: 0.8em;
+  line-height: 1.45;
+  max-width: 34em;
+  margin: 0 auto;
+  color: var(--experience-scene-muted);
+}
+.moons-empty-body code {
+  font-family: Consolas, monospace;
+  background: color-mix(in srgb, var(--experience-scene-text) 12%, transparent);
+  border-radius: 3px;
+  padding: 0 0.3em;
+}

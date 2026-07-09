@@ -42,6 +42,7 @@ declare global {
       lichGetVars:      (lichPath: string, scope?: string) => Promise<{ scope: string; vars: unknown }[]>
       lichGetSettings:  (lichPath: string)                 => Promise<{ name: string; value: string }[]>
       lichGetSessions:  (lichPath: string)                 => Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]>
+      moonsFetchSunData: () => Promise<{ sunRiseAt: number; sunSetAt: number } | null>
 
       // ── Per-session Lich command injection ───────────────────────────────────
       lichPollScripts:     (sessionId: SessionId)                              => Promise<void>

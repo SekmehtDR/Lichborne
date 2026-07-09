@@ -23,7 +23,13 @@ import '../styles/panel-frame.css'
 // [parser](src/main/parser/StormFrontParser.ts) also keeps a
 // 'conversations' → 'conversation' backward alias so any in-flight
 // XML or legacy F29 export with the plural still routes correctly.
-export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversation' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'combat' | 'custom'
+// 'experience' (v0.15.1, §34 dual-hosting — Sekmeht superseded the 2026-06-12
+// v2 discard): a Lichborne Experience hosted as a TAB. Its tab id is ALWAYS
+// `exp:<experienceId>` (EXP_TAB_PREFIX) so experience ids never enter the
+// stream/tab id space bare — the §34.1 collision-safety guarantee holds.
+// Deliberately NOT in ALL_PANEL_TYPES (it's parameterized — added via the
+// + menu's [e] section, never as a generic builtin row).
+export type PanelType = 'room' | 'thoughts' | 'arrivals' | 'conversation' | 'deaths' | 'spells' | 'exp' | 'familiar' | 'inv' | 'injuries' | 'debug' | 'log' | 'map' | 'lichScripts' | 'combat' | 'custom' | 'experience'
 
 export interface TabDef {
   id: string
@@ -48,6 +54,7 @@ export const PANEL_LABELS: Record<PanelType, string> = {
   lichScripts:   'Lich Scripts',
   combat:        'Combat',
   custom:        'Custom',
+  experience:    'Lichborne Experience',   // generic fallback — real tabs carry the Experience's own label
 }
 
 export const ALL_PANEL_TYPES: PanelType[] = [
@@ -70,6 +77,19 @@ export function makeCustomTab(name: string): TabDef {
   const id    = name.trim()
   const label = id.charAt(0).toUpperCase() + id.slice(1)
   return { id, type: 'custom', label }
+}
+
+// Experience-as-tab id namespace. The prefix keeps experience ids out of the
+// bare stream-id space (a Lich script would have to push a stream literally
+// named "exp:moons" to collide).
+export const EXP_TAB_PREFIX = 'exp:'
+
+export function makeExperienceTab(expId: string, label: string): TabDef {
+  return { id: EXP_TAB_PREFIX + expId, type: 'experience', label }
+}
+
+export function expIdFromTab(tab: TabDef): string {
+  return tab.id.startsWith(EXP_TAB_PREFIX) ? tab.id.slice(EXP_TAB_PREFIX.length) : tab.id
 }
 
 interface Props {
@@ -135,6 +155,12 @@ interface Props {
   // (no lock concept there — the Panel Manager's arrow buttons remain as the
   // click alternative).
   reorderTabs?: boolean
+  // v0.15.1 (§34 dual-hosting): Experiences addable as tabs from the + menu
+  // ([e]-badged section below a separator). `experienceDefs` is the registry
+  // list (id + label); `renderExperienceTab` renders one by id on the shared
+  // GameWindow props bag (MUST ride sharedFrameProps — the B193 rule).
+  experienceDefs?: Array<{ id: string; label: string }>
+  renderExperienceTab?: (expId: string) => React.ReactNode
 }
 
 export default function PanelFrame({
@@ -151,6 +177,7 @@ export default function PanelFrame({
   onLichPause, onLichResume, onLichKill, onLichRefresh,
   getPanelFontSize, onAdjustPanelFontSize,
   reorderTabs = false,
+  experienceDefs = [], renderExperienceTab,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   // F46: id of the tab currently being dragged (null when idle). Live
@@ -240,6 +267,13 @@ export default function PanelFrame({
     setShowAddMenu(false)
   }
 
+  function addExperienceTab(expId: string, label: string) {
+    const tab = makeExperienceTab(expId, label)
+    onTabsChange([...tabs, tab])
+    onActiveChange(tab.id)
+    setShowAddMenu(false)
+  }
+
   function addCustomTab() {
     const name = newPanelName.trim()
     if (!name) return
@@ -289,6 +323,10 @@ export default function PanelFrame({
 
   const availableToAdd = ALL_PANEL_TYPES.filter(type => !tabs.some(t => t.type === type))
   const availableDiscovered = discoveredStreams.filter(id => !tabs.some(t => t.id === id))
+  // Experiences not already tabbed in THIS frame (duplicate tab ids within
+  // one frame would break keys/activeId; other frames/windows may host their
+  // own copy).
+  const availableExperiences = experienceDefs.filter(d => !tabs.some(t => t.id === EXP_TAB_PREFIX + d.id))
   const activeTab = tabs.find(t => t.id === activeId)
 
   // F31: active panel's font-size override + floating controls. The
@@ -314,6 +352,7 @@ export default function PanelFrame({
           onLichPause ?? NOOP, onLichResume ?? NOOP,
           onLichKill ?? NOOP, onLichRefresh ?? NOOP,
           mapAnimations, compactExp,
+          renderExperienceTab, activeFontSize,
         )}
         {activeTab && onAdjustPanelFontSize && (
           <div className="panel-font-controls" aria-label="Adjust panel font size">
@@ -364,7 +403,14 @@ export default function PanelFrame({
                 onDrop={reorderTabs ? (e => { e.preventDefault(); setDragTabId(null) }) : undefined}
                 onDragEnd={reorderTabs ? (() => setDragTabId(null)) : undefined}
               >
-                <span>{tab.label}</span>
+                {/* Experience tabs: label resolves LIVE from the registry
+                    (renames apply to already-placed tabs) and carries the
+                    [e] badge so e.g. the Moons EXPERIENCE reads distinctly
+                    from moonwatch's "Moons" STREAM tab. */}
+                <span>{tab.type === 'experience'
+                  ? (experienceDefs.find(d => EXP_TAB_PREFIX + d.id === tab.id)?.label ?? tab.label)
+                  : tab.label}</span>
+                {tab.type === 'experience' && <span className="panel-tab-exp-badge" title="Lichborne Experience">[e]</span>}
                 {isUnread && <span className="panel-tab-unread-dot" title="New content" />}
                 <span
                   className="panel-tab-close"
@@ -377,17 +423,21 @@ export default function PanelFrame({
           {tabCtxMenu && (() => {
             const tab = tabs.find(t => t.id === tabCtxMenu.tabId)
             if (!tab) return null
-            const items: ({ label: string; onClick: () => void } | { label: null })[] = [
-              {
-                label: 'Clear',
-                onClick: () => {
-                  if (tab.type === 'debug') onClearDebug?.()
-                  else onClearStream?.(tab.id)
-                },
-              },
-              { label: null },
-              { label: 'Close tab', onClick: () => closeTab(tab.id) },
-            ]
+            // Experience tabs have no text buffer — 'Clear' would be a
+            // silent no-op, so it's omitted (only Close applies).
+            const items: ({ label: string; onClick: () => void } | { label: null })[] = tab.type === 'experience'
+              ? [{ label: 'Close tab', onClick: () => closeTab(tab.id) }]
+              : [
+                  {
+                    label: 'Clear',
+                    onClick: () => {
+                      if (tab.type === 'debug') onClearDebug?.()
+                      else onClearStream?.(tab.id)
+                    },
+                  },
+                  { label: null },
+                  { label: 'Close tab', onClick: () => closeTab(tab.id) },
+                ]
             return <ContextMenu x={tabCtxMenu.x} y={tabCtxMenu.y} items={items} onClose={() => setTabCtxMenu(null)} />
           })()}
         </div>
@@ -435,6 +485,23 @@ export default function PanelFrame({
                       {item.label}
                     </div>
                   ))}
+                {/* Lichborne Experiences (§34 dual-hosting): separated from
+                    the streams above and [e]-badged so it's obvious these are
+                    graphical surfaces, not text streams (Sekmeht's spec). */}
+                {availableExperiences.length > 0 && renderExperienceTab && (
+                  <>
+                    <div className="panel-add-sep" />
+                    {availableExperiences
+                      .slice()
+                      .sort((a, b) => a.label.localeCompare(b.label))
+                      .map(d => (
+                        <div key={`e:${d.id}`} className="panel-add-item panel-add-item--exp" onClick={() => addExperienceTab(d.id, d.label)}>
+                          <span>{d.label}</span>
+                          <span className="panel-add-exp-badge" title="Lichborne Experience — a graphical surface, not a text stream">[e]</span>
+                        </div>
+                      ))}
+                  </>
+                )}
               </div>
               <div className="panel-add-footer">
                 {showNameInput ? (
@@ -508,6 +575,8 @@ function renderPanel(
   onLichRefresh: () => void = () => {},
   mapAnimations = true,
   compactExp = false,
+  renderExperienceTab?: (expId: string) => React.ReactNode,
+  panelFontSize?: number,
 ) {
   // B172: StreamPanel is memoized, so every prop must be referentially
   // stable — onClear/onToggleTimestamp now take the streamId as an argument
@@ -541,6 +610,21 @@ function renderPanel(
         showTimestamp={!!streamTimestamps[tab.id]}
         onToggleTimestamp={onToggleTimestamp}
         emptyMessage={`Waiting for content on stream "${tab.label}"…`} />
+    )
+    case 'experience':    return (
+      // Tab-hosted Experience (§34 dual-hosting). Experience text sizes off
+      // --game-font-size; the F31 per-panel A+/A− sets --panel-font-size on
+      // the body wrapper, so an active override is re-mapped here (inline —
+      // a var self-reference in CSS would be a cycle). No override → the
+      // global game font, exactly like a floating Experience window.
+      <div
+        className="exp-tab-host"
+        style={panelFontSize ? ({ ['--game-font-size' as string]: `${panelFontSize}px` } as React.CSSProperties) : undefined}
+      >
+        {renderExperienceTab?.(expIdFromTab(tab)) ?? (
+          <div className="exp-tab-missing">This Experience is no longer registered.</div>
+        )}
+      </div>
     )
   }
 }

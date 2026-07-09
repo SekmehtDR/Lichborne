@@ -184,6 +184,9 @@ contextBridge.exposeInMainWorld('api', {
   lichGetSettings:  (lichPath: string):                    Promise<{ name: string; value: string }[]>  => ipcRenderer.invoke('lich:get-settings', lichPath),
   lichGetSessions:  (lichPath: string):                    Promise<{ pid: number; session_name: string; game_code: string; role: string; state: string; frontend: string; last_heartbeat_at: number | null; started_at: number | null }[]> => ipcRenderer.invoke('lich:get-sessions', lichPath),
 
+  // ── Weather & Moons: community sun anchors (dr-scripts Firebase, read-only) ──
+  moonsFetchSunData: (): Promise<{ sunRiseAt: number; sunSetAt: number } | null> => ipcRenderer.invoke('moons:fetch-sun-data'),
+
   // ── Lich command injection (per-session — commands route to that character's Lich) ──
   lichPollScripts:  (sessionId: SessionId):                                    Promise<void>   => ipcRenderer.invoke('lich:poll-scripts', sessionId),
   lichPauseScript:  (sessionId: SessionId, name: string):                      Promise<void>   => ipcRenderer.invoke('lich:pause-script', sessionId, name),

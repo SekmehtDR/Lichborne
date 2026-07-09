@@ -23,12 +23,12 @@ import DebugPanel from './DebugPanel'
 import VitalsBar from './VitalsBar'
 import IconBar from './IconBar'
 import FloatingCompass from './FloatingCompass'
-import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab } from './PanelFrame'
+import PanelFrame, { type TabDef, type PanelType, PANEL_LABELS, ALL_PANEL_TYPES, makeTab, expIdFromTab } from './PanelFrame'
 import PanelManager from './PanelManager'
 import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
-import { experienceById, loadExperiences, saveExperiences, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem } from '../experiences'
+import { EXPERIENCES, experienceById, loadExperiences, saveExperiences, parseMoonLine, SUN_RISE_RE, SUN_SET_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState } from '../experiences'
 import { guildToFocusOption } from '../focusTemplates'
 import { nanoid } from 'nanoid'
 import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
@@ -134,6 +134,10 @@ const ROOM_STREAMS = new Set([
 // adding 'combat' here was the cause of the "combat shows up twice in
 // Available Streams" bug; the more robust fix is to filter every builtin
 // PanelType id at discovery so future panels don't have to remember.
+// §34 dual-hosting: what the + menu's [e] section offers. Module-level for
+// referential stability (pitfall #82c) — derived once from the registry.
+const EXPERIENCE_TAB_DEFS = EXPERIENCES.map(e => ({ id: e.id, label: e.label }))
+
 const NEVER_DISCOVER = new Set([
   'main', 'raw',
   'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
@@ -581,12 +585,129 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [experiences, setExperiences] = useState<ExperienceInstance[]>(() =>
     loadExperiences(scopedKey(session.character, 'experiences')))
   const [showExpShelf, setShowExpShelf] = useState(false)
-  const expAnyOpen = experiences.some(i => i.open)
+  // Experiences hosted as TABS (§34 dual-hosting, v0.15.1 — `exp:<id>` tab
+  // ids, type 'experience'). Pitfall #79: "which tabs are visible" MUST
+  // branch on layoutMode — the zone arrays are deliberately-stale state in
+  // free mode.
+  const expTabIds = useMemo(() => {
+    const ids = new Set<string>()
+    const collect = (tabs?: TabDef[]) => tabs?.forEach(t => { if (t.type === 'experience') ids.add(expIdFromTab(t)) })
+    if (layoutMode === 'free') {
+      for (const w of freeWindows) if (w.kind === 'panel') collect(w.tabs)
+    } else {
+      if (mainTopAdded) collect(mainTopTabs)
+      if (topAdded)     collect(topTabs)
+      if (midAdded)     collect(midTabs)
+      if (bottomAdded)  collect(bottomTabs)
+    }
+    return ids
+  }, [layoutMode, freeWindows, mainTopAdded, mainTopTabs, topAdded, topTabs, midAdded, midTabs, bottomAdded, bottomTabs])
+  // "Any Experience live" = a floating instance OR a hosted tab — this drives
+  // the §35.6 scene-work gate, so a tab-hosted Tableau still gets its feed.
+  const expAnyOpen = experiences.some(i => i.open) || expTabIds.size > 0
   // §35: the typed cast from main's SceneParser (scene-cast events) — the
   // Experiences' "who is here" source of truth (replaces any renderer-side
   // text re-parsing). Replay-snapshotted in main, so a window handoff or
   // import-remount repaints it without waiting for the next room update.
   const [sceneCast, setSceneCast] = useState<SceneCast>({ players: [], creatures: [] })
+  // Weather & Moons (Experience #2, v0.15.1): parsed moonwatch state + the
+  // last observed sunrise/sunset transition. Moon lines arrive on the
+  // `moonWindow` stream ~once a real minute while the script runs (cheap,
+  // parsed unconditionally so the display is warm the moment the window
+  // opens); sun prose is caught in the main-stream branch behind a substring
+  // pre-gate (pitfall #82a). The `moons` PROP stays undefined until a moon
+  // line has arrived — that drives the component's setup empty state.
+  const [moonData, setMoonData] = useState<(Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> & { reportedAt: number }) | null>(null)
+  // Sun anchors: the last OBSERVED sunrise/sunset moments. The sun cycle is
+  // periodic in real time (SUN_CYCLE_MINUTES — moonwatch's own 360-minute
+  // constant), so an anchor keeps positioning the sun indefinitely — which is
+  // why it's PERSISTED per-character (scopedKey → state: → YAML, Principle
+  // #1): observe one sunrise once and the sky works every session after.
+  const [sunState, setSunState] = useState<{ riseAt?: number; setAt?: number } | null>(() => {
+    try {
+      const raw = localStorage.getItem(scopedKey(session.character, 'moonSun'))
+      if (raw) {
+        const p = JSON.parse(raw)
+        if (p && (typeof p.riseAt === 'number' || typeof p.setAt === 'number')) return p
+      }
+    } catch { /* corrupt → re-anchor on the next observed transition */ }
+    return null
+  })
+  useEffect(() => {
+    if (!sunState) return
+    localStorage.setItem(scopedKey(session.character, 'moonSun'), JSON.stringify(sunState))
+    saveProfile()
+  }, [session.character, sunState, saveProfile])
+  // PRIMARY sun seed: the dr-scripts Firebase (`moon_data_v2.json` — the SAME
+  // public feed moonwatch itself polls) carries the community-observed
+  // sunrise/sunset EPOCHS, i.e. both anchors exactly: true day length + true
+  // phase, no 180/180 assumption (that assumption put a mid-morning sun at
+  // the apex — all a timer-only seed knows is "sets in Nm"). Fetched via main
+  // (`moons:fetch-sun-data`, 10-min cached, read-only GET) once per session
+  // while the Moons experience is open; fills only MISSING anchors so a
+  // locally-OBSERVED transition (fresher, exact) always wins. Works
+  // direct-SGE too. On fetch failure the UserVars/observed fallbacks below
+  // still apply.
+  const moonsExpOpen = experiences.some(i => i.open && i.id === 'moons') || expTabIds.has('moons')
+  // Anchor provenance: which anchors were locally OBSERVED (prose) this
+  // session. Observed beats Firebase (fresher, exact); everything else —
+  // persisted, UserVars-synthesized — yields to the Firebase pair.
+  const sunObservedRef = useRef<{ rise?: boolean; set?: boolean }>({})
+  const sunFetchRef = useRef<'idle' | 'pending' | 'ok' | 'failed'>('idle')
+  useEffect(() => {
+    const haveBoth = !!(sunState?.riseAt != null && sunState?.setAt != null)
+    if (!moonsExpOpen || haveBoth || sunFetchRef.current !== 'idle') return
+    sunFetchRef.current = 'pending'
+    window.api.moonsFetchSunData().then(d => {
+      sunFetchRef.current = d ? 'ok' : 'failed'
+      if (!d) return
+      setSunState(prev => ({
+        riseAt: (sunObservedRef.current.rise && prev?.riseAt != null) ? prev.riseAt : d.sunRiseAt,
+        setAt:  (sunObservedRef.current.set  && prev?.setAt  != null) ? prev.setAt  : d.sunSetAt,
+      }))
+    }).catch(() => { sunFetchRef.current = 'failed' /* offline → fallback below */ })
+  }, [moonsExpOpen, sunState])
+  // FALLBACK sun seed (offline / Firebase unreachable): moonwatch's own
+  // `UserVars.sun` in lich.db3 (day/night + minutes-to-next-event) so the sun
+  // still shows without waiting up to ~3h to observe a sunrise/sunset line.
+  // Existing telemetry, existing reader (`lich:get-vars`) — nothing invented.
+  // Gates: Lich mode; no anchor yet (an observed transition always wins and
+  // overwrites); moonData present (a LIVE moonWindow feed proves moonwatch is
+  // running NOW, so the DB copy is at worst ~5 min stale — Lich's var flush
+  // cadence); timer sane. The synthesized anchor uses the 180/180 assumption,
+  // which computeSunPhase flags with ≈ until real anchors land.
+  useEffect(() => {
+    if (sunState || !moonData || !session.useLich) return
+    if (sunFetchRef.current !== 'failed') return  // Firebase pending/succeeded → let it seed
+    let lichPath = ''
+    try { lichPath = JSON.parse(localStorage.getItem('lichborne.advancedSettings') ?? '{}').lichPath ?? '' } catch { /* no path → skip */ }
+    if (!lichPath) return
+    let cancelled = false
+    window.api.lichGetVars(lichPath, `${session.game}:${session.character}`).then(rows => {
+      if (cancelled) return
+      const vars = rows[0]?.vars as Record<string, unknown> | undefined
+      const sun = vars?.['sun'] as Record<string, unknown> | undefined
+      if (!sun) return
+      const day = sun['day'] === true
+      const timer = typeof sun['timer'] === 'number' ? sun['timer'] : NaN
+      if (!Number.isFinite(timer) || timer < 0 || timer > 360) return
+      const M = 60_000
+      // Clamp to 179: real day/night halves can run past 180 (a 187m day was
+      // observed in live data), and an unclamped value would synthesize a
+      // rise anchor in the FUTURE (null phase) or land a night timer in the
+      // day half. Clamped, the phase reads "just after the transition" — a
+      // few ≈-minutes off, corrected by the first observed transition.
+      const t = Math.min(timer, 179)
+      // day: sunset in `t` min ⇒ rise was (180 − t) min ago.
+      // night: sunrise in `t` min ⇒ rise recurs at now + t − 360 min.
+      const riseAt = day ? Date.now() - (180 - t) * M : Date.now() + (t - 360) * M
+      setSunState({ riseAt })
+    }).catch(() => { /* unreadable db → the observed-prose path still works */ })
+    return () => { cancelled = true }
+  }, [sunState, moonData, session.useLich, session.game, session.character])
+  const moonsState = useMemo<MoonsState | undefined>(
+    () => moonData ? { ...moonData, ...(sunState ? { sun: sunState } : {}) } : undefined,
+    [moonData, sunState])
   // Recent scene-speech events (§35 speech capturers) — the Tableau's bubble
   // feed. Capped small; bubbles also expire by timestamp in the component.
   const [sceneSpeech, setSceneSpeech] = useState<SceneSpeechItem[]>([])
@@ -1190,14 +1311,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // a stream in a stale zone array but closed in windows had its fallback
   // BLOCKED (content silently buffered, invisible — the worse failure).
   useEffect(() => {
+    // Experience tabs (type 'experience', `exp:` ids) are NOT stream watchers
+    // — they consume typed state, never stream text; keep their ids out so
+    // the watched set stays a pure stream-id set.
     watchedStreamsRef.current = layoutMode === 'free'
-      ? new Set(freeWindows.flatMap(w => (w.kind === 'panel' ? (w.tabs ?? []).map(t => t.id) : [])))
+      ? new Set(freeWindows.flatMap(w => (w.kind === 'panel' ? (w.tabs ?? []).filter(t => t.type !== 'experience').map(t => t.id) : [])))
       : new Set([
           ...(mainTopAdded ? mainTopTabs : []),
           ...(topAdded     ? topTabs     : []),
           ...(midAdded     ? midTabs     : []),
           ...(bottomAdded  ? bottomTabs  : []),
-        ].map(t => t.id))
+        ].filter(t => t.type !== 'experience').map(t => t.id))
   }, [layoutMode, freeWindows, mainTopTabs, topTabs, midTabs, bottomTabs, mainTopAdded, topAdded, midAdded, bottomAdded])
 
   // v0.8.1: mirrors of the per-zone "added" flags. The divider drag handler
@@ -1518,6 +1642,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // batch on a real room entry. Gives the map matcher a fresh description
       // every look/entry. See pitfall #70.
       let batchRoomDesc: string | null = null
+      // Weather & Moons: last moonwatch line + sun transition seen this batch,
+      // applied after the loop (one setState per batch at most).
+      let batchMoons: ReturnType<typeof parseMoonLine> = null
+      let batchSun: boolean | null = null
       let newRt: number | null = null
       let newCt: number | null = null
       let newAim: number | null = null
@@ -1548,6 +1676,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 if (d) batchRoomDesc = d
               }
               if (!isExpReadout(segments)) newMain.push(mkLine())
+              // Weather & Moons: DR announces sunrise/sunset as ambient main
+              // prose (pattern set mirrored verbatim from moonwatch.lic's own
+              // detection). Cheap substring pre-gate before the regexes
+              // (pitfall #82a) — the five literals cover every alternative.
+              if (lineText.includes('sun') || lineText.includes('ight slowly') || lineText.includes('grey light') || lineText.includes('heralding') || lineText.includes('new day')) {
+                if (SUN_RISE_RE.test(lineText)) batchSun = true
+                else if (SUN_SET_RE.test(lineText)) batchSun = false
+              }
               processLineRef.current('main', lineText)
               processHighlightSoundsRef.current(lineText)
               logHighlightFiresRef.current(lineText, 'main')
@@ -1567,6 +1703,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             } else if (stream === 'room-extra') {
               roomUpdates.extra = segments
             } else {
+              // Weather & Moons: moonwatch.lic pushes its readout into the
+              // `moonWindow` stream (case preserved end-to-end, Principle #5 —
+              // the lowercase compare here is a read-only match, routing is
+              // untouched). Parse is one cheap regex on a rare line.
+              if (stream.toLowerCase() === 'moonwindow') {
+                const parsed = parseMoonLine(lineText)
+                if (parsed) batchMoons = parsed
+              }
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
                 : stream
@@ -1819,6 +1963,28 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // path (roomUpdates.desc set in-loop) still works on its own; this only
       // adds the far-more-frequent inline form.
       if (batchRoomDesc != null) roomUpdates.desc = batchRoomDesc
+      // Weather & Moons — apply at most one state write per batch. Replayed
+      // batches (pitfall #60) re-seed this too, so a window handoff keeps the
+      // sky; the replayed line's reportedAt is "now", which slightly
+      // understates data age until the next live report (accepted).
+      // MERGE over the previous report, never replace — a moon absent from one
+      // line (malformed/partial) must never vanish from the sky (its stale
+      // countdown drifts until the next full report, which is the lesser
+      // evil). The normal all-three line overwrites everything anyway.
+      if (batchMoons) {
+        const parsed = batchMoons
+        setMoonData(prev => ({ katamba: prev?.katamba, yavash: prev?.yavash, xibar: prev?.xibar, ...parsed, reportedAt: Date.now() }))
+      }
+      // A rise stamps riseAt, a set stamps setAt — keeping the OTHER anchor so
+      // computeSunPhase can derive the true day length from the pair. Replay
+      // batches (pitfall #60) re-stamp "now", which is close enough: a replay
+      // arrives seconds after the live line it mirrors.
+      if (batchSun !== null) {
+        const isRise = batchSun
+        if (isRise) sunObservedRef.current.rise = true
+        else sunObservedRef.current.set = true
+        setSunState(prev => isRise ? { ...prev, riseAt: Date.now() } : { ...prev, setAt: Date.now() })
+      }
 
       // Text-modification passes (DESIGN.md §31): mute → substitute, applied to
       // the main window AND every stream buffer — GLOBAL by default; a rule with
@@ -2979,6 +3145,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // pattern the Settings panel's onChange uses (line ~2113).
       scheduleProfileSave(session.account, session.character, session.game, session.useLich)
     },
+    // §34 dual-hosting: the + menu's [e] section + the tab renderer. Both
+    // MUST ride sharedFrameProps (B193) so zone tabs and floating windows
+    // behave identically.
+    experienceDefs: EXPERIENCE_TAB_DEFS,
+    renderExperienceTab,
   }
 
   // ── Free Layout handlers (DESIGN.md §33) ───────────────────────────────────
@@ -3145,10 +3316,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     })
   }
 
-  // Content for one Experience window: the registered component on the shared
-  // props bag (typed game state — never raw stream text, §34.8 #2).
-  function renderExperience(inst: ExperienceInstance): React.ReactNode {
-    const def = experienceById(inst.id)
+  // Content for one Experience: the registered component on the shared props
+  // bag (typed game state — never raw stream text, §34.8 #2). ONE builder for
+  // BOTH hostings (floating window / panel tab) so they can never drift.
+  // Stable identity (pitfall #82c): every Experience component is memo()'d,
+  // and an inline arrow here minted a fresh prop per GameWindow render —
+  // silently defeating ALL the Experience memos (they re-rendered on every
+  // game batch). setState setters are stable, so [] deps are correct.
+  const openContactPopover = useCallback((contactId: string, x: number, y: number) => {
+    setContactPopover({ contactId, x, y })
+  }, [])
+
+  function renderExperienceContent(expId: string, hidden?: Record<string, boolean>): React.ReactNode {
+    const def = experienceById(expId)
     if (!def) return null
     const C = def.component
     return (
@@ -3163,10 +3343,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         contactTemplates={contactTemplates}
         settings={settings}
         isActive={isActive}
-        onOpenContact={(contactId, x, y) => setContactPopover({ contactId, x, y })}
-        hidden={inst.hidden}
+        onOpenContact={openContactPopover}
+        hidden={hidden}
+        moons={moonsState}
       />
     )
+  }
+
+  function renderExperience(inst: ExperienceInstance): React.ReactNode {
+    return renderExperienceContent(inst.id, inst.hidden)
+  }
+
+  // Tab-hosted Experience (§34 dual-hosting): shares the floating instance's
+  // ⚙ layer prefs when one exists (ONE `hidden` map per experience — a layer
+  // hidden in the window stays hidden in the tab). Font sizing comes from the
+  // panel's own F31 A+/A− (PanelFrame re-maps it onto --game-font-size).
+  function renderExperienceTab(expId: string): React.ReactNode {
+    return renderExperienceContent(expId, experiences.find(i => i.id === expId)?.hidden)
   }
 
   // Content for one floating window. 2a: panel / vitals / icon. The main text
