@@ -44,6 +44,26 @@ export interface SharedProfile {
   // User-defined named colors (v0.14.6, `/colors add`). App-wide — a color
   // vocabulary is shared like themes. Optional → older files default to [].
   customColors?: { name: string; hex: string }[]
+  // "Reconnect last session" snapshot (F62, v0.15.2) — the character set that
+  // was live (across all windows) the last time any session was open. Written
+  // by the primary window on every non-empty roster change. Optional → older
+  // files default to [] (no reconnect offer).
+  lastSessionCharacters?: { account: string; name: string }[]
+  // Global cross-character rules (F37, v0.15.2) — apply to EVERY character,
+  // merged at runtime after each character's own rules. Stored here (not in
+  // any {Character}.yaml) because they're deliberately not character-bound;
+  // the localStorage working copies live under the virtual `_global` scope
+  // (characterScope.GLOBAL_RULES_SCOPE). Always-active — group gating is
+  // per-character and is normalized away. Loose `unknown[]` typing avoids a
+  // profile-types → rule-module import web; the rule stores validate shape on
+  // load exactly as they do for per-character lists. Optional → older files
+  // default to [] (no globals).
+  sharedHighlights?: unknown[]
+  sharedTriggers?: unknown[]
+  sharedMacros?: unknown[]
+  sharedAliases?: unknown[]
+  sharedMutes?: unknown[]
+  sharedSubstitutes?: unknown[]
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

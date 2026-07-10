@@ -160,6 +160,62 @@
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-sunken));
 }
 
+/* F37 scope switch (This Character | All Characters) — segmented pair on the
+   at-analytics-btn recipe so it sits naturally in the header on every theme. */
+.at-scope {
+  display: flex;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.at-scope-btn {
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  border: none;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.at-scope-btn + .at-scope-btn { border-left: 1px solid var(--border-subtle); }
+.at-scope-btn:hover:not(:disabled) { color: var(--text-primary); }
+.at-scope-btn--on {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-sunken));
+}
+/* Always rendered, greyed where scope doesn't apply (Groups) — keeps the
+   header buttons from shifting position between tabs (Sekmeht). */
+.at-scope--disabled { opacity: 0.45; }
+.at-scope-btn:disabled { cursor: default; }
+
+/* F63 per-rule "Applies to" control (rendered inside the hp-/tp-/ma- editors —
+   shared classes here since automations.css is always loaded with them). Same
+   segmented recipe as .at-scope; the ACTIVE side is disabled (it's a state
+   marker), the inactive side is the MOVE action. */
+.rule-scope-row {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.rule-scope-btn {
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  border: none;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rule-scope-btn + .rule-scope-btn { border-left: 1px solid var(--border-subtle); }
+.rule-scope-btn:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
+.rule-scope-btn:disabled {
+  cursor: default;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-sunken));
+}
+
 /* Full-width banner above the list+detail split, so it has room to read
    (it used to be jammed into the ~210px sidebar). aa-host is the column wrapper
    that puts the banner over the panel body. */

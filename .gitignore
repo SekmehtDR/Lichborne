@@ -15,11 +15,17 @@ Logs/
 corpus/
 
 # Local harnesses (tmp-scene-harness = the SceneParser capturer regression
-# suite, tmp-scroll-repro = the B171/B172 scroll simulation). Kept OUT of the
-# repo on purpose: the scene harness embeds verbatim corpus lines with real
-# player names (Sekmeht, 2026-06-12 — same privacy stance as corpus/). They
-# live machine-local; pitfalls #81/#35.4 document how to rebuild them.
+# suite, tmp-scroll-repro = the B171/B172 scroll simulation, tmp-cmd-harness =
+# command resolution, tmp-rules-harness = global rules/Transfer/reconnect).
+# Kept OUT of the repo on purpose: the scene harness embeds verbatim corpus
+# lines with real player names (Sekmeht, 2026-06-12 — same privacy stance as
+# corpus/). They live machine-local; each README/recipe documents rebuilds.
 tmp-*/
+
+# Per-version test plans (Sekmeht, 2026-07-10): machine-local working
+# checklists, like the harnesses they feed. Part of the "update my
+# documentation" set but not committed.
+testplans/
 
 # Logs
 *.log

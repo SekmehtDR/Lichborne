@@ -36,17 +36,21 @@ export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClea
   const pinnedRef = useRef(true)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; word: string | null; lineText: string | null } | null>(null)
 
-  // Re-check DOM position only when already pinned — catches stale-true from the
-  // B16 race. When already unpinned, trust it: DOM reads are unreliable while
-  // the MAX_STREAM_LINES trim is removing nodes and scroll anchoring hasn't settled.
-  if (pinnedRef.current) {
-    const scrollEl = scrollRef.current
-    if (scrollEl) pinnedRef.current = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40
-  }
-
+  // B203: unpinning happens ONLY here, from real scroll events — never from
+  // render-time geometry reads. The old render-time "recheck" re-derived
+  // pinned from raw geometry every render, so anything that changed the
+  // container's shape WITHOUT a user scroll silently unpinned the panel: a
+  // floating window's 0-height mount frame (dist = scrollHeight ≥ 40 → false),
+  // a drag-resize shrinking clientHeight, a layout-mode switch. Symptom:
+  // "thoughts fills, then scrolls off screen — until I scroll to the bottom
+  // once." That's the pitfall-#71/B191 class (layout signals must not drive
+  // user-intent state); resizes now RE-SNAP instead (observer below).
   function handleScroll() {
     const el = scrollRef.current
-    if (!el) return
+    // Hidden or unmeasurable panels can't receive USER scrolls — any scroll
+    // signal there is layout churn (B191's document.hidden guard, plus the
+    // 0-height mount frame).
+    if (!el || document.hidden || el.clientHeight === 0) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
     pinnedRef.current = dist <= 40
   }
@@ -81,6 +85,21 @@ export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClea
   useLayoutEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines])
+
+  // B203 companion: container resizes (floating-window drag, zone divider,
+  // window maximize, the mount frame getting its real height) re-assert the
+  // bottom when pinned — a PASSIVE bare scrollTop write, never a re-render
+  // (the pitfall #68c observer rule, StreamPanel-sized). A scrolled-up reader
+  // is never touched (pinned false → no write).
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      if (pinnedRef.current && el.clientHeight > 0) el.scrollTop = el.scrollHeight - el.clientHeight
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   return (
     <div className="stream-panel" ref={scrollRef} onScroll={handleScroll} onContextMenu={handleContextMenu}>

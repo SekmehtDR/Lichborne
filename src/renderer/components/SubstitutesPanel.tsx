@@ -21,9 +21,15 @@ interface Props {
   prefill?: SubstituteRule   // from the game-window right-click "Substitute …"
   openRuleId?: string        // v0.14.6: open an existing rule for edit (slash /sub edit)
   analyticsOn?: boolean
+  // F37/F63 (v0.15.2): which store this panel edits ('global' = All Characters
+  // scope — groups row hidden) + the cross-store MOVE callback for the
+  // editor's "Applies to" control. Both absent when hosted standalone.
+  scope?: 'character' | 'global'
+  onMoveScope?: (rule: SubstituteRule) => void
 }
 
-export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyticsOn = false }: Props) {
+export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyticsOn = false, scope = 'character', onMoveScope }: Props) {
+  const hideGroups = scope === 'global'
   const character = useCharacter()
   const [rules, setRules]   = useState<SubstituteRule[]>(() => loadSubstitutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -179,6 +185,7 @@ export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyti
               />
             </div>
 
+            {!hideGroups && (
             <div className="hp-field">
               <label className="hp-label">Groups</label>
               <div className="grp-row">
@@ -195,6 +202,35 @@ export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyti
                 )}
               </div>
             </div>
+            )}
+
+            {/* F63: per-rule scope — the inactive side MOVES the substitute to
+                the other store (incl. any unsaved draft edits). */}
+            {onMoveScope && (
+            <div className="hp-field">
+              <label className="hp-label">Applies to</label>
+              <div className="rule-scope-row">
+                <button
+                  type="button"
+                  className={`rule-scope-btn${scope === 'character' ? ' rule-scope-btn--on' : ''}`}
+                  disabled={scope === 'character'}
+                  onClick={() => onMoveScope(draft)}
+                  title={scope === 'character'
+                    ? 'This substitute belongs to this character'
+                    : 'Move this substitute to the character you have open — every OTHER character stops getting it'}
+                >This Character</button>
+                <button
+                  type="button"
+                  className={`rule-scope-btn${scope === 'global' ? ' rule-scope-btn--on' : ''}`}
+                  disabled={scope === 'global'}
+                  onClick={() => onMoveScope(draft)}
+                  title={scope === 'global'
+                    ? 'This substitute applies to every character'
+                    : 'Move this substitute to All Characters — it will rewrite this text for every character on every account'}
+                >All Characters</button>
+              </div>
+            </div>
+            )}
 
             <div className="hp-field">
               <label className="hp-label">Find</label>

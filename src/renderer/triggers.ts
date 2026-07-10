@@ -114,8 +114,10 @@ export function loadTriggers(character: string): TriggerRule[] {
   } catch { return [] }
 }
 
-export function saveTriggers(character: string, rules: TriggerRule[]): void {
-  safeSetItem(storageKey(character), JSON.stringify(rules))
+// Returns the write's success flag (false = quota, already toasted) — see
+// saveHighlights' note; the F63 scope move aborts on a failed target write.
+export function saveTriggers(character: string, rules: TriggerRule[]): boolean {
+  return safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newTriggerAction(type: ActionType = 'command'): TriggerAction {

@@ -36,9 +36,15 @@
 
 import yaml from 'js-yaml'
 import { nanoid } from 'nanoid'
-import { scopedKey } from './characterScope'
+import { scopedKey, GLOBAL_RULES_SCOPE, asGlobalRules } from './characterScope'
 import { loadMyThemes, saveMyThemes, type CustomTheme } from './myThemes'
 import { loadCustomColors, saveCustomColors, type CustomColor } from './colors'
+import { hlKey, trKey, maKey, alKey, muteKey, subKey, type RuleKeyFn } from './ruleIdentity'
+import { loadHighlights, saveHighlights } from './highlights'
+import { loadTriggers, saveTriggers } from './triggers'
+import { loadMacros, saveMacros, loadAliases, saveAliases } from './macros'
+import { loadMutes, saveMutes } from './mutes'
+import { loadSubstitutes, saveSubstitutes } from './substitutes'
 import type { CharacterProfile } from './profile-types'
 
 // ── Categories ────────────────────────────────────────────────────────────────
@@ -46,7 +52,7 @@ import type { CharacterProfile } from './profile-types'
 export type TransferCategoryId =
   | 'display' | 'layout' | 'viewPrefs' | 'theme' | 'colors'
   | 'highlights' | 'triggers' | 'macros' | 'aliases' | 'mutes' | 'substitutes'
-  | 'groupsModes' | 'contacts' | 'experiences'
+  | 'groupsModes' | 'contacts' | 'experiences' | 'globalRules'
 
 export type CategoryKind = 'config' | 'rules'
 
@@ -123,6 +129,11 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
     desc: 'Lichborne Experiences — which are open and their window positions/sizes (§34.6).',
     suffixes: ['experiences'],
   },
+  {
+    id: 'globalRules', label: 'Global Rules (All Characters)', kind: 'rules',
+    desc: 'Your All-Characters highlights, triggers, macros, aliases, mutes, and substitutes (F37). App-wide, like Named Colors — importing MERGES them into this machine’s All Characters rules regardless of the Append/Replace choice, and rules that already exist there are skipped, never duplicated.',
+    suffixes: [], // special-cased (shared _global store, not per-character state)
+  },
 ]
 
 export const TRANSFER_CATEGORY_IDS: TransferCategoryId[] = TRANSFER_CATEGORIES.map(c => c.id)
@@ -185,6 +196,24 @@ export async function buildProfileExport(
       // Shared-palette data (like the custom-theme definition) — the exporter's
       // APP-WIDE custom colors, not anything from the source character's YAML.
       categories.colors = { customColors: loadCustomColors() }
+      continue
+    }
+
+    if (cat.id === 'globalRules') {
+      // Shared-store data (F63) — the machine's All-Characters rules, not
+      // anything from the source character's YAML (globals are deliberately
+      // not character-bound, which is why they're a separate category rather
+      // than riding the per-character rule categories).
+      const bag: Record<string, unknown> = {
+        highlights:  loadHighlights(GLOBAL_RULES_SCOPE),
+        triggers:    loadTriggers(GLOBAL_RULES_SCOPE),
+        macros:      loadMacros(GLOBAL_RULES_SCOPE),
+        aliases:     loadAliases(GLOBAL_RULES_SCOPE),
+        mutes:       loadMutes(GLOBAL_RULES_SCOPE),
+        substitutes: loadSubstitutes(GLOBAL_RULES_SCOPE),
+      }
+      const any = Object.values(bag).some(v => Array.isArray(v) && v.length > 0)
+      if (any) categories.globalRules = bag
       continue
     }
 
@@ -270,6 +299,7 @@ function countCategory(id: TransferCategoryId, bag: Record<string, unknown>): nu
     case 'substitutes': return arrLen(bag.substitutes)
     case 'groupsModes': return arrLen(bag.groups) + arrLen(bag.modes)
     case 'contacts':   return arrLen(bag.contacts) + arrLen(bag['contact-templates'])
+    case 'globalRules': return arrLen(bag.highlights) + arrLen(bag.triggers) + arrLen(bag.macros) + arrLen(bag.aliases) + arrLen(bag.mutes) + arrLen(bag.substitutes)
     case 'theme':      return 1
     default:           return Object.keys(bag).length // config: number of keys present
   }
@@ -372,7 +402,11 @@ export async function applyProfileImport(
   // a category missing from this list silently no-ops on import (the v0.14.0
   // Experiences category shipped exactly that bug, caught v0.14.6).
   const order: TransferCategoryId[] =
-    ['display', 'layout', 'viewPrefs', 'theme', 'colors', 'highlights', 'triggers', 'macros', 'aliases', 'mutes', 'substitutes', 'groupsModes', 'contacts', 'experiences']
+    ['display', 'layout', 'viewPrefs', 'theme', 'colors', 'globalRules', 'highlights', 'triggers', 'macros', 'aliases', 'mutes', 'substitutes', 'groupsModes', 'contacts', 'experiences']
+  // globalRules runs BEFORE the per-character rule categories so the
+  // global-awareness filter below sees the freshly-merged global store —
+  // otherwise a bundle carrying the same rule as both a global AND a
+  // per-character copy would import the per-character duplicate first.
 
   for (const id of order) {
     if (!opts.selected.has(id)) continue
@@ -389,15 +423,20 @@ export async function applyProfileImport(
         if (set === 'set' && !isActive && inactiveProfile) stagedTheme = bag.theme as string
         break
       }
-      case 'highlights': applyRuleArray(store, 'highlights', bag.highlights, opts.merge, regenHighlights, hlKey); break
-      case 'triggers':   applyRuleArray(store, 'triggers',   bag.triggers,   opts.merge, regenTriggers,  trKey); break
-      case 'macros':     applyRuleArray(store, 'macros',     bag.macros,     opts.merge, regenSimple,    maKey); break
-      case 'aliases':    applyRuleArray(store, 'aliases',    bag.aliases,    opts.merge, regenSimple,    alKey); break
-      case 'mutes':      applyRuleArray(store, 'mutes',       bag.mutes,       opts.merge, regenSimple, muteKey); break
-      case 'substitutes': applyRuleArray(store, 'substitutes', bag.substitutes, opts.merge, regenSimple, subKey); break
+      // F63: the four global-capable types filter incoming rules that already
+      // exist in this machine's ALL-CHARACTERS store (same content key) — a
+      // rule promoted to global must not come back as a per-character copy
+      // that double-fires. Mutes/substitutes have no global store — no filter.
+      case 'highlights': applyRuleArray(store, 'highlights', bag.highlights, opts.merge, regenHighlights, hlKey, globalKeySet(loadHighlights(GLOBAL_RULES_SCOPE), hlKey)); break
+      case 'triggers':   applyRuleArray(store, 'triggers',   bag.triggers,   opts.merge, regenTriggers,  trKey, globalKeySet(loadTriggers(GLOBAL_RULES_SCOPE), trKey)); break
+      case 'macros':     applyRuleArray(store, 'macros',     bag.macros,     opts.merge, regenSimple,    maKey, globalKeySet(loadMacros(GLOBAL_RULES_SCOPE), maKey)); break
+      case 'aliases':    applyRuleArray(store, 'aliases',    bag.aliases,    opts.merge, regenSimple,    alKey, globalKeySet(loadAliases(GLOBAL_RULES_SCOPE), alKey)); break
+      case 'mutes':      applyRuleArray(store, 'mutes',       bag.mutes,       opts.merge, regenSimple, muteKey, globalKeySet(loadMutes(GLOBAL_RULES_SCOPE), muteKey)); break
+      case 'substitutes': applyRuleArray(store, 'substitutes', bag.substitutes, opts.merge, regenSimple, subKey, globalKeySet(loadSubstitutes(GLOBAL_RULES_SCOPE), subKey)); break
       case 'groupsModes': applyGroupsModes(store, bag, opts.merge); break
       case 'contacts':   applyContacts(store, bag, opts.merge); break
       case 'colors':     applyNamedColors(bag); break
+      case 'globalRules': applyGlobalRules(bag); break
       // B(v0.14.0 latent, fixed v0.14.6): experiences exported but never
       // applied — it was missing from `order` + this switch.
       case 'experiences': applyPlain(store, bag, TRANSFER_CATEGORIES.find(c => c.id === 'experiences')!.suffixes); break
@@ -486,7 +525,11 @@ function applyTheme(
 // ── Rule-category apply helpers ─────────────────────────────────────────────────
 
 type RegenFn = (items: unknown[]) => unknown[]
-type KeyFn = (item: unknown) => string
+type KeyFn = RuleKeyFn
+
+function globalKeySet(rules: unknown[], keyOf: KeyFn): Set<string> {
+  return new Set(rules.map(keyOf))
+}
 
 function applyRuleArray(
   store: TargetStore,
@@ -495,14 +538,46 @@ function applyRuleArray(
   merge: MergeStrategy,
   regen: RegenFn,
   keyOf: KeyFn,
+  // F63: content keys that exist in the machine's All-Characters store —
+  // incoming per-character rules matching one are dropped in BOTH merge modes
+  // (they'd double-fire on top of the global).
+  skipGlobalKeys?: Set<string>,
 ) {
   if (!Array.isArray(incomingRaw) || incomingRaw.length === 0) return
-  const incoming = regen(incomingRaw)
+  let incoming = regen(incomingRaw)
+  if (skipGlobalKeys && skipGlobalKeys.size > 0) {
+    incoming = incoming.filter(it => !skipGlobalKeys.has(keyOf(it)))
+  }
   if (merge === 'replace') { store.write(suffix, incoming); return }
   const existing = (store.read(suffix) as unknown[] | undefined) ?? []
   const seen = new Set(existing.map(keyOf))
   const merged = [...existing, ...incoming.filter(it => !seen.has(keyOf(it)))]
   store.write(suffix, merged)
+}
+
+// F63: import the bundle's All-Characters rules into THIS machine's global
+// store. Always a MERGE (never replace — the Named Colors model for shared
+// data: checking the category means "add the exporter's globals", not "wipe
+// mine"); content-identical rules are skipped; ids regenerate (another
+// machine's ids); asGlobalRules re-normalizes always-active. Dispatches the
+// F37 change event so every mounted GameWindow re-merges live; the modal's
+// post-import _shared.yaml flush persists it.
+function applyGlobalRules(bag: Record<string, unknown>) {
+  const mergeInto = <T extends { groupIds?: string[]; allGroups?: boolean }>(
+    incomingRaw: unknown, existing: T[], keyOf: KeyFn, regen: RegenFn, save: (rules: T[]) => void,
+  ) => {
+    if (!Array.isArray(incomingRaw) || incomingRaw.length === 0) return
+    const seen = new Set(existing.map(keyOf))
+    const fresh = asGlobalRules(regen(incomingRaw) as T[]).filter(it => !seen.has(keyOf(it)))
+    if (fresh.length > 0) save([...existing, ...fresh])
+  }
+  mergeInto(bag.highlights,  loadHighlights(GLOBAL_RULES_SCOPE),  hlKey,  regenHighlights, r => saveHighlights(GLOBAL_RULES_SCOPE, r))
+  mergeInto(bag.triggers,    loadTriggers(GLOBAL_RULES_SCOPE),    trKey,  regenTriggers,   r => saveTriggers(GLOBAL_RULES_SCOPE, r))
+  mergeInto(bag.macros,      loadMacros(GLOBAL_RULES_SCOPE),      maKey,  regenSimple,     r => saveMacros(GLOBAL_RULES_SCOPE, r))
+  mergeInto(bag.aliases,     loadAliases(GLOBAL_RULES_SCOPE),     alKey,  regenSimple,     r => saveAliases(GLOBAL_RULES_SCOPE, r))
+  mergeInto(bag.mutes,       loadMutes(GLOBAL_RULES_SCOPE),       muteKey, regenSimple,    r => saveMutes(GLOBAL_RULES_SCOPE, r))
+  mergeInto(bag.substitutes, loadSubstitutes(GLOBAL_RULES_SCOPE), subKey,  regenSimple,    r => saveSubstitutes(GLOBAL_RULES_SCOPE, r))
+  document.dispatchEvent(new CustomEvent('lichborne:global-rules-changed'))
 }
 
 function applyGroupsModes(store: TargetStore, bag: Record<string, unknown>, merge: MergeStrategy) {
@@ -552,34 +627,9 @@ function regenTriggers(items: unknown[]): unknown[] {
   })
 }
 
-// ── Content dedup keys (mirror ImportWizard) ────────────────────────────────────
-
-function hlKey(it: unknown): string {
-  const h = it as { pattern?: string; scope?: string; caseSensitive?: boolean }
-  const p = h.caseSensitive ? (h.pattern ?? '') : (h.pattern ?? '').toLowerCase()
-  return `${p}|${h.scope ?? 'match'}|${h.caseSensitive ? 1 : 0}`
-}
-function trKey(it: unknown): string {
-  const t = it as { pattern?: string; caseSensitive?: boolean }
-  const p = t.caseSensitive ? (t.pattern ?? '') : (t.pattern ?? '').toLowerCase()
-  return `${p}|${t.caseSensitive ? 1 : 0}`
-}
-function maKey(it: unknown): string {
-  return String((it as { key?: string }).key ?? '').toLowerCase()
-}
-function alKey(it: unknown): string {
-  return String((it as { input?: string }).input ?? '').toLowerCase()
-}
-function muteKey(it: unknown): string {
-  const g = it as { pattern?: string; mode?: string; scope?: string; caseSensitive?: boolean }
-  const p = g.caseSensitive ? (g.pattern ?? '') : (g.pattern ?? '').toLowerCase()
-  return `${p}|${g.mode ?? 'phrase'}|${g.scope ?? 'line'}|${g.caseSensitive ? 1 : 0}`
-}
-function subKey(it: unknown): string {
-  const g = it as { pattern?: string; mode?: string; replacement?: string; caseSensitive?: boolean }
-  const p = g.caseSensitive ? (g.pattern ?? '') : (g.pattern ?? '').toLowerCase()
-  return `${p}|${g.mode ?? 'phrase'}|${g.replacement ?? ''}|${g.caseSensitive ? 1 : 0}`
-}
+// ── Content dedup keys ──────────────────────────────────────────────────────────
+// Moved to ruleIdentity.ts (F63) — ONE definition shared by Transfer's dedup,
+// the global-awareness filter, and the Automations per-rule scope move.
 
 // ── Misc helpers for the UI ─────────────────────────────────────────────────────
 

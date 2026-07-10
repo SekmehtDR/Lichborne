@@ -1,26 +1,32 @@
-## What's new in v0.15.1
+## What's new in v0.15.2
 
-### New — Moons [Beta], the second Lichborne Experience
+### Your fingers already know this client
 
-- **Elanthia's sky, as a living dial.** Open **Experiences → Moons** and the three moons — dark **Katamba**, ember-red **Yavash**, pale-blue **Xibar** — arc across a drawn sky, each positioned by how much of its transit remains. Moons that are up show **"sets in 88m"**; moons below the horizon wait dimmed underneath with **"rises in 152m"**. The countdowns tick in real time, and a small footer always tells you how fresh the data is.
-- **A real sun in a sky that lives.** A golden sun rides the same arc as the moons all day and waits below the horizon at night, with its own rise/set countdowns — positioned from the same community data moonwatch uses, plus the game's own sunrise/sunset announcements as they happen. The whole sky follows: bright at midday, warm sunrise and sunset glows at the horizon, deepening night with stars that fade in through twilight and wink out before dawn. Anything about to rise or set breathes gentle horizon rings (expanding for a rise, drawing inward for a set) — and all motion respects your epilepsy-safe setting.
-- **Powered by the community moonwatch script.** The moon feed comes from **moonwatch** (crowd-sourced by players across Elanthia): run `;moonwatch window` on any Lich character and the sky lights up on its next report. Until then, the window explains exactly what to do.
-- **A sky with a sense of place.** A mountain silhouette lines the horizon; moons that set travel a shallow underground path back to where they'll rise (nothing ever just vanishes); anything about to rise or set breathes gentle horizon rings; and **hovering any body tells its story** — Katamba burnt by the World Dragon's breath, Yavash's celestial fire, Xibar's pristine ice — along with the clock time it next rises or sets. The footer tracks the next event and always shows how fresh the data is.
-- Like the Living Tableau, it has hover **A− / A+** text sizing and a **⚙ "Show in this scene"** menu — the sun, the living sky, countdowns, name labels, the silhouette, and the rise/set effects each toggle independently and are remembered per window. It's marked **[Beta]**, costs nothing until you open it, and all motion respects the epilepsy-safe setting. Weather itself is the planned next layer. *(Requested and art-directed by Sekmeht.)*
+- **The numpad moves you, out of the box.** The classic movement pad from Genie, Frostbite, and Wrayth is now set up automatically: **Num8/2/4/6** = north/south/west/east, the corners are the diagonals, **Num5** = out, **Num0** = down, **Num.** = up. Any key you'd already bound is left alone, and they're ordinary macros — edit or delete them like any other. (Digits still type from the top row, exactly like the classic clients.)
+- **Type `n;n;e` like you always have.** Semicolons chain commands on one line, the Genie way. Lich commands are completely safe — anything starting with `;` goes to Lich untouched — and `\;` sends a literal semicolon.
+- **Just start typing.** Wherever your focus landed (the map, a panel, a button you just clicked), printable keys now go to the command bar instead of vanishing — the Genie/Frostbite behavior. No more lost keystrokes mid-hunt.
+- **Your command line remembers.** ↑/↓ history survives restarts (per character), pressing ↑ no longer eats the line you were halfway through typing (↓ brings it back), and **Esc** clears the command line — the classic reflex.
+- New characters get a one-time hint in the command bar pointing at the `/` client commands; it disappears once you've played and never bothers veterans.
 
-### Experiences can now live as panel tabs
+### Find things faster
 
-- **Save the screen space.** Every panel's **+** button now lists the Lichborne Experiences below a separator, each marked with an **[e]** badge — add Moons (or the Living Tableau) as a tab right beside your Thoughts and Combat panels instead of a separate floating window. The tab itself wears the **[e]** too, so the Moons *Experience* never gets mistaken for the moonwatch script's "Moons" text stream. Works in both Static and Windowed layouts, the panel's own A− / A+ sizes it, your ⚙ scene choices carry over, and the tab travels with your layout like any other.
+- **Ctrl+F searches the live game window.** Type a word, land on its most recent mention, walk older/newer matches with **Enter / Shift+Enter**, **Esc** to get back to playing. No log-viewer detour, and your view stays put until you jump back to the bottom.
+- **Settings has a search box.** Type "font" or "log" and watch the window filter to matching settings, with a section rail for one-click jumps.
 
----
+### Quality of life, at scale
 
-## What's new in v0.15.0
+- **⟲ Reconnect Last.** The launcher remembers which characters you had connected — across all your windows — and brings the whole crew back with one click. Already-connected characters are skipped, your "separate windows" preference is honored, and if an account already has a *different* character on it, Lichborne asks which one you want (keep who's connected, or switch to who you had last time) instead of bouncing anyone.
+- **Rules for ALL your characters.** The Automations window now has an **All Characters** scope (next to the tabs): highlights, triggers, macros, aliases, **mutes, and substitutes** created there apply to every character on every account — edit once, everyone gets it, instantly, even in other windows. Each character's own rules still win any conflict, and nothing about your existing per-character setup changes. (The scope switch stays put on every tab — it's simply greyed out on Groups, the one place it can't apply.) *(Long requested by Binu.)*
+- **Move rules between scopes with one click.** Already perfected a highlight on your main? Every rule editor now has an **"Applies to"** switch — flip a rule from *This Character* to *All Characters* (or back) and it moves, never copies: if an identical rule already exists on the other side, Lichborne removes the extra and tells you. **Transfer** understands globals too — your All-Characters rules travel as their own category, and importing an old character bundle never re-creates a rule you've since made global. *(Requested by Sekmeht.)*
 
-### The platform release
+### Experiences polish
 
-- **Lichborne's engine jumped two years forward.** The app now runs on Electron 43 (Chromium 150 / Node 24) — up from a version that had aged out of security support. That means all the browser-engine security patches from the last two years, plus the performance work that came with them. No features changed in this release; if anything *feels* different (font rendering, scrolling, window behavior), please report it — that's exactly what this release is shaking out.
-- **A smaller installer.** A packaging cleanup stopped shipping several libraries twice, so the download and install footprint shrink with no change in behavior.
-- **Better Windows taskbar behavior.** Lichborne now registers its own app identity with Windows, so pinning it to the taskbar and any notifications group correctly under Lichborne instead of a generic Electron entry.
-- **For the curious:** your profiles, settings, logs, and automations are completely untouched by this upgrade — it's the same app on a newer engine.
+- **Scene options on tabs.** The ⚙ "Show in this scene" choices (hide the Moons horizon or sun, mute the Tableau's thoughts, and more) now appear on Experience **tabs** too — hover the tab's corner next to A−/A+ — not just on floating Experience windows. It's one set of preferences per Experience: change a layer in the tab and the floating copy follows, and vice versa. The whole control cluster also sits clear of the Moons footer now instead of overlapping its text. *(Reported by Sekmeht.)*
 
----
+### Fixes
+
+- **Stream panels stay glued to the newest line.** Thoughts (and other stream panels) in floating windows could silently stop following after a resize or layout change until you scrolled to the bottom once — fixed at the root: only a real scroll un-pins now, and resizes snap the view back to the bottom instead. *(Reported by Sekmeht.)*
+- **The Moons horizon now reaches both edges of a wide window.** Maximized panels used to show the sky stretching full-width while the mountains and ground sat centered with gaps — fixed. *(Reported by Sekmeht.)*
+- Assorted under-the-hood correctness: macros no longer fire into the Maps overlay or Lich Dashboard while they're open, and pressing ↑ with an empty history no longer wipes what you'd typed.
+- **More safety nets behind the scenes.** This release's new features went through two dedicated bug-audit passes before reaching you, and the trickiest logic — the All-Characters rule system, Transfer's duplicate protection, Reconnect Last's account rules, the `;` command splitting — is now locked by automated regression suites that run before every release.
+

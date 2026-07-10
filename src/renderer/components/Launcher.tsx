@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { CharacterProfile } from '../profile-types'
+import { loadLastSessionCharacters } from '../profile'
 import ContextMenu from './ContextMenu'
 import CharacterNotesEditor, { guildLabel } from './CharacterNotesEditor'
 import '../styles/launcher.css'
@@ -43,6 +44,10 @@ interface Props {
   // v0.8.0 (F21): clicking the Bulk Connect button. Launcher surfaces the
   // current connectable character list to App so it can present the picker.
   onBulkConnect?: (characters: LauncherCharacter[]) => void
+  // F62 (v0.15.2): clicking "Reconnect Last". Launcher passes the saved
+  // last-session set already matched to existing, non-hidden tiles; App
+  // filters out already-connected characters and runs the bulk-connect flow.
+  onReconnectLast?: (characters: LauncherCharacter[]) => void
 }
 
 // Game-section ordering inside an account. DR (and its DRT variant) come
@@ -60,14 +65,30 @@ function LauncherTopBar({
   onAddNew,
   onBulkConnect,
   bulkConnectEnabled,
+  onReconnectLast,
+  reconnectCount = 0,
 }: {
   onOpenLichSetup: () => void
   onAddNew?: () => void
   onBulkConnect?: () => void
   bulkConnectEnabled: boolean
+  onReconnectLast?: () => void
+  reconnectCount?: number
 }) {
   return (
     <div className="launcher-topbar">
+      {/* F62: leads the bar — the most likely first action on a fresh launch.
+          Rendered only when the saved last-session set matches existing tiles,
+          so a first-run launcher never shows it (quiet by default). */}
+      {onReconnectLast && reconnectCount > 0 && (
+        <button
+          className="launcher-topbar-btn launcher-topbar-btn--bulk"
+          onClick={onReconnectLast}
+          title={`Reconnect the ${reconnectCount} character${reconnectCount === 1 ? '' : 's'} from your last session (already-connected ones are skipped)`}
+        >
+          ⟲ Reconnect Last ({reconnectCount})
+        </button>
+      )}
       {onBulkConnect && (
         <button
           className="launcher-topbar-btn launcher-topbar-btn--bulk"
@@ -327,7 +348,7 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect }: Props) {
+export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<LauncherCharacter | null>(null)
@@ -452,6 +473,24 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
     onBulkConnect(characters)
   }
 
+  // F62: the saved last-session set matched to EXISTING, NON-HIDDEN tiles
+  // (deleted/hidden characters silently drop out; saved order — the original
+  // login order — is preserved). Recomputed per render: the saved list is a
+  // tiny localStorage read and `characters` only changes on refresh.
+  const lastSessionTiles: LauncherCharacter[] = (() => {
+    if (!onReconnectLast || !characters) return []
+    const tiles = new Map(
+      characters.filter(c => !c.hidden).map(c => [`${c.account}:${c.name}`.toLowerCase(), c]),
+    )
+    return loadLastSessionCharacters()
+      .map(e => tiles.get(`${e.account}:${e.name}`.toLowerCase()))
+      .filter((c): c is LauncherCharacter => !!c)
+  })()
+
+  function handleReconnectLastClick() {
+    if (lastSessionTiles.length > 0) onReconnectLast?.(lastSessionTiles)
+  }
+
   async function handleSaveNotes(c: LauncherCharacter, patch: { guild: string | undefined; circle: number | undefined; notes: string | undefined }) {
     try {
       await patchCharacterProfile(c.name, patch)
@@ -482,6 +521,8 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
             onAddNew={onAddNew}
             onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
             bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
+            onReconnectLast={handleReconnectLastClick}
+            reconnectCount={lastSessionTiles.length}
           />
         )}
         {!compact && (
@@ -529,6 +570,8 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           onAddNew={onAddNew}
           onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
           bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
+          onReconnectLast={handleReconnectLastClick}
+          reconnectCount={lastSessionTiles.length}
         />
       )}
       {!compact && (

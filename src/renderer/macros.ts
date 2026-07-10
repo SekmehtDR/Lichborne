@@ -45,8 +45,10 @@ export function loadAliases(character: string): AliasRule[] {
   } catch { return [] }
 }
 
-export function saveAliases(character: string, rules: AliasRule[]): void {
-  safeSetItem(aliasKey(character), JSON.stringify(rules))
+// Returns the write's success flag (false = quota, already toasted) — see
+// saveHighlights' note; the F63 scope move aborts on a failed target write.
+export function saveAliases(character: string, rules: AliasRule[]): boolean {
+  return safeSetItem(aliasKey(character), JSON.stringify(rules))
 }
 
 export function loadMacros(character: string): MacroRule[] {
@@ -57,8 +59,8 @@ export function loadMacros(character: string): MacroRule[] {
   } catch { return [] }
 }
 
-export function saveMacros(character: string, rules: MacroRule[]): void {
-  safeSetItem(macroKey(character), JSON.stringify(rules))
+export function saveMacros(character: string, rules: MacroRule[]): boolean {
+  return safeSetItem(macroKey(character), JSON.stringify(rules))
 }
 
 // ── Factories ─────────────────────────────────────────────────────────────────
@@ -120,6 +122,29 @@ export function formatKeyCombo(e: KeyboardEvent): string {
 export function matchKeyCombo(combo: string, e: KeyboardEvent): boolean {
   if (!combo) return false
   return formatKeyCombo(e) === combo
+}
+
+// ── Typed-input command separator (F59, v0.15.2) ─────────────────────────────
+// Genie's model: `n;n;e` typed in the command bar is three commands. Rules:
+//   - A line whose first non-space char is ';' is a LICH command — returned
+//     verbatim, never split (Lich commands can legally contain ';', e.g.
+//     `;e Vars['x'] = 'a;b'` — splitting would corrupt them).
+//   - Otherwise split on ';', with `\;` escaping a literal ';' (the escape is
+//     resolved in the returned parts). Parts are trimmed; empties dropped.
+// The separator is hardcoded ';' (Genie's default separatorchar — the import
+// layer makes the same assumption, see import/macroAction.ts). Slash commands
+// never reach this: dispatchUserText handles a '/'-leading line first.
+export function splitTypedCommands(text: string): string[] {
+  if (text.trimStart().startsWith(';')) return [text]
+  const parts: string[] = []
+  let cur = ''
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && text[i + 1] === ';') { cur += ';'; i++; continue }
+    if (text[i] === ';') { parts.push(cur); cur = ''; continue }
+    cur += text[i]
+  }
+  parts.push(cur)
+  return parts.map(p => p.trim()).filter(p => p.length > 0)
 }
 
 // ── Interpolation ─────────────────────────────────────────────────────────────

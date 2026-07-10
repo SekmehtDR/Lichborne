@@ -119,6 +119,20 @@
     - 35.5 Build phases
     - 35.6 Performance contract — scene work is OFF until an Experience is open
     - 35.7 Conversation gravity (Tableau layout)
+36. [Automation Analytics — usage stats & health](#36-automation-analytics--usage-stats--health-shipped-v0144)
+37. [Slash Commands ("Client Commands")](#37-slash-commands-client-commands--designed-2026-07-03-phase-1-built-v0145-phases-23-built-v0146)
+    - 37.1 Why `/` and the product frame
+    - 37.2 Syntax
+    - 37.3 The palette (the UX heart)
+    - 37.4 Architecture
+    - 37.5 Phasing
+    - 37.6 Toast notifications
+    - 37.7 Maintenance contract
+38. [Command Bar Input Model — history, draft, Esc, first-session hint](#38-command-bar-input-model--history-draft-esc-first-session-hint-f57f58-v0152)
+    - 38.6 `;` command separator (F59)
+    - 38.7 Type-anywhere focuses the bar (F60)
+39. [Global Cross-Character Rules](#39-global-cross-character-rules-f37-shipped-v0152)
+40. [v0.15.2 batch records — search, session restore, settings nav, virtualization decision](#40-v0152-batch-records--search-session-restore-settings-nav-virtualization-decision)
 
 ---
 
@@ -1146,7 +1160,7 @@ Priority order reflects data availability from the protocol and player-facing va
 - [x] Indicators — stance, bleeding, webbed, stunned, hidden, dead (from `<indicator>` elements)
 - [x] Two-row icon bar HUD — RT/CT/stance/status row + compass/hands/spell row (Section 4.8)
 - [x] Prepared spell display (from `<spell>` element)
-- [x] Command history — Up/Down arrow navigation, 200-command buffer (Section 5.6)
+- [x] Command history — Up/Down arrow navigation, 200-command buffer; persisted per character + draft preservation + Esc-clear as of v0.15.2 (F57 — Section 38)
 - [x] Room panel — structured layout with name, desc, objects, players, clickable exits (full direction names)
 - [x] Experience panel — live mindstate tracker: rank / pct / mindstate name / X/34, gradient bars by mindstate level, filters clear skills, exp pulse lines suppressed from main stream
 - [x] Thoughts stream panel (stream routing via `<pushStream>`)
@@ -2518,6 +2532,29 @@ unfocused** bar keeps replace semantics (a template fire starts fresh). Conseque
 re-firing a template while focused in its own non-empty output inserts again — clear the bar for a
 fresh template. Git-verified the fire path was replace-only v0.8.10→v0.13.2; insert mode is new
 capability, not a regression fix.
+
+### 17.15 Default macro seeds (v0.8.3 repeat tokens; F56 numpad movement, v0.15.2)
+
+Two one-time per-character seeds run from GameWindow mount effects, giving a fresh character (or a
+convert's existing character, once) the Stormfront-family keyboard conventions out of the box:
+
+- **`seededRepeatMacros` (v0.8.3):** `Ctrl+Enter` → `{RepeatLast}`, `Alt+Enter` →
+  `{RepeatSecondToLast}`, `NumEnter` → `{ReturnOrRepeatLast}` — the Stormfront/Wrayth repeat keys.
+- **`seededNumpadMovement` (F56, v0.15.2):** the classic movement pad — `Num8/2/4/6` = `n/s/w/e`,
+  corners = the diagonals (`Num7/9/1/3` = `nw/ne/sw/se`), `Num5` = `out`, `Num0` = `down`,
+  `Num.` = `up`. Layout and short-form commands verified against **Frostbite's bundled default
+  profile** (`deploy-files/profiles/frostbite/macros.ini`, Qt keycodes decoded) — the muscle memory
+  Genie/Wrayth/Frostbite converts arrive with. Frostbite's utility keys (`Num+`=look, `Num-`=info,
+  `Num*`=exp, `Num/`=health, Ctrl+numpad=peer) are deliberately NOT seeded — testers personalize
+  those (Morress's `Num+`→LOOK), and the seed stays quiet/minimal (movement is the universal core).
+
+**Shared rules (both seeds):** keys the user already bound are SKIPPED (never override
+customization); the per-character localStorage flag makes each seed once-only, so deleting a seeded
+macro never resurrects it; seeded macros are ordinary `MacroRule`s (editable/deletable like any
+other, ride the Macros Transfer category). The flags themselves are excluded from Profile Transfer
+(§29.3). Note the behavioral consequence, same as the legacy clients: numpad macros match on
+`e.code` (NumLock-independent) and fire globally, so the numpad IS a movement pad — digits type
+from the top row.
 
 ---
 
@@ -5293,7 +5330,7 @@ Core logic in [profileTransfer.ts](src/renderer/profileTransfer.ts). Each per-ch
 | Groups & Modes | `groups`, `modes` (+ `activeGroupStates`/`activeModeId` on Replace) |
 | Contacts | `contacts`, `contact-templates` |
 
-**Excluded:** `seededRepeatMacros`/`mainTopMigrated` (internal), `discoveredStreams` (ephemeral). An allowlist is the safe default: a new key is omitted until explicitly registered, so it can never silently break a target. Adding a new per-character setting ⇒ register it here.
+**Excluded:** `seededRepeatMacros`/`seededNumpadMovement`/`mainTopMigrated` (internal one-time flags), `discoveredStreams` (ephemeral), `commandHistory` (character history, not setup — the `automationStats` precedent). An allowlist is the safe default: a new key is omitted until explicitly registered, so it can never silently break a target. Adding a new per-character setting ⇒ register it here.
 
 ### 29.4 Build (export)
 
@@ -6223,6 +6260,17 @@ YAML → Transfer with no new plumbing. **Slash surface: no command by design** 
 — per-window visual controls whose surface is the window itself; an `/experience` noun stays a
 future consideration.
 
+**Tab-hosted ⚙ (v0.15.2, Sekmeht — "I don't see the layer options anymore").** The ⚙ above was
+floating-window chrome only, so an Experience hosted purely as a PANEL TAB (§34 dual-hosting,
+v0.15.1) had NO path to its layer options. PanelFrame's F31 view-controls corner now adds the same
+⚙ on an active experience tab whose registry def has `options`, opening the identical
+`.exp-inst-options` popover (a `--tab` position modifier — bottom-right, above the A−/A+ stack).
+It edits the SAME instance `hidden` map via two sharedFrameProps (`getExperienceHidden` /
+`onToggleExperienceOption` — B193: one source for both hostings, so window and tab can never
+disagree), with **find-or-create**: a tab-only experience mints a CLOSED instance at the registry
+`defaultRect` purely as the prefs record (open: false — the shelf/layer ignore it until opened).
+Font sizing stays the panel's own F31 A+/A− (unchanged). The popover closes on tab switch.
+
 ### 34.7 Theming, accessibility & guardrails
 
 The standing law applies in full: every color a `--exp-*`/`--hud-*` var cascading from general vars
@@ -6337,7 +6385,10 @@ gates** (procedural fallbacks always).
      stream-id match is read-only (routing/discovery untouched — the `moonWindow` stream stays
      addable as a plain text panel, which IS the text equivalent). Geometry: the viewBox WIDTH
      derives from the drawing area's measured aspect (ResizeObserver, 0×0-guarded per pitfall
-     #83) so single-axis resizes widen the horizon instead of letterboxing; SVG text sizes via
+     #83) so single-axis resizes widen the horizon instead of letterboxing — the width ceiling
+     (5000) is a degenerate-measurement guard ONLY, never a layout limit (B204: the original 1100
+     ceiling triggered on ordinary maximized panels and letterboxed the SVG ground away from the
+     full-width HTML sky layers); SVG text sizes via
      `calc(var(--game-font-size) * k)` — CSS px are SVG user units, so it lives in drawing space
      AND tracks Settings font + the per-window A−/A+ override (the B201 map-LABEL approach); HTML
      chrome anchors to the var + em. ⚙ options are ONE PER VISUAL LAYER, each accurate
@@ -6698,3 +6749,226 @@ A small themed toast stack ([toasts.ts](src/renderer/toasts.ts) + [ToastHost.tsx
 ### 37.7 Maintenance contract — slash commands track the features they drive (Sekmeht, 2026-07-04)
 
 The registry is a FIRST-CLASS control surface with a standing obligation, codified as **CLAUDE.md Principle #11 + pre-merge check #5**: every new user-facing feature gets its `/command` (or an explicit, recorded "no command because X" in that feature's DESIGN section), and every feature CHANGE updates its registry entries — executors, options, hints, examples, summary formatters, error messages, and the `SlashLiveData` completion values — in the same change. A drifted command (a hint describing an option that no longer exists, a summary missing a new field) is a shipped bug of the same class as a stale tooltip: it teaches users wrong things with confidence. Concretely: new rule type → the full `add`/`remove`/`list`/`edit` verb set + the panel `openRuleId` plumbing; new toggle/setting → the `/timestamps` shape; new selectable values → completion chips; retired feature → entry removed (fail-closed covers muscle memory with the `/help` hint); renamed concept → old noun kept as a `nounAliases` alias (the `/gag`→mute precedent). Retroactive sweeps at version boundaries include a drift pass over the registry (does every entry still match the feature it drives?).
+
+---
+
+## 38. Command Bar Input Model — history, draft, Esc, first-session hint (F57/F58, v0.15.2)
+
+The command bar's input-layer behaviors, consolidated from the v0.15.2 quick-wins pass (the "your
+fingers already know Lichborne" track). All logic lives in GameWindow (`handleCommandKey` /
+`dispatchUserText`); the persistence helper is [commandHistory.ts](src/renderer/commandHistory.ts).
+
+### 38.1 History — persisted per character
+
+The ↑/↓ recall buffer (≤200 entries, most-recent-first, consecutive-duplicate suppressed) is
+persisted on the `commandHistory` scopedKey: loaded once per mount (lazy state — a bare
+`useRef(load(...))` would re-run the localStorage read every render), written synchronously on every
+push (tiny payload; the write is try/catch'd, NOT `safeSetItem` — history is background telemetry
+and must never toast mid-play; a quota-failed write just skips while the in-memory ref keeps the
+session's history). It rides the dynamic `state:` pipeline into the profile YAML for free and is
+deliberately NOT in `TRANSFER_CATEGORIES` (character history, not setup — the `automationStats`
+precedent, §29.3). **Push POLICY is unchanged** (CLAUDE.md pitfall #31: only the bar's normal Enter
+and `{ReturnOrRepeatLast}`'s typed case push — repeat tokens never pollute history).
+
+### 38.2 Draft preservation (the shell model)
+
+Pressing ↑ from the live line (history index −1) stashes the in-progress text in `historyDraftRef`;
+↓ back to the bottom restores it instead of discarding it. Editing a recalled entry resets the index
+to −1 (the existing `onChange` behavior), so the edited text becomes the next draft — exactly how
+shells behave. Companion fix: ↑ with an EMPTY history is now a no-op (it used to fall through
+`Math.min(0, −1) = −1` and wipe the typed line).
+
+### 38.3 Esc clears the line
+
+The classic Stormfront/Genie reflex. Layered UNDER the slash palette's Esc (the palette's
+`handleKey` runs first in `handleCommandKey`): first Esc dismisses an open palette, second clears
+the line. Gated on non-empty so Esc on an empty bar stays inert. Clearing also resets the history
+index and the stashed draft.
+
+### 38.4 First-session hint (F58)
+
+The input's `placeholder` — *"Type a game command — or / for Lichborne client commands"* — is the
+passive discoverability surface for §37 (there was previously none: the palette only appears after
+`/` is already typed). Gated on the INITIAL history load being empty, so it shows for the whole of a
+character's first session and never again from the next mount on — quiet-by-default for veterans
+(polish standard #1). Placeholder color is an explicit `var(--text-faint)` (Chromium's default
+placeholder grey is a literal — the pitfall #34 light-theme class).
+
+### 38.5 Slash surface — none, by design
+
+F57/F58 are input-layer behaviors of the bar itself, not client capabilities to invoke: history
+recall/draft/Esc are keystrokes, and the hint is a one-time passive affordance. Nothing here is
+meaningfully drivable by a `/command` (recorded per pre-merge check #5). If a history-SEARCH feature
+ships later (F50), THAT gets a surface (likely a keystroke + palette, same infrastructure as §37.3).
+The same recorded no-command decision covers §38.6/38.7 below (a separator and a focus behavior are
+not invocable capabilities).
+
+### 38.6 `;` command separator (F59, v0.15.2)
+
+`n;n;e` typed in the bar is three commands — the Genie reflex. `splitTypedCommands`
+([macros.ts](src/renderer/macros.ts), harness-covered) runs in `dispatchUserText` AFTER slash
+handling: **a line whose first non-space char is `;` is a LICH command, returned verbatim and never
+split** (Lich commands can legally contain `;` — `;e Vars['x'] = 'a;b'` must not be corrupted);
+`\;` escapes a literal `;`; parts are trimmed, empties dropped, and each part runs the full
+alias/echo/send/log tail independently (aliases expand per command). History keeps the RAW typed
+line — ↑ recalls `n;n;e` whole and `{RepeatLast}` replays it through the same split. The separator
+is hardcoded `;` (Genie's default `separatorchar`; the import layer assumes the same). QuickSend
+deliberately does NOT split — it targets other characters' sessions, the same reasoning as its `/`
+exclusion (§37.4). A `//`-escaped line (literal `/text`) DOES split like any game line.
+
+### 38.7 Type-anywhere focuses the bar (F60, v0.15.2)
+
+The Genie/Frostbite model: a printable keystroke that would otherwise be lost (focus sitting on a
+button, the map, a panel, or body after a click) lands in the command input. Mechanism: the global
+keydown handler focuses the input during keydown — the browser then delivers the character to the
+newly-focused input, so there is no preventDefault and no manual insertion, and a space aimed at a
+focused button no longer clicks it (button activation fires on keyup, which now targets the input).
+Guards, all load-bearing: no Ctrl/Alt/Meta chords; `e.key.length === 1` only; never while ANY text
+field / select / contentEditable has focus (editor fields keep their keystrokes); never while a
+modal is open (reuses the macro guard's `anyModalOpenRef` — whose missing `showMapOverlay` /
+`showLichDash` deps were found and fixed in the same pass); never mid-IME (`e.isComposing`); never
+when something above already consumed the key (`e.defaultPrevented` — covers macro-bound printable
+keys). **Always on, no setting** — matches the siblings; add a toggle only on a real tester ask.
+
+---
+
+## 39. Global Cross-Character Rules (F37, shipped v0.15.2)
+
+Binu's long-standing ask, built exactly on the settled design (Sekmeht, 2026-05-31 — option A):
+global rules live in a **separate store**, edited via a scope switch, never a per-rule
+promote-to-global toggle (the footgun the design rejected).
+
+### 39.1 Storage — the virtual `_global` scope
+
+Global highlights / triggers / macros / aliases live under a VIRTUAL character scope:
+`lichborne._global.*` (`GLOBAL_RULES_SCOPE` in [characterScope.ts](src/renderer/characterScope.ts);
+the underscore can't collide with a real DR name). This is the load-bearing trick: the four rule
+STORES and the four rule PANELS only ever see `scopedKey(character, …)`, so they work on the global
+store **completely unchanged** — same editors, same analytics UI, same save calls. The disk bridge
+is **`_shared.yaml`** (new optional `SharedProfile.sharedHighlights/Triggers/Macros/Aliases`
+fields; raw-key read/write in [profile.ts](src/renderer/profile.ts) so profile.ts stays free of
+rule-module imports), NOT any {Character}.yaml — there is no `_global` character profile and no
+session for it. Structurally excluded from Profile Transfer and character exports (they scan the
+character's own key prefix).
+
+### 39.2 Runtime — merge, always-active, character-first
+
+GameWindow loads the four global lists once (lazy state) and merges them AFTER the character's own
+lists at each engine input: `useCompiledHighlights([...highlights, ...globalHighlights])`,
+`useTriggerEngine([...triggers, ...globalTriggers])`, and the `macrosRef`/`aliasesRef` mirrors hold
+the merged arrays. **Character-first** so every conflict resolves to the character's rule
+(equal-specificity highlight ties are first-in-array; `resolveMacro`/`resolveAlias` take the first
+match). `asGlobalRules` normalizes globals to `allGroups: true, groupIds: []` at every load —
+groups/modes are per-character concepts (their nanoid ids differ per character), so global rules
+are **always-active by design**; the editors hide the Groups row in Global scope (`hideGroups`
+prop) rather than show a control that can't apply. Merged arrays are DERIVED, never saved.
+
+### 39.3 Live sync
+
+An AutomationsPanel Global-scope save dispatches `lichborne:global-rules-changed` (same-window —
+a `storage` event never fires in the writing window, the analytics-toggle precedent) and schedules
+the `_shared.yaml` flush; other windows hear the `storage` event on the `lichborne._global.` prefix
+(the theme-sync precedent). Every mounted GameWindow listens for both and re-merges — edits reach
+every character in every window without a remount.
+
+### 39.4 UI
+
+AutomationsPanel header gains a segmented **"This Character | All Characters"** switch, rendered
+only on the four scope-capable tabs (Mutes/Substitutes/Groups stay per-character — the switch hides
+rather than disabling). Global scope re-points a `CharacterProvider` at `_global` around the panel
+body; panel keys include the scope so switching remounts (each panel loads its list once on mount).
+Prefill/open-rule props carry character rule ids — harmless no-ops in Global scope.
+
+### 39.5 Deliberately deferred (recorded)
+
+- **Global contacts** — contacts are runtime-MUTATED by presence tracking (lastSeen / timeSpentMs
+  buffers, pitfall #36); a shared store would be written concurrently by every session in every
+  window. Needs its own design (probably main-owned, like the roster). Do not bolt it onto the
+  virtual-scope model.
+- ~~**Global mutes/substitutes** — same mechanism would work; deferred until asked for.~~
+  **SHIPPED same release at Sekmeht's ask:** mutes + substitutes are now scope-capable — same
+  virtual-scope storage (`sharedMutes`/`sharedSubstitutes` in `_shared.yaml`), same character-first
+  compile merge in GameWindow (`compileMutes`/`compileSubstitutes` over `[...character, ...global]`),
+  same "Applies to" move control (muteKey/subKey identity), same Transfer coverage (in the
+  globalRules category + global-skip filters on the per-character mute/sub imports). Only
+  **Groups & Modes** remains per-character — and the header scope switch now renders on EVERY tab,
+  greyed with an explanatory tooltip on Groups, so the header buttons never shift position between
+  tabs (Sekmeht's call: disabled-in-place beats disappearing).
+- **Slash surface** — `/highlight add` etc. create CHARACTER rules; a `global` flag on the add
+  verbs is the recorded follow-up (pre-merge check #5: no command yet, because the SlashContext's
+  apply functions are character-bound and the scope switch is the v1 surface). Same recorded
+  deferral covers a `/… move` verb for §39.6's scope move.
+- **Analytics badges in Global scope** — fires are recorded under each CHARACTER's stats map (the
+  prune now counts global ids as live there), so the Global-scope editor's per-rule badges read the
+  unused `_global` map and show no counts. Cross-character aggregation is the fix if testers care.
+
+### 39.6 Per-rule scope move — "Applies to" (F63, same release)
+
+Sekmeht's follow-up ask ("move one from this character to all characters… a toggle for 'this
+character' or 'all characters'"), reconciled with 39.0's rejected-toggle rationale: the STORAGE
+model is untouched (two separate stores, no per-rule scope field) — the toggle is a **deliberate
+MOVE action**. Each of the four editors gains an **"Applies to: This Character | All Characters"**
+segmented row (rendered only when hosted by the Automations panel — standalone hosting passes no
+`onMoveScope`); the active side is an inert state marker, the inactive side moves the rule:
+
+- Remove from the source store; if a **content-identical** rule (ruleIdentity.ts keys — the SAME
+  definition Transfer's dedup uses) already exists in the target store, add nothing and toast
+  "already exists — duplicate removed". **A move can never mint a duplicate.**
+- Promotion normalizes group gating away (`asGlobalRules`); the id travels with the rule so its
+  per-character analytics history stays attached. Demotion's consequence (every OTHER character
+  loses the rule) is stated in the button tooltip; the action is one-click-reversible, so no
+  confirm dialog (revisit on tester feedback).
+- The move passes the **draft** (unsaved edits included — a move is save-and-move), syncs both
+  stores the F37 way (shared-YAML flush + `lichborne:global-rules-changed` + character reload/
+  profile save), and remounts the panel via `importNonce` (a cross-store edit, like an import).
+
+### 39.7 Transfer global-awareness (F63, same release)
+
+Two additions to Profile Transfer (§29), so globals and Transfer can't fight each other:
+
+1. **"Global Rules (All Characters)" category** — shared-store data (the Named Colors model, NOT
+   the source character's YAML): exports the machine's four global lists; importing **always
+   MERGES** into the destination's global store regardless of the Append/Replace choice (Replace
+   is a per-character intent; a shared store is never wiped by it), skipping content-identical
+   rules, regenerating ids, re-normalizing always-active, and dispatching the F37 change event so
+   live windows re-merge. All five registration points done (entry, count, build, order, switch —
+   the v0.14.0 Experiences lesson).
+2. **Global-aware per-character import** — the four per-character rule categories filter incoming
+   rules whose content key already exists in the destination's GLOBAL store, in BOTH merge modes
+   (a rule promoted to global must not come back as a per-character copy that double-fires).
+   `globalRules` runs BEFORE the per-character categories in the apply order so the filter sees
+   the freshly-merged global store. Mutes/substitutes have no global store — no filter.
+
+---
+
+## 40. v0.15.2 batch records — search, session restore, settings nav, virtualization decision
+
+Short records for the rest of the v0.15.2 review batch (full behavior in Tracker.md):
+
+- **F49 — Ctrl+F in-scrollback search** ([ScrollbackSearch.tsx](src/renderer/components/ScrollbackSearch.tsx)):
+  a pure view over the `lines` data model (joined segment text — WYSIWYG, pitfall #89); new query
+  lands on the MOST RECENT match, Enter = older / Shift+Enter = newer, wrapping; jumps un-pin first
+  then `scrollToIndex({align:'center'})` — **no new scroll mechanism** (pitfall #68); the active
+  hit's wrapper gets an accent-outline class (TextLineRow memo props untouched); un-pinned buffer
+  never trims, so indices stay stable while searching (pitfall #81). Ctrl+F intercepted in the
+  global keydown (Electron has no native find), inert while modals are open.
+- **F62 — Reconnect Last Session**: primary window snapshots the all-windows roster to
+  `SharedProfile.lastSessionCharacters` on every NON-EMPTY change (non-empty-only so shutdown /
+  disconnect-all can't wipe it); the launcher's "⟲ Reconnect Last (N)" button feeds the saved set —
+  matched to existing non-hidden tiles, minus already-connected — into `runBulkConnect`, honoring
+  the separate-windows preference. Window-arrangement restore deferred.
+- **F61 — Settings search + section rail**: filter box (label/section-name substring) + a left rail
+  of the six sections (hidden while searching); rows wrapped mechanically, zero setting-logic
+  changes, theme vars only.
+- **Stream-panel virtualization — evaluated, DEFERRED**: rows are capped at 500 and `TextLineRow`
+  is memoized, so an append reconciles ≤500 memo-bailing children — B172's profiling already moved
+  the real per-line costs out of render. Virtualizing would rewrite the exact scroll surface B203
+  just fixed (uncommitted at decision time), and the main window needed six iterations
+  (B33→B158) to get Virtuoso pinning right. **Re-open only with a measured case, after B203
+  soaks.** Do not reach for `content-visibility`/`contain` shortcuts either — pitfall #23's class.
+- **Programmatic coverage (Sekmeht's ask, same version)**: the batch's pure logic is locked by
+  `tmp-rules-harness` (machine-local, 34 cases — ruleIdentity, `asGlobalRules` + the `_global`
+  store, `applyProfileImport` global-awareness per §39.7, the `_shared.yaml` bridge, and
+  `planReconnect` in [reconnectPlan.ts](src/renderer/reconnectPlan.ts) — F62's eligibility rules
+  extracted pure precisely for this) plus the F59 split cases in `tmp-cmd-harness`. The version's
+  test plan tags harness-locked items `[auto]`; the React wiring stays the manual pass.

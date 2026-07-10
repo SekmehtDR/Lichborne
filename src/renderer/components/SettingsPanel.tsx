@@ -101,6 +101,22 @@ function RadioGroup<T extends string>({ label, value, options, onChange, disable
   )
 }
 
+// ── F61: settings search + section nav ─────────────────────────────────
+// Section names in render order — drives the nav rail. Keep in sync with the
+// `sec*` section wrappers in the JSX below.
+const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'Lich Setup'] as const
+
+// Row-visibility helper for the global settings filter: empty query shows
+// everything; otherwise a row stays visible when the (lowercased, trimmed)
+// query appears in its section name or any of its label texts / keywords.
+// Module-scope on purpose (UX polish standard #4 — no inline component
+// types / helpers recreated per render).
+function rowVisible(q: string, section: string, ...labels: string[]): boolean {
+  if (!q) return true
+  if (section.toLowerCase().includes(q)) return true
+  return labels.some(l => l.toLowerCase().includes(q))
+}
+
 export default function SettingsPanel({ settings, character, onChange, layoutMode, onClose }: Props) {
   const inWindowed = layoutMode === 'free'
   const [systemFonts, setSystemFonts] = useState<string[]>([])
@@ -119,6 +135,13 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   // Session Log sub-options are collapsed by default so the section is short —
   // the user sees the master toggle plus a disclosure hinting more is there.
   const [logExpanded, setLogExpanded] = useState(false)
+
+  // F61: global settings filter (separate from the font-family sp-font-search)
+  // + section refs for the nav rail's scrollIntoView jumps. Refs, not ids —
+  // the modal portals to document.body, so ids could collide if a second
+  // SettingsPanel is ever mounted in the same document.
+  const [query, setQuery] = useState('')
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
@@ -208,6 +231,68 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     return first ? first[1] : settings.fontFamily
   })()
 
+  // ── F61: per-row visibility for the global settings filter ──────────────
+  // One boolean per existing row, applied mechanically as `{vX && (…)}` in
+  // the JSX below. A section shows while any of its rows match; the nav rail
+  // hides while a query is active.
+  const q = query.trim().toLowerCase()
+  const searching = q !== ''
+  const vis = (section: string, ...labels: string[]) => rowVisible(q, section, ...labels)
+
+  const vFontFamily    = vis('Display', 'Font family', 'monospace')
+  const vFontSize      = vis('Display', 'Font size', 'game text')
+  const vLineHeight    = vis('Display', 'Line height')
+  const vTextWeight    = vis('Display', 'Text weight')
+  const vPreview       = vis('Display', 'Preview', 'font')
+  const secDisplay     = vFontFamily || vFontSize || vLineHeight || vTextWeight || vPreview
+
+  const vLargePrint    = vis('Accessibility', 'Large Print')
+  const vHighContrast  = vis('Accessibility', 'High Contrast')
+  const vEpilepsy      = vis('Accessibility', 'Epilepsy Safe Mode', 'animations')
+  const vColorBlind    = vis('Accessibility', 'Color Blind Mode', 'deuteranopia', 'protanopia', 'tritanopia')
+  const secAccess      = vLargePrint || vHighContrast || vEpilepsy || vColorBlind
+
+  const vVitalsPos     = vis('Layout', 'Vitals Bar Position')
+  const vCompactVitals = vis('Layout', 'Compact Vitals')
+  const vCompactExp    = vis('Layout', 'Compact Experience Panel')
+  const vIconBarPos    = vis('Layout', 'Icon Bar Position', 'status bar', 'compass')
+  const vTimerStyle    = vis('Layout', 'RT / CT Timer Style', 'roundtime')
+  const secLayout      = vVitalsPos || vCompactVitals || vCompactExp || vIconBarPos || vTimerStyle
+
+  const vAutoLink      = vis('Behavior', 'Auto-link URLs')
+  const vWebSafety     = vis('Behavior', 'Web Link Safety', 'bounce')
+  const vMapAnim       = vis('Behavior', 'Genie Map Animations')
+  const secBehavior    = vAutoLink || vWebSafety || vMapAnim
+
+  const vLogEnabled    = vis('Session Log', 'Enable session logging')
+  const vLogOptions    = vis('Session Log', 'Logging options')
+  const vLogMain       = vis('Session Log', 'Game text')
+  const vLogStreams    = vis('Session Log', 'Stream content')
+  const vLogCommands   = vis('Session Log', 'Commands')
+  const vLogSystem     = vis('Session Log', 'System messages')
+  const vLogCompress   = vis('Session Log', 'Compress old logs')
+  const vLogRetention  = vis('Session Log', 'Keep logs for', 'retention')
+  const vLogMaxRaw     = vis('Session Log', 'Cap uncompressed logs')
+  const vLogUsage      = vis('Session Log', 'Disk usage')
+  const vLogFiles      = vis('Session Log', 'Log files', 'Open Logs Folder')
+  const anyLogSub      = vLogMain || vLogStreams || vLogCommands || vLogSystem
+                      || vLogCompress || vLogRetention || vLogMaxRaw || vLogUsage || vLogFiles
+  const showLogBlock   = vLogOptions || anyLogSub
+  // Section header shows only if something under it will actually render —
+  // the sub-option block is gated on logCfg.enabled, so a sub-row match with
+  // logging disabled must not leave a bare header.
+  const secSessionLog  = vLogEnabled || (logCfg.enabled && showLogBlock)
+  // Display-level courtesy while searching: a matched sub-row must be VISIBLE
+  // (requirement of the filter), so the sublist force-opens without touching
+  // the user's logExpanded state.
+  const logListOpen    = logExpanded || (searching && anyLogSub)
+
+  const vLichRow       = vis('Lich Setup', 'Lich path, port & mode', 'launch', 'connect')
+  const secLichSetup   = vLichRow
+
+  const noMatches = searching
+    && !secDisplay && !secAccess && !secLayout && !secBehavior && !secSessionLog && !secLichSetup
+
   return createPortal(
     <div className="sp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="sp-modal">
@@ -218,11 +303,49 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
 
-        <div className="sp-body">
+        {/* F61: global settings filter — separate from the font list's sp-font-search */}
+        <div className="sp-searchbar">
+          <input
+            type="text"
+            className="sp-search-input"
+            placeholder="Search settings…"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape' && query) setQuery('') }}
+          />
+          {query !== '' && (
+            <button className="sp-search-clear" onClick={() => setQuery('')} title="Clear search">×</button>
+          )}
+        </div>
+
+        <div className="sp-content">
+
+          {/* F61: section nav rail — hidden while a search query is active */}
+          {!searching && (
+            <nav className="sp-nav">
+              {SECTION_NAMES.map(name => (
+                <button
+                  key={name}
+                  className="sp-nav-item"
+                  onClick={() => sectionRefs.current[name]?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                >
+                  {name}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          <div className="sp-body">
+
+          {noMatches && (
+            <div className="sp-search-empty">No settings match “{query.trim()}”</div>
+          )}
 
           {/* ── Display ─────────────────────────────────────────── */}
+          {secDisplay && <section className="sp-sec" ref={el => { sectionRefs.current['Display'] = el }}>
           <div className="sp-section-label">Display</div>
 
+          {vFontFamily && (
           <div className="sp-font-picker">
             <div className="sp-font-picker-header">
               <span className="sp-field-label">Font family</span>
@@ -264,7 +387,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               )}
             </div>
           </div>
+          )}
 
+          {vFontSize && (
           <div className="sp-field-row">
             <label className="sp-field-label" htmlFor="sp-font-size">
               Font size <span className="sp-field-hint">(game text)</span>
@@ -282,7 +407,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               <button className="sp-num-btn" onClick={() => set('fontSize', Math.min(24, settings.fontSize + 1))}>+</button>
             </div>
           </div>
+          )}
 
+          {vLineHeight && (
           <div className="sp-field-row">
             <label className="sp-field-label" htmlFor="sp-line-height">Line height</label>
             <select
@@ -297,6 +424,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               <option value={2.0}>Double (2.0)</option>
             </select>
           </div>
+          )}
 
           {/* B113: text weight tuning. Positive = faux-bold via stroke
               widening (useful on light themes where Chromium DirectWrite
@@ -304,6 +432,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               Negative = lower font-weight (only renders thinner on fonts
               with light weights; Cascadia Code default ships 200/300/350,
               Consolas / Lucida Console silently fall back to 400). */}
+          {vTextWeight && (
           <div className="sp-field-row">
             <label className="sp-field-label" htmlFor="sp-text-weight">Text weight</label>
             <select
@@ -322,7 +451,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               <option value={0.6}>Boldest (+0.6)</option>
             </select>
           </div>
+          )}
 
+          {vPreview && (
           <div className="sp-preview">
             <div className="sp-preview-label">Preview</div>
             <div
@@ -348,33 +479,36 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
             </div>
           </div>
 
-          <div className="sp-divider" />
+          )}
+          </section>}
 
           {/* ── Accessibility ────────────────────────────────────── */}
+          {secAccess && <section className="sp-sec" ref={el => { sectionRefs.current['Accessibility'] = el }}>
+          <div className="sp-divider" />
           <div className="sp-section-label">Accessibility</div>
 
-          <Toggle
+          {vLargePrint && <Toggle
             label="Large Print"
             description="Larger game text and more spacing throughout the interface"
             checked={settings.largePrint}
             onChange={v => set('largePrint', v)}
-          />
+          />}
 
-          <Toggle
+          {vHighContrast && <Toggle
             label="High Contrast"
             description="Black background, white text, yellow accent — overrides theme colors"
             checked={settings.highContrast}
             onChange={v => set('highContrast', v)}
-          />
+          />}
 
-          <Toggle
+          {vEpilepsy && <Toggle
             label="Epilepsy Safe Mode"
             description="Disables all pulsing animations (RT bar, status indicators)"
             checked={settings.epilepsySafe}
             onChange={v => set('epilepsySafe', v)}
-          />
+          />}
 
-          <RadioGroup
+          {vColorBlind && <RadioGroup
             label="Color Blind Mode"
             value={settings.colorBlind}
             onChange={v => set('colorBlind', v)}
@@ -384,14 +518,15 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               { value: 'protanopia',   label: 'Protanopia',    description: 'Red-green (red-weak) — shifts reds to amber/yellow, greens to teal' },
               { value: 'tritanopia',   label: 'Tritanopia',    description: 'Blue-yellow — shifts blues to purple, cyans to pink' },
             ]}
-          />
-
-          <div className="sp-divider" />
+          />}
+          </section>}
 
           {/* ── Layout ───────────────────────────────────────────── */}
+          {secLayout && <section className="sp-sec" ref={el => { sectionRefs.current['Layout'] = el }}>
+          <div className="sp-divider" />
           <div className="sp-section-label">Layout</div>
 
-          <RadioGroup
+          {vVitalsPos && <RadioGroup
             label="Vitals Bar Position"
             value={settings.vitalsBarPosition}
             onChange={v => set('vitalsBarPosition', v)}
@@ -401,23 +536,23 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               { value: 'top',    label: 'Top',    description: 'Vitals below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Vitals above the command bar' },
             ]}
-          />
+          />}
 
-          <Toggle
+          {vCompactVitals && <Toggle
             label="Compact Vitals"
             description="Slimmer half-height bars with short labels (H: 100%) — frees up ~half a line of game text"
             checked={settings.compactVitals}
             onChange={v => set('compactVitals', v)}
-          />
+          />}
 
-          <Toggle
+          {vCompactExp && <Toggle
             label="Compact Experience Panel"
             description="Text-forward Exp panel: Skill · Ranks · % · learning-rate, with simple summary bars — no progress bars or pickers"
             checked={settings.compactExp}
             onChange={v => set('compactExp', v)}
-          />
+          />}
 
-          <RadioGroup
+          {vIconBarPos && <RadioGroup
             label="Icon Bar Position"
             value={settings.iconBarPosition}
             onChange={v => set('iconBarPosition', v)}
@@ -427,9 +562,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               { value: 'top',    label: 'Top',    description: 'Stance, timers, hands, and compass below the toolbar' },
               { value: 'bottom', label: 'Bottom', description: 'Stance, timers, hands, and compass above the command bar' },
             ]}
-          />
+          />}
 
-          <RadioGroup
+          {vTimerStyle && <RadioGroup
             label="RT / CT Timer Style"
             value={settings.timerStyle}
             onChange={v => set('timerStyle', v)}
@@ -437,92 +572,95 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               { value: 'chips', label: 'Chips', description: 'One chip per second — chips disappear as time counts down' },
               { value: 'bar',   label: 'Bar',   description: 'Classic draining strip that shrinks with remaining time' },
             ]}
-          />
-
-          <div className="sp-divider" />
+          />}
+          </section>}
 
           {/* ── Behavior ─────────────────────────────────────────── */}
+          {secBehavior && <section className="sp-sec" ref={el => { sectionRefs.current['Behavior'] = el }}>
+          <div className="sp-divider" />
           <div className="sp-section-label">Behavior</div>
 
-          <Toggle
+          {vAutoLink && <Toggle
             label="Auto-link URLs"
             description="Detect http/https URLs in game text and make them clickable"
             checked={settings.autoLinkUrls}
             onChange={v => set('autoLinkUrls', v)}
-          />
+          />}
 
-          <Toggle
+          {vWebSafety && <Toggle
             label="Web Link Safety"
             description="Route external URL clicks through Simu's bounce page (play.net/bounce/redirect.asp) — shows a 'you are leaving Play.net' warning before opening any link from game text or a script. Matches Genie's behavior."
             checked={settings.webLinkSafety}
             onChange={v => set('webLinkSafety', v)}
-          />
+          />}
 
-          <Toggle
+          {vMapAnim && <Toggle
             label="Genie Map Animations"
             description="Genie Maps motion — per-room effects (shop glints, water ripples, sparkles) and the camera glide as it follows you. Turn off if the map feels sluggish; the map then snaps instantly with no effects."
             checked={settings.mapAnimations}
             onChange={v => set('mapAnimations', v)}
-          />
-
-          <div className="sp-divider" />
+          />}
+          </section>}
 
           {/* ── Session Log ─────────────────────────────────────── */}
           {/* App-wide settings — shared across all characters (_shared.yaml). */}
+          {secSessionLog && <section className="sp-sec" ref={el => { sectionRefs.current['Session Log'] = el }}>
+          <div className="sp-divider" />
           <div className="sp-section-label">Session Log</div>
 
-          <Toggle
+          {vLogEnabled && <Toggle
             label="Enable session logging"
             description="Write game text to dated log files on disk. Applies to every character. Logs stay on your computer and are never sent anywhere."
             checked={logCfg.enabled}
             onChange={v => setLog('enabled', v)}
-          />
+          />}
 
-          {logCfg.enabled && (
+          {logCfg.enabled && showLogBlock && (
             <>
               <button
                 type="button"
                 className="sp-disclosure"
                 onClick={() => setLogExpanded(e => !e)}
-                aria-expanded={logExpanded}
+                aria-expanded={logListOpen}
               >
-                <span className="sp-disclosure-arrow">{logExpanded ? '▾' : '▸'}</span>
+                <span className="sp-disclosure-arrow">{logListOpen ? '▾' : '▸'}</span>
                 Logging options
               </button>
-              {logExpanded && (
+              {logListOpen && (
             <div className="sp-sublist">
-              <Toggle
+              {(vLogOptions || vLogMain) && <Toggle
                 label="Game text"
                 description="The main game window — room text, speech, combat narration"
                 checked={logCfg.captureMain}
                 onChange={v => setLog('captureMain', v)}
-              />
-              <Toggle
+              />}
+              {(vLogOptions || vLogStreams) && <Toggle
                 label="Stream content"
                 description="Thoughts, combat, death, and any script-driven streams (LichScripts, etc.)"
                 checked={logCfg.captureStreams}
                 onChange={v => setLog('captureStreams', v)}
-              />
-              <Toggle
+              />}
+              {(vLogOptions || vLogCommands) && <Toggle
                 label="Commands"
                 description="Echo of the commands you type, prefixed with >"
                 checked={logCfg.captureCommands}
                 onChange={v => setLog('captureCommands', v)}
-              />
-              <Toggle
+              />}
+              {(vLogOptions || vLogSystem) && <Toggle
                 label="System messages"
                 description="Connect / disconnect notices"
                 checked={logCfg.captureSystem}
                 onChange={v => setLog('captureSystem', v)}
-              />
+              />}
 
-              <Toggle
+              {(vLogOptions || vLogCompress) && <Toggle
                 label="Compress old logs"
                 description="Gzip yesterday-and-older day-files — about 85% smaller. Today's log stays plain text; the in-client viewer reads compressed logs transparently."
                 checked={logCfg.compress}
                 onChange={v => setLog('compress', v)}
-              />
+              />}
 
+              {(vLogOptions || vLogRetention) && (
               <div className="sp-field-row">
                 <label className="sp-field-label" htmlFor="sp-log-retention">
                   Keep logs for <span className="sp-field-hint">(0 = forever)</span>
@@ -546,7 +684,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                   >+</button>
                 </div>
               </div>
+              )}
 
+              {(vLogOptions || vLogMaxRaw) && (
               <div className="sp-field-row">
                 <label className="sp-field-label" htmlFor="sp-log-maxraw">
                   Cap uncompressed logs <span className="sp-field-hint">(0 = no cap)</span>
@@ -570,7 +710,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                   >+</button>
                 </div>
               </div>
+              )}
 
+              {(vLogOptions || vLogUsage) && (
               <div className="sp-field-row">
                 <span className="sp-field-label">
                   Disk usage
@@ -584,7 +726,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                     : '…'}
                 </span>
               </div>
+              )}
 
+              {(vLogOptions || vLogFiles) && (
               <div className="sp-field-row">
                 <span className="sp-field-label">Log files</span>
                 <button
@@ -594,14 +738,16 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                   Open Logs Folder
                 </button>
               </div>
+              )}
             </div>
               )}
             </>
           )}
-
-          <div className="sp-divider" />
+          </section>}
 
           {/* ── Lich Setup ──────────────────────────────────────── */}
+          {secLichSetup && <section className="sp-sec" ref={el => { sectionRefs.current['Lich Setup'] = el }}>
+          <div className="sp-divider" />
           <div className="sp-section-label">Lich Setup</div>
 
           <div className="sp-field-row">
@@ -613,7 +759,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               Open Lich Setup…
             </button>
           </div>
+          </section>}
 
+          </div>
         </div>
       </div>
 

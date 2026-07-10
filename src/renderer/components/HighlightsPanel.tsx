@@ -34,9 +34,16 @@ interface Props {
   openRuleId?: string // v0.14.6: open an existing rule for edit (slash /highlight edit)
   inline?: boolean
   analyticsOn?: boolean
+  // F37/F63 (v0.15.2): which store this panel is editing ('global' = the
+  // Automations panel's All Characters scope — groups row hidden, since global
+  // rules are always-active) + the cross-store MOVE callback for the editor's
+  // "Applies to" control. Both absent when the panel is hosted standalone.
+  scope?: 'character' | 'global'
+  onMoveScope?: (rule: HighlightRule) => void
 }
 
-export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, openRuleId, inline = false, analyticsOn = false }: Props) {
+export default function HighlightsPanel({ onClose, onSaved, prefill, initialTestText, openRuleId, inline = false, analyticsOn = false, scope = 'character', onMoveScope }: Props) {
+  const hideGroups = scope === 'global'
   const character = useCharacter()
   const [rules, setRules]       = useState<HighlightRule[]>(() => loadHighlights(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -289,6 +296,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                   />
                 </div>
 
+                {!hideGroups && (
                 <div className="hp-field">
                   <label className="hp-label">Groups</label>
                   <div className="grp-row">
@@ -305,6 +313,35 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                     )}
                   </div>
                 </div>
+                )}
+
+                {/* F63: per-rule scope — the inactive side MOVES the rule to the
+                    other store (incl. any unsaved edits in the draft). */}
+                {onMoveScope && (
+                <div className="hp-field">
+                  <label className="hp-label">Applies to</label>
+                  <div className="rule-scope-row">
+                    <button
+                      type="button"
+                      className={`rule-scope-btn${scope === 'character' ? ' rule-scope-btn--on' : ''}`}
+                      disabled={scope === 'character'}
+                      onClick={() => onMoveScope(draft)}
+                      title={scope === 'character'
+                        ? 'This rule belongs to this character'
+                        : 'Move this rule to the character you have open — every OTHER character stops getting it'}
+                    >This Character</button>
+                    <button
+                      type="button"
+                      className={`rule-scope-btn${scope === 'global' ? ' rule-scope-btn--on' : ''}`}
+                      disabled={scope === 'global'}
+                      onClick={() => onMoveScope(draft)}
+                      title={scope === 'global'
+                        ? 'This rule applies to every character'
+                        : 'Move this rule to All Characters — it will fire for every character on every account (group gating is removed; global rules are always active)'}
+                    >All Characters</button>
+                  </div>
+                </div>
+                )}
 
                 <div className="hp-field">
                   <label className="hp-label">Pattern</label>

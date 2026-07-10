@@ -70,8 +70,11 @@ export function loadHighlights(character: string): HighlightRule[] {
   } catch { return [] }
 }
 
-export function saveHighlights(character: string, rules: HighlightRule[]): void {
-  safeSetItem(storageKey(character), JSON.stringify(rules))
+// Returns safeSetItem's success flag (false = quota failure, already toasted)
+// so transactional callers — the F63 scope MOVE — can abort instead of
+// removing a rule whose new home never persisted. Ordinary callers ignore it.
+export function saveHighlights(character: string, rules: HighlightRule[]): boolean {
+  return safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newHighlight(pattern = '', scope: 'match' | 'line' = 'line'): HighlightRule {

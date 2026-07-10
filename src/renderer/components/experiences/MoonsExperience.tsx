@@ -167,7 +167,16 @@ function MoonsExperience({ moons, hidden, settings }: ExperienceProps) {
     const ro = new ResizeObserver(entries => {
       const r = entries[0]?.contentRect
       if (!r || r.width <= 0 || r.height <= 0) return
-      const w = Math.max(300, Math.min(1100, H * (r.width / r.height)))
+      // Width ceiling is a DEGENERATE-MEASUREMENT guard, not a layout feature.
+      // It was 1100, which a merely-maximized wide panel exceeds (aspect ≥ 4.4
+      // × H=250) — the clamp then letterboxed the SVG under `xMidYMax meet`,
+      // so the ground/ridges sat centered with side gaps while the HTML sky
+      // layers kept filling the container (B204, Sekmeht's screenshot). 5000
+      // covers any real monitor edge-to-edge (a 5120px-wide strip at 250px
+      // tall is aspect ~20 → w = 5120… clamped only past that) while still
+      // bounding the ridge path against a transient sliver measurement
+      // (e.g. 2000×2px mid-drag → aspect 1000 → w would be 250,000).
+      const w = Math.max(300, Math.min(5000, H * (r.width / r.height)))
       setDynW(Math.round(w / 8) * 8)
     })
     ro.observe(el)
@@ -303,9 +312,11 @@ function MoonsExperience({ moons, hidden, settings }: ExperienceProps) {
           <div className="moons-layer moons-layer--twilight" style={{ opacity: wTwi }} />
         </>
       )}
-      {/* xMidYMax meet is only the CLAMP fallback (extreme aspects hit the
-          300/1100 W bounds): drawing pinned to the bottom so residual
-          letterbox space goes above the sky, never under the ground. */}
+      {/* xMidYMax meet is only the CLAMP fallback (degenerate measurements
+          hit the 300/5000 W bounds — B204: the old 1100 ceiling triggered on
+          ordinary maximized panels and letterboxed the ground): drawing
+          pinned to the bottom so residual letterbox space goes above the sky,
+          never under the ground. */}
       <svg className="moons-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMax meet">
         <defs>
           {/* Lore surfaces (see MOON_STYLE note): soot-black Katamba, ruby

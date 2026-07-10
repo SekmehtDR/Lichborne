@@ -23,6 +23,12 @@ interface Props {
   initialTab?:  'aliases' | 'macros'
   openAliasId?: string // v0.14.6: open an existing alias for edit (slash /alias edit)
   analyticsOn?: boolean
+  // F37/F63 (v0.15.2): which store this panel edits ('global' = All Characters
+  // scope — groups rows hidden) + the cross-store MOVE callback for the
+  // editors' "Applies to" controls. This panel hosts BOTH macro and alias
+  // editors (internal tab), so the callback carries the type.
+  scope?: 'character' | 'global'
+  onMoveScope?: (type: 'macros' | 'aliases', rule: MacroRule | AliasRule) => void
 }
 
 // ── Var Picker ────────────────────────────────────────────────────────────────
@@ -209,7 +215,8 @@ export function KeyBindingField({ value, onChange }: KeyBindingFieldProps) {
 
 // ── Main Panel ────────────────────────────────────────────────────────────────
 
-export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab, openAliasId, analyticsOn = false }: Props) {
+export default function MacrosPanel({ onClose, onSaved, inline = false, initialTab, openAliasId, analyticsOn = false, scope = 'character', onMoveScope }: Props) {
+  const hideGroups = scope === 'global'
   const [tab, setTab]           = useState<Tab>(initialTab ?? 'aliases')
   const character = useCharacter()
   const [aliases, setAliases]   = useState<AliasRule[]>(() => loadAliases(character))
@@ -471,6 +478,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                       />
                     </div>
 
+                    {!hideGroups && (
                     <div className="ma-section">
                       <label className="ma-section-label">Groups</label>
                       <div className="grp-row">
@@ -487,6 +495,35 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         )}
                       </div>
                     </div>
+                    )}
+
+                    {/* F63: per-rule scope — the inactive side MOVES the alias
+                        to the other store (incl. any unsaved draft edits). */}
+                    {onMoveScope && (
+                    <div className="ma-section">
+                      <label className="ma-section-label">Applies to</label>
+                      <div className="rule-scope-row">
+                        <button
+                          type="button"
+                          className={`rule-scope-btn${scope === 'character' ? ' rule-scope-btn--on' : ''}`}
+                          disabled={scope === 'character'}
+                          onClick={() => onMoveScope('aliases', aliasDraft)}
+                          title={scope === 'character'
+                            ? 'This alias belongs to this character'
+                            : 'Move this alias to the character you have open — every OTHER character stops getting it'}
+                        >This Character</button>
+                        <button
+                          type="button"
+                          className={`rule-scope-btn${scope === 'global' ? ' rule-scope-btn--on' : ''}`}
+                          disabled={scope === 'global'}
+                          onClick={() => onMoveScope('aliases', aliasDraft)}
+                          title={scope === 'global'
+                            ? 'This alias applies to every character'
+                            : 'Move this alias to All Characters — it will work for every character on every account'}
+                        >All Characters</button>
+                      </div>
+                    </div>
+                    )}
 
                     <div className="ma-section">
                       <label className="ma-section-label">When I type</label>
@@ -653,6 +690,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                       />
                     </div>
 
+                    {!hideGroups && (
                     <div className="ma-section">
                       <label className="ma-section-label">Groups</label>
                       <div className="grp-row">
@@ -669,6 +707,35 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                         )}
                       </div>
                     </div>
+                    )}
+
+                    {/* F63: per-rule scope — the inactive side MOVES the macro
+                        to the other store (incl. any unsaved draft edits). */}
+                    {onMoveScope && (
+                    <div className="ma-section">
+                      <label className="ma-section-label">Applies to</label>
+                      <div className="rule-scope-row">
+                        <button
+                          type="button"
+                          className={`rule-scope-btn${scope === 'character' ? ' rule-scope-btn--on' : ''}`}
+                          disabled={scope === 'character'}
+                          onClick={() => onMoveScope('macros', macroDraft)}
+                          title={scope === 'character'
+                            ? 'This macro belongs to this character'
+                            : 'Move this macro to the character you have open — every OTHER character stops getting it'}
+                        >This Character</button>
+                        <button
+                          type="button"
+                          className={`rule-scope-btn${scope === 'global' ? ' rule-scope-btn--on' : ''}`}
+                          disabled={scope === 'global'}
+                          onClick={() => onMoveScope('macros', macroDraft)}
+                          title={scope === 'global'
+                            ? 'This macro applies to every character'
+                            : 'Move this macro to All Characters — its key will work for every character on every account'}
+                        >All Characters</button>
+                      </div>
+                    </div>
+                    )}
 
                     <div className="ma-section">
                       <label className="ma-section-label">Key Binding</label>

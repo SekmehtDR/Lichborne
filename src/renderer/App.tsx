@@ -13,7 +13,8 @@ import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
 import { RosterProvider, useRoster } from './RosterContext'
 import { CharacterProvider } from './CharacterContext'
-import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile } from './profile'
+import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile, saveLastSessionCharacters, scheduleSharedProfileSave } from './profile'
+import { planReconnect } from './reconnectPlan'
 import { loadAdvanced, saveAdvanced, gameOptionByCode } from './lichSettings'
 import { initTheme } from './themes'
 import type { LoginCredentials, SessionId, RosterEntry } from '../shared/types'
@@ -75,6 +76,103 @@ function AppShell() {
     })
     return () => { unsubAcquire(); unsubRelease() }
   }, [addSession, removeSession, updateStatus])
+
+  // F62 (v0.15.2): snapshot the live character set for the launcher's
+  // "Reconnect Last" button. Reads the ROSTER (all windows) so decoupled
+  // characters are included; PRIMARY window only (one writer, no cross-window
+  // duplicate writes); NON-EMPTY only, so the shutdown drain / a manual
+  // disconnect-all can never wipe the last good set (a stale offer is
+  // harmless — App filters already-connected characters at reconnect time).
+  // scheduleSharedProfileSave keeps _shared.yaml in step, because
+  // importSharedProfile re-seeds localStorage from YAML on next launch and a
+  // never-exported snapshot would be rolled back by it.
+  useEffect(() => {
+    // CONNECTED entries only (v0.15.2 bug check): a roster entry can be a
+    // DISCONNECTED tab still open in the bar — "last session" means who was
+    // actually on, and a roster of only dead tabs must not overwrite the last
+    // good set (the same `.connected` convention the single-tile conflict
+    // check has always used).
+    const live = roster.filter(r => r.connected)
+    if (!isPrimary || live.length === 0) return
+    const seen = new Set<string>()
+    const entries = live
+      .map(r => ({ account: r.account, name: r.character }))
+      .filter(e => {
+        const k = `${e.account}:${e.name}`.toLowerCase()
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+    saveLastSessionCharacters(entries)
+    scheduleSharedProfileSave()
+  }, [roster, isPrimary])
+
+  // F62 + feel-pass fix (Sekmeht): reconnect eligibility respects DR's ONE
+  // CHARACTER PER ACCOUNT rule. The first cut only skipped characters that
+  // were THEMSELVES connected, so reconnecting a saved character onto an
+  // account where a DIFFERENT character was live bounced the live one — the
+  // exact vetting BulkConnectPicker does at the account level (buildBulkGroups)
+  // that going straight to runBulkConnect skipped. Per Sekmeht's follow-up,
+  // an account conflict is not silently skipped: a chooser modal lists each
+  // conflicted account and the player picks per account — KEEP the connected
+  // character (default) or SWITCH to the saved one (awaited disconnect first,
+  // the continueWithDisconnect model). Nothing connects until the player
+  // confirms; Cancel connects nothing. Conflict detection uses the ROSTER
+  // (all windows), and roster entries carry the sessionId, so a switch can
+  // disconnect a character living in a decoupled window too.
+  type ReconnectConflict = { saved: LauncherCharacter; connectedName: string; connectedSessionId: SessionId; account: string; choice: 'keep' | 'switch' }
+  const [reconnectPrompt, setReconnectPrompt] = useState<{ todo: LauncherCharacter[]; conflicts: ReconnectConflict[] } | null>(null)
+  const [reconnectBusy, setReconnectBusy] = useState(false)
+
+  function handleReconnectLast(picks: LauncherCharacter[]) {
+    if (reconnectPrompt) return
+    // Eligibility lives in the PURE planReconnect (reconnectPlan.ts) so the
+    // rules harness locks it: connected-only roster reads, already-on skips,
+    // account conflicts → chooser rows, one-per-account batch dedup.
+    const plan = planReconnect(picks, roster)
+    if (plan.conflicts.length === 0) {
+      if (plan.todo.length === 0) return
+      const separate = localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true'
+      void runBulkConnect(plan.todo, separate)
+      return
+    }
+    setReconnectPrompt({
+      todo: plan.todo,
+      conflicts: plan.conflicts.map(c => ({ ...c, choice: 'keep' as const })),
+    })
+  }
+
+  function setReconnectChoice(index: number, choice: 'keep' | 'switch') {
+    setReconnectPrompt(p => p && { ...p, conflicts: p.conflicts.map((c, i) => i === index ? { ...c, choice } : c) })
+  }
+
+  async function confirmReconnectPrompt() {
+    if (!reconnectPrompt || reconnectBusy) return
+    const { todo, conflicts } = reconnectPrompt
+    setReconnectBusy(true)
+    try {
+      const switched = conflicts.filter(c => c.choice === 'switch')
+      for (const c of switched) {
+        // Awaited (NOT fire-and-forget) so SGE sees the slot free — the
+        // continueWithDisconnect rationale. The disconnected tab stays open.
+        await window.api.disconnectAwait(c.connectedSessionId)
+      }
+      // DR's server-side slot release can lag the disconnect ack by a beat;
+      // one grace pause before the batch instead of per-character retries.
+      if (switched.length > 0) await new Promise(r => setTimeout(r, 2000))
+      const finalPicks = [...todo, ...switched.map(c => c.saved)]
+      setReconnectPrompt(null)
+      setReconnectBusy(false)
+      if (finalPicks.length > 0) {
+        const separate = localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true'
+        await runBulkConnect(finalPicks, separate)
+      }
+    } catch (err) {
+      setConnectError(`Failed to disconnect: ${String(err)}`)
+      setReconnectPrompt(null)
+      setReconnectBusy(false)
+    }
+  }
   const [showAdd, setShowAdd] = useState(false)
   // The Add modal renders the Launcher (cards) so the user can pick a saved
   // character. Clicking "+ Add account" inside the Launcher opens the wizard
@@ -802,6 +900,7 @@ function AppShell() {
             refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
             onBulkConnect={(characters) => setBulkPickerSource(characters)}
+            onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {
               setWizardPrefillAccount(account)
@@ -875,6 +974,7 @@ function AppShell() {
             refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
             onBulkConnect={(characters) => setBulkPickerSource(characters)}
+            onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {
               setShowAdd(false)
@@ -962,6 +1062,66 @@ function AppShell() {
                 {conflictBusy
                   ? `Disconnecting ${pendingConflict.conflict.character}…`
                   : `Disconnect ${pendingConflict.conflict.character} and continue`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* F62 account-conflict chooser — Reconnect Last found saved characters
+          whose accounts are occupied by OTHER characters. Per account the
+          player keeps the connected character or switches to the saved one;
+          nothing connects until Confirm (Sekmeht: choose, don't skip). */}
+      {reconnectPrompt && (
+        <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget && !reconnectBusy) setReconnectPrompt(null) }}>
+          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 520, gap: 12 }}>
+            <div className="launcher-connecting-text">
+              Some accounts from your last session already have a character connected.
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              DragonRealms allows one character per account at a time — choose which character to
+              use on each account. Switching disconnects the current character first (its tab stays
+              open in case you want to log back into it later).
+            </div>
+            {reconnectPrompt.conflicts.map((c, i) => (
+              <div key={`${c.account}:${c.saved.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'stretch' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '7rem' }}>{c.account}:</span>
+                <button
+                  className="launcher-connecting-cancel"
+                  style={c.choice === 'keep' ? { background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : undefined}
+                  onClick={() => setReconnectChoice(i, 'keep')}
+                  disabled={reconnectBusy}
+                  title={`Stay connected as ${c.connectedName}; ${c.saved.name} is not reconnected`}
+                >
+                  Keep {c.connectedName}
+                </button>
+                <button
+                  className="launcher-connecting-cancel"
+                  style={c.choice === 'switch' ? { background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : undefined}
+                  onClick={() => setReconnectChoice(i, 'switch')}
+                  disabled={reconnectBusy}
+                  title={`Disconnect ${c.connectedName}, then connect ${c.saved.name}`}
+                >
+                  Switch to {c.saved.name}
+                </button>
+              </div>
+            ))}
+            {reconnectPrompt.todo.length > 0 && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {reconnectPrompt.todo.map(t => t.name).join(', ')} will connect on Confirm (no conflicts).
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="launcher-connecting-cancel" onClick={() => { if (!reconnectBusy) setReconnectPrompt(null) }} disabled={reconnectBusy}>
+                Cancel
+              </button>
+              <button
+                className="launcher-connecting-cancel"
+                style={{ background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' }}
+                onClick={confirmReconnectPrompt}
+                disabled={reconnectBusy}
+              >
+                {reconnectBusy ? 'Switching…' : 'Confirm and connect'}
               </button>
             </div>
           </div>

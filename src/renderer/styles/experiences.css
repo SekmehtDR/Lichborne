@@ -92,6 +92,26 @@
 .exp-inst-option:hover { color: var(--text-primary); }
 .exp-inst-option input { margin: 0; }
 
+/* F55 follow-up: the same popover hosted by a PANEL TAB's ⚙ (PanelFrame).
+   The tab's view controls sit bottom-right of .panel-frame-body (F31), so the
+   popover anchors bottom-right too — opening upward-left of the button stack,
+   clear of the 12px scrollbar rail and above the controls' z (5). */
+.exp-inst-options--tab {
+  top: auto;
+  bottom: 28px;
+  right: 44px;
+  z-index: 8;
+}
+
+/* Experience tabs lift the whole view-controls cluster (A−/A+ + ⚙) above the
+   scene's bottom chrome — the Moons footer strip sat exactly under the stack's
+   4px anchor (Sekmeht's screenshot: the ⚙ over "moonwatch: just now"). 28px
+   clears the text-height footer (~20px strip + breathing room) on every
+   game-font size; ordinary stream panels keep the original corner. */
+.panel-font-controls--exp {
+  bottom: 28px;
+}
+
 /* ── The shelf (§34.5) ────────────────────────────────────────────────────
    Canonical modal chrome recipe (pitfall #55): body --bg-base, header band
    --bg-hover, title --accent. A compact picker, not a full-size modal. */

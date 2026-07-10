@@ -3,6 +3,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
 import { normalizeStreamId } from '../../shared/streamAliases'
 import { TextLineRow } from './TextLineRow'
+import { ScrollbackSearch } from './ScrollbackSearch'
 import { buildNameRegex } from '../utils/renderWithContacts'
 import { ContactsContext } from '../ContactsContext'
 import { HighlightsContext, useCompiledHighlights } from '../HighlightsContext'
@@ -16,7 +17,7 @@ import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
-import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, type AliasRule, type MacroRule } from '../macros'
+import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, splitTypedCommands, type AliasRule, type MacroRule } from '../macros'
 import ContactPopover from './ContactPopover'
 import MapPanel from './panels/MapPanel'
 import DebugPanel from './DebugPanel'
@@ -48,7 +49,8 @@ import { loadSettings, saveSettings, applySettingsToDOM, DEFAULT_SETTINGS, type 
 import { loadSessionLogSettings } from '../sessionLogSettings'
 import { THEMES, applyTheme, applyCustomTheme, registerThemeAppliedHook } from '../themes'
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
-import { scopedKey } from '../characterScope'
+import { scopedKey, GLOBAL_RULES_SCOPE, asGlobalRules } from '../characterScope'
+import { loadCommandHistory, saveCommandHistory, COMMAND_HISTORY_MAX } from '../commandHistory'
 import { useSessions, makeCharacterId } from '../SessionsContext'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
@@ -136,7 +138,10 @@ const ROOM_STREAMS = new Set([
 // PanelType id at discovery so future panels don't have to remember.
 // §34 dual-hosting: what the + menu's [e] section offers. Module-level for
 // referential stability (pitfall #82c) — derived once from the registry.
-const EXPERIENCE_TAB_DEFS = EXPERIENCES.map(e => ({ id: e.id, label: e.label }))
+// id + label drive the + menu rows and live tab labels; options drive the
+// tab-hosted ⚙ layer popover (F55 follow-up — the gear was floating-window-only,
+// so a tab-only Moons had no path to "hide the horizon" etc.).
+const EXPERIENCE_TAB_DEFS = EXPERIENCES.map(e => ({ id: e.id, label: e.label, options: e.options }))
 
 const NEVER_DISCOVER = new Set([
   'main', 'raw',
@@ -401,8 +406,42 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // the {ReturnOrRepeatLast} token to peek at what's currently typed.
   const commandRef = useRef('')
   useEffect(() => { commandRef.current = command }, [command])
-  const historyRef    = useRef<string[]>([])
+  // F57 (v0.15.2): command history is persisted per character
+  // (commandHistory.ts) so ↑ recall survives restarts. Loaded once per mount
+  // via lazy state (a bare useRef(load(...)) would re-run the localStorage
+  // read on every render); the same initial load drives the first-session
+  // command-bar hint below.
+  const [initialCmdHistory] = useState<string[]>(() => loadCommandHistory(session.character))
+  const historyRef    = useRef<string[]>(initialCmdHistory)
   const historyIdxRef = useRef(-1)
+  // F57: pressing ↑ from the live line (index -1) stashes the in-progress
+  // text here; ↓ back to -1 restores it instead of discarding it (the shell
+  // model — half-typed commands survive a history browse).
+  const historyDraftRef = useRef('')
+  // F58: first-session hint — the command bar's placeholder (which teaches
+  // the '/' client commands) renders only while this character has never sent
+  // a command. Derived from the INITIAL load, so it stays up for the whole
+  // first session and is gone from the next mount on; veterans never see it.
+  const showCmdHint = initialCmdHistory.length === 0
+  // F49 (v0.15.2): Ctrl+F in-scrollback search. searchHitId marks the active
+  // match's row (only that wrapper div gets the class — cheap; TextLineRow
+  // memo props are untouched, so no row re-renders beyond the two wrappers
+  // that change per navigation).
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchHitId, setSearchHitId] = useState<number | null>(null)
+  const handleSearchJump = useCallback((index: number, lineId: number) => {
+    // Un-pin FIRST (the reading-while-scrolled-up state — same as PageUp), so
+    // stickToBottom's pin-gated paths bail and don't fight the jump. The jump
+    // itself is a plain scrollToIndex — no new scroll mechanism (pitfall #68).
+    pinnedRef.current = false
+    setSearchHitId(lineId)
+    virtuosoRef.current?.scrollToIndex({ index, align: 'center' })
+  }, [])
+  const handleSearchClose = useCallback(() => {
+    setSearchOpen(false)
+    setSearchHitId(null)
+    inputRef.current?.focus()
+  }, [])
   // Slash-command palette (DESIGN §37) — shown while the input holds a '/'
   // line; Esc dismisses it until the input CHANGES (any edit reopens it, the
   // Discord model). The ref forwards ↑/↓/Tab/Esc from handleCommandKey.
@@ -801,17 +840,59 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (!activeModeIdInitRef.current) { activeModeIdInitRef.current = true; return }
     scheduleProfileSave(session.account, session.character, session.game, session.useLich)
   }, [activeModeId]) // eslint-disable-line react-hooks/exhaustive-deps
-  const { matchRules, lineRules } = useCompiledHighlights(highlights, activeGroupStates)
+  // ── Global cross-character rules (F37, v0.15.2; mutes/subs joined at
+  // Sekmeht's ask same release) ─────────────────────────────────────────────
+  // Loaded from the virtual `_global` scope and MERGED after the character's
+  // own lists at each engine's input (character-first: highlight-specificity
+  // ties, macro key conflicts, and alias prefix conflicts all resolve to the
+  // character's rule). asGlobalRules normalizes them always-active (groups are
+  // per-character concepts — F37 design). These merged arrays are DERIVED,
+  // never saved: every save path still writes only its own store. Declared
+  // ABOVE every consuming compile effect/memo (deps arrays evaluate at render
+  // — a later declaration is a TDZ error, the allHighlights lesson).
+  const [globalHighlights, setGlobalHighlights] = useState<HighlightRule[]>(() => asGlobalRules(loadHighlights(GLOBAL_RULES_SCOPE)))
+  const [globalTriggers,   setGlobalTriggers]   = useState<TriggerRule[]>(() => asGlobalRules(loadTriggers(GLOBAL_RULES_SCOPE)))
+  const [globalMacros,     setGlobalMacros]     = useState<MacroRule[]>(() => asGlobalRules(loadMacros(GLOBAL_RULES_SCOPE)))
+  const [globalAliases,    setGlobalAliases]    = useState<AliasRule[]>(() => asGlobalRules(loadAliases(GLOBAL_RULES_SCOPE)))
+  const [globalMutes,      setGlobalMutes]      = useState<MuteRule[]>(() => asGlobalRules(loadMutes(GLOBAL_RULES_SCOPE)))
+  const [globalSubs,       setGlobalSubs]       = useState<SubstituteRule[]>(() => asGlobalRules(loadSubstitutes(GLOBAL_RULES_SCOPE)))
+  // Refresh on: the same-window custom event (an AutomationsPanel Global-scope
+  // save — a storage event never fires in the writing window, the analytics
+  // precedent) and cross-window `storage` events on the _global keys (the
+  // theme-sync precedent). Every mounted GameWindow hears both, so edits reach
+  // every character in every window without a remount.
+  useEffect(() => {
+    const reload = () => {
+      setGlobalHighlights(asGlobalRules(loadHighlights(GLOBAL_RULES_SCOPE)))
+      setGlobalTriggers(asGlobalRules(loadTriggers(GLOBAL_RULES_SCOPE)))
+      setGlobalMacros(asGlobalRules(loadMacros(GLOBAL_RULES_SCOPE)))
+      setGlobalAliases(asGlobalRules(loadAliases(GLOBAL_RULES_SCOPE)))
+      setGlobalMutes(asGlobalRules(loadMutes(GLOBAL_RULES_SCOPE)))
+      setGlobalSubs(asGlobalRules(loadSubstitutes(GLOBAL_RULES_SCOPE)))
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith(`lichborne.${GLOBAL_RULES_SCOPE}.`)) reload()
+    }
+    document.addEventListener('lichborne:global-rules-changed', reload)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      document.removeEventListener('lichborne:global-rules-changed', reload)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+
   // Mutes (DESIGN.md §31): compiled + group-gated, kept in a ref for the render
   // hot-path that filters newMain before commit.
   const [mutes, setMutes] = useState<MuteRule[]>(() => loadMutes(session.character))
   const activeMutesRef = useRef<CompiledMute[]>([])
   useEffect(() => {
+    // F37 (mutes joined at Sekmeht's ask): compile character + global mutes
+    // together, character first — same merge shape as the other engines.
     activeMutesRef.current = compileMutes(
-      mutes,
+      [...mutes, ...globalMutes],
       (groupIds, allGroups) => isRuleActive(groupIds, activeGroupStates, allGroups),
     )
-  }, [mutes, activeGroupStates])
+  }, [mutes, globalMutes, activeGroupStates])
   // Substitutes (DESIGN.md §31): compiled + group-gated, applied after mutes.
   const [substitutes, setSubstitutes] = useState<SubstituteRule[]>(() => loadSubstitutes(session.character))
   const activeSubsRef = useRef<CompiledSubstitute[]>([])
@@ -823,14 +904,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // never leaves a stray '>'.
   const lastMainLineRef = useRef<{ text: string; isPrompt: boolean } | null>(null)
   useEffect(() => {
+    // F37 (substitutes joined at Sekmeht's ask): character first, then globals
+    // — substitutes apply sequentially, so a character's rewrite runs before a
+    // global one on the same text.
     activeSubsRef.current = compileSubstitutes(
-      substitutes,
+      [...substitutes, ...globalSubs],
       (groupIds, allGroups) => isRuleActive(groupIds, activeGroupStates, allGroups),
     )
-  }, [substitutes, activeGroupStates])
+  }, [substitutes, globalSubs, activeGroupStates])
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers(session.character))
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases(session.character))
   const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros(session.character))
+
+  const allTriggers = useMemo(() => [...triggers, ...globalTriggers], [triggers, globalTriggers])
+  // F37: compile character + global highlights together (character first —
+  // equal-specificity ties go first-in-array, so a character rule wins them).
+  const allHighlights = useMemo(() => [...highlights, ...globalHighlights], [highlights, globalHighlights])
+  const { matchRules, lineRules } = useCompiledHighlights(allHighlights, activeGroupStates)
 
   // v0.8.3: One-time seed of Stormfront/Wrayth repeat-command macros so
   // the convention works out of the box on a fresh character. Skipped if
@@ -852,6 +942,44 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       localStorage.setItem(flagKey, '1')
       if (toAdd.length === 0) return prev
       const next = [...prev, ...toAdd.map(s => ({ ...newMacro(s.key), name: s.name, commands: [s.token] }))]
+      saveMacros(session.character, next)
+      return next
+    })
+  }, [session.character])
+
+  // v0.15.2 (F56): One-time seed of the classic numpad movement pad — the
+  // layout every Stormfront-family client ships. Verified against Frostbite's
+  // bundled default profile (deploy-files/profiles/frostbite/macros.ini):
+  // Num8/2/4/6 = n/s/w/e, corners = the diagonals, Num5 = out, Num0 = down,
+  // Num. = up — the muscle memory Genie/Wrayth/Frostbite converts arrive with.
+  // Short-form commands, matching Frostbite's. Same non-destructive rules as
+  // the repeat-command seed above: keys already bound are skipped, the
+  // per-character flag makes it once-only, and deleting a seeded macro never
+  // resurrects it. NOTE: macros match on e.code (NumLock-independent) and fire
+  // globally, so the numpad becomes a movement pad exactly like the legacy
+  // clients — digits still type from the top row.
+  useEffect(() => {
+    const flagKey = scopedKey(session.character, 'seededNumpadMovement')
+    if (localStorage.getItem(flagKey) === '1') return
+    const SEED: { key: string; cmd: string; name: string }[] = [
+      { key: 'Num8', cmd: 'n',    name: 'North' },
+      { key: 'Num9', cmd: 'ne',   name: 'Northeast' },
+      { key: 'Num6', cmd: 'e',    name: 'East' },
+      { key: 'Num3', cmd: 'se',   name: 'Southeast' },
+      { key: 'Num2', cmd: 's',    name: 'South' },
+      { key: 'Num1', cmd: 'sw',   name: 'Southwest' },
+      { key: 'Num4', cmd: 'w',    name: 'West' },
+      { key: 'Num7', cmd: 'nw',   name: 'Northwest' },
+      { key: 'Num5', cmd: 'out',  name: 'Out' },
+      { key: 'Num0', cmd: 'down', name: 'Down' },
+      { key: 'Num.', cmd: 'up',   name: 'Up' },
+    ]
+    setMacros(prev => {
+      const existing = new Set(prev.map(m => m.key.toLowerCase()))
+      const toAdd = SEED.filter(s => !existing.has(s.key.toLowerCase()))
+      localStorage.setItem(flagKey, '1')
+      if (toAdd.length === 0) return prev
+      const next = [...prev, ...toAdd.map(s => ({ ...newMacro(s.key), name: s.name, commands: [s.cmd] }))]
       saveMacros(session.character, next)
       return next
     })
@@ -1002,7 +1130,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     },
   }), [echoToStream])
 
-  const { processLine, processVariableChange, cancelPending } = useTriggerEngine(triggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
+  const { processLine, processVariableChange, cancelPending } = useTriggerEngine(allTriggers, triggerCtxRef, triggerCallbacks, activeGroupStatesRef)
   // Gate trigger firing on replayingRef so a replayed history batch rebuilds
   // game state WITHOUT re-firing triggers (which would re-send commands). The
   // wrapper is the single choke point — every loop call goes through these refs.
@@ -1093,11 +1221,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     }
   })
 
-  // Alias + macro refs — always current without re-registering document listeners
+  // Alias + macro refs — always current without re-registering document
+  // listeners. F37: the refs hold the MERGED character+global lists (character
+  // first, so a character binding wins a key/prefix conflict — resolveMacro/
+  // resolveAlias take the first match). Saves never read these refs.
   const aliasesRef = useRef(aliases)
-  useEffect(() => { aliasesRef.current = aliases }, [aliases])
+  useEffect(() => { aliasesRef.current = [...aliases, ...globalAliases] }, [aliases, globalAliases])
   const macrosRef  = useRef(macros)
-  useEffect(() => { macrosRef.current = macros }, [macros])
+  useEffect(() => { macrosRef.current = [...macros, ...globalMacros] }, [macros, globalMacros])
 
   // Pending timer handles for alias/macro command sequences — cancelled on disconnect
   const macroTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
@@ -1141,7 +1272,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     anyModalOpenRef.current = showDebug || showPanelManager || showThemePicker ||
       showSettings || showContacts || showAutomations || showMapOverlay ||
       showLichDash || showSessionLog || showExpShelf
-  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showSessionLog, showExpShelf])
+    // showMapOverlay + showLichDash were computed above but MISSING from the
+    // deps until v0.15.2 — opening ONLY the map overlay or Lich dashboard left
+    // the ref stale (macros kept firing into them). Found while wiring F60's
+    // type-to-focus onto this same guard.
+  }, [showDebug, showPanelManager, showThemePicker, showSettings, showContacts, showAutomations, showMapOverlay, showLichDash, showSessionLog, showExpShelf])
 
   // Surface open-overlay state so the app-level app-bar can glow the matching
   // button for the ACTIVE session (the old per-session toolbar showed this via
@@ -2415,6 +2550,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // only the active tab should respond. Inactive tabs ignore all keyboard.
       if (!isActiveRef.current) return
 
+      // F49 (v0.15.2): Ctrl+F opens the in-scrollback search (Electron has no
+      // native find, so the chord is free). Works while the command input is
+      // focused (the normal play state); gated off while a modal is open so a
+      // modal's own fields keep the chord inert — same guard as macros.
+      if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.key === 'f' || e.key === 'F') && !anyModalOpenRef.current) {
+        e.preventDefault()
+        setSearchOpen(true)
+        return
+      }
       const active = document.activeElement
       const inTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
       const inCommandInput = active === inputRef.current
@@ -2546,6 +2690,32 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           }
           if (!stoppedForCursor) flushPlain()
         }
+      }
+      // F60 (v0.15.2): type-anywhere focuses the command bar — the
+      // Genie/Frostbite model. A printable keystroke that would otherwise be
+      // LOST (focus sitting on a button, the map, a panel, or body after a
+      // click) lands in the command input instead. Focusing during keydown is
+      // sufficient: the browser delivers the character to the newly-focused
+      // input, so there's no preventDefault and no manual insertion — and a
+      // space aimed at a focused button no longer clicks it (button
+      // activation fires on keyup, which now targets the input). Guards:
+      // never on Ctrl/Alt/Meta combos (app hotkeys), single printable keys
+      // only, never while ANY text field / select / contentEditable has focus
+      // (editor fields keep their keystrokes), never while a modal is open
+      // (typing must not land in a bar hidden behind Settings — reuses the
+      // macro guard's anyModalOpenRef), never mid-IME composition, and never
+      // when something above already consumed the key (e.defaultPrevented —
+      // covers macro-bound printable keys). Always on, no setting — matches
+      // the siblings' behavior; add a toggle only on a real tester ask.
+      if (
+        !anyModalOpenRef.current &&
+        !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing &&
+        !e.defaultPrevented && e.key.length === 1
+      ) {
+        const ae = document.activeElement
+        const inEditable = ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement ||
+          ae instanceof HTMLSelectElement || (ae instanceof HTMLElement && ae.isContentEditable)
+        if (!inEditable) inputRef.current?.focus()
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -2961,8 +3131,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   function dispatchUserText(text: string, opts: { pushToHistory: boolean; clearInput: boolean }) {
     if (!text.trim()) return
     if (opts.pushToHistory) {
-      if (historyRef.current[0] !== text) historyRef.current = [text, ...historyRef.current].slice(0, 200)
+      if (historyRef.current[0] !== text) {
+        historyRef.current = [text, ...historyRef.current].slice(0, COMMAND_HISTORY_MAX)
+        // F57: persist so ↑ recall survives restarts. Synchronous but tiny
+        // (≤200 short strings); try/catch'd inside — never throws mid-send.
+        saveCommandHistory(session.character, historyRef.current)
+      }
       historyIdxRef.current = -1
+      historyDraftRef.current = ''
     }
     // Slash commands (DESIGN §37): a '/'-leading line is a CLIENT command — it
     // executes locally and NEVER reaches the game (unknown commands fail closed
@@ -2978,24 +3154,35 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         return
       }
     }
+    // F59 (v0.15.2): ';' command separator — `n;n;e` is three commands (the
+    // Genie model every convert types reflexively). splitTypedCommands
+    // returns a LICH line (first non-space char ';') verbatim so `;commands`
+    // can never be corrupted, and resolves the `\;` literal escape. Each part
+    // runs the full alias/echo/send/log tail independently, so aliases expand
+    // per command. History (pushed above) keeps the raw typed line — ↑
+    // recalls `n;n;e` whole, and {RepeatLast} replays it through this same
+    // split. QuickSend deliberately does NOT split (it targets OTHER
+    // characters' sessions — same reasoning as its '/' exclusion, §37.4).
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
-    const resolved = resolveAlias(text, activeAliases, buildMacroVars())
-    if (resolved) {
-      if (analyticsEnabledRef.current) recordFire(session.character, resolved.ruleId)
-      sendCommandSequence(resolved.commands, resolved.delayMs)
-      if (resolved.passThrough) {
-        const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
-        if (delay > 0) {
-          const h = setTimeout(() => window.api.sendCommand(sessionIdRef.current, text), delay)
-          macroTimersRef.current.add(h)
-        } else {
-          window.api.sendCommand(sessionIdRef.current, text)
+    for (const part of splitTypedCommands(text)) {
+      const resolved = resolveAlias(part, activeAliases, buildMacroVars())
+      if (resolved) {
+        if (analyticsEnabledRef.current) recordFire(session.character, resolved.ruleId)
+        sendCommandSequence(resolved.commands, resolved.delayMs)
+        if (resolved.passThrough) {
+          const delay = resolved.delayMs > 0 ? resolved.commands.length * resolved.delayMs : 0
+          if (delay > 0) {
+            const h = setTimeout(() => window.api.sendCommand(sessionIdRef.current, part), delay)
+            macroTimersRef.current.add(h)
+          } else {
+            window.api.sendCommand(sessionIdRef.current, part)
+          }
         }
+      } else {
+        setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${part}`, preset: 'command-echo' }], timestamp: Date.now() }]))
+        window.api.sendCommand(sessionIdRef.current, part)
+        logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${part}` }])
       }
-    } else {
-      setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${text}`, preset: 'command-echo' }], timestamp: Date.now() }]))
-      window.api.sendCommand(sessionIdRef.current, text)
-      logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${text}` }])
     }
     if (opts.clearInput) setCommand('')
   }
@@ -3019,6 +3206,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const h = historyRef.current
     if (e.key === 'ArrowUp') {
       e.preventDefault()
+      // Empty history: do nothing (before F57 this fell through and wiped
+      // whatever was typed — Math.min(0, -1) = -1 → setCommand('')).
+      if (h.length === 0) return
+      // F57: entering history from the live line (index -1) stashes the
+      // in-progress text so ↓ back to the bottom restores it (shell model).
+      if (historyIdxRef.current === -1) historyDraftRef.current = command
       const next = Math.min(historyIdxRef.current + 1, h.length - 1)
       historyIdxRef.current = next
       setCommand(h[next] ?? '')
@@ -3031,7 +3224,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // Wrayth behavior where pressing Down at the bottom is a no-op.
       const next = Math.max(-1, historyIdxRef.current - 1)
       historyIdxRef.current = next
-      setCommand(next < 0 ? '' : (h[next] ?? ''))
+      // F57: index -1 restores the stashed draft (was '' — the half-typed
+      // line used to be discarded by a history browse).
+      setCommand(next < 0 ? historyDraftRef.current : (h[next] ?? ''))
+    } else if (e.key === 'Escape' && command !== '') {
+      // Classic Stormfront/Genie reflex: Esc clears the command line. The
+      // slash palette consumed Esc above while open, so the two layer
+      // naturally — first Esc dismisses the palette, second clears the line.
+      // Gated on non-empty so an Esc on an empty bar stays inert/native.
+      e.preventDefault()
+      setCommand('')
+      historyIdxRef.current = -1
+      historyDraftRef.current = ''
     }
   }
 
@@ -3150,6 +3354,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // behave identically.
     experienceDefs: EXPERIENCE_TAB_DEFS,
     renderExperienceTab,
+    // F55 follow-up: the tab-hosted ⚙ reads/writes the SAME instance `hidden`
+    // map the floating window uses. Plain per-render closures (PanelFrame is
+    // not memoized — F46 note — so identity churn is free here).
+    getExperienceHidden: (expId: string) => experiences.find(i => i.id === expId)?.hidden,
+    onToggleExperienceOption: toggleExperienceOption,
   }
 
   // ── Free Layout handlers (DESIGN.md §33) ───────────────────────────────────
@@ -3313,6 +3522,29 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       const def = experienceById(id)
       if (!def) return prev
       return [...prev, { id, rect: def.defaultRect, z: maxZ + 1, showTitle: true, open: true }]
+    })
+  }
+
+  // F55 follow-up (Sekmeht: the ⚙ layer options weren't reachable from a
+  // hosted TAB): toggle a content-layer option from PanelFrame's tab gear.
+  // Find-or-create — a tab-hosted experience may have no floating instance
+  // yet, so mint a CLOSED one at the registry defaultRect purely as the prefs
+  // record. It's the same ONE `hidden` map the floating window's ⚙ edits, so
+  // window and tab can never disagree; rides the existing experiences
+  // persistence (state → YAML → Transfer) unchanged.
+  function toggleExperienceOption(expId: string, optId: string) {
+    setExperiences(prev => {
+      const existing = prev.find(i => i.id === expId)
+      if (existing) {
+        return prev.map(i => i.id === expId
+          ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: !i.hidden?.[optId] } }
+          : i)
+      }
+      const def = experienceById(expId)
+      if (!def) return prev
+      const maxZ = prev.reduce((m, i) => Math.max(m, i.z), 0)
+      // First-ever toggle necessarily goes from "all visible" to hiding optId.
+      return [...prev, { id: expId, rect: def.defaultRect, z: maxZ + 1, showTitle: true, open: false, hidden: { [optId]: true } }]
     })
   }
 
@@ -3589,7 +3821,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 // the deferred raw scroll winning over followOutput, not row math.)
                 computeItemKey={(_index, line) => line.id}
                 itemContent={(_index, line) => (
-                  <div className="text-line-wrap">
+                  // F49: the active search hit's wrapper gets a marker class —
+                  // wrapper-only, so TextLineRow memo props stay untouched.
+                  <div className={line.id === searchHitId ? 'text-line-wrap text-line-wrap--search-hit' : 'text-line-wrap'}>
                     <TextLineRow
                       line={line}
                       matchRules={matchRules}
@@ -3615,6 +3849,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 ▼ {newLineCount} new {newLineCount === 1 ? 'line' : 'lines'}
               </div>
             )}
+            {/* F49: Ctrl+F in-scrollback search — inside .text-area so it rides
+                the main text into a floating window in free mode unchanged. */}
+            {searchOpen && (
+              <ScrollbackSearch lines={lines} onJump={handleSearchJump} onClose={handleSearchClose} onClearHit={() => setSearchHitId(null)} />
+            )}
             <FloatingCompass exits={exits} />
           </div>
   )
@@ -3638,7 +3877,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} aimExpires={aimExpires} timerStyle={settings.timerStyle} />
         <input ref={inputRef} type="text" autoFocus value={command}
           onChange={e => { historyIdxRef.current = -1; setSlashDismissed(false); setCommand(e.target.value) }}
-          onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false} />
+          onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false}
+          placeholder={showCmdHint ? 'Type a game command — or / for Lichborne client commands' : undefined} />
         {/* Slash palette (DESIGN §37) — mounted only while the input holds a
             client command; portals itself above the input, so it works in the
             skeleton AND a floating command window. */}

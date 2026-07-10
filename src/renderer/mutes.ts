@@ -81,8 +81,10 @@ export function loadMutes(character: string): MuteRule[] {
   } catch { return [] }
 }
 
-export function saveMutes(character: string, rules: MuteRule[]): void {
-  safeSetItem(storageKey(character), JSON.stringify(rules))
+// Returns the write's success flag (false = quota, already toasted) — see
+// saveHighlights' note; the F63 scope move aborts on a failed target write.
+export function saveMutes(character: string, rules: MuteRule[]): boolean {
+  return safeSetItem(storageKey(character), JSON.stringify(rules))
 }
 
 export function newMute(pattern = '', mode: MuteRule['mode'] = 'phrase'): MuteRule {

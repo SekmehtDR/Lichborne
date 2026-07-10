@@ -1,6 +1,6 @@
 import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
-import { scopedKey, normalizeCharacter } from './characterScope'
+import { scopedKey, normalizeCharacter, GLOBAL_RULES_SCOPE } from './characterScope'
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
 import { loadCustomColors, saveCustomColors } from './colors'
@@ -21,6 +21,50 @@ const DEFAULT_GAMES = {
 // `characterMigrations[2]` that upgrades v2-shaped data into v3-shaped data).
 const SHARED_PROFILE_VERSION    = 1 as const
 const CHARACTER_PROFILE_VERSION = 2 as const
+
+// ── Last session (F62, v0.15.2) ──────────────────────────────────────────────
+// "Reconnect last session": the primary window snapshots the live roster (ALL
+// windows) here whenever it's NON-EMPTY — non-empty-only so the shutdown drain
+// or a manual disconnect-all can never wipe the last good set (a stale offer
+// on the launcher is harmless; an emptied one loses the feature). Rides
+// _shared.yaml like bulkConnectSeparateWindows.
+
+export interface LastSessionEntry { account: string; name: string }
+const LAST_SESSION_KEY = 'lichborne.lastSessionCharacters'
+
+export function loadLastSessionCharacters(): LastSessionEntry[] {
+  try {
+    const raw = localStorage.getItem(LAST_SESSION_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed)
+      ? parsed.filter((e): e is LastSessionEntry =>
+          !!e && typeof e.account === 'string' && typeof e.name === 'string')
+      : []
+  } catch { return [] }
+}
+
+export function saveLastSessionCharacters(entries: LastSessionEntry[]): void {
+  try { localStorage.setItem(LAST_SESSION_KEY, JSON.stringify(entries)) } catch { /* quota — skip */ }
+}
+
+// ── Global rules bridge (F37, v0.15.2) ────────────────────────────────────────
+// The four cross-character rule lists live at `lichborne._global.*` in
+// localStorage (the virtual scope — see characterScope.GLOBAL_RULES_SCOPE) and
+// ride _shared.yaml, NOT any {Character}.yaml. Raw key access here (not the
+// rule modules) keeps profile.ts free of rule-module imports; the stores
+// re-validate shape on load exactly as they do for per-character lists.
+
+function loadGlobalList(suffix: string): unknown[] {
+  try {
+    const raw = localStorage.getItem(scopedKey(GLOBAL_RULES_SCOPE, suffix))
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
+
+function saveGlobalList(suffix: string, list: unknown[]): void {
+  try { localStorage.setItem(scopedKey(GLOBAL_RULES_SCOPE, suffix), JSON.stringify(list)) } catch { /* quota — skip */ }
+}
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +92,13 @@ export function buildSharedProfile(): SharedProfile {
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
     customColors: loadCustomColors(),
+    lastSessionCharacters: loadLastSessionCharacters(),
+    sharedHighlights:  loadGlobalList('highlights'),
+    sharedTriggers:    loadGlobalList('triggers'),
+    sharedMacros:      loadGlobalList('macros'),
+    sharedAliases:     loadGlobalList('aliases'),
+    sharedMutes:       loadGlobalList('mutes'),
+    sharedSubstitutes: loadGlobalList('substitutes'),
   }
 }
 
@@ -182,6 +233,17 @@ export async function importSharedProfile(): Promise<void> {
   if (data.bulkConnectSeparateWindows !== undefined) {
     localStorage.setItem('lichborne.bulkConnectSeparateWindows', String(data.bulkConnectSeparateWindows))
   }
+
+  if (Array.isArray(data.lastSessionCharacters)) {
+    saveLastSessionCharacters(data.lastSessionCharacters)
+  }
+
+  if (Array.isArray(data.sharedHighlights))  saveGlobalList('highlights',  data.sharedHighlights)
+  if (Array.isArray(data.sharedTriggers))    saveGlobalList('triggers',    data.sharedTriggers)
+  if (Array.isArray(data.sharedMacros))      saveGlobalList('macros',      data.sharedMacros)
+  if (Array.isArray(data.sharedAliases))     saveGlobalList('aliases',     data.sharedAliases)
+  if (Array.isArray(data.sharedMutes))       saveGlobalList('mutes',       data.sharedMutes)
+  if (Array.isArray(data.sharedSubstitutes)) saveGlobalList('substitutes', data.sharedSubstitutes)
 
   if (data.automationAnalytics !== undefined) {
     localStorage.setItem('lichborne.automationAnalytics', String(data.automationAnalytics))

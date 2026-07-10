@@ -22,9 +22,15 @@ interface Props {
   prefill?: MuteRule   // from the game-window right-click "Mute …"
   openRuleId?: string  // v0.14.6: open an existing rule for edit (slash /mute edit)
   analyticsOn?: boolean
+  // F37/F63 (v0.15.2): which store this panel edits ('global' = All Characters
+  // scope — groups row hidden) + the cross-store MOVE callback for the
+  // editor's "Applies to" control. Both absent when hosted standalone.
+  scope?: 'character' | 'global'
+  onMoveScope?: (rule: MuteRule) => void
 }
 
-export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = false }: Props) {
+export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = false, scope = 'character', onMoveScope }: Props) {
+  const hideGroups = scope === 'global'
   const character = useCharacter()
   const [rules, setRules]   = useState<MuteRule[]>(() => loadMutes(character))
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -180,6 +186,7 @@ export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = 
               />
             </div>
 
+            {!hideGroups && (
             <div className="hp-field">
               <label className="hp-label">Groups</label>
               <div className="grp-row">
@@ -196,6 +203,35 @@ export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = 
                 )}
               </div>
             </div>
+            )}
+
+            {/* F63: per-rule scope — the inactive side MOVES the mute to the
+                other store (incl. any unsaved draft edits). */}
+            {onMoveScope && (
+            <div className="hp-field">
+              <label className="hp-label">Applies to</label>
+              <div className="rule-scope-row">
+                <button
+                  type="button"
+                  className={`rule-scope-btn${scope === 'character' ? ' rule-scope-btn--on' : ''}`}
+                  disabled={scope === 'character'}
+                  onClick={() => onMoveScope(draft)}
+                  title={scope === 'character'
+                    ? 'This mute belongs to this character'
+                    : 'Move this mute to the character you have open — every OTHER character stops getting it'}
+                >This Character</button>
+                <button
+                  type="button"
+                  className={`rule-scope-btn${scope === 'global' ? ' rule-scope-btn--on' : ''}`}
+                  disabled={scope === 'global'}
+                  onClick={() => onMoveScope(draft)}
+                  title={scope === 'global'
+                    ? 'This mute applies to every character'
+                    : 'Move this mute to All Characters — it will hide this text for every character on every account'}
+                >All Characters</button>
+              </div>
+            </div>
+            )}
 
             <div className="hp-field">
               <label className="hp-label">Pattern</label>

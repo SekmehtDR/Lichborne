@@ -159,8 +159,14 @@ interface Props {
   // ([e]-badged section below a separator). `experienceDefs` is the registry
   // list (id + label); `renderExperienceTab` renders one by id on the shared
   // GameWindow props bag (MUST ride sharedFrameProps — the B193 rule).
-  experienceDefs?: Array<{ id: string; label: string }>
+  experienceDefs?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; desc?: string }> }>
   renderExperienceTab?: (expId: string) => React.ReactNode
+  // F55 follow-up: the tab-hosted ⚙ layer popover. Reads/writes the SAME
+  // instance `hidden` map the floating Experience window's ⚙ edits (one map
+  // per experience — window and tab can never disagree). Both absent when the
+  // host doesn't support it; the gear then doesn't render.
+  getExperienceHidden?: (expId: string) => Record<string, boolean> | undefined
+  onToggleExperienceOption?: (expId: string, optId: string) => void
 }
 
 export default function PanelFrame({
@@ -178,8 +184,13 @@ export default function PanelFrame({
   getPanelFontSize, onAdjustPanelFontSize,
   reorderTabs = false,
   experienceDefs = [], renderExperienceTab,
+  getExperienceHidden, onToggleExperienceOption,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
+  // F55 follow-up: tab-hosted ⚙ popover open state — closed on tab switch so
+  // it never lingers over an unrelated tab's content.
+  const [expOptionsOpen, setExpOptionsOpen] = useState(false)
+  useEffect(() => { setExpOptionsOpen(false) }, [activeId])
   // F46: id of the tab currently being dragged (null when idle). Live
   // reorder: crossing the midpoint of a sibling commits the new order via
   // onTabsChange immediately, so the strip previews the result as you drag.
@@ -354,22 +365,65 @@ export default function PanelFrame({
           mapAnimations, compactExp,
           renderExperienceTab, activeFontSize,
         )}
-        {activeTab && onAdjustPanelFontSize && (
-          <div className="panel-font-controls" aria-label="Adjust panel font size">
-            <button
-              type="button"
-              className="panel-font-btn"
-              title="Smaller font for this panel"
-              onClick={() => onAdjustPanelFontSize(activeTab.id, -1)}
-            >A−</button>
-            <button
-              type="button"
-              className="panel-font-btn"
-              title="Larger font for this panel"
-              onClick={() => onAdjustPanelFontSize(activeTab.id, 1)}
-            >A+</button>
-          </div>
-        )}
+        {activeTab && (() => {
+          // F55 follow-up: an active EXPERIENCE tab with registry options gets
+          // the same ⚙ the floating window has, in the font-controls cluster.
+          const expDef = activeTab.type === 'experience'
+            ? experienceDefs.find(d => EXP_TAB_PREFIX + d.id === activeTab.id)
+            : undefined
+          const expGear = !!(expDef?.options?.length && onToggleExperienceOption)
+          if (!onAdjustPanelFontSize && !expGear) return null
+          const expId = expIdFromTab(activeTab)
+          const hidden = expGear ? getExperienceHidden?.(expId) : undefined
+          return (
+            <>
+              {/* --exp: experience scenes carry bottom chrome (the Moons
+                  footer strip), so the whole cluster lifts above it —
+                  Sekmeht's screenshot had the ⚙ sitting on the footer text. */}
+              <div className={`panel-font-controls${expGear ? ' panel-font-controls--exp' : ''}`} aria-label="Panel view controls">
+                {onAdjustPanelFontSize && (
+                  <>
+                    <button
+                      type="button"
+                      className="panel-font-btn"
+                      title="Smaller font for this panel"
+                      onClick={() => onAdjustPanelFontSize(activeTab.id, -1)}
+                    >A−</button>
+                    <button
+                      type="button"
+                      className="panel-font-btn"
+                      title="Larger font for this panel"
+                      onClick={() => onAdjustPanelFontSize(activeTab.id, 1)}
+                    >A+</button>
+                  </>
+                )}
+                {expGear && (
+                  <button
+                    type="button"
+                    className="panel-font-btn"
+                    title="Choose what this scene shows"
+                    onClick={() => setExpOptionsOpen(o => !o)}
+                  >⚙</button>
+                )}
+              </div>
+              {expGear && expOptionsOpen && expDef && (
+                <div className="exp-inst-options exp-inst-options--tab">
+                  <div className="exp-inst-options-title">Show in this scene</div>
+                  {expDef.options!.map(opt => (
+                    <label key={opt.id} className="exp-inst-option" title={opt.desc}>
+                      <input
+                        type="checkbox"
+                        checked={!hidden?.[opt.id]}
+                        onChange={() => onToggleExperienceOption!(expId, opt.id)}
+                      />
+                      <span>{opt.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
       </div>
 
       <div className="panel-frame-tabs">

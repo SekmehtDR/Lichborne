@@ -18,6 +18,24 @@ export function scopedKey(character: string, suffix: string): string {
   return `lichborne.${normalizeCharacter(character)}.${suffix}`
 }
 
+// ── Global rules scope (F37, v0.15.2) ────────────────────────────────────────
+// Cross-character highlights/triggers/macros/aliases live under a VIRTUAL
+// character scope: `lichborne._global.*`. The rule stores + editor panels work
+// on it UNCHANGED (they only ever see `scopedKey(character, ...)`); the
+// bridge to disk is _shared.yaml (buildSharedProfile/importSharedProfile read
+// and write these keys), NOT a per-character YAML — there is no `_global`
+// character profile and no session for it. The leading underscore can't
+// collide with a real DR character name (alphabetic only).
+export const GLOBAL_RULES_SCOPE = '_global'
+
+// Global rules are ALWAYS-ACTIVE by design — groups/modes are per-character
+// concepts (their nanoid ids differ per character, so gating could never
+// match cross-character). Applied at every runtime merge point so a
+// hand-edited YAML can't smuggle a group-gated global in.
+export function asGlobalRules<T extends { groupIds?: string[]; allGroups?: boolean }>(rules: T[]): T[] {
+  return rules.map(r => ({ ...r, groupIds: [], allGroups: true }))
+}
+
 // Quota-safe localStorage write. A character with thousands of imported rules
 // (× several characters in ONE localStorage) can exceed the ~5MB origin quota —
 // a bare setItem then THROWS and the write is silently lost, which reads back as

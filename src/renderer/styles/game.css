@@ -567,6 +567,81 @@
   outline: none;
 }
 
+/* F58 first-session hint — GameWindow only sets the placeholder attr while the
+   character has never sent a command, so veterans never see it. Explicit faint
+   theme var (Chromium's default placeholder grey is a literal that can vanish
+   on light themes — pitfall #34 family). */
+.command-input::placeholder {
+  color: var(--text-faint);
+  opacity: 1;
+}
+
+/* F49 in-scrollback search (Ctrl+F) — overlays the story window's top-right,
+   inside .text-area (position: relative). Game-area chrome: anchored to the
+   game font (pitfall #45b), text-height strip (polish standard #7 — pinned
+   line-height, ≤1em icons, minimal padding), theme vars only. The dark
+   drop-shadow literal is one of the allowed exceptions (Principle #4). */
+.sb-search {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--game-font-size);
+  line-height: 1;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+}
+
+.sb-search-input {
+  width: 16em;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1em;
+  line-height: 1.2;
+  padding: 1px 2px;
+}
+
+.sb-search-input::placeholder { color: var(--text-faint); opacity: 1; }
+
+.sb-search-count {
+  color: var(--text-muted);
+  font-size: 0.84em;
+  line-height: 1;
+  min-width: 4.5em;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sb-search-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9em;
+  line-height: 1;
+  padding: 2px 3px;
+  font-family: inherit;
+}
+
+.sb-search-btn:hover { color: var(--accent); }
+
+/* F49: the active match's row — accent outline + a translucent accent wash
+   (color-mix over the theme var, so it self-corrects on light themes). */
+.text-line-wrap--search-hit {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .btn-send {
   background: var(--bg-btn);
   border: 1px solid var(--border);
