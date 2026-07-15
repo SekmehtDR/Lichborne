@@ -4,7 +4,7 @@ import * as path from 'path'
 import * as zlib from 'zlib'
 import type {
   SessionLogRecord, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
-  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
+  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
 } from '../shared/types'
 
 // ── Session Log writer ────────────────────────────────────────────────────────
@@ -355,6 +355,47 @@ function readDay(character: string, date: string, tailLines: number, beforeLine:
   return { lines: all.slice(start, end), totalLines }
 }
 
+// Read every logged line whose timestamp falls inside [fromTs, toTs], across the
+// day-file(s) the window spans. GROUNDWORK for the future log-analysis AI feature
+// (DESIGN §10.4) — currently UNWIRED (Catch Me Up reverted to screen-only, §10.3).
+// Kept because it carries pitfall #92's lesson and is exactly what that feature needs.
+//
+// The filtering MUST happen here, in main. The renderer originally asked for "the
+// last N lines of the day-file" and filtered by time itself — but N is a LINE cap
+// being used to satisfy a TIME window, and a busy character blows straight through
+// it: Agan logs ~820 lines/min (81k in a day, mostly inv/spells), so an 8000-line
+// tail reached back only 6.2 MINUTES. An 11-minute request silently returned ~6
+// minutes of data and reported the truncated count as if it were the whole window.
+// Never bound a time window with a line count. (Sekmeht, v0.16.0.)
+//
+// `maxRows` is a transport guard only, applied as a TAIL (most recent wins) — the
+// caller's real bound is a character budget far smaller than this.
+function readWindow(
+  character: string, fromTs: number, toTs: number, maxRows: number,
+): SessionLogWindowRow[] {
+  const rows: SessionLogWindowRow[] = []
+  const day  = new Date(fromTs); day.setHours(0, 0, 0, 0)
+  const last = new Date(toTs);   last.setHours(0, 0, 0, 0)
+  // Guard the loop, not the data: a window can legitimately span a couple of days.
+  for (let i = 0; i < 8 && day.getTime() <= last.getTime(); i++) {
+    const date = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+    const file = resolveDayFile(character, date)
+    const raw = file ? readLogFile(file) : null
+    if (raw != null) {
+      for (const line of raw.split('\n')) {
+        const m = EXPORT_LINE_RE.exec(line)
+        if (!m) continue
+        const ts = new Date(`${m[1] || date}T${m[2]}`).getTime()
+        if (!Number.isFinite(ts) || ts < fromTs || ts > toTs) continue
+        rows.push({ ts, stream: m[3] || 'main', text: m[4] })
+      }
+    }
+    day.setDate(day.getDate() + 1)
+  }
+  rows.sort((a, b) => a.ts - b.ts)
+  return rows.length > maxRows ? rows.slice(-maxRows) : rows
+}
+
 function searchLogs(
   character: string,
   query: string,
@@ -567,6 +608,15 @@ export function registerSessionLogHandlers(): void {
     const buf = buffers.get(character?.toLowerCase() ?? '')
     if (buf) flushBuffer(buf)
     return readDay(character, date, tailLines, beforeLine)
+  })
+
+  // Future log-analysis feature (§10.4, unwired): every logged line in a TIME
+  // window. Filters in main (see
+  // readWindow) — never bound a time window with a line cap.
+  ipcMain.handle('session-log:read-window', (_e, character: string, fromTs: number, toTs: number, maxRows: number) => {
+    const buf = buffers.get(character?.toLowerCase() ?? '')
+    if (buf) flushBuffer(buf)
+    return readWindow(character, fromTs, toTs, maxRows)
   })
 
   ipcMain.handle('session-log:search', (_e, character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string }) => {

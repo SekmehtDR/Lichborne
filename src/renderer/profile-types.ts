@@ -1,5 +1,6 @@
 import type { CustomTheme } from './myThemes'
 import type { SessionLogSettings } from './sessionLogSettings'
+import type { AIConfig } from './aiConfig'
 
 // ── Shared (_shared.yaml) ─────────────────────────────────────────────────────
 
@@ -64,6 +65,13 @@ export interface SharedProfile {
   sharedAliases?: unknown[]
   sharedMutes?: unknown[]
   sharedSubstitutes?: unknown[]
+  // AI feature config (v0.16.0, DESIGN §10) — app-wide, BYOK. The NON-SECRET
+  // config only: master enable, chosen text model, per-feature consent flags.
+  // The API key never rides YAML — it lives in main's safeStorage (ai-keys.json,
+  // the passwords.json precedent). Optional → older files default to disabled.
+  // Deliberately NOT a Profile Transfer category (machine-local; automationStats
+  // precedent).
+  ai?: AIConfig
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter, GLOBAL_RULES_SCOPE } from './characterScope'
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
+import { loadAIConfig, saveAIConfig, DEFAULT_AI_CONFIG } from './aiConfig'
 import { loadCustomColors, saveCustomColors } from './colors'
 
 // ── Default game definitions ──────────────────────────────────────────────────
@@ -89,6 +90,7 @@ export function buildSharedProfile(): SharedProfile {
     games:       DEFAULT_GAMES,
     myThemes:  loadMyThemes(),
     sessionLog: loadSessionLogSettings(),
+    ai:         loadAIConfig(),
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
     customColors: loadCustomColors(),
@@ -232,6 +234,16 @@ export async function importSharedProfile(): Promise<void> {
 
   if (data.bulkConnectSeparateWindows !== undefined) {
     localStorage.setItem('lichborne.bulkConnectSeparateWindows', String(data.bulkConnectSeparateWindows))
+  }
+
+  // AI config — app-wide, non-secret. Merge over defaults so a partial/older
+  // block still yields a complete config. The API key is NOT here (safeStorage).
+  if (data.ai) {
+    saveAIConfig({
+      ...DEFAULT_AI_CONFIG,
+      ...data.ai,
+      consent: (data.ai.consent && typeof data.ai.consent === 'object') ? data.ai.consent : {},
+    })
   }
 
   if (Array.isArray(data.lastSessionCharacters)) {

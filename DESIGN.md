@@ -1065,7 +1065,7 @@ The Display section includes a **live font preview** — a bordered box showing 
 | **Command Bar** | RT display, cast time display, command history size |
 | **Highlights** | Highlight rules, groups, import/export |
 | **Connection** | Default credentials, Lich paths, SGE fallback settings |
-| **AI** | OpenAI API key, AI feature toggles |
+| **AI** | Master enable, per-capability BYO key (text=Claude) + Test, model tier (Haiku/Sonnet), per-feature consent, cost meter (§10) |
 
 ---
 
@@ -1107,39 +1107,223 @@ On login, the client receives the character name from SGE. It looks up a matchin
 
 ## 10. AI Features
 
-AI features use the OpenAI API (key stored locally, never transmitted anywhere else).
+**Status: v0.16.0 — Phase 0 (BYOK foundation) + Phase 1 (Catch Me Up) scheduled.** This section is the
+*matured, authoritative* AI spec; it **supersedes** the original OpenAI-only sketch (which assumed a single
+OpenAI key powering every AI feature). The full AI-feature backlog (AI1–AI10) lives in §32.3, and the
+cross-cutting engine list in §32.4; this section defines the **provider adapter, the BYOK model, and the
+first shipping slice** that every §32.3 feature builds on.
 
-> **See also §32.3** for the full AI-feature backlog (AI1–AI10: Setup Sage, RP Muse, Elanthia
-> Oracle, Catch Me Up, Chronicle, Ask Your Logs, War Council, Loremaster's Loom, Portrait Forge,
-> Mentor). §32 supersedes this section's OpenAI-only assumption with a provider-agnostic, BYO-key
-> adapter (Claude default) and per-feature consent gates. §10.1 below is the matured form of AI1.
+**The three guardrails from §32 apply verbatim and are load-bearing here:** (1) AI **advises / composes /
+summarizes / decorates — it NEVER issues game commands** (the single rule that keeps every AI feature inside
+Simutronics' scripting policy and Principle #1; state it in-UI on every feature); (2) **BYOK, opt-in,
+privacy-disclosed** — nothing leaves the machine unless a specific feature is enabled and its consent gate
+accepted; (3) **AI ENHANCES, never GATES** — every feature has a working non-AI baseline (§32.3's baseline
+column) that ships FIRST, with the AI tier layered on top as the upsell.
 
-### 10.1 Highlight Suggester (Phase 4)
+### 10.1 The capability-routed `AIProvider` adapter (the correction to "one provider, one key")
 
-The first AI feature. Analyzes recent session logs and the current highlight config, then suggests new highlight rules:
+The original design (and §32.4's one-line "chat + embeddings + image, Claude default") conflated three
+capabilities that **no single provider serves**:
 
-**Flow:**
-1. Player opens AI panel or runs `/ai highlights`
-2. Client reads last N lines of session log + current `highlights.json`
-3. Sends to OpenAI with a prompt asking for regex highlight suggestions
-4. Returns structured suggestions: `{ pattern, color, label, reason }`
-5. UI shows each suggestion with a preview — player accepts or rejects individually
-6. Accepted rules are written to `highlights.json` and applied immediately
+- **Claude does text brilliantly, but generates NO images and has NO embeddings endpoint** (Anthropic points
+  to Voyage AI for embeddings). A single Claude key therefore *cannot* power Portrait Forge (G9/AI9) or X1's
+  backdrops, and cannot ground the RAG features (AI3 Oracle / AI6 Ask Your Logs / AI10 Mentor).
 
-Color suggestions from the AI are shown through the same colorblind-aware color picker, so players can see at a glance if a suggested color works for them.
+So the adapter is **capability-routed, not provider-routed** (decided 2026-07-10 with Sekmeht) — a small
+sharpening of §32.4, not a redesign. Three independent capabilities, each independently BYOK, each disabled
+until its own key exists (guardrail #2, applied per-capability):
 
-**Example suggestion:**
-```
-Pattern: "Fenvaok"  Color: #ff4444  Label: "hostile creature"
-Reason: This creature name appears frequently in your combat logs.
-```
+| Capability | Powers | Provider options | v0.16.0 status |
+|---|---|---|---|
+| **Text** (chat / structured output) | Catch Me Up, Chronicle, Setup Sage, Loom, War Council, Oracle answers | **Claude** (default) | **SHIPPING** |
+| **Embeddings** | RAG grounding for Oracle / Ask Your Logs / Mentor | Voyage AI, OpenAI, or **local/offline** (preferred — logs never leave the machine) | declared, dark |
+| **Image** | Portrait Forge, X1 backdrops, Scene Composer | OpenAI / Google / local SD (a separate ecosystem + key) | declared, dark |
 
-### 10.2 Future AI Ideas (not committed)
+`AIProvider` (main process, `src/main/ai/`) exposes `chat()`, `embed()`, and `generateImage()`. In v0.16.0
+only `chat()` (Claude) is implemented; `embed()` / `generateImage()` are **declared but stubbed to throw a
+clear "capability not configured" error** so the image and RAG feature tracks slot in later without a
+redesign — and so a feature that reaches for a dark capability *degrades with a helpful message, never a
+crash* (the graceful-degradation contract, guardrail #3).
 
-- **Lore assistant** — ask Claude questions about DR lore, mechanics, skills
-- **Session summary** — end-of-session summary of what happened, XP gained, notable events
-- **Skill tracker** — track mindstates and estimate time to next rank
-- **Config explainer** — "what does this highlight rule do?"
+**Model tiers (text):** **Claude Haiku 4.5** (`claude-haiku-4-5`) is the default workhorse for
+high-frequency, bounded-input jobs (Catch Me Up, summaries, "what does this rule do?"). **Claude Sonnet 5**
+(`claude-sonnet-5`) is the selectable quality tier for correctness-sensitive jobs (Setup Sage config
+generation, Loom theme/layout gen, coaching) — its native structured-output support yields schema-valid rule
+JSON against the existing rule shapes. Opus is available but not the default (a game client's AI stays cheap
+enough that testers actually enable it).
+
+### 10.2 Architecture (BYOK, main-process, capability-routed)
+
+- **Runs in MAIN, never renderer** (mirrors `src/main/connection/`). The key lives in `safeStorage` (Windows
+  DPAPI) as a sibling to `passwords.json` — **never in YAML**, and the renderer never sees it. Main-process
+  execution also sidesteps CSP/CORS (a renderer `fetch` to a provider host would be blocked) and keeps the
+  key off every game-text code path.
+- **The Claude text path is a thin raw-`fetch` SSE client** ([claudeProvider.ts](src/main/ai/claudeProvider.ts)),
+  NOT the bundled `@anthropic-ai/sdk` (decision 2026-07-10, revised from the initial spec). Rationale: the
+  v0.15.0 packaging-hygiene rule minimizes runtime deps, and this codebase hand-rolls its own parsers
+  (StormFrontParser, the Marshal reader) — a ~100-line SSE reader over Electron's global `fetch` fits that
+  ethos better than bundling a large SDK for one streaming call, and it avoids a network-install dependency
+  entirely (zero new packages). Streaming ON so summaries render progressively. If a future image/embeddings
+  capability wants a heavier client, that's a per-capability call.
+- **IPC** (all AI payloads carry `sessionId` per Principle #6 where session-scoped): `ai:chat` (streamed),
+  `ai:set-key` / `ai:test-key` / `ai:clear-key` / `ai:get-config`. Renderer client in `src/renderer/ai/` is a
+  thin wrapper over `window.api.ai*` plus consent state and a running token/cost meter.
+- **Non-secret config** (master enable, model tier, per-feature consent booleans) lives in **`SharedProfile.ai`**
+  (app-wide, the `sessionLog` precedent — needs the three registrations: `SharedProfile` type +
+  `buildSharedProfile` + `importSharedProfile`; optional field, non-breaking, no version bump). The **secret
+  key never rides YAML** — it stays in `safeStorage`. AI config is deliberately NOT in a Transfer category
+  (machine-local, the `automationStats` precedent).
+- **Consent + cost, done the Lichborne way:** a per-feature one-time **disclosure modal** (themed, NEVER
+  `window.alert`) discloses exactly what is sent ("this sends recent game text to Anthropic"); background /
+  quota notices are **toasts** (§37.6); in-flow feature results are `internal-system` lines + `[sys]` log
+  entries. A running token/cost meter is surfaced in the AI Settings section.
+- **Privacy stance (v0.16.0):** **disclose + send raw** — game text (including player names) is sent as-is
+  after the consent gate, with the disclosure stating so plainly. **Name redaction** and **scrollback-cap
+  tuning** are tracked follow-ups (§10.4), deliberately deferred so the pipe ships first.
+- **Slash surface (Principle #11):** an `/ai` command family from day one — `/ai key …`, `/ai on|off`,
+  `/ai status`, `/ai catchup` — registered in [slashCommands.ts](src/renderer/slashCommands.ts) with `/help`
+  blurbs, so AI is a first-class control surface, not a mouse-only bolt-on.
+- **AI Settings section** (the "AI" row already reserved in the §8 settings table): master enable, key entry +
+  Test button, model-tier picker (Haiku default / Sonnet 5), per-feature consent list, cost tally. Theme-audit
+  on a light theme (Principle #4); every consent toggle must actually gate its feature (Principle #9).
+
+### 10.3 First shipping slice — Catch Me Up (AI4) — SHIPPED v0.16.0
+
+The vertical slice that exercises the whole stack (key → consent → main-process call → stream → render →
+log) on the cheapest possible input. **What shipped:**
+
+- **Invocation:** the `/ai` slash family ([slashCommands.ts](src/renderer/slashCommands.ts)) — `/ai` /
+  `/ai status` (on-off / key / model), `/ai on|off` (master toggle), `/ai key` (points at Settings — a key is
+  never typed into the command bar; it would land in history + the palette), and **`/ai catchup`** (the
+  feature). The executors are sync matchers; the async work lives in GameWindow's `ctx.aiCatchup` (§37.5
+  client-control pattern — SlashContext gained `getAIState` / `setAIEnabled` / `aiCatchup`).
+- **AI tier:** `/ai catchup` checks the master enable, runs a **first-use consent gate**
+  ([AIConsentModal.tsx](src/renderer/components/AIConsentModal.tsx) — themed, per-feature, stored in
+  `aiConfig.consent`), gathers its input (below), then streams a Haiku summary into **one live
+  `internal-system` line** (updated per delta; `\n` survives via the `.text-line` pre-wrap) under a header
+  (`— Catch Me Up · while you were away (14 min · 87 lines)`). It ends the line with a **trailing `\n`** for one
+  blank line of separation from the next paragraph — deliberately NOT a separate spacer row, which would pick
+  up its own empty `[HH:MM]` when timestamps are on (Sekmeht, v0.16.0). The final text logs to `[sys]`; token
+  usage feeds the Settings cost meter (`aiSessionUsage`). **`/ai stop`** aborts a stream mid-flight
+  (`aiChatStream` returns an `abort()`; the cancel closure owns its own cleanup because `abort()` tears down
+  the listeners, so `onDone` never fires).
+- **Gathering — MAIN + every OPEN stream panel (INVARIANT, v0.16.0 fix).** A **watched** stream
+  (thoughts/deaths/arrivals/…) routes to `streamLines` and **never reaches `lines`** — `STREAM_FALLBACK` only
+  spills a stream into main when *nobody is watching it*. So gathering from `lines` alone made the summary
+  blind to exactly the conversation a returning player cares about, and it got **worse the better the user's
+  panel layout was** (a power user with comms panels got the weakest summary — that inversion is how the bug
+  was spotted). `runCatchup` therefore collects from `lines` **plus every watched stream buffer**,
+  **timestamp-merged** (`TextLine.timestamp`) and **source-tagged** (`[thoughts] Rakkor says …`) so the model
+  can tell a thought from room prose. It skips our own `internal-system` chatter, its own prior output
+  (`lbAI`), and `CATCHUP_SKIP_STREAMS` — the **state-readout** streams that clear+rewrite themselves (`exp`,
+  `inv`, `activespells`, `percwindow`, `moonwindow`, `lichscripts`), which would feed the model a stale TABLE
+  instead of events. **Any future AI feature that reads "what happened" must gather this way, not from `lines`.**
+- **The window is ALWAYS a TIME RANGE `[from, now]` — two sources, no heuristics.** `from` is either **(1)** an
+  explicit duration — **`/ai catchup 30m`** / `2h` (a bare number is minutes; `parseDuration` in slashCommands,
+  capped at `CATCHUP_MAX_MINUTES` = 24h) — or **(2)** the **default window** (`CATCHUP_DEFAULT_MINUTES` = 30).
+  The header always states which was used (`— Catch Me Up · the last 30 min · 87 lines`), so the feature is
+  never a black box. Empty window → "Nothing happened" with **no API call**.
+  - **Two earlier auto-window mechanisms were BOTH removed — do not reintroduce either.** (a) A *silent
+    idle-detector* watched for gaps in your keypresses/clicks and made that the window, so `/ai catchup` did
+    different things depending on state you couldn't see (Sekmeht: *"I don't understand what data /ai catchup
+    looks at"*). (b) A **`/afk` toggle** let you mark an explicit away-span that a bare `/ai catchup` then used;
+    it was removed as not-worth-it (Sekmeht, 2026-07-14: *"it's on the player to know how to catch up"*) — the
+    duration argument covers the need. If you wandered off, the answer is `/ai catchup 2h`, not a heuristic and
+    not a mode. (Removing `/afk` also removed the welcome-back card, which was Catch Me Up's non-AI baseline;
+    guardrail #3 falls back to "the baseline is the scrollback + Session Log" — the player's own eyes — which is
+    exactly the stance that motivated the removal.)
+  - A proactive auto-offer on return was considered and **declined** — invocation stays manual; nothing spends
+    tokens unasked.
+- **Output routing — the `lbAI` stream (DECIDED default, 2026-07-14).** AI feature output is a first-class named
+  stream, **`lbAI`** (LichborneAI), seeded into `discoveredStreams` so it's always addable in Panel Manager /
+  `/panel open lbai`. **Default = the MAIN game window; when an `lbAI` panel is open
+  (`watchedStreamsRef.has('lbAI')`) output routes THERE (`setStreamLines`) instead.** Routing is decided once
+  per run and the streaming updates + trailing newline follow it. `lbAI` is never emitted by the game, so it
+  has **no `STREAM_FALLBACK` entry** — the open/closed fallback is handled inline in `runCatchup`. This is the
+  shared output surface every future AI feature (Setup Sage cards, Chronicle, …) routes through.
+  - **Making `lbAI` the DEFAULT target was considered and DECLINED (Sekmeht, 2026-07-14).** Rationale for
+    keeping main-as-default: the summary should land where the player is already looking, and forcing a
+    separate panel would be surprising; `lbAI` stays the opt-in "keep it out of my scroll" surface. Consequence
+    (accepted): the two low-severity main-window-path edges — the live line can be trimmed out during a
+    2000+-line flood mid-stream, and `updateLive` re-maps the full `lines` array per token (pitfall #82 zone) —
+    are real but rare, and **opening the `lbAI` panel is the user-side fix for both** (its small dedicated
+    buffer is immune to game-text trimming and cheap to map).
+  - **`lbAI`'s display LABEL is `lbAI`, not the mangled `LbAI`** — it's client-seeded (no game-supplied title),
+    so the generic `capitalize(id)` at the tab/add-menu label sites would turn `lbAI` → `LbAI`. A shared
+    `streamLabel(id, title?)` ([aiConfig.ts](src/renderer/aiConfig.ts)) special-cases `AI_STREAM` and is used at
+    every label site (makeCustomTab, the two add-menus, slashPanelTab, addToZone); a game-supplied title still
+    wins, else the id is capitalized as before — behavior-preserving for every non-AI stream.
+- **Error handling — mid-stream failures surface.** `claudeProvider.handleFrame` handles the Anthropic SSE
+  `error` frame (e.g. `overloaded_error`/529 AFTER `message_start`) by THROWING, so it propagates out of
+  `claudeChatStream` → main's try/catch → the renderer's error line. Without that branch the frame hit no case,
+  was ignored, and the caller's `onDone` fired with a partial/empty summary and NO error (tokens still counted).
+  Any future SSE consumer must handle the `error` frame, not just the content deltas.
+- **`/ai catchup` pre-checks the key** (`aiCatchup` returns `'nokey'`) so it doesn't open the one-time consent
+  modal for a request that can't fire (enabled + no key → the disclosure would show, then error). The check
+  reads `aiKeyPresentRef` (fresh in-window via mount + `lichborne:ai-key-changed`); a key set in ANOTHER OS
+  window can read stale here — the same accepted cross-window display-staleness papercut, and catchup would
+  still work if forced.
+- **SCOPE — it summarizes WHAT IS ON YOUR SCREEN, and deliberately does NOT read the session log.**
+  Purpose, stated plainly (Sekmeht, 2026-07-14): *"I walked away, I came back — what did I miss in the last
+  20 minutes?"* That is the whole job. The source is `collectHistory()` — the live scrollback plus every OPEN
+  stream panel — filtered to the window.
+  - **A build that read the session log was written, shipped to the tester, and REVERTED.** It worked, but it
+    dragged in a mountain of machinery that only exists at LOG scale: a busy character logs 80k lines/day
+    (49k `main` + 38k `inv` + 17k `spells`), so finding the signal needed priority tiers, a verbatim block,
+    realm-ticker gating, NPC-vendor filters and template collapsing — and it *still* produced walls of vendor
+    chatter. None of that is needed for the few thousand lines actually on screen, which are already bounded
+    by `MAX_LINES`. **LOG ANALYSIS IS A DIFFERENT FEATURE** (§10.4) with different scale problems and a
+    different UI; do NOT merge them back together. The lesson is worth more than the code: *the scale of your
+    input decides your architecture* — the same feature over 3k on-screen lines and over 80k logged lines is
+    two different features.
+  - **Kept from that work** (they are wins at any scale): `CATCHUP_SKIP_STREAMS` (state readouts that
+    clear+rewrite — `exp`/`inv`/`spells`/`activespells`/`moonwindow`/… — contribute a stale TABLE, never
+    history); consecutive-identical dedup in `gatherWindow` (DR emits speech TWICE, pitfall #49, and game text
+    is repetitive besides); and **naming the character in the prompt** (the first version said "the player" and
+    left the model to *guess* which name in raw game text was them — one line, highest value-per-token in the
+    whole prompt).
+  - **Left behind as groundwork:** the `session-log:read-window(character, fromTs, toTs, maxRows)` IPC
+    ([sessionLog.ts](src/main/sessionLog.ts)) — it filters a time window **in main** and is exactly what the
+    future log-analysis feature needs. **Its own lesson stands regardless: NEVER bound a TIME window with a
+    LINE count** (pitfall #92 — an 8000-line tail reached back only 6.2 minutes on a busy character, so an
+    `/ai catchup 11m` silently summarized ~6).
+- **The budget is CHARACTERS, not lines** (`CATCHUP_MAX_CHARS` 40k ≈ 10k input tokens ≈ under a cent on Haiku).
+  A flat tail is fine *here* precisely because the source is the screen buffer, not a log — the noise-to-signal
+  ratio is nothing like an 80k-line/day file. The header says so honestly when it cannot fit everything
+  (`…4,902 lines, summarizing the most recent 734`).
+- **`[sys]` never enters the prompt — INVARIANT.** That is where we log our OWN output (slash results, prior
+  summaries); feeding it back makes the model summarize its own summaries.
+
+### 10.4 Tracked follow-ups (deferred, not forgotten)
+
+- **LOG ANALYSIS — a SEPARATE AI feature (Sekmeht, 2026-07-14).** Catch Me Up is deliberately screen-scoped
+  (§10.3); reading the session log is a different feature with different scale problems, and cramming both into
+  one command is what produced the over-engineered build that got reverted. What a log feature must solve that
+  the screen one doesn't: **80k lines/day** on a busy character (49k `main`, 38k `inv`, 17k `spells`), so it
+  needs signal-extraction (priority tiering, state-stream skipping), **NPC-vendor / realm-ticker filtering**
+  (DR has *no* conversation stream — player and NPC speech both land in `main`, verified against two real logs —
+  and `[arrivals]`/`[deaths]` are realm-wide tickers about strangers, not room events), **template collapsing**
+  (a script hammering a vendor emits the same line 15×), and almost certainly a **map-reduce** (chunk →
+  summarize → summarize-the-summaries) since a 2-hour window is already 1.5M chars. Groundwork already exists:
+  the **`session-log:read-window`** IPC filters a time range in main (pitfall #92: never bound a time window
+  with a line count). Likely shape: `/ai chronicle 8h` or AI6 "Ask Your Logs" (§32.3) rather than `/ai catchup`.
+  **Do not fold it back into Catch Me Up.**
+- **Name redaction / pseudonymization** toggle before send (v0.16.0 sends raw with disclosure).
+- **Scrollback-cap tuning** for Catch Me Up (v0.16.0 uses fixed `CATCHUP_LINES`/`CATCHUP_CHARS`; make it a setting).
+- **"Unread since you last looked" divider** — a divider in the main window marking where you left off, so
+  no-key players get a "here's where you were" anchor. It would need a lightweight last-viewed marker (the
+  `/afk`/`awayWindowRef` boundary that used to feed this was removed with `/afk`); a scroll-position or
+  focus-loss timestamp is the natural source.
+- **Catch Me Up button** (app-bar / More menu) for discoverability — v0.16.0 ships `/ai catchup` + `/help` only.
+- **`CATCHUP_SKIP_STREAMS` is a hand-curated deny-list** — a custom Lich script stream that is a state readout
+  (clear+rewrite) isn't recognized as one and would be fed to the summary as history. If that bites, promote it
+  to a *detected* property (the batch handler already tracks `clearedStreams`) rather than growing the list.
+- **Embeddings capability** — prefer a **local/offline** model so logs never leave the machine (only matched
+  snippets go to Claude for the answer); Voyage/OpenAI as the cloud fallback. Unlocks AI3 / AI6 / AI10.
+- **Image capability** — a separate provider + key (OpenAI `gpt-image-1` / Google Imagen / local SD); unlocks
+  G9/AI9 Portrait Forge, X1 backdrops, X6 Scene Composer.
+- **The §32.3 backlog** (AI2 RP Muse, AI3 Oracle, AI5 Chronicle, AI6 Ask Your Logs, AI7 War Council,
+  AI8 Loom, AI10 Mentor) — each ships its non-AI baseline first, then the AI tier over the shared adapter.
 
 ---
 
@@ -5712,7 +5896,7 @@ expand and supersede §10's OpenAI-only sketch. AI1 is the maturation of §10.1'
 | AI1 | Setup Sage | Manual rule editors + right-click "Highlight/Trigger this" + frequency-based name detection (Phase 6D) | Smart, context-aware rule *suggestions* pre-filled to approve |
 | AI2 | RP Muse | An emote/phrase template library + quick-emote palette | Bespoke in-character drafts tuned to a vibe & context |
 | AI3 | Elanthia Oracle | Bundled searchable lore reference + Elanthipedia link-outs | Conversational, room/guild-aware, cited answers |
-| AI4 | Catch Me Up | "Unread since AFK" divider + filtered comms scrollback | A 3-line prose summary of what happened |
+| AI4 | Catch Me Up | Scrollback + Session Log (read it yourself) | A prose summary of the last N minutes on screen (`/ai catchup 30m`) — SHIPPED v0.16.0 |
 | AI5 | Chronicle | Raw session-log view + export (already exists) | The log rewritten as narrative diary prose |
 | AI6 | Ask Your Logs | Existing keyword Session Log search | Natural-language querying over the same logs |
 | AI7 | War Council | Pure-arithmetic combat recap (hit/miss %, damage tallies) | Coaching advice on *why* + what to change |

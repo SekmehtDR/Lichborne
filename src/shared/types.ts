@@ -633,3 +633,47 @@ export interface FireLogEntry {
                     // Optional so older entries (or future non-rule sources)
                     // still satisfy the type.
 }
+
+// ── AI (BYOK, capability-routed — DESIGN §10, v0.16.0) ───────────────────────
+// The adapter is capability-routed, not provider-routed: text (Claude, shipping),
+// embeddings + image (declared, dark until their tracks land). Each capability's
+// API key lives in main's safeStorage (ai-keys.json — the passwords.json
+// precedent) and NEVER crosses IPC; only these non-secret payloads do.
+export type AICapability = 'text' | 'embeddings' | 'image'
+
+export interface AIKeyStatus {
+  text: boolean
+  embeddings: boolean
+  image: boolean
+}
+
+export interface AITestResult {
+  ok: boolean
+  error?: string
+}
+
+export interface AIChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+// Renderer → main (send). Streamed back on the ai:chat-* channels keyed by
+// requestId, so multiple in-flight calls (and multiple windows) don't cross.
+export interface AIChatRequest {
+  requestId: string
+  system?: string
+  messages: AIChatMessage[]
+  model?: string       // overrides the config default (a Claude model id)
+  maxTokens?: number
+}
+
+// One logged line inside a requested time window (session-log:read-window).
+// Filtering happens in MAIN — a busy character logs 80k+ lines/day, so shipping
+// the file to the renderer to filter would be absurd (the build-export precedent:
+// big data never crosses IPC, only the spec and the result).
+export interface SessionLogWindowRow { ts: number; stream: string; text: string }
+
+export interface AIChatChunk { requestId: string; delta: string }
+export interface AIUsage     { inputTokens: number; outputTokens: number }
+export interface AIChatDone  { requestId: string; usage?: AIUsage }
+export interface AIChatError { requestId: string; message: string }

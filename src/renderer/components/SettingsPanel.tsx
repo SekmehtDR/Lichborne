@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage } from '../../shared/types'
 import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import { type SessionLogSettings, loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
+import { type AIConfig, loadAIConfig, saveAIConfig, AI_TEXT_MODELS } from '../aiConfig'
+import { aiSessionUsage } from '../ai/aiClient'
 import { exportSharedProfile } from '../profile'
 import LichSetupDialog from './LichSetupDialog'
 import '../styles/settings.css'
@@ -104,7 +106,7 @@ function RadioGroup<T extends string>({ label, value, options, onChange, disable
 // ── F61: settings search + section nav ─────────────────────────────────
 // Section names in render order — drives the nav rail. Keep in sync with the
 // `sec*` section wrappers in the JSX below.
-const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'Lich Setup'] as const
+const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'AI', 'Lich Setup'] as const
 
 // Row-visibility helper for the global settings filter: empty query shows
 // everything; otherwise a row stays visible when the (lowercased, trimmed)
@@ -171,6 +173,56 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   }, [logCfg])
   function setLog<K extends keyof SessionLogSettings>(key: K, value: SessionLogSettings[K]) {
     setLogCfg(c => ({ ...c, [key]: value }))
+  }
+
+  // ── AI config (app-wide — _shared.yaml, not per-character; DESIGN §10) ────
+  // Same pattern as the Session Log block: a localStorage working copy + a
+  // debounced exportSharedProfile. The API KEY is separate — it lives in main's
+  // safeStorage and only its presence (a boolean) is surfaced here.
+  const [aiCfg, setAiCfg] = useState<AIConfig>(loadAIConfig)
+  const [aiKeyPresent, setAiKeyPresent] = useState(false)
+  const [aiKeyInput, setAiKeyInput] = useState('')
+  const [aiTesting, setAiTesting] = useState(false)
+  const [aiTestMsg, setAiTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  useEffect(() => {
+    window.api.aiKeyStatus().then(s => setAiKeyPresent(s.text)).catch(() => {})
+  }, [])
+  useEffect(() => {
+    saveAIConfig(aiCfg)
+    const t = setTimeout(() => exportSharedProfile().catch(console.error), 1000)
+    return () => clearTimeout(t)
+  }, [aiCfg])
+  function setAi<K extends keyof AIConfig>(key: K, value: AIConfig[K]) {
+    setAiCfg(c => ({ ...c, [key]: value }))
+  }
+  async function saveAiKey() {
+    const key = aiKeyInput.trim()
+    if (!key) return
+    await window.api.aiSetKey('text', key)
+    setAiKeyInput('')
+    setAiKeyPresent(true)
+    setAiTestMsg(null)
+    // Tell any mounted GameWindow to re-fetch key presence — its aiKeyPresentRef
+    // is fetched once on mount, so /ai status would otherwise stay stale until
+    // reconnect (a cross-window `storage` event never fires in the writing window,
+    // and the key isn't in localStorage anyway — hence a same-doc CustomEvent).
+    document.dispatchEvent(new CustomEvent('lichborne:ai-key-changed'))
+  }
+  async function clearAiKey() {
+    await window.api.aiClearKey('text')
+    setAiKeyPresent(false)
+    setAiTestMsg(null)
+    document.dispatchEvent(new CustomEvent('lichborne:ai-key-changed'))
+  }
+  async function testAiKey() {
+    setAiTesting(true)
+    setAiTestMsg(null)
+    try {
+      const r = await window.api.aiTestKey('text', aiCfg.textModel)
+      setAiTestMsg(r.ok ? { ok: true, text: 'Key works.' } : { ok: false, text: r.error ?? 'Test failed.' })
+    } finally {
+      setAiTesting(false)
+    }
   }
 
   // ── Session Log disk usage ──────────────────────────────────────────────
@@ -264,6 +316,12 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   const vMapAnim       = vis('Behavior', 'Genie Map Animations')
   const secBehavior    = vAutoLink || vWebSafety || vMapAnim
 
+  const vAiEnable      = vis('AI', 'Enable AI features', 'artificial intelligence', 'byok')
+  const vAiKey         = vis('AI', 'Anthropic API key', 'claude', 'byok')
+  const vAiModel       = vis('AI', 'Text model', 'haiku', 'sonnet', 'opus')
+  const vAiUsage       = vis('AI', 'Usage this session', 'tokens', 'cost')
+  const secAI          = vAiEnable || vAiKey || vAiModel || vAiUsage
+
   const vLogEnabled    = vis('Session Log', 'Enable session logging')
   const vLogOptions    = vis('Session Log', 'Logging options')
   const vLogMain       = vis('Session Log', 'Game text')
@@ -291,7 +349,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   const secLichSetup   = vLichRow
 
   const noMatches = searching
-    && !secDisplay && !secAccess && !secLayout && !secBehavior && !secSessionLog && !secLichSetup
+    && !secDisplay && !secAccess && !secLayout && !secBehavior && !secSessionLog && !secAI && !secLichSetup
 
   return createPortal(
     <div className="sp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -746,6 +804,70 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
           </section>}
 
           {/* ── Lich Setup ──────────────────────────────────────── */}
+          {/* ── AI ───────────────────────────────────────────────── */}
+          {secAI && <section className="sp-sec" ref={el => { sectionRefs.current['AI'] = el }}>
+          <div className="sp-divider" />
+          <div className="sp-section-label">AI</div>
+
+          {vAiEnable && <Toggle
+            label="Enable AI features"
+            description="Bring your own Anthropic (Claude) API key. Off by default — nothing is sent anywhere unless you enable a feature and accept its disclosure. AI advises, composes, and summarizes; it never issues game commands."
+            checked={aiCfg.enabled}
+            onChange={v => setAi('enabled', v)}
+          />}
+
+          {vAiKey && <>
+            <div className="sp-field-row">
+              <span className="sp-field-label">
+                Anthropic API key
+                <span className="sp-field-hint"> · stored encrypted on this machine (DPAPI), never in your profile</span>
+              </span>
+            </div>
+            <div className="sp-ai-key-row">
+              <input
+                className="sp-ai-key-input"
+                type="password"
+                placeholder={aiKeyPresent ? '•••••••••••• (saved)' : 'sk-ant-…'}
+                value={aiKeyInput}
+                onChange={e => setAiKeyInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveAiKey() }}
+              />
+              <button className="sp-button" disabled={!aiKeyInput.trim()} onClick={saveAiKey}>Save</button>
+              <button className="sp-button" disabled={!aiKeyPresent || aiTesting} onClick={testAiKey}>{aiTesting ? 'Testing…' : 'Test'}</button>
+              <button className="sp-button" disabled={!aiKeyPresent} onClick={clearAiKey}>Clear</button>
+            </div>
+            {aiTestMsg
+              ? <div className={`sp-ai-status ${aiTestMsg.ok ? 'sp-ai-status--ok' : 'sp-ai-status--err'}`}>{aiTestMsg.text}</div>
+              : aiKeyPresent && <div className="sp-ai-status sp-ai-status--ok">✓ Key saved</div>}
+          </>}
+
+          {vAiModel && <>
+            <RadioGroup
+              label="Text model"
+              value={aiCfg.textModel}
+              options={AI_TEXT_MODELS.map(m => ({ value: m.id, label: m.label }))}
+              onChange={v => setAi('textModel', v)}
+            />
+            <div className="sp-ai-hint">Used by Catch Me Up and future AI features. Higher tiers cost more per request (billed to your own API key).</div>
+          </>}
+
+          {vAiUsage && (() => {
+            const u = aiSessionUsage()
+            // Quiet by default (UX standard #1): a fresh session reads clean, not a
+            // row of zeros — the token breakdown appears once something's been used.
+            return (
+              <div className="sp-field-row">
+                <span className="sp-field-label">
+                  Usage this session
+                  <span className="sp-field-hint">{u.requests === 0
+                    ? ' · not used yet'
+                    : ` · ${u.requests} request${u.requests === 1 ? '' : 's'} · ${u.inputTokens.toLocaleString()} in / ${u.outputTokens.toLocaleString()} out tokens`}</span>
+                </span>
+              </div>
+            )
+          })()}
+          </section>}
+
           {secLichSetup && <section className="sp-sec" ref={el => { sectionRefs.current['Lich Setup'] = el }}>
           <div className="sp-divider" />
           <div className="sp-section-label">Lich Setup</div>

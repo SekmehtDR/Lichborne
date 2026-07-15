@@ -3,7 +3,8 @@ import type {
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
-  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
+  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
+  AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
 } from '../shared/types'
 
 const CH = {
@@ -284,4 +285,36 @@ contextBridge.exposeInMainWorld('api', {
   sessionLogDiskUsage: (character: string): Promise<SessionLogDiskUsage> =>
     ipcRenderer.invoke('session-log:disk-usage', character),
   sessionLogOpenFolder: (character: string): void => ipcRenderer.send('session-log:open-folder', character),
+  // GROUNDWORK for the future log-analysis AI feature (DESIGN §10.4) — NOT yet
+  // wired to anything (Catch Me Up reverted to screen-only, §10.3). Returns every
+  // logged line in [fromTs, toTs], filtered in MAIN because a busy character logs
+  // 80k+ lines/day and a line-capped tail can't bound a TIME window (pitfall #92).
+  sessionLogReadWindow: (character: string, fromTs: number, toTs: number, maxRows: number): Promise<SessionLogWindowRow[]> =>
+    ipcRenderer.invoke('session-log:read-window', character, fromTs, toTs, maxRows),
+
+  // ── AI (BYOK, capability-routed — DESIGN §10) ────────────────────────────────
+  // Keys go DOWN (set/clear) but never come back up — aiKeyStatus returns only
+  // booleans. Chat is fire-and-stream: aiChat sends, the on* channels stream
+  // chunks/done/error back keyed by requestId.
+  aiSetKey:    (cap: AICapability, key: string): Promise<void>       => ipcRenderer.invoke('ai:set-key', cap, key),
+  aiClearKey:  (cap: AICapability):              Promise<void>       => ipcRenderer.invoke('ai:clear-key', cap),
+  aiKeyStatus: ():                               Promise<AIKeyStatus> => ipcRenderer.invoke('ai:key-status'),
+  aiTestKey:   (cap: AICapability, model?: string): Promise<AITestResult> => ipcRenderer.invoke('ai:test-key', cap, model),
+  aiChat:      (req: AIChatRequest): void => ipcRenderer.send('ai:chat', req),
+  aiChatAbort: (requestId: string):  void => ipcRenderer.send('ai:chat-abort', requestId),
+  onAIChatChunk: (cb: (c: AIChatChunk) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, c: AIChatChunk) => cb(c)
+    ipcRenderer.on('ai:chat-chunk', listener)
+    return () => ipcRenderer.removeListener('ai:chat-chunk', listener)
+  },
+  onAIChatDone: (cb: (d: AIChatDone) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, d: AIChatDone) => cb(d)
+    ipcRenderer.on('ai:chat-done', listener)
+    return () => ipcRenderer.removeListener('ai:chat-done', listener)
+  },
+  onAIChatError: (cb: (er: AIChatError) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, er: AIChatError) => cb(er)
+    ipcRenderer.on('ai:chat-error', listener)
+    return () => ipcRenderer.removeListener('ai:chat-error', listener)
+  },
 })

@@ -12,6 +12,7 @@ import DebugPanel from './DebugPanel'
 import MapPanel from './panels/MapPanel'
 import ScriptListPanel from './ScriptListPanel'
 import type { ScriptRecord } from '../../shared/types'
+import { AI_STREAM, AI_STREAM_EMPTY, streamLabel } from '../aiConfig'
 import '../styles/panel-frame.css'
 
 // v0.8.10 (B134-follow-up): `conversation` (singular) — matches the
@@ -75,8 +76,7 @@ export function makeTab(type: PanelType): TabDef {
 
 export function makeCustomTab(name: string): TabDef {
   const id    = name.trim()
-  const label = id.charAt(0).toUpperCase() + id.slice(1)
-  return { id, type: 'custom', label }
+  return { id, type: 'custom', label: streamLabel(id) }
 }
 
 // Experience-as-tab id namespace. The prefix keeps experience ids out of the
@@ -270,8 +270,7 @@ export default function PanelFrame({
   }
 
   function addDiscoveredTab(streamId: string) {
-    const raw   = streamTitles[streamId] ?? streamId
-    const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+    const label = streamLabel(streamId, streamTitles[streamId])
     const tab: TabDef = { id: streamId, type: 'custom', label }
     onTabsChange([...tabs, tab])
     onActiveChange(tab.id)
@@ -525,10 +524,9 @@ export default function PanelFrame({
                     onClick: () => addTab(type),
                   })),
                   ...availableDiscovered.map(id => {
-                    const raw = streamTitles[id] ?? id
                     return {
                       key: `d:${id}`,
-                      label: raw.charAt(0).toUpperCase() + raw.slice(1),
+                      label: streamLabel(id, streamTitles[id]),
                       onClick: () => addDiscoveredTab(id),
                     }
                   }),
@@ -663,7 +661,7 @@ function renderPanel(
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety}
         showTimestamp={!!streamTimestamps[tab.id]}
         onToggleTimestamp={onToggleTimestamp}
-        emptyMessage={`Waiting for content on stream "${tab.label}"…`} />
+        emptyMessage={tab.id === AI_STREAM ? AI_STREAM_EMPTY : `Waiting for content on stream "${tab.label}"…`} />
     )
     case 'experience':    return (
       // Tab-hosted Experience (§34 dual-hosting). Experience text sizes off

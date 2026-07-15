@@ -71,6 +71,15 @@ export interface SlashContext {
   // is shared, like themes) — apply = saveCustomColors + scheduleSharedProfileSave.
   getCustomColors: () => CustomColor[]
   applyCustomColors: (list: CustomColor[]) => void
+  // ── AI (BYOK — DESIGN §10). getAIState reads the app-wide config sync + the
+  // main-fetched key-presence flag; setAIEnabled flips the master toggle;
+  // aiCatchup fires the async Catch Me Up (consent gate + stream) in GameWindow
+  // and reports whether it started, needs consent, or is disabled. ──
+  getAIState: () => { enabled: boolean; keyPresent: boolean; model: string }
+  setAIEnabled: (on: boolean) => void
+  // minutes = how far back to summarize; null = the default window (see runCatchup).
+  aiCatchup: (minutes: number | null) => 'started' | 'consent' | 'disabled' | 'nokey'
+  aiCancel: () => boolean   // true if a run was actually in flight and got stopped
 }
 
 // A result line is usually a plain string (rendered as internal-system text).
@@ -95,6 +104,7 @@ export function slashLineText(l: SlashLine): string {
 // set — Genie's vocabulary). Re-exported so palette/consumers keep one import.
 
 import { CURATED_COLORS, WEB_COLORS, loadCustomColors, resolveColor, isHexColor, validateCustomColorName, type CustomColor } from './colors'
+import { modelLabel } from './aiConfig'
 export { resolveColor }
 
 /** True when a token was probably MEANT as a color (for targeted error text). */
@@ -218,6 +228,32 @@ function listRules<T>(kind: string, rules: T[], filter: string | undefined, summ
   const lines = matched.slice(0, MAX).map(r => `  · ${summarize(r)}`)
   if (matched.length > MAX) lines.push(`  … and ${matched.length - MAX} more (see ${where}).`)
   return ok(`${matched.length} ${kind}${matched.length === 1 ? '' : 's'}${f ? ` matching "${filter}"` : ''}:`, ...lines)
+}
+
+// `/ai catchup 30m` — a free-form duration. Type whatever you actually mean:
+//   27m · 4m · 90 (bare = minutes) · 2h · 2.7h · 1.5h · 1h30m · 1h30
+// Fractions are allowed on either unit and the result is rounded to whole
+// minutes. Returns minutes, or null when the token isn't a duration at all.
+export const CATCHUP_MAX_MINUTES = 24 * 60
+export function parseDuration(token: string): number | null {
+  const t = token.trim().toLowerCase()
+  if (!t) return null
+  const num = String.raw`\d+(?:\.\d+)?`
+  // Combined form first, so "1h30m" doesn't get mistaken for a bare "1h".
+  const combo = new RegExp(`^(${num})\\s*h\\s*(${num})\\s*m?$`).exec(t)
+  const single = combo ? null : new RegExp(`^(${num})\\s*([mh])?$`).exec(t)
+  let mins: number
+  if (combo) {
+    mins = Number(combo[1]) * 60 + Number(combo[2])
+  } else if (single) {
+    const n = Number(single[1])
+    mins = single[2] === 'h' ? n * 60 : n
+  } else {
+    return null
+  }
+  if (!Number.isFinite(mins)) return null
+  const rounded = Math.round(mins)
+  return rounded > 0 ? rounded : null   // "0.2m" rounds to nothing — reject it
 }
 
 const MODE_OPT: SlashOptionSpec = { key: 'mode', values: ['text', 'phrase', 'regex'], hint: 'how the pattern matches (text = whole words, phrase = exact substring, regex)' }
@@ -997,6 +1033,82 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       return ok(`Main-window timestamps ${next ? 'ON' : 'OFF'}.`)
     },
   },
+
+  // ── /ai (BYOK — DESIGN §10) ───────────────────────────────────────────────
+  // Bare /ai (verb '') reports status; on/off flip the master toggle; catchup
+  // fires Catch Me Up; key points at Settings (a key is never typed into the
+  // command bar — it would land in history + the palette). The async work lives
+  // in GameWindow's ctx.aiCatchup; these executors stay sync matchers.
+  {
+    noun: 'ai', nounAliases: [], verb: '',
+    args: [], options: [], flags: [],
+    description: 'Show AI status (on/off, key, model)',
+    example: '/ai',
+    run: (ctx) => {
+      const s = ctx.getAIState()
+      return ok(`AI: ${s.enabled ? 'ON' : 'OFF'} · key ${s.keyPresent ? 'set' : 'NOT set'} · model ${modelLabel(s.model)}`)
+    },
+  },
+  {
+    noun: 'ai', nounAliases: [], verb: 'on',
+    args: [], options: [], flags: [],
+    description: 'Enable AI features',
+    example: '/ai on',
+    run: (ctx) => {
+      ctx.setAIEnabled(true)
+      return ok(ctx.getAIState().keyPresent
+        ? 'AI features enabled.'
+        : 'AI features enabled — but no API key yet. Add one in Settings → AI.')
+    },
+  },
+  {
+    noun: 'ai', nounAliases: [], verb: 'off',
+    args: [], options: [], flags: [],
+    description: 'Disable AI features',
+    example: '/ai off',
+    run: (ctx) => {
+      ctx.setAIEnabled(false)
+      return ok('AI features disabled.')
+    },
+  },
+  {
+    noun: 'ai', nounAliases: [], verb: 'key',
+    args: [], options: [], flags: [],
+    description: 'Where to set your API key',
+    example: '/ai key',
+    run: () => ok('Set your Anthropic API key in Settings → AI (stored encrypted on this machine — not typed here).'),
+  },
+  {
+    noun: 'ai', nounAliases: [], verb: 'catchup',
+    args: [{ name: 'duration', required: false, kind: 'word', hint: 'how far back — 27m · 2h · 1.5h · 1h30m · 90 (bare = minutes). Omit for the last 30m' }],
+    options: [], flags: [],
+    description: 'Summarize what happened (AI) — /ai catchup 27m',
+    example: '/ai catchup 1.5h',
+    run: (ctx, p) => {
+      const tok = p.args[0]?.trim()
+      let minutes: number | null = null
+      if (tok) {
+        minutes = parseDuration(tok)
+        if (minutes === null) return err(`"${tok}" isn't a duration — try 27m, 2h, 1.5h, or 1h30m.`)
+        if (minutes > CATCHUP_MAX_MINUTES) return err('The most you can catch up on at once is 24h.')
+      }
+      const st = ctx.aiCatchup(minutes)
+      if (st === 'disabled') return err('AI is off — /ai on to enable (set a key in Settings → AI first).')
+      if (st === 'nokey')    return err('No API key yet — add one in Settings → AI.')
+      if (st === 'consent')  return ok('One-time AI disclosure opened — accept it to continue.')
+      return ok()   // 'started' — GameWindow renders the streaming summary line itself
+    },
+  },
+  {
+    noun: 'ai', nounAliases: [], verb: 'stop',
+    args: [], options: [], flags: [],
+    description: 'Stop an AI response that is still streaming',
+    example: '/ai stop',
+    run: (ctx) => ctx.aiCancel()
+      ? ok()                                  // GameWindow marks the line "(stopped)"
+      : err('Nothing is running.'),
+  },
+
 ]
 
 // Noun-level blurbs for the bare /help listing — one PLAIN-LANGUAGE line per
@@ -1019,6 +1131,7 @@ const NOUN_HELP: Record<string, string> = {
   timestamps: 'Show the time next to each line in the main window',
   clear:      'Wipe the main window (your Session Log still keeps everything)',
   colors:     'The named colors — see them, add your own (/colors add "ember" #ff6a30)',
+  ai:         'AI features (bring your own key) — /ai catchup 30m summarizes what happened',
   help:       'This list — /help <command> explains one in detail',
 }
 

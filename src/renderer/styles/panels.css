@@ -19,6 +19,15 @@
 [data-preset="command-echo"]   { color: var(--preset-cmd);      background-color: var(--preset-cmd-bg); }
 [data-preset="echo"]           { color: var(--text-dim); font-style: italic; }
 [data-preset="internal-system"] { color: var(--text-dim); font-style: italic; }
+/* Lichborne AI output (DESIGN §10) is CONTENT the user actually reads — a summary,
+   not a throwaway notice like "Connection closed." — so it must NOT sit on
+   --text-dim, the dimmest rung of the text ramp (Sekmeht: "it's dark grey when I
+   have white text"). It follows the GAME TEXT color instead, tinted toward the
+   theme accent so it still reads as "the client talking" rather than the game.
+   Written as a color-mix over the general vars so it self-corrects on every theme,
+   light or dark, with no per-theme entry (pitfall #34/#63 — let the cascade work).
+   Not italic: it's prose to read, and a whole italic paragraph is a wall. */
+[data-preset="ai"]             { color: color-mix(in srgb, var(--accent) 25%, var(--text-primary)); }
 
 /* ============================================================
    Stream panel — generic scrolling text

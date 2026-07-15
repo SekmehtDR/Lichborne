@@ -2,7 +2,8 @@ import type {
   LoginCredentials, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
-  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage,
+  SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
+  AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
 } from '../shared/types'
 
 declare global {
@@ -114,6 +115,18 @@ declare global {
       sessionLogBuildExport: (character: string, spec: SessionLogExportSpec) => Promise<SessionLogExportResult>
       sessionLogDiskUsage: (character: string) => Promise<SessionLogDiskUsage>
       sessionLogOpenFolder: (character: string) => void
+      sessionLogReadWindow: (character: string, fromTs: number, toTs: number, maxRows: number)
+        => Promise<SessionLogWindowRow[]>
+      // AI (BYOK, capability-routed — DESIGN §10)
+      aiSetKey:    (cap: AICapability, key: string) => Promise<void>
+      aiClearKey:  (cap: AICapability) => Promise<void>
+      aiKeyStatus: () => Promise<AIKeyStatus>
+      aiTestKey:   (cap: AICapability, model?: string) => Promise<AITestResult>
+      aiChat:      (req: AIChatRequest) => void
+      aiChatAbort: (requestId: string) => void
+      onAIChatChunk: (cb: (c: AIChatChunk) => void) => () => void
+      onAIChatDone:  (cb: (d: AIChatDone) => void) => () => void
+      onAIChatError: (cb: (er: AIChatError) => void) => () => void
     }
   }
 }

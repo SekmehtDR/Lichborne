@@ -12,6 +12,7 @@ import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
 import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir, ensureExportsDir, getExportsDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
+import { registerAIHandlers } from './ai'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
@@ -344,6 +345,11 @@ registerLichSqliteHandlers()
 // Register Session Log IPC handlers (append / flush / list / read / search /
 // open-folder). The writer buffers per-character and flushes to per-day files.
 registerSessionLogHandlers()
+
+// Register AI (BYOK, capability-routed — DESIGN §10) IPC handlers: per-capability
+// key management (safeStorage), key test, and streaming text chat. Keys never
+// cross back to the renderer; only booleans + streamed text do.
+registerAIHandlers()
 
 // ── Window ────────────────────────────────────────────────────────────────────
 

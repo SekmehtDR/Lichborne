@@ -1,4 +1,5 @@
 import type { TabDef, PanelType } from './PanelFrame'
+import { streamLabel } from '../aiConfig'
 import '../styles/panel-manager.css'
 
 // v0.8.1 (F24): 'mainTop' is the new zone above the main scrolling text
@@ -251,8 +252,7 @@ export default function PanelManager({
                 </Row>
               ))}
               {availableCustom.map(id => {
-                const raw   = streamTitles[id] ?? id
-                const label = raw.charAt(0).toUpperCase() + raw.slice(1)
+                const label = streamLabel(id, streamTitles[id])
                 return (
                   <Row key={id} label={label}>
                     {addedZones.length === 0

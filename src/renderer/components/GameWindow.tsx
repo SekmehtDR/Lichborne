@@ -13,6 +13,9 @@ import { loadMutes, saveMutes, compileMutes, applyMutesToSegments, newMute, type
 import { loadSubstitutes, saveSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
 import { runSlash, slashLineText, type SlashContext, type SlashEditorTab } from '../slashCommands'
 import { loadCustomColors, saveCustomColors, contrastBackingFor } from '../colors'
+import { loadAIConfig, saveAIConfig, AI_STREAM, streamLabel } from '../aiConfig'
+import { aiChatStream } from '../ai/aiClient'
+import AIConsentModal from './AIConsentModal'
 import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
@@ -71,6 +74,65 @@ interface Props {
 }
 
 let lineId = 0
+
+// ── Catch Me Up (AI4, DESIGN §10.3) ─────────────────────────────────────────
+// PURPOSE, stated plainly (Sekmeht): "I walked away, I came back — what did I miss
+// in the last 20 minutes?" That is the WHOLE job. It summarizes WHAT IS ON YOUR
+// SCREEN (the live scrollback + open stream panels), over a time window you name.
+//
+// It deliberately does NOT read the session log. An earlier build did, and that
+// dragged in a mountain of complexity which only exists at LOG scale — a busy
+// character logs 80k lines/day, so the summary needed priority tiers, verbatim
+// blocks, realm-ticker gating, NPC-vendor filters and template collapsing just to
+// find the signal. None of it is needed for the few thousand lines actually on
+// screen. LOG ANALYSIS IS A DIFFERENT FEATURE and gets built as one (§10.4) —
+// do not merge them back together.
+//
+// The window is ALWAYS a time range [from, now]. `from` is either an explicit
+// duration (`/ai catchup 30m`) or the default window — nothing else. An earlier
+// build ALSO guessed at absences by watching for gaps in your keypresses, so
+// `/ai catchup` did one of several different things depending on state you could
+// not see. That silent detection is GONE. Do not reintroduce it.
+const CATCHUP_DEFAULT_MINUTES = 30
+// Prompt budget. The cost driver is CHARACTERS, not lines (40k ≈ 10k input tokens,
+// well under a cent on Haiku). The screen buffer is already bounded by MAX_LINES,
+// so this rarely bites — but when it does, the header says so honestly.
+const CATCHUP_MAX_CHARS = 40_000
+
+// Streams that are STATE readouts (they clear+rewrite themselves) rather than
+// history — feeding these to a summary sends a stale TABLE instead of events. Real
+// numbers from a live character: 1,173 `spells` and 2,574 `inv` lines in a single
+// 11-minute window, all pure clear+rewrite spam. (lbAI is skipped too: never feed
+// the model its own prior output.)
+const CATCHUP_SKIP_STREAMS = new Set([
+  'exp', 'inv', 'spells', 'activespells', 'percwindow', 'moonwindow', 'lichscripts', 'debug', 'raw',
+])
+
+function fmtDuration(ms: number): string {
+  const mins = Math.max(1, Math.round(ms / 60_000))
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+// Naming the character is the highest-value line in this prompt: without it the
+// model has to GUESS which name in raw game text is the player.
+function catchupSystem(character: string): string {
+  return [
+    `You are catching up ${character}'s player, who stepped away from DragonRealms (a text MUD) and just got back.`,
+    'Lines from side channels are tagged like [thoughts]; untagged lines are the main game window.',
+    `"You" and "your" in the text refer to ${character}.`,
+    '',
+    'In a few short prose lines, tell them what they missed:',
+    'what was said to them or around them, who came and went, any combat or notable events,',
+    `and what ${character} was doing (a script often keeps acting while the player is away).`,
+    '',
+    'Be concise and factual. No preamble, no headers, no markdown. Never invent detail.',
+    'If nothing notable happened, say so in one line.',
+  ].join('\n')
+}
+
 let fireLogId = 0
 
 const EXP_READOUT = /^[A-Za-z ]+:\s+\d+\s+\d+%\s+\w/
@@ -338,6 +400,26 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const saveProfile = useProfileSaver()
   const [lines, setLines] = useState<TextLine[]>([])
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
+
+  // ── AI (Catch Me Up — DESIGN §10.3) ──────────────────────────────────────
+  // Key presence is fetched once from main (safeStorage) into a ref so the sync
+  // /ai status executor can report it. The consent modal state gates the first
+  // Catch Me Up run; aiCatchupInFlight prevents a second concurrent summary.
+  const aiKeyPresentRef = useRef(false)
+  const aiCatchupInFlight = useRef(false)
+  const aiCancelRef = useRef<null | (() => void)>(null)
+  const [aiConsent, setAiConsent] = useState<null | { onAccept: () => void }>(null)
+  // Fetch key presence on mount AND whenever Settings changes the key (same-doc
+  // CustomEvent — the key lives in main's safeStorage, never localStorage, so a
+  // `storage` event can't carry it). Keeps /ai status honest without a remount.
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => window.api.aiKeyStatus().then(s => { if (!cancelled) aiKeyPresentRef.current = s.text }).catch(() => {})
+    refresh()
+    document.addEventListener('lichborne:ai-key-changed', refresh)
+    return () => { cancelled = true; document.removeEventListener('lichborne:ai-key-changed', refresh) }
+  }, [])
+
   const [roomState, setRoomState] = useState<RoomState>({ title: '', desc: '', objects: [], players: [], creatures: [], extra: [], exits: [] })
   const [lichMapVersion, setLichMapVersion] = useState(0)
   const [expSkills, setExpSkills]       = useState<Record<string, string>>({})
@@ -1065,7 +1147,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [currentThemeId, setCurrentThemeId]     = useState(() => localStorage.getItem('lichborne.theme') ?? 'classic')
   const [myThemes, setMyThemes]                 = useState<CustomTheme[]>(() => loadMyThemes())
   const [settings, setSettings]                 = useState<AppSettings>(() => loadSettings(session.character))
-  const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([])
+  // Seed the AI output stream so it's always addable in Panel Manager even before
+  // any AI feature has produced output (the user wants to pin it up front).
+  const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([AI_STREAM])
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
   const [injuryState, setInjuryState]             = useState<InjuryState>({})
 
@@ -2884,7 +2968,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const isBuiltin = ALL_PANEL_TYPES.includes(typeOrId as PanelType)
     const tab: TabDef = isBuiltin
       ? makeTab(typeOrId as PanelType)
-      : { id: typeOrId, type: 'custom', label: typeOrId.charAt(0).toUpperCase() + typeOrId.slice(1) }
+      : { id: typeOrId, type: 'custom', label: streamLabel(typeOrId) }
     if (zone === 'mainTop') { setMainTopTabs(p => [...p, tab]); setMainTopActiveId(tab.id); setMainTopAdded(true) }
     if (zone === 'top')    { setTopTabs(p => [...p, tab]);    setTopActiveId(tab.id);    setTopAdded(true) }
     if (zone === 'mid')    { setMidTabs(p => [...p, tab]);    setMidActiveId(tab.id);    setMidAdded(true) }
@@ -2974,7 +3058,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   function slashPanelTab(id: string): TabDef {
     return ALL_PANEL_TYPES.includes(id as PanelType)
       ? makeTab(id as PanelType)
-      : { id, type: 'custom', label: id.charAt(0).toUpperCase() + id.slice(1) }
+      : { id, type: 'custom', label: streamLabel(id) }
   }
   function slashOpenPanel(id: string): 'opened' | 'focused' {
     if (layoutMode === 'free') {
@@ -3027,6 +3111,172 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // created rule is byte-compatible with an editor-created one. Result lines
   // render as client text (preset 'internal-system', the "Connection closed."
   // pattern) and log to the Session Log under [sys].
+  // Catch Me Up (AI4, DESIGN §10.3). Streams a summary into ONE live
+  // internal-system line (updated per delta; `\n` survives via the `.text-line`
+  // pre-wrap), then logs the final text to [sys]. The consent gate + enable check
+  // happen in the ctx.aiCatchup wrapper below.
+  // ── Shared history view: MAIN + every OPEN stream panel, timestamp-merged and
+  // source-tagged. A WATCHED stream (thoughts/deaths/arrivals/…) routes to
+  // streamLines and NEVER reaches `lines` — STREAM_FALLBACK only spills a stream
+  // into main when nobody is watching it. Reading `lines` alone therefore went
+  // blind to exactly the conversation a returning player cares about, and got
+  // WORSE the better the panel layout was (v0.16.0 fix). Skips our own client
+  // chatter, our own prior AI output, and the state-readout streams that
+  // clear+rewrite themselves (CATCHUP_SKIP_STREAMS) — those would contribute a
+  // stale TABLE instead of events. Used by BOTH Catch Me Up and the welcome-back
+  // card, so the two can never disagree about "what happened".
+  function collectHistory(): { ts: number; stream: string; text: string }[] {
+    const out: { ts: number; stream: string; text: string }[] = []
+    const collect = (ln: TextLine, stream: string) => {
+      if (ln.segments[0]?.preset === 'internal-system') return
+      const text = ln.segments.map(s => s.text).join('').trim()
+      if (text) out.push({ ts: ln.timestamp, stream, text })
+    }
+    for (const ln of lines) collect(ln, 'main')
+    for (const id of watchedStreamsRef.current) {
+      if (id === AI_STREAM || CATCHUP_SKIP_STREAMS.has(id.toLowerCase())) continue
+      for (const ln of (streamLines[id] ?? [])) collect(ln, id)
+    }
+    out.sort((a, b) => a.ts - b.ts)
+    return out
+  }
+
+  // "What happened in [from, to]" — the ONE source Catch Me Up reads. If a second
+  // surface ever needs to answer the same question, it MUST call this, not roll its
+  // own: a previous build had the welcome-back card counting the live buffers while
+  // catchup read the session log, and the two reported wildly different line counts
+  // for the same window (the tester rightly asked why).
+  //
+  // Source = WHAT IS ON SCREEN: the live scrollback plus every OPEN stream panel.
+  // A watched stream routes to streamLines and never reaches `lines` (STREAM_FALLBACK
+  // only spills into main when nobody is watching), so reading `lines` alone would go
+  // blind to exactly the conversation a returning player cares about — and would get
+  // WORSE the better the panel layout was. collectHistory() merges both.
+  //
+  // It deliberately does NOT read the session log (see the header comment on
+  // CATCHUP_DEFAULT_MINUTES): that is log-analysis, a different feature.
+  function gatherWindow(from: number, to: number): { ts: number; stream: string; text: string }[] {
+    const rows = collectHistory().filter(c => c.ts >= from && c.ts <= to)
+    // Collapse CONSECUTIVE identical lines. Deliberately keyed on TEXT ALONE, not
+    // (stream, text): DR double-emits speech (pitfall #49 — once inside the
+    // pushStream block, once to main), so with a conversation/whispers panel OPEN the
+    // two copies arrive under DIFFERENT streams (`conversation` and `main`) at the
+    // same timestamp. A stream-aware dedup misses that entirely and feeds the model
+    // every spoken line twice. Text-only also gives free compression on repetitive
+    // game text (crafting loops, combat rounds).
+    const out: typeof rows = []
+    for (const r of rows) {
+      const prev = out[out.length - 1]
+      if (prev && prev.text === r.text) continue
+      out.push(r)
+    }
+    return out
+  }
+
+  // `minutes` = an explicit duration (`/ai catchup 30m`), or null for the default
+  // window (CATCHUP_DEFAULT_MINUTES). Those are the only two possibilities.
+  function runCatchup(minutes: number | null) {
+    if (aiCatchupInFlight.current) return
+    aiCatchupInFlight.current = true
+
+    // ── Window. ALWAYS a time range [from, now]: an explicit duration, or the
+    // default. Nothing else, and nothing hidden.
+    const now = Date.now()
+    const from = now - (minutes ?? CATCHUP_DEFAULT_MINUTES) * 60_000
+    // Say exactly what window was used — the feature must never be a black box.
+    const label = `the last ${fmtDuration(now - from)}`
+
+    // Route output to the lbAI stream panel if it's open, else the main window.
+    const toStream = watchedStreamsRef.current.has(AI_STREAM)
+    const appendLine = (line: TextLine) => {
+      if (toStream) setStreamLines(prev => ({ ...prev, [AI_STREAM]: [...(prev[AI_STREAM] ?? []), line].slice(-MAX_STREAM_LINES) }))
+      else setLines(prev => appendTrimmed(prev, [line]))
+    }
+    const updateLive = (id: number, segs: TextSegment[]) => {
+      if (toStream) setStreamLines(prev => ({ ...prev, [AI_STREAM]: (prev[AI_STREAM] ?? []).map(ln => ln.id === id ? { ...ln, segments: segs } : ln) }))
+      else setLines(prev => prev.map(ln => ln.id === id ? { ...ln, segments: segs } : ln))
+    }
+
+    const liveId = lineId++
+    appendLine({ id: liveId, segments: [{ text: '— Catching you up…', preset: 'internal-system' }], timestamp: Date.now() })
+
+    // ── Gather what's on screen for the window (see gatherWindow).
+    const rows = gatherWindow(from, now)
+
+    const total = rows.length
+    if (total === 0) {
+      aiCatchupInFlight.current = false
+      updateLive(liveId, [{
+        text: `— Catch Me Up · ${label}\nNothing happened.\n`,
+        preset: 'internal-system',
+      }])
+      return
+    }
+
+    // ── Budget: take as much of the TAIL as the char budget allows (most recent
+    // matters most), and say so honestly in the header when we couldn't fit it all.
+    // A flat tail is fine HERE precisely because the source is the screen buffer,
+    // not the log — it's already bounded by MAX_LINES, so the ratio of noise to
+    // signal is nothing like a 80k-line/day log file.
+    const rendered = rows.map(r => (r.stream === 'main' ? r.text : `[${r.stream}] ${r.text}`))
+    let start = rendered.length
+    let used = 0
+    while (start > 0 && used + rendered[start - 1].length + 1 <= CATCHUP_MAX_CHARS) {
+      start--
+      used += rendered[start].length + 1
+    }
+    const buffer = rendered.slice(start).join('\n')
+    const clipped = start > 0 ? `, summarizing the most recent ${rendered.length - start}` : ''
+    const header = `— Catch Me Up · ${label} · ${total} line${total === 1 ? '' : 's'}${clipped}`
+
+    // Header stays quiet (internal-system); the SUMMARY body uses the 'ai' preset,
+    // which follows the game-text color rather than the dim system grey (it's content
+    // you read, not a notice). Trailing newline separates it from the next paragraph
+    // WITHOUT a spacer row (which would take its own [HH:MM] when timestamps are on).
+    const live = (body: string, bodyPreset: string) => updateLive(liveId, [
+      { text: header + '\n', preset: 'internal-system' },
+      { text: body, preset: bodyPreset },
+    ])
+    const settle = (body: string, preset: string) => {
+      aiCatchupInFlight.current = false
+      aiCancelRef.current = null
+      live(body + '\n', preset)
+    }
+
+    let acc = ''
+    let handle: { abort: () => void }
+    try {
+      handle = aiChatStream(
+        { system: catchupSystem(session.character), messages: [{ role: 'user', content: buffer }], maxTokens: 500 },
+        {
+          onDelta: d => { acc += d; live(acc, 'ai') },
+          onDone: () => {
+            const final = acc.trim() || '(no summary returned)'
+            settle(final, 'ai')
+            logToSession([header, ...final.split('\n')].map(t => ({ ts: Date.now(), stream: 'sys', text: t })))
+          },
+          onError: msg => {
+            // A failure is a NOTICE, not content — keep it on the dim system preset.
+            settle(`✕ Catch Me Up failed: ${msg}`, 'internal-system')
+            logToSession([{ ts: Date.now(), stream: 'sys', text: `Catch Me Up failed: ${msg}` }])
+          },
+        },
+      )
+    } catch (e) {
+      // A throw here would otherwise strand aiCatchupInFlight at `true` FOREVER,
+      // silently disabling Catch Me Up for the rest of the session with no error
+      // anywhere. The in-flight guard must never be able to leak.
+      settle(`✕ Catch Me Up failed: ${e instanceof Error ? e.message : String(e)}`, 'internal-system')
+      return
+    }
+    // /ai stop — abort() tears down the stream listeners, so onDone never fires;
+    // this closure owns the cleanup + the final render itself.
+    aiCancelRef.current = () => {
+      handle.abort()
+      settle(acc.trim() ? `${acc.trim()}\n(stopped)` : '(stopped)', 'ai')
+    }
+  }
+
   function runSlashLine(text: string) {
     const ctx: SlashContext = {
       character: session.character,
@@ -3091,6 +3341,38 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // Custom named colors are APP-WIDE (like themes) → _shared.yaml.
       getCustomColors: loadCustomColors,
       applyCustomColors: list => { saveCustomColors(list); scheduleSharedProfileSave() },
+      // ── AI (BYOK — DESIGN §10). Config is app-wide (loadAIConfig); the key
+      // presence comes from the main-fetched ref. aiCatchup gates on enable +
+      // one-time consent (opening the disclosure modal), then fires runCatchup. ──
+      getAIState: () => { const c = loadAIConfig(); return { enabled: c.enabled, keyPresent: aiKeyPresentRef.current, model: c.textModel } },
+      setAIEnabled: on => { const c = loadAIConfig(); saveAIConfig({ ...c, enabled: on }); scheduleSharedProfileSave() },
+      aiCatchup: (minutes) => {
+        const c = loadAIConfig()
+        if (!c.enabled) return 'disabled'
+        // Pre-check the key so we don't open the consent modal for a request that
+        // can't fire (enabled + no key → accept → "No key" error). aiKeyPresentRef
+        // is fresh in this window (mount + lichborne:ai-key-changed); a key set in
+        // ANOTHER OS window could read stale here — the accepted cross-window
+        // display-staleness papercut, and catchup would still work if forced.
+        if (!aiKeyPresentRef.current) return 'nokey'
+        const fire = () => runCatchup(minutes)
+        if (!c.consent['catchup']) {
+          setAiConsent({ onAccept: () => {
+            const cur = loadAIConfig()
+            saveAIConfig({ ...cur, consent: { ...cur.consent, catchup: true } })
+            scheduleSharedProfileSave()
+            fire()   // same window the user originally asked for
+          } })
+          return 'consent'
+        }
+        fire()
+        return 'started'
+      },
+      aiCancel: () => {
+        if (!aiCancelRef.current) return false
+        aiCancelRef.current()
+        return true
+      },
     }
     const result = runSlash(text, ctx)
     const marker = result.ok ? '— ' : '✕ '
@@ -4208,6 +4490,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           character={session.character}
           initialSearch={sessionLogSearch}
           onClose={() => setShowSessionLog(false)}
+        />
+      )}
+
+      {aiConsent && (
+        <AIConsentModal
+          title="Catch Me Up — send recent text to Anthropic?"
+          body="Catch Me Up asks Claude to summarize what happened recently so you can get back up to speed after being away."
+          provider="Anthropic (Claude)"
+          onAccept={() => { const a = aiConsent; setAiConsent(null); a.onAccept() }}
+          onDecline={() => setAiConsent(null)}
         />
       )}
 
