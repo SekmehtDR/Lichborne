@@ -537,12 +537,18 @@ export class StormFrontParser {
               // parens-form rooms got NO roomId — the Lich Map's instant
               // lichDb.get(roomId) lookup never fired and it fell back to the
               // fragile title+desc match (the "stuck until something forces a
-              // re-emit" symptom), and $roomid was empty.
+              // re-emit" symptom), and $roomid was empty. The parens form also
+              // accepts a `u` prefix (`(u12345)`): with Lich's display_uid
+              // setting on, Lich REWRITES the native `(12345)` to `(u12345)`
+              // (the same game uid, u-prefixed) — `u?` parses both to the bare
+              // id so the lichDb lookup is identical (Lich 5.18 review, pitfall
+              // #65). Non-numeric parens (`(**)`, `(unknown)`) still miss →
+              // roomId stays undefined, preserving the id-absence no-op.
               const trailMatch = inner.match(/\s*-\s*(\d+)\s*$/)
               const cleanTitle = trailMatch
                 ? inner.slice(0, trailMatch.index).trim()
                 : inner.trim()
-              const parenMatch = trailMatch ? null : attrs.subtitle.match(/\]\s*\((\d+)\)/)
+              const parenMatch = trailMatch ? null : attrs.subtitle.match(/\]\s*\(u?(\d+)\)/)
               const roomId = trailMatch
                 ? parseInt(trailMatch[1], 10)
                 : parenMatch ? parseInt(parenMatch[1], 10) : undefined

@@ -10,9 +10,14 @@ import type { TextSegment, ScenePlayer, SceneCreature } from './types'
 const PLAYER_STATUS = / (?:(?:who|whose body) )?(?:has|is|appears|glows) .+$/
 // Lich DRDefsPattern.TRAILING_AND: / and (?<last>.*)$/
 const TRAILING_AND = / and (.*)$/
-// Lich DRDefsPattern.SITTING / LYING_DOWN (checked BEFORE the status strip)
-const SITTING = /who is sitting/i
-const LYING_DOWN = /who is lying down/i
+// Lich DRDefsPattern.SITTING / LYING_DOWN (checked BEFORE the status strip).
+// Each matches the default long form AND the "(sitting)"/"(prone)" SHORT form
+// DR emits under the HidePostStrings option (Lich drdefs #4529, synced from
+// Lich 5.18 #1442). The parenthetical strip in extractScenePlayers (` \(.+\)`)
+// removes the "(prone)"/"(sitting)" suffix before name extraction, so posture
+// is captured while the name still resolves.
+const SITTING = /who is sitting|\(sitting\)/i
+const LYING_DOWN = /who is lying down|\(prone\)/i
 // Sekmeht corpus 2026-06-12: "Also here: Agan who is hiding." — a noticed
 // hider keeps their room-list entry with this status.
 const HIDING = /who is hiding/i

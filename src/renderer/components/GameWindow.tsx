@@ -33,6 +33,7 @@ import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
 import { EXPERIENCES, experienceById, loadExperiences, saveExperiences, parseMoonLine, SUN_RISE_RE, SUN_SET_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState } from '../experiences'
+import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
 import { nanoid } from 'nanoid'
 import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
@@ -613,6 +614,34 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const playerTitleRef              = useRef('')
   const [rightHand, setRightHand]   = useState('Empty')
   const [leftHand, setLeftHand]     = useState('Empty')
+  // Combat POSITION (−9…+9 advantage vs opponent) parsed from DR's balance
+  // status line (combatExtract, mirroring Lich #1400). null = never seen this
+  // session; 0 = an even contest (a valid value, distinct from null).
+  const [combatPosition, setCombatPosition] = useState<number | null>(null)
+  // Combat BALANCE — how ready/stable you are to act (0…11), the sibling of
+  // position on the same status line (combatExtract, mirroring Lich).
+  const [combatBalance, setCombatBalance] = useState<number | null>(null)
+  // Combat RANGE — the closest incoming threat's range ("… closes to melee
+  // range on you"). Shown only while combat is live, so a value that goes stale
+  // after a fight never lingers on screen (combatExtract, corpus-mined).
+  const [combatRange, setCombatRange] = useState<CombatRange | null>(null)
+  // ASSESS — the per-creature tactical snapshot (facing/flank/behind + range +
+  // id) parsed from the `assess` stream. `assessAccumRef` accumulates one block
+  // (reset on clear-stream 'assess'); the state mirrors the latest full snapshot
+  // for the Tableau. `assessAt` stamps it for staleness (assess is on-demand /
+  // script-driven, so it must age out after a fight — combatExtract).
+  const assessAccumRef = useRef<AssessEntity[]>([])
+  const [assessCast, setAssessCast] = useState<AssessEntity[]>([])
+  const [assessAt, setAssessAt] = useState(0)
+  // Combat state for the G1 Combat HUD facet (Tableau) — memoized so the fresh
+  // object doesn't defeat the memo'd Experience components on every GameWindow
+  // re-render (pitfall #82c). Only re-issues when a combat value actually
+  // changes; the timers then tick INSIDE the Tableau via useTimers, no prop
+  // churn. rtExpires/ctExpires/aimExpires are stable epoch-ms expiries.
+  const experienceCombat = useMemo(
+    () => ({ rtExpires, ctExpires, aimExpires, stance, leftHand, rightHand, position: combatPosition, balance: combatBalance, range: combatRange, assess: assessCast, assessAt }),
+    [rtExpires, ctExpires, aimExpires, stance, leftHand, rightHand, combatPosition, combatBalance, combatRange, assessCast, assessAt],
+  )
   const [exits, setExits]           = useState<string[]>([])
   const [newLineCount, setNewLineCount] = useState(0)
 
@@ -1865,6 +1894,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // applied after the loop (one setState per batch at most).
       let batchMoons: ReturnType<typeof parseMoonLine> = null
       let batchSun: boolean | null = null
+      // G1 Combat HUD facet: last combat position + closest incoming range
+      // parsed this batch (applied once after the loop).
+      let batchPosition: number | null = null
+      let batchBalance: number | null = null
+      let batchRange: CombatRange | null = null
+      let batchAssessTouched = false
       let newRt: number | null = null
       let newCt: number | null = null
       let newAim: number | null = null
@@ -1885,6 +1920,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               logRecords.push({ ts: Date.now(), stream, text: lineText })
             }
             if (/^--- Map loaded .+\.json$/i.test(lineText.trim())) setLichMapVersion(v => v + 1)
+            // G1 Combat HUD facet: combat status (position + closest incoming
+            // range) rides DR's balance/engagement lines, which arrive on the
+            // `combat` stream (falling back to main only when it's unwatched) —
+            // so parse per-line REGARDLESS of stream, not just in the main
+            // branch. Cheap substring pre-gates (pitfall #82a) before each regex.
+            if (stream !== 'raw') {
+              if (lineText.includes('balanc')) {
+                const p = parseCombatPosition(lineText)
+                if (p !== null) batchPosition = p
+                const b = parseCombatBalance(lineText)
+                if (b !== null) batchBalance = b
+              }
+              if (lineText.includes('range on you')) {
+                const r = parseCombatRange(lineText)
+                if (r) batchRange = r
+              }
+            }
             if (stream === 'main') {
               // Capture the inline room description (preset 'roomdesc') for the
               // map matcher — applied to roomUpdates.desc after the loop so it
@@ -1929,6 +1981,23 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
               if (stream.toLowerCase() === 'moonwindow') {
                 const parsed = parseMoonLine(lineText)
                 if (parsed) batchMoons = parsed
+              }
+              // ASSESS (combat situation): each entity is one line on the
+              // `assess` stream; the creature id rides its <d cmd='look #id'>
+              // tag → the segment's `cmd`. Accumulate into assessAccumRef (reset
+              // on clear-stream 'assess' below); routing is untouched (the text
+              // still flows to its stream/main). parseAssessLine mirrors Lich.
+              if (stream.toLowerCase() === 'assess') {
+                const ids: string[] = []
+                let prevId: string | null = null
+                for (const s of segments) {
+                  const cid = s.cmd?.match(/^look #(-?\d+)$/)?.[1] ?? null
+                  if (cid && cid !== prevId) ids.push(cid)
+                  prevId = cid
+                }
+                const ent = parseAssessLine(lineText, ids)
+                if (ent) assessAccumRef.current.push(ent)
+                batchAssessTouched = true
               }
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
@@ -2042,6 +2111,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             }
             break
           case 'clear-stream':
+            // A fresh ASSESS starts with clearStream 'assess' — reset the
+            // accumulator so a new snapshot replaces the old (not appends).
+            if (evt.stream.toLowerCase() === 'assess') { assessAccumRef.current = []; batchAssessTouched = true }
             if (evt.stream === 'room')           roomUpdates.desc      = ''
             if (evt.stream === 'room-objects')   roomUpdates.objects   = []
             if (evt.stream === 'room-players')   roomUpdates.players   = []
@@ -2204,6 +2276,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         else sunObservedRef.current.set = true
         setSunState(prev => isRise ? { ...prev, riseAt: Date.now() } : { ...prev, setAt: Date.now() })
       }
+      if (batchPosition !== null) setCombatPosition(batchPosition)
+      if (batchBalance !== null) setCombatBalance(batchBalance)
+      if (batchRange) setCombatRange(batchRange)
+      // Only snapshot a NON-EMPTY accumulator: DR emits <clearStream id='assess'/>
+      // then the lines, and at 16ms coalescing they almost always land in one batch
+      // — but a block straddling a flush boundary would apply the post-clear empty
+      // accum and flicker the arena blank for a frame. A completed assess always has
+      // ≥1 entity (the self line), so guarding on length never suppresses a real
+      // update; a genuinely-empty assess (left combat) ages out via the 30s TTL.
+      if (batchAssessTouched && assessAccumRef.current.length > 0) { setAssessCast(assessAccumRef.current.slice()); setAssessAt(Date.now()) }
 
       // Text-modification passes (DESIGN.md §31): mute → substitute, applied to
       // the main window AND every stream buffer — GLOBAL by default; a rule with
@@ -3858,8 +3940,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         settings={settings}
         isActive={isActive}
         onOpenContact={openContactPopover}
+        onCommand={sendCommand}
         hidden={hidden}
         moons={moonsState}
+        combat={experienceCombat}
       />
     )
   }

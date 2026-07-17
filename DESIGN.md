@@ -5719,7 +5719,9 @@ reworded (these now import instead of "belong in Lich").
 durable home for the "graphics for text players" feature pipeline so it doesn't get lost.
 **Architecture home: §34 (Lichborne Experiences), decided 2026-06-10** — the G-series and X-series
 ship as registered **Experiences** (floating graphical surfaces over the layout), NOT as panels or
-panel view-modes; the Combat HUD (G1) is Experience #1, ahead of §32.5's original G2-first ordering. Each idea
+panel view-modes. **X1 (Living Tableau) is Experience #1** (2026-06-12), and **G1 (Combat HUD) is now a
+combat FACET of X1 rather than a standalone Experience** (2026-07-16 — see the G1 entry in §32.1 for the
+full decision). Each idea
 carries a stable local ID (`G#` graphical, `X#` interactive experience, `AI#` AI-assisted) for
 reference in conversation and commits; a real `F##` number gets assigned when an item is actually
 scheduled. Ideas are described richly on purpose (the value is in the *why* and the data source, not
@@ -5757,13 +5759,96 @@ exp components, contacts — are a goldmine that most of these consume with litt
 
 ### 32.1 Graphical Visualization Features (G1–G10)
 
-- **G1 — Combat HUD ("Engagement" panel).** A compact graphical combat cockpit. Central **readiness
+- **G1 — Combat HUD ("Engagement").** A compact graphical combat cockpit. Central **readiness
   ring** that sweeps as roundtime burns down; **stance** as a posture icon; a **range gauge** to the
   current target (melee → pole → missile); a **facing/engagement** indicator; a row of **threat pips**
   (one per creature, tinted by apparent condition); active conditions (stunned/webbed/bleeding) flash
   a red ring border. *Data:* stance / roundtime / casttime / indicators / room-creatures are already
   structured; **range / position / facing / "you advance on…" need a new stateful parse of the combat
   stream** (~70% existing, ~30% new). *Fit:* pure display, never auto-acts. The headline differentiator.
+
+  > **DECISION (2026-07-16, Sekmeht): G1 is NOT a separate Experience — it is a COMBAT FACET of X1 (the
+  > Living Tableau), rendered as auto-revealing overlay LAYERS on the same scene.** Rationale: both draw
+  > the *same subjects on the same stage* — the SceneParser already emits `cast-creatures` (the NPC_SCAN
+  > bold spans) alongside `cast-players`, so the creatures a Combat HUD would track are already figures
+  > in the Tableau's scene. Drawing combat state *on those figures* ("the ogre on your left is badly
+  > wounded, at pole range") is spatially legible in a way an abstract standalone pip-row can never be —
+  > the §32 "graphics for text players" thesis at its strongest — and it collapses two surfaces
+  > competing for the same screen estate into one adaptive one. **Shape:** the combat instruments are
+  > `ExperienceDef.options` LAYERS (the Moons/§34.7 one-checkbox-per-visual-layer precedent), each
+  > auto-revealing when combat state is live (RT active / engaged) and quiet otherwise. **The cockpit
+  > renders AROUND the PLAYER's avatar, not as corner overlays (Sekmeht 2026-07-16: "the combat flavor
+  > should sit around the player's bubble" — rings/dials/gauges, no floating corner text):** *readiness
+  > rings* hug the avatar (RT/CT/aim depleting), *range bands* ring it further out (melee inner →
+  > missile outer, threatened band lit), a *position gauge* sits under it (foe ↔ even ↔ you), the avatar
+  > *pulses* on danger conditions, and *threat* markers glow on each creature figure. This **subsumes a hard Social⇄Combat mode
+  > toggle**: all combat layers off = today's pure social Tableau; social layers off + combat on = a
+  > combat cockpit rendered on the scene; both on = a combat-aware gather scene. **What the merge does
+  > and does NOT save:** it saves the *rendering* scaffold (shared figure / seating / scene engine —
+  > confirm at spec time whether creatures are already RENDERED as figures or only tracked as cast), but
+  > it does NOT save the `CombatParser` — the ~30% new stateful range/facing/"you advance on…" parse is
+  > unchanged. **Risks to hold at spec time:** (1) *visual-grammar collision* — combat is time-critical
+  > and dense, social is leisurely/ambient; the readiness ring and range gauge must NOT get buried in
+  > gather-mode ambiance when combat is live (tactical layers take hierarchy). (2) *Perf during combat
+  > floods* — the combat capturers join the SAME §35.6-gated registry (off until an Experience is open)
+  > under the pitfall-#82a substring pre-gate, same discipline as scene capturers, just more of it under
+  > load. (3) *Coupling* — G1 now rides X1's stability, so it ships as X1 leaves Beta rather than as a
+  > fresh Experience. **This is NOT one of the §34.2 rejected models** — those rejected giving *panels*
+  > interactive modes / streams-as-a-panel-category; this is layering combat state onto an existing
+  > *Experience*, fully inside the §34 framework.
+  *Combat POSITION — BUILT (v0.16.x, the first CombatParser signal).* DR's **balance status line**
+  ("[You're battered (71%), incredibly balanced and in dominating position.]") also encodes your relative
+  **position** — a signed **−9…+9** symmetric advantage scale (+9 overwhelming … +8 dominating … 0 no
+  advantage … −8 opponent dominating … −9 opponent overwhelming you). **`DRStats` is NOT front-end-readable —
+  DECIDED to mirror Lich's parse, not read its state (Sekmeht "lich does the work", 2026-07-16; verified).**
+  `DRStats.balance`/`.position` are in-memory Ruby `@@` class vars in [drstats.rb](file:///C:/Ruby4Lich5/Lich5/lib/dragonrealms/drinfomon/drstats.rb) —
+  a `grep` of all of Lich `lib/` shows **NOTHING pushes them to a client** (no stream, `<component>`, or
+  persisted var), so a front-end genuinely cannot read them live (only a `;e echo DRStats.balance` POLL
+  could — laggy, Lich-only, rejected). So [combatExtract.ts](src/shared/combatExtract.ts)
+  (`parseCombatPosition` / `parseCombatBalance`) mirrors Lich's `PositionValue` / `BalanceValue` regexes +
+  `DR_POSITION_VALUES` / `DR_BALANCE_VALUES` tables **VERBATIM from drparser.rb / drvariables.rb** (#1398/#1400,
+  the 5.18 form with the `(?:.*,)?` wound-prefix that the older live-install regex misses; Lich validated it
+  on an 11,388-line sample) — **the same code that fills `DRStats`, so the value is IDENTICAL to `DRStats`,
+  computed live from the same line, and it works direct-SGE too.** Corollary: if Lich's regex can't parse a
+  tier (it requires "…balanced", so an "imbalanced/unbalanced" phrasing wouldn't match), `DRStats` wouldn't
+  have it either — reading `DRStats` gains nothing over the mirror. Both parse **per-line regardless of
+  stream** — the balance/engagement lines arrive on the `combat` stream (main only via fallback), so a
+  main-branch-only parse misses them whenever a combat panel is open (caught this build). GameWindow holds
+  `combatPosition` / `combatBalance` (0…11) and threads them into `ExperienceCombatState`.
+  *Closest-incoming RANGE is also built* (`parseCombatRange`, corpus-mined from
+  [corpus/2026-06-12-combat-lavadrakes.xml](corpus/) — "the lava drake closes to melee/pole weapon/missile
+  range on you") → a melee/pole/missile band indicator in the same readout. **Both parse per-line
+  regardless of stream** — DR sends the balance/engagement lines on the `combat` stream (main only via
+  fallback), so a main-branch-only parse would miss them whenever a combat panel is open (caught during
+  this build). SCOPE (honest, Principle #10): range tracks the LAST "closes to … on you" (the closest
+  threat's band), shown only while combat is live so a stale value can't linger.
+
+  ***ASSESS (per-creature tactical positions) — BUILT (v0.16.1, layout B — the earlier "Phase 2" per-creature
+  engagement, now realized via DR's ASSESS command).*** DR's `ASSESS` emits one entity per line on the
+  **`assess` stream** — each with a **relation to its target** (facing you / flanking you / behind you /
+  moving-to-flank / advancing on / in front of / beside / next to / to-the-left/right-of), a **range**
+  (melee/pole/missile), a **status** (balance + flags like *stunned*, *cursed*, *hidden*), and an **id** from
+  its `<d cmd='look #id'>` tag. `parseAssessLine` ([combatExtract.ts](src/shared/combatExtract.ts)) **mirrors
+  Lich's `parse_assess_line` VERBATIM** (xmlparser.rb #1413; corpus-verified against real captures +
+  Lich's spec). GameWindow accumulates each block (`clearStream 'assess'` = fresh snapshot → reset
+  `assessAccumRef`; each line's look-ids scraped from the `<d>` segment `cmd`; routing untouched), snapshots
+  to `assessCast`/`assessAt`, threads into `ExperienceCombatState.assess`. The Tableau (**layout B — Sekmeht's
+  pick over a radial arena**) shows the id'd creatures as figures tagged with **relation + range + a
+  targeting-number badge**, **your target ringed gold** (the `You are facing #N` self-row's target), **melee =
+  engaged/attacking** (red glow), **reeling** (stunned/imbalanced) dimmed, and **click-a-creature → `face
+  #id`** via the new `onCommand` prop. **Three load-bearing invariants (Sekmeht's own observations, DESIGN
+  discussion 2026-07-17):** **(1)** the **`id` is identity; the NUMBER is a reusable targeting slot** — a dead
+  creature's slot recycles (corpus: slot #1 went `48407408`→`48430408` after the first died), so key figures
+  on `id`, not number. **(2)** the **combat narration is ANONYMOUS** — attacks / "closes to X range" /
+  "advances on you" carry NO creature id (only assess & look/face do), so a given attack CANNOT be attributed
+  to a specific figure. We don't fake it: "who's attacking" is answered by **range** (everyone assess lists at
+  **melee** is attacking; pole/missile are closing), and the single target we DO single out is the faced one.
+  **(3)** assess is **on-demand / script-driven** (this player's `combat-trainer` auto-assesses each action →
+  effectively live; others run it manually or via a `face`-click), so the snapshot **ages out** after
+  `ASSESS_TTL_MS` (30s) and falls back to the plain creature line. Corpus `corpus/2026-07-17-assess-lavadrakes.xml`
+  (gitignored). **Still Phase 2:** a true top-down radial "Tactical Radar" arrangement (assess has the data —
+  relation→angle, range→distance — if we ever want the spatial view instead of the sorted annotated row); and
+  the organic "advancing/closing" live cues as a between-assess update layer.
 
 - **G2 — Wound Paper-Doll.** Replace the text list in [InjuriesPanel.tsx](src/renderer/components/panels/InjuriesPanel.tsx)
   with an **anatomical silhouette**: each wounded part glows by severity (yellow→orange→deep red),
@@ -5960,8 +6045,9 @@ from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
   G1/X2/X3); (b) the **avatar/seating/speech-bubble engine** (X1, reused by X2/X4/X5/X6); (c) the parsing layer behind
   Experiences — the **`SceneParser`** (name pinned 2026-06-12): typed *scene events* — speaker /
   channel / arrival-direction — from the comms streams (X1, reused by X4/X5/X6); and the
-  **`CombatParser`** for range/position/facing (G1, reused by X2/AI7) — both stateful readers in the
-  spirit of `StormFrontParser`; (d) the **`AIProvider` adapter** (chat + embeddings + image), Claude
+  **`CombatParser`** for range/position/facing (the G1 combat FACET of X1 — see §32.1's G1 decision;
+  reused by X2/AI7) — both stateful readers in the spirit of `StormFrontParser`, co-located in the
+  Tableau Experience (scene events + combat state feed the same scene, combat as auto-revealing layers); (d) the **`AIProvider` adapter** (chat + embeddings + image), Claude
   default, per-provider keys via `safeStorage`, per-feature consent + token/cost meter (every AI item
   calls the adapter, never an SDK directly); (e) **RAG grounding** (a curated DR lore corpus for
   AI3/AI10; local-log indexing for AI6) so these cite rather than hallucinate.
@@ -5987,6 +6073,11 @@ from logs we already keep). **Headline wow:** AI9 (Portrait Forge).
 > **Superseded 2026-06-12 (ordering only):** Sekmeht promoted **X1 (Living Tableau) to Experience #1**
 > — it builds FIRST, on the §34 scaffold (see §34.9 for the phased plan); G1 (Combat HUD) follows.
 > The per-feature analysis above remains current; the G-series "fast wins" stay available as fillers.
+>
+> **Superseded again 2026-07-16 (G1 fold):** G1 is no longer a separate step here — it becomes the
+> **combat FACET of X1** (auto-revealing combat layers on the Living Tableau's scene; full decision in
+> §32.1's G1 entry). The `CombatParser` work is unchanged and still gated on capturing real fight
+> Raw-XML first; it just lands inside the Tableau Experience rather than a new one.
 
 ---
 
@@ -6310,7 +6401,7 @@ An Experience is **not a panel and not a stream**:
 
 | ID | Experience | Kind | One-liner | Status |
 |---|---|---|---|---|
-| G1 | **Combat HUD ("Engagement")** | Instrument | RT readiness ring + CT inner ring, stance figure, threat pips, range gauge, condition border, hands | Follows X1 (was the original #1) |
+| G1 | **Combat HUD ("Engagement")** | **Combat facet of X1** (auto-revealing layers, not a standalone Experience) | RT readiness ring + CT inner ring, stance figure, threat pips ON creature figures, range gauge, condition border, hands | Folded into X1 (2026-07-16); needs the `CombatParser` |
 | G2 | Wound Paper-Doll | Instrument | Anatomical silhouette, wounds glow by severity, bleeders pulse | Likely folds in as G1's center figure |
 | G3 | Life Orbs | Instrument* | Liquid-filled vitals orbs that drain/refill and pulse when critical | *May ship as a vitals-strip display style instead — decide when scheduled |
 | G4 | Tactical Room Radar | Instrument | You at center, exits as rim arrows, creatures/players as dots in Contact colors | Backlog |
@@ -6587,11 +6678,14 @@ gates** (procedural fallbacks always).
      which we already parse per pitfall #87), so there is nothing to borrow: weather means
      classifying DR's ambient weather prose ourselves (a corpus problem, §35-style capturer
      registry). Noon/game-time readouts from the prompt clock are the other natural layer.
-4. **Combat HUD (G1) second:** Phase 1 on existing typed events only (readiness ring, CT ring,
-   stance figure, condition border, hands, threat pips from `roomState.creatures`); Phase 2 adds
-   the **`CombatParser`** (range/target/facing as new typed events — the shared engine §32.4
-   wants for X2/AI7, the `SceneParser`'s sibling). Corpus capture of real fight Raw-XML precedes
-   the parser.
+4. **Combat facet of X1 (the G1 fold, 2026-07-16):** G1 is no longer a second Experience — it ships as
+   auto-revealing **combat LAYERS on the Living Tableau** (full decision in §32.1's G1 entry). Phase 1
+   uses existing typed events only (readiness ring, CT ring, stance figure, condition border, hands,
+   threat pips from `roomState.creatures` — rendered ON the Tableau's creature figures); Phase 2 adds
+   the **`CombatParser`** (range/target/facing as new typed events — the `SceneParser`'s sibling,
+   co-located in the same Experience, reused by X2/AI7). Corpus capture of real fight Raw-XML precedes
+   the parser. The layers are `ExperienceDef.options` (one per instrument, the Moons §34.7 precedent),
+   auto-revealing on live combat state; all off = pure social Tableau.
 5. **Then the §32 catalog** lands here, one registry entry at a time (G2 paper-doll as the HUD's
    center figure or standalone, G4 radar, G6 buffs board, X-series scenes on X1's engine as their
    parsers come online — X6 Scene Composer is the natural follow-on, compositing X1's rendered
@@ -6708,7 +6802,9 @@ Read from the real sources — these are the grounded starting patterns:
   CAST extraction. `RoomPlayers = 'room players'>Also here: (?<players>.*)\.` then `extract_pcs`:
   **normalize only the TRAILING " and " to a comma** (no Oxford comma), split `', '`, strip the
   status tail `/ (who|whose body)? ?(has|is|appears|glows) .+/` and parentheticals, **name = last
-  word** (`\w+$`). Posture sub-filters: `who is lying down` / `who is sitting`. NPCs: `NPC_SCAN` —
+  word** (`\w+$`). Posture sub-filters: `who is lying down` / `who is sitting` — **each also matches the
+  `(prone)` / `(sitting)` SHORT form DR emits under the HidePostStrings option** (synced from Lich drdefs
+  #4529 / 5.18 #1442; the parenthetical strip removes the suffix before name extraction). NPCs: `NPC_SCAN` —
   creatures are the `<pushBold/>…<popBold/>` spans of 'room objs' (dead: `which appears dead|\(dead\)`),
   leading article stripped, creature name `[A-Za-z'-]+$`. **DRRoom.pcs/npcs is maintained by
   re-parsing the component on every room update — so presence CHANGES (arrive/depart) are derivable

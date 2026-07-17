@@ -12,6 +12,7 @@
 // the design is drifting back to §34.2's rejected models — stop and re-read.
 import type { ComponentType } from 'react'
 import type { RoomState, ScenePlayer, SceneCreature } from '../shared/types'
+import type { CombatRange, AssessEntity } from '../shared/combatExtract'
 import type { AppSettings } from './settings'
 import type { Contact, ContactTemplate } from './contacts'
 import type { FloatRect } from './freeLayout'
@@ -145,6 +146,36 @@ export interface SceneMoveItem {
   ts: number
 }
 
+// v0.16.x (G1 Combat HUD facet of X1, DESIGN §32.1): live combat state for the
+// HUD layers on the Tableau. Timestamps are STABLE epoch-ms expiries — the
+// component ticks internally via `useTimers` (like the isolated TimerDisplay),
+// so passing these never re-renders GameWindow every frame. stance/hands are
+// the foreground readout. Absent for non-combat Experiences (Moons ignores it).
+// Phase 1 uses existing typed state only; range/facing (the CombatParser) is
+// Phase 2 and adds fields here additively.
+export interface ExperienceCombatState {
+  rtExpires: number
+  ctExpires: number
+  aimExpires: number
+  stance: string      // '' when unknown
+  leftHand: string    // 'Empty' when empty-handed
+  rightHand: string
+  // Combat position vs opponent, −9…+9 (+ = you lead), parsed from DR's balance
+  // status line (combatExtract, Lich #1400). null = never seen; 0 = even.
+  position: number | null
+  // Combat balance 0…11 (0 = completely imbalanced, 11 = incredibly balanced),
+  // the sibling of position on the same line (combatExtract). null = never seen.
+  balance: number | null
+  // Closest incoming threat's range ("… closes to melee range on you"), or null
+  // (combatExtract, corpus-mined). Shown only while combat is live.
+  range: CombatRange | null
+  // ASSESS snapshot — per-creature tactical positions (facing/flank/behind +
+  // range + id), latest first-to-last as the game listed them. Empty when none.
+  assess: AssessEntity[]
+  // When `assess` was captured (Date.now()); consumers age it out (on-demand).
+  assessAt: number
+}
+
 export interface ExperienceProps {
   character: string
   roomState: RoomState
@@ -162,12 +193,19 @@ export interface ExperienceProps {
   // Open the contact CARD (the same ContactPopover in-text name clicks use)
   // at the given screen position — contact figures in a scene are clickable.
   onOpenContact?: (contactId: string, x: number, y: number) => void
+  // Send a game command as if the user issued it (echoes + logs, pitfall #86) —
+  // for user-initiated actions inside an Experience, e.g. clicking a creature to
+  // `face #id` from the combat arena. NOT for automation (AI never sends).
+  onCommand?: (cmd: string) => void
   // v0.14.7: content layers the user toggled OFF via the window's ⚙ popover
   // (option-id → true; see ExperienceDef.options). Absent = show everything.
   hidden?: Record<string, boolean>
   // v0.15.0 (Weather & Moons): the parsed moonwatch state + observed sun
   // transitions. Absent until a moonWindow line has arrived this session.
   moons?: MoonsState
+  // v0.16.x (G1 Combat HUD facet): live combat state for the Tableau's HUD
+  // layers (readiness rings / threat markers / danger frame / stance+hands).
+  combat?: ExperienceCombatState
 }
 
 // A user-toggleable content layer of an Experience (v0.14.7, Sekmeht: "click
@@ -218,8 +256,14 @@ export const EXPERIENCES: ExperienceDef[] = [
       { id: 'emotes',    label: 'Emotes',         desc: 'Action captions under the acting figure.' },
       { id: 'creatures', label: 'Creatures',      desc: 'Creature figures lining the back of the scene.' },
       { id: 'moves',     label: 'Arrivals & departures', desc: 'Walk-ins from their direction and fading ghosts on the way out.' },
+      // Combat HUD facet (G1, DESIGN §32.1) — layers auto-reveal while combat is
+      // live (a roundtime/cast/aim timer or a wound condition is active).
+      { id: 'readiness', label: 'Readiness ring',  desc: 'Roundtime sweeps as a ring hugging your figure (with thin cast/aim arcs) so you can see when you can act.' },
+      { id: 'threat',    label: 'Threat markers',  desc: 'Creatures flare as threats while combat is live; calm (pet-neutral) otherwise.' },
+      { id: 'danger',    label: 'Danger pulse',    desc: 'Your figure pulses in alarm when you are stunned, webbed, bleeding, poisoned or diseased.' },
+      { id: 'position',  label: 'Combat gauges',   desc: 'A readout under your figure with balance and position meters (foe ↔ even ↔ you) and the closest incoming threat\'s range.' },
     ],
-    textEquivalent: 'The main window and Room panel: "Also here:" players, "You also see" creatures, and the comms streams carry everything the scene shows.',
+    textEquivalent: 'The main window and Room panel: "Also here:" players, "You also see" creatures, and the comms streams carry everything the scene shows; the vitals/timer bar and icon bar carry the combat state (roundtime, cast, aim, stance, hands and conditions).',
   },
   {
     // Renamed "Weather & Moons" → "Moons" (Sekmeht, 2026-07-08). The id stays

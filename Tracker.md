@@ -81,6 +81,23 @@
 
 ---
 
+**v0.16.1 — Combat HUD facet + ASSESS arena on the Living Tableau (Beta)**
+
+The G1 Combat HUD, built as a **facet of the Living Tableau** (the 2026-07-16 fold, not a separate Experience). The cockpit renders **around the player avatar** (Sekmeht's steer — "the combat flavor sits around the player's bubble"): three **readiness rings** (Roundtime / Cast / Aim, inner→outer, in the command-bar timer colours), a **danger pulse** on the avatar, **threat markers** on creatures, and a **gauge panel under the figure** — **BAL / POS** as bipolar red→yellow→green spectrum gauges (a fixed 0/neutral tick + a moving value needle; balance anchored at "solidly" = baseline) and an **RNG** M/P/R row. Combat position / balance / range are parsed by **mirroring Lich's verified regexes verbatim** ([combatExtract.ts](src/shared/combatExtract.ts)) — `DRStats` isn't front-end-readable, so we run Lich's exact parse in the FE (identical value, live, works direct-SGE). Then **ASSESS (layout B):** `parseAssessLine` mirrors Lich's `parse_assess_line` to turn DR's `assess` stream into id'd per-creature records — the Tableau shows each drake tagged with its **relation (facing/flank/behind) + range**, **your target ringed gold**, **melee = engaged** (red glow), **reeling** dimmed, and **click-a-creature → `face #id`**. Honest scope from Sekmeht's own observations: **id is identity (number is a reusable slot), combat narration is anonymous (no per-attack attribution — "who's attacking" = everyone at melee), assess is on-demand** (ages out after 30s). Corpus `corpus/2026-07-17-assess-lavadrakes.xml`; parser harness-verified against real captures. Three bugs fixed along the way: the A−/A+ "zoom" not scaling the scene (`.tableau-scene` lacked the `--game-font-size` anchor, B211), figures rendering over the room title at close zoom (header/stage flex split), and figures hopping on description-length changes (fixed-height header). A post-build bug check added one more hardening — the assess snapshot is now guarded on a **non-empty accumulator** so a block split across a 16ms flush boundary can't flicker the arena blank for a frame (B212). All Beta; needs the live in-game visual pass. (Full write-up: CLAUDE.md §32 Experiences note + DESIGN §32.1.)
+
+---
+
+**v0.16.1 — Lich 5.18 compatibility review + two safe hardenings**
+
+Reviewed all 78 commits in the Lich `16213354..e20803c4` sync (5.18.0) against Lichborne's integration surface (both repos read). **Every touchpoint holds unchanged** — force-mode loopback bind + one-FE-close-listener, the `inventory_boxes_off` hook + `_flag Display Inventory Boxes 1` workaround (now `persist: true`), `;eq Vars` writes + Marshal reader, `cmd\r\n` sends (the 5.18 CRLF→LF normalization is on `StringProc`, not the FE socket), the `;listall` poll, and the parser's existing `<d>`-link / `<output class="mono">` / inline-`AimTimerDialog` handling. Recorded in CLAUDE.md (a new "Lich version compatibility" note): **Lich 5.18 now requires Ruby 4.0** (tester launch-failure signal), Lich core now **natively injects room-number/exits** (roomlinks/roommono, replacing `roomnumbers.lic`; DR default mono + plain text — renders fine), and **do NOT present as the new `--saga` frontend** (saga = stormfront's exact caps + a whole-stream `\x1f` sentinel = pure overhead, zero gain). Two provably-safe changes shipped from the review:
+- **Lich Map roomId parse now accepts the `u`-prefixed parens form** (`(u12345)`) that Lich emits when `display_uid` is on — `parenMatch` widened to `/\]\s*\(u?(\d+)\)/` (bare digits still match; `(**)`/`(unknown)` still miss → id-absence no-op preserved). Pre-existing gap (pitfall #65), not a 5.18 regression; before this it silently degraded to title+desc matching for `display_uid`-on players. Verified via the parser; CLAUDE.md pitfall #65 updated.
+- **SceneParser posture short forms** (Beta, §35): `sceneExtract.ts` `SITTING`/`LYING_DOWN` now also match the `(sitting)`/`(prone)` short forms DR emits under the HidePostStrings option (synced from Lich drdefs #4529 / 5.18 #1442), so the Living Tableau seats postures right for those players. Verified with a focused bundle test (long forms, short forms, no-posture all pass); DESIGN §35 note updated.
+- **DESIGN §32.1 (G1 Combat HUD):** recorded Lich 5.18 #1400's `DRStats.position` (signed −8…+8 from the balance status line) as the crib for the future CombatParser's position gauge.
+
+*(Test plan: testplans/test-plan-v0.16.1.md)*
+
+---
+
 **v0.16.0 — AI foundation (BYOK) + Catch Me Up (in progress)**
 
 *(v0.15.3 was scaffolded but nothing landed in it; the AI work opened a new minor. Test plan: testplans/test-plan-v0.16.0.md)*

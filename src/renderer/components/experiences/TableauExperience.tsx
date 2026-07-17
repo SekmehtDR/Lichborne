@@ -2,6 +2,93 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Contact, ContactTemplate } from '../../contacts'
 import type { ExperienceProps, SceneSpeechItem, SceneMoveItem } from '../../experiences'
 import type { SceneCreature } from '../../../shared/types'
+import { useTimers } from '../../hooks/useTimers'
+import { positionLabel, balanceLabel, RANGE_ORDER } from '../../../shared/combatExtract'
+
+// Combat conditions that raise the danger pulse on the PLAYER avatar (a subset
+// of SELF_RING_KEYS — 'dead' is its own state, it greys the self figure rather
+// than raising alarm).
+const DANGER_KEYS = ['bleeding', 'stunned', 'webbed', 'poisoned', 'diseased']
+
+// Range band → single-letter label for the RNG row: Melee / Pole / Ranged.
+const RANGE_LETTER: Record<string, string> = { melee: 'M', pole: 'P', missile: 'R' }
+
+// ── Assess (combat arena) relation helpers ──────────────────────────────────
+// Coarse zone (for tint + sort) and a short human label per assess relation.
+const ASSESS_LABEL: Record<string, string> = {
+  'facing': 'facing you', 'in front of': 'in front', 'advancing on': 'advancing',
+  'behind': 'behind you', 'flanking': 'flanking', 'beside': 'beside you',
+  'next to': 'next to you', 'to the left of': 'left flank', 'to the right of': 'right flank',
+  'to left of': 'left flank', 'to right of': 'right flank',
+}
+function assessZone(rel: string): 'front' | 'flank' | 'behind' {
+  if (rel === 'facing' || rel === 'in front of' || rel === 'advancing on') return 'front'
+  if (rel === 'behind') return 'behind'
+  return 'flank'
+}
+// A creature "reeling" (about to fall / can't defend) — worth flagging.
+const ASSESS_REELING = /stunned|imbalanced|unbalanced/i
+const ASSESS_ZONE_ORDER: Record<string, number> = { front: 0, flank: 1, behind: 2 }
+const ASSESS_TTL_MS = 30_000  // assess is on-demand/script-driven; age it out after a fight
+
+// The READINESS RING around the player avatar (DESIGN §32.1 — the combat HUD
+// "sits around the player's bubble", Sekmeht 2026-07-16). ONE cooldown sweep,
+// not a stack of look-alike rings: RT is the thick outer arc over a faint full
+// track (so it reads as "filling back up"), and CT/aim are thin inner accent
+// arcs shown only while they run — differentiated by weight + colour. Range /
+// balance / position live in the gauge panel below the figure, NOT as more
+// rings. Stateless; re-renders with its parent on the useTimers clock so the
+// sweep animates. Module-scope so it isn't a fresh component type each render.
+// A BIPOLAR gauge — a centre baseline with the fill growing toward "you"/good
+// (green, right) or "foe"/bad (red, left). `frac` is a signed −1…+1 reading:
+// position uses pos/9 (even = 0 centre); balance uses (level − "solidly")
+// normalised per side (Sekmeht 2026-07-17: "solidly balanced" IS the baseline —
+// above it is a bonus, below it is off-balance), so both read the same way.
+function BipolarGauge({ label, frac, title }: { label: string; frac: number; title: string }) {
+  // A red → yellow → green SPECTRUM track (Sekmeht 2026-07-17: yellow neutral,
+  // green toward +, red toward −) with a needle marking where you sit. `frac`
+  // is −1…+1; the needle at 50 + frac·50% lands on the matching colour.
+  return (
+    <div className="tableau-gauge tableau-gauge--bipolar" title={title}>
+      <span className="tableau-gauge-label">{label}</span>
+      <span className="tableau-gauge-track">
+        <span className="tableau-gauge-center" />
+        <span className="tableau-gauge-mark" style={{ left: `${50 + frac * 50}%` }} />
+      </span>
+    </div>
+  )
+}
+
+// Three readiness RINGS around the avatar (DESIGN §32.1), fixed inner → outer:
+// Roundtime, Cast, Aim (Sekmeht 2026-07-17) — each in its command-bar timer
+// colour (var --rt/ct/aim-end, matching the bars and theme-correct), shown only
+// while that timer runs. Each = a faint track + a depleting sweep; distinct by
+// radius + colour (the range bands that made this a look-alike stack moved to
+// the gauge panel). Stateless; re-renders with its parent on the useTimers clock.
+function CombatRings({ rtPct, ctPct, aimPct }: { rtPct: number; ctPct: number; aimPct: number }) {
+  const rings = [
+    { on: rtPct > 0,  pct: rtPct,  r: 25, cls: 'rt'  },   // inner  — Roundtime
+    { on: ctPct > 0,  pct: ctPct,  r: 32, cls: 'ct'  },   // middle — Cast
+    { on: aimPct > 0, pct: aimPct, r: 39, cls: 'aim' },   // outer  — Aim
+  ].filter(x => x.on)
+  if (rings.length === 0) return null
+  return (
+    <svg className="tableau-combat-rings" viewBox="0 0 100 100" aria-hidden="true">
+      {rings.map(x => {
+        const c = 2 * Math.PI * x.r
+        return (
+          <g key={x.cls}>
+            <circle className="tableau-cr-track" cx="50" cy="50" r={x.r} fill="none" />
+            <circle className={`tableau-cr-ready tableau-cr-ready--${x.cls}`}
+              cx="50" cy="50" r={x.r} fill="none"
+              strokeDasharray={c} strokeDashoffset={c * (1 - x.pct / 100)}
+              transform="rotate(-90 50 50)" />
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
 
 // Stable empties for the v0.14.7 ⚙ content-layer toggles — a fresh [] per
 // render would defeat the effects keyed on these arrays' identities.
@@ -137,7 +224,7 @@ const DIR_VECTOR: Record<string, [number, number]> = {
 // Tableau only needs to when its own inputs change (cast/speech/moves are
 // state objects with stable identities between changes). The default export
 // wraps this at the bottom of the file.
-function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech, moves: rawMoves, indicators, contacts, contactTemplates, settings, onOpenContact, hidden }: ExperienceProps) {
+function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech, moves: rawMoves, indicators, contacts, contactTemplates, settings, onOpenContact, onCommand, hidden, combat }: ExperienceProps) {
   const players = sceneCast.players
   // v0.14.7 content-layer toggles (the window's ⚙ popover, ExperienceDef
   // options): gate each layer HERE, at the single entry point, so every
@@ -186,6 +273,54 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
     }, 1000)
     return () => clearInterval(t)
   }, [speech])
+
+  // ── Combat HUD facet (G1, DESIGN §32.1) ─────────────────────────────────────
+  // Layers on the scene that auto-reveal while combat is live, using existing
+  // typed state only (RT/CT/aim timers + self indicators + stance/hands). The
+  // timers tick INSIDE useTimers (100ms self-retiring interval, like the command
+  // bar's TimerDisplay), so GameWindow doesn't re-render every frame. Range/
+  // facing/engagement (the CombatParser) is Phase 2 — threat here means "combat
+  // is live", not true range-close engagement.
+  const { aim, rtPct, ctPct, aimMax } = useTimers(
+    combat?.rtExpires ?? 0, combat?.ctExpires ?? 0, combat?.aimExpires ?? 0)
+  const aimPct = aimMax > 0 ? (aim / aimMax) * 100 : 0
+  const timersLive = rtPct > 0 || ctPct > 0 || aimPct > 0
+  const danger = !hidden?.danger && DANGER_KEYS.some(k => indicators[k])
+  const combatLive = timersLive || danger
+  // "In combat" is STICKY — once a real combat signal (a timer or a wound) fires
+  // it stays true briefly after things go quiet, so the cockpit doesn't flicker
+  // off in the gap between attacks (your RT hits 0 while you wait your turn).
+  const [inCombat, setInCombat] = useState(false)
+  useEffect(() => {
+    if (combatLive) { setInCombat(true); return }
+    if (!inCombat) return
+    const t = setTimeout(() => setInCombat(false), 8000)
+    return () => clearTimeout(t)
+  }, [combatLive, inCombat])
+  const pos = combat?.position ?? null
+  const bal = combat?.balance ?? null
+  const range = combat?.range ?? null
+  // Signed −1…+1 gauge readings. Position is symmetric (pos/9, even = 0). Balance
+  // is anchored at "solidly" (index 8) = the ready baseline, normalised per side
+  // (+1…+3 above → incredibly, −1…−8 below → completely) so above reads green,
+  // below reads red — the same bipolar shape as position (Sekmeht 2026-07-17).
+  const posFrac = pos === null ? null : pos / 9
+  const balFrac = bal === null ? null : ((bal - 8) >= 0 ? (bal - 8) / 3 : (bal - 8) / 8)
+  const showReadiness = !hidden?.readiness && timersLive
+  const showThreat = !hidden?.threat && inCombat
+  // Gauges STAY ON once there's data (Sekmeht 2026-07-17: "just leave these on")
+  // — a persistent HUD showing last-known balance/position/range, not tied to
+  // active combat. The ⚙ "Combat gauges" layer (hidden.position) is the on/off.
+  const showGauges = !hidden?.position && (bal !== null || pos !== null || range !== null)
+  // Assess arena (B): show id'd creatures by their relation to you when a fresh
+  // assess is in hand (ages out after ASSESS_TTL_MS — it's on-demand). Self/PC
+  // rows are excluded; the self row's target is your current target.
+  const showAssess = !hidden?.creatures && !!combat && combat.assess.length > 0 && (Date.now() - combat.assessAt) < ASSESS_TTL_MS
+  const assessCreatures = showAssess ? combat!.assess.filter(e => !e.self && !e.pc && !!e.id) : []
+  const assessTargetId = showAssess ? (combat!.assess.find(e => e.self)?.targetId ?? null) : null
+  // No pulsing under the epilepsy-safe accessibility setting (the ring depletion
+  // is a smooth transition, not a flashing loop, so it stays).
+  const calm = settings.epilepsySafe
 
   // Latest live utterance per speaker → bubble over their seat. Thoughts are
   // telepathic — the speaker is NOT physically present (§32.2), so they
@@ -420,9 +555,20 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
   }
 
   return (
-    <div ref={sceneRef} className={`tableau-scene${anySpeaking ? ' tableau-scene--focus' : ''}${isLarge ? ' tableau-scene--large' : ''}`}>
-      <div className="tableau-room-title">{roomState.title || 'Somewhere in Elanthia'}</div>
-      {descExcerpt && <div className="tableau-room-desc">{descExcerpt}</div>}
+    <div className={`tableau-scene${anySpeaking ? ' tableau-scene--focus' : ''}${isLarge ? ' tableau-scene--large' : ''}`}>
+      <div className="tableau-header">
+        <div className="tableau-room-title">{roomState.title || 'Somewhere in Elanthia'}</div>
+        {descExcerpt && <div className="tableau-room-desc">{descExcerpt}</div>}
+      </div>
+      {/* The STAGE holds every figure + bubble, kept SEPARATE from the header so
+          NPCs/avatars can never render over the room title/description at close
+          zoom or odd aspect ratios (Sekmeht 2026-07-17). sceneRef measures the
+          stage, so bubble layout stays inside it too. */}
+      <div ref={sceneRef} className="tableau-stage">
+      {/* Combat HUD facet (G1): the cockpit — readiness/range rings, danger
+          pulse and position gauge — renders AROUND the player avatar below
+          (Sekmeht 2026-07-16: "the combat flavor should sit around the player's
+          bubble" — rings/dials/gauges, no floating corner text). */}
 
       {/* Thought/ESP wisps — telepathy drifts at the scene edge; the speaker
           gets NO body in the room (§32.2's phantom rule). */}
@@ -444,6 +590,45 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
           same visual language the main window uses for them. Exactly deadCount
           of each tally render as corpses; >10 overflow to a "+N more" chip. */}
       {(() => {
+        // Assess arena (B): id'd creatures placed in a row sorted front → flank
+        // → behind, each tagged with its relation to you + range, melee = engaged
+        // (attacking), your target ringed, reeling ones flagged; click to `face`.
+        if (showAssess && assessCreatures.length > 0) {
+          const sorted = [...assessCreatures].sort(
+            (a, b) => ASSESS_ZONE_ORDER[assessZone(a.relation)] - ASSESS_ZONE_ORDER[assessZone(b.relation)])
+          const slots = sorted.length
+          const top = isLarge ? '13%' : '20%'
+          return (
+            <>
+              {sorted.map((e, i) => {
+                const zone = assessZone(e.relation)
+                const isTarget = e.id === assessTargetId
+                const reeling = ASSESS_REELING.test(e.status)
+                const rangeCh = e.range === 'melee' ? 'M' : e.range === 'pole' ? 'P' : 'R'
+                return (
+                  <div
+                    key={`as-${e.id}`}
+                    className={`tableau-figure tableau-figure--creature tableau-figure--assess tableau-assess--${zone}${isTarget ? ' tableau-assess--target' : ''}${e.range === 'melee' ? ' tableau-assess--engaged' : ''}${reeling ? ' tableau-assess--reeling' : ''}${onCommand ? ' tableau-assess--clickable' : ''}`}
+                    style={{ left: `${8 + ((i + 0.5) / Math.max(slots, 1)) * 84}%`, top }}
+                    title={`${e.name}${e.number != null ? ` #${e.number}` : ''} — ${ASSESS_LABEL[e.relation] ?? e.relation}, ${e.range} range${e.status ? ` (${e.status})` : ''}${isTarget ? ' — your target' : ''}${onCommand ? '\nClick to face' : ''}`}
+                    onClick={onCommand && e.id ? () => onCommand(`face #${e.id}`) : undefined}
+                    role={onCommand ? 'button' : undefined}
+                  >
+                    <div className="tableau-avatar tableau-avatar--creature">
+                      {initials(e.name)}
+                      {e.number != null && <span className="tableau-assess-num">{e.number}</span>}
+                    </div>
+                    <div className="tableau-name">{e.name}</div>
+                    <div className="tableau-assess-tags">
+                      <span className={`tableau-assess-rel tableau-assess-rel--${zone}`}>{ASSESS_LABEL[e.relation] ?? e.relation}</span>
+                      <span className={`tableau-assess-rng tableau-assess-rng--${e.range}`}>{rangeCh}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )
+        }
         const instances: { name: string; dead: boolean; ord: number; total: number }[] = []
         for (const c of creatures) {
           const total = c.count ?? 1
@@ -459,7 +644,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
             {shown.map((c, i) => (
               <div
                 key={`cr-${c.name}-${c.ord}`}
-                className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}`}
+                className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}${showThreat && !c.dead ? ' tableau-figure--threat' : ''}`}
                 style={{ left: `${8 + ((i + 0.5) / Math.max(slots, 1)) * 84}%`, top }}
                 title={`${c.name}${c.total > 1 ? ` #${c.ord}` : ''}${c.dead ? ' (dead)' : ''}`}
               >
@@ -580,10 +765,45 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
         return (
           <div className={selfCls} style={{ left: `${selfPos.x}%`, top: `${selfPos.y}%` }}>
             {renderCaption(selfBubble)}
-            <div className="tableau-avatar tableau-avatar--self" style={avatarStyle}>
-              {indicators.dead ? '✕' : initials(character)}
+            <div className="tableau-self-core">
+              {showReadiness && (
+                <CombatRings rtPct={rtPct} ctPct={ctPct} aimPct={aimPct} />
+              )}
+              <div
+                className={`tableau-avatar tableau-avatar--self${danger ? ' tableau-avatar--danger' : ''}${danger && !calm ? ' tableau-avatar--danger-anim' : ''}`}
+                style={avatarStyle}
+                title={danger ? 'In danger' : undefined}
+              >
+                {indicators.dead ? '✕' : initials(character)}
+              </div>
             </div>
             <div className="tableau-name">{character}</div>
+            {/* Combat gauge panel — balance + position meters (continuous fills,
+                so they FLOW instead of blinking) and a range row, grouped in one
+                readout under the figure. */}
+            {showGauges && (
+              <div className="tableau-combat-gauges" aria-hidden="true">
+                {bal !== null && balFrac !== null && (
+                  <BipolarGauge label="BAL" frac={balFrac} title={`Balance: ${balanceLabel(bal)} (solidly = baseline)`} />
+                )}
+                {pos !== null && posFrac !== null && (
+                  <BipolarGauge label="POS" frac={posFrac}
+                    title={`Position: ${positionLabel(pos)}${pos !== 0 ? (pos > 0 ? ' (you lead)' : ' (foe leads)') : ' (even)'}`} />
+                )}
+                {range !== null && (
+                  <div className="tableau-gauge tableau-gauge--range" title={`Closest threat: ${range} range`}>
+                    <span className="tableau-gauge-label">RNG</span>
+                    <span className="tableau-range-pips">
+                      {RANGE_ORDER.map(r => (
+                        <span key={r} data-r={r} className={`tableau-range-pip${r === range ? ' tableau-range-pip--on' : ''}`}>
+                          {RANGE_LETTER[r]}
+                        </span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             {selfStatuses.length > 0 && (
               <div className="tableau-self-status">
                 {selfStatuses.map(s => (
@@ -622,6 +842,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
       {players.length === 0 && creatures.length === 0 && (
         <div className="tableau-empty">No one else is here.</div>
       )}
+      </div>
     </div>
   )
 }
