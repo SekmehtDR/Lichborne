@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import FloatingWindow from './FloatingWindow'
-import { experienceById, type ExperienceInstance } from '../experiences'
+import { experienceById, optionShown, type ExperienceInstance } from '../experiences'
 import type { FloatWindow } from '../freeLayout'
 import '../styles/experiences.css'
 
@@ -117,9 +117,11 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
     }))
   }
 
-  function toggleOption(id: string, optId: string) {
+  // Store the EXPLICIT hidden value (not a blind flip) so `defaultHidden` layers
+  // toggle correctly — the checkbox's `checked` already reflects the default.
+  function setOption(id: string, optId: string, hidden: boolean) {
     onInstancesChange(instances.map(i => (i.id === id
-      ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: !i.hidden?.[optId] } }
+      ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: hidden } }
       : i)))
   }
 
@@ -172,8 +174,8 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
                   <label key={opt.id} className="exp-inst-option" title={opt.desc}>
                     <input
                       type="checkbox"
-                      checked={!inst.hidden?.[opt.id]}
-                      onChange={() => toggleOption(inst.id, opt.id)}
+                      checked={optionShown(inst.hidden, opt)}
+                      onChange={e => setOption(inst.id, opt.id, !e.target.checked)}
                     />
                     <span>{opt.label}</span>
                   </label>

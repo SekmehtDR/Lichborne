@@ -4,6 +4,7 @@ import Launcher, { loadCharacterCards, type LauncherCharacter } from './componen
 import AddCharacterWizard from './components/AddCharacterWizard'
 import LichSetupDialog from './components/LichSetupDialog'
 import ProfileTransferModal from './components/ProfileTransferModal'
+import AboutModal from './components/AboutModal'
 import GameWindow from './components/GameWindow'
 import AppBar from './components/AppBar'
 import QuickSend from './components/QuickSend'
@@ -197,6 +198,7 @@ function AppShell() {
   // nonces (to remount a session after a live import). Opened via the
   // `lichborne:open-profile-transfer` custom event the Launcher dispatches.
   const [showProfileTransfer, setShowProfileTransfer] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
   // Per-session remount key suffix. Bumping a character's nonce changes its
   // GameWindow `key`, forcing a full remount that re-reads all per-character
   // state from localStorage — used to commit a live profile import into a
@@ -411,6 +413,7 @@ function AppShell() {
           break
         }
         case 'check-updates':   handleCheckForUpdates(); break
+        case 'about':           setShowAbout(true); break
       }
     }
   })
@@ -1007,6 +1010,8 @@ function AppShell() {
       )}
 
       {showLichSetup && <LichSetupDialog onClose={() => setShowLichSetup(false)} />}
+
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
 
       {showProfileTransfer && (
         <ProfileTransferModal

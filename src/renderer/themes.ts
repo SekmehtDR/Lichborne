@@ -264,6 +264,13 @@ export const darkBase: ThemeVars = {
   '--experience-scene-text':  'var(--text-secondary)',
   '--experience-scene-muted': 'var(--text-dim)',
   '--experience-chip-border': 'var(--border)',
+  // Moons experience — the ONLY themeable cue in an otherwise realistic sky
+  // (sky gradients, moon lore colors, shadow landscape are fixed nature/lore
+  // data, the Principle #4 exception like the map's baked tiles). This tints the
+  // instrument OVERLAY (the arc path the bodies travel) so the scene carries the
+  // theme's signature colour; the CSS blends it toward the sky-contrast ink so
+  // it stays legible on any sky. Follows the --map-arc-* semantic-cue precedent.
+  '--moons-guide': 'var(--accent)',
   '--map-select-color':  'var(--accent)',
   '--map-arc-cardinal':  '#8a7050',
   '--map-arc-vertical':  '#d4a020',

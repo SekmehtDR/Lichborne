@@ -559,6 +559,10 @@ ipcMain.handle('get-window-info', (event) => ({
   isPrimary: event.sender.id === primaryWindowId,
 }))
 
+// App version for the About modal (reads package.json via Electron) — keeps the
+// version dynamic in the renderer, never hardcoded.
+ipcMain.handle('get-app-version', () => app.getVersion())
+
 // The owner window's GameWindow reports the server-canonical character name
 // (from player-info XML) so the roster — and thus other windows' Quick Send —
 // shows the right casing.
@@ -1389,13 +1393,11 @@ function setupMenu() {
         { label: 'Check for Updates…', click: () => sendMenuAction('check-updates') },
         { type: 'separator' },
         {
+          // Themed in-app modal (AboutModal) rather than a native message box,
+          // so it follows the active theme + styles the credit lists. Routed
+          // through the menu-action bridge to the focused window.
           label: 'About Lichborne',
-          click: () => { void dialog.showMessageBox({
-            type: 'info',
-            title: 'About Lichborne',
-            message: 'Lichborne',
-            detail: `Version ${app.getVersion()}`,
-          }) },
+          click: () => sendMenuAction('about'),
         },
       ],
     },
@@ -1412,8 +1414,10 @@ app.setAppUserModelId('com.lichborne.app')
 app.whenReady().then(() => {
   // Electron's permission enum doesn't include 'local-fonts' in current type
   // definitions, but it is a valid runtime value used by the system font picker.
+  // 'midi' lets the About easter-egg play its MIDI through the OS synth (the
+  // Microsoft GS Wavetable Synth) via the Web MIDI API — sounds like Media Player.
   session.defaultSession.setPermissionRequestHandler((_wc, permission: string, callback) => {
-    callback(permission === 'local-fonts')
+    callback(permission === 'local-fonts' || permission === 'midi')
   })
   session.defaultSession.setPermissionCheckHandler(() => true)
   createWindow()

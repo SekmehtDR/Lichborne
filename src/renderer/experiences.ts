@@ -57,6 +57,7 @@ export interface SunPhase {
   day: boolean
   progress: number      // 0..1 through the CURRENT phase (day: rise→set; night: set→rise)
   toNextMin: number     // minutes until the next transition
+  phaseMin: number      // total minutes of the CURRENT phase (day length or night length)
   assumed: boolean      // true when the day length is the 180/180 assumption
 }
 
@@ -78,7 +79,8 @@ export function computeSunPhase(sun: { riseAt?: number; setAt?: number }, now: n
   const day = phase < dayMs
   const progress = day ? phase / dayMs : (phase - dayMs) / (cycleMs - dayMs)
   const toNextMin = Math.max(0, Math.round(((day ? dayMs - phase : cycleMs - phase)) / 60_000))
-  return { day, progress: Math.min(1, progress), toNextMin, assumed }
+  const phaseMin = Math.round((day ? dayMs : cycleMs - dayMs) / 60_000)
+  return { day, progress: Math.min(1, progress), toNextMin, phaseMin, assumed }
 }
 
 // Orbital constants from moonwatch.lic (Settings['rise']/'set', in minutes) —
@@ -109,6 +111,105 @@ export function parseMoonLine(text: string): Pick<MoonsState, 'katamba' | 'yavas
 // 210–219); these are the DR ambient lines that announce the transitions.
 export const SUN_RISE_RE = /heralding another fine day|rises to create the new day|as the sun rises, hidden|as the sun rises behind it|faintest hint of the rising sun|The rising sun slowly|Night slowly turns into day as the horizon/
 export const SUN_SET_RE = /The sun sinks below the horizon|night slowly drapes its starry banner|sun slowly sinks behind the scattered clouds and vanishes|grey light fades into a heavy mantle of black/
+
+// Weather (§34.9 Tier 2) — DR has NO passive weather feed (verified: no XML tag,
+// no DRStats field, no community script stores it; the ONLY source is the WEATHER
+// command / a natural sky-glance). WEATHER has THREE outcomes (Elanthipedia):
+//   1. outdoors                       → "You glance up at the sky." + <conditions>
+//   2. indoors WITH a window/door/portal opening out → "You glance outside." + <conditions>
+//   3. indoors, fully enclosed        → "That's a bit hard to do while inside."
+// So both glance markers (1 & 2) mean "the weather line follows on the NEXT main
+// line" — this regex matches EITHER, and we show that line VERBATIM. Case 3 is a
+// GENERIC command refusal (other commands emit it too), so it's NOT matched here;
+// it's read as "can't see the sky" ONLY inside an explicit ⟳ sync (see GameWindow)
+// — otherwise it's ignored and the last-known weather persists with its age.
+export const WEATHER_GLANCE_RE = /^You glance (?:up at the sky|outside)\b/
+
+// Last-observed weather line (the prose after a sky-glance) + when we saw it.
+export interface WeatherInfo {
+  text: string        // verbatim, e.g. "The starry skies above are marred by a few dark clouds."
+  observedAt: number  // ms epoch — the footer shows age so stale weather never reads as live
+  // Set when a ⟳ sync was answered by DR's "hard to do while inside" refusal —
+  // i.e. the sky isn't visible from here. Only ever set from an EXPLICIT sync
+  // (the generic refusal is never matched passively — see GameWindow).
+  indoor?: boolean
+}
+
+// Weather CONDITIONS detected from the prose by keyword (the Moons experience
+// renders a matching sky effect: snow/rain/clouds/fog). DR has no structured
+// weather, so we classify its ambient sentences — deliberately generous keyword
+// sets (Sekmeht). Precipitation implies clouds; `clear` only when nothing else.
+export interface WeatherFx {
+  clear?: boolean
+  clouds?: boolean
+  rain?: boolean
+  snow?: boolean
+  storm?: boolean
+  fog?: boolean
+  wind?: boolean
+  heavy?: boolean   // intensity → denser/faster effect
+}
+
+export function detectWeather(text: string): WeatherFx {
+  const t = text.toLowerCase()
+  const has = (re: RegExp) => re.test(t)
+  const fx: WeatherFx = {}
+  // Leading `\b` on each set so a keyword only matches at a WORD start — avoids
+  // mid-word false positives ("terrain"→rain, "unclear"→clear, "regale"→gale).
+  // Stems (drizzl/sprinkl/breez/…) still match their inflections (drizzling, …).
+  // `gale` lives ONLY in wind — a gale is strong wind, not a thunderstorm.
+  if (has(/\b(snow|flurr|blizzard|sleet|wintry)/))                          fx.snow = true
+  if (has(/\b(rain|drizzl|shower|downpour|deluge|sprinkl|pelt)/))           fx.rain = true
+  if (has(/\b(storm|thunder|lightning|tempest|squall)/))                    fx.storm = true
+  if (has(/\b(cloud|overcast|dreary|gloom|grey sk|gray sk|leaden|sullen|dark sk)/)) fx.clouds = true
+  if (has(/\b(fog|mist|haz[ey]|murk|smog|shroud)/))                         fx.fog = true
+  if (has(/\b(wind|breez|gust|blustery|blowing|gale)/))                     fx.wind = true
+  if (has(/\b(clear|cloudless|sunny|bright|starry|starlit|fair skies|calm|serene|placid)/)) fx.clear = true
+  if (has(/\b(heav|thick|hard|torrential|fierce|driving|strong|violent|raging)/))  fx.heavy = true
+  // Precipitation and storms come from clouds; a storm also drives heavy rain.
+  if (fx.storm) { fx.rain = true; fx.heavy = true }
+  if (fx.snow || fx.rain || fx.storm) fx.clouds = true
+  // "Clear" is only truly clear when nothing's in the sky (a "starry sky marred
+  // by clouds" mentions both — that's partly-cloudy, not clear).
+  if (fx.clouds || fx.rain || fx.snow || fx.storm || fx.fog) fx.clear = false
+  return fx
+}
+
+// Elanthian calendar (from the TIME command, §34.9 Tier 2). Like weather, DR has
+// no passive feed — TIME is a pull. The ⟳ sends it SILENTLY (no echo, reply
+// consumed) alongside WEATHER. Line 4 (the skill-dependent fine clock) is not
+// modeled. Fields are optional so a partial/verbatim-fallback read still shows.
+export interface CalendarInfo {
+  year?: number        // 457 — years since the Victory (the A.V. year)
+  dayOfYear?: number   // 43  — days into the year
+  monthNum?: number    // 2
+  monthName?: string   // "Ka'len the Sea Drake"
+  yearName?: string    // "Golden Panther"
+  season?: string      // "winter"
+  timeOfDay?: string   // "evening" — the game's OWN word (complements the sun label)
+  observedAt: number   // ms epoch
+}
+
+// TIME output templates — DR's fixed sentences; only the fill-in words vary, so
+// they parse cleanly (verified against a real TIME capture). Anchored/tolerant
+// of trailing punctuation. Line 4 ("You're positive it's N roisaen after the
+// Anlas of …") carries a skill-dependent confidence prefix and is deliberately
+// NOT parsed (least sky-relevant; would need more samples to model safely).
+const TIME_YEAR_RE = /^It has been (\d+) years?, (\d+) days? since the Victory/
+const TIME_MONTH_RE = /^It is the (\d+)(?:st|nd|rd|th) month of (.+?) in the year of the (.+?)\.?\s*$/
+const TIME_SEASON_RE = /^It is currently (.+?) and it is (.+?)\.?\s*$/
+
+// Parse ONE TIME line into whatever calendar fields it carries; null for a
+// non-calendar line. Caller accumulates across the (up to) three matching lines.
+export function parseTimeLine(line: string): Partial<CalendarInfo> | null {
+  let m = TIME_YEAR_RE.exec(line)
+  if (m) return { year: Number(m[1]), dayOfYear: Number(m[2]) }
+  m = TIME_MONTH_RE.exec(line)
+  if (m) return { monthNum: Number(m[1]), monthName: m[2].trim(), yearName: m[3].trim() }
+  m = TIME_SEASON_RE.exec(line)
+  if (m) return { season: m[1].trim(), timeOfDay: m[2].trim() }
+  return null
+}
 
 // The typed cast from main's SceneParser (§35) — GameWindow accumulates the
 // scene-cast events into this shape and hands it to every Experience.
@@ -206,6 +307,14 @@ export interface ExperienceProps {
   // v0.16.x (G1 Combat HUD facet): live combat state for the Tableau's HUD
   // layers (readiness rings / threat markers / danger frame / stance+hands).
   combat?: ExperienceCombatState
+  // v0.17.0 (Moons Tier 2): last-observed weather line, captured off the stream
+  // after a sky-glance. Absent until the first glance/WEATHER this session.
+  weather?: WeatherInfo
+  // v0.17.0 (Moons Tier 2): last-observed Elanthian calendar (from TIME).
+  calendar?: CalendarInfo
+  // Refresh the sky info: SILENTLY send TIME + WEATHER (no echo, replies consumed)
+  // and arm the indoor-refusal window. One click updates both readouts.
+  onSyncSky?: () => void
 }
 
 // A user-toggleable content layer of an Experience (v0.14.7, Sekmeht: "click
@@ -217,6 +326,26 @@ export interface ExperienceOptionDef {
   id: string
   label: string
   desc: string   // tooltip — the UI explains itself (polish standard #8)
+  // Layers default VISIBLE. Set true to default a layer OFF (still user-toggleable);
+  // the `hidden` map only stores explicit choices, so the default is respected when
+  // the key is absent (see `optionShown` / `defaultHiddenMap`).
+  defaultHidden?: boolean
+}
+
+// Is an option's layer currently SHOWN? Respects `defaultHidden` when the user
+// hasn't explicitly toggled it (key absent). Use everywhere the ⚙ checkbox
+// checked-state and the component gating are derived, so they always agree.
+export function optionShown(hidden: Record<string, boolean> | undefined, opt: { id: string; defaultHidden?: boolean }): boolean {
+  const v = hidden?.[opt.id]
+  return v === undefined ? !opt.defaultHidden : !v
+}
+
+// The seed `hidden` map for a NEW instance — only the default-OFF layers, stored
+// explicitly so the default persists into the profile.
+export function defaultHiddenMap(def: ExperienceDef): Record<string, boolean> {
+  const h: Record<string, boolean> = {}
+  for (const o of def.options ?? []) if (o.defaultHidden) h[o.id] = true
+  return h
 }
 
 export interface ExperienceDef {
@@ -259,7 +388,7 @@ export const EXPERIENCES: ExperienceDef[] = [
       // Combat HUD facet (G1, DESIGN §32.1) — layers auto-reveal while combat is
       // live (a roundtime/cast/aim timer or a wound condition is active).
       { id: 'readiness', label: 'Readiness ring',  desc: 'Roundtime sweeps as a ring hugging your figure (with thin cast/aim arcs) so you can see when you can act.' },
-      { id: 'threat',    label: 'Threat markers',  desc: 'Creatures flare as threats while combat is live; calm (pet-neutral) otherwise.' },
+      { id: 'threat',    label: 'Threat markers',  desc: 'In the ASSESS view, creatures at melee range flare as engaged (actively attacking you). Harmless bystanders are never flagged.' },
       { id: 'danger',    label: 'Danger pulse',    desc: 'Your figure pulses in alarm when you are stunned, webbed, bleeding, poisoned or diseased.' },
       { id: 'position',  label: 'Combat gauges',   desc: 'A readout under your figure with balance and position meters (foe ↔ even ↔ you) and the closest incoming threat\'s range.' },
     ],
@@ -272,7 +401,7 @@ export const EXPERIENCES: ExperienceDef[] = [
     id: 'moons',
     label: 'Moons',
     kind: 'instrument',
-    desc: 'Elanthia\'s sky as a living dial — soot-black Katamba, blood-red Yavash and silvery-blue Xibar arc across the heavens with live rise/set countdowns (fed by the community moonwatch script), and the backdrop follows day and night. Weather is the planned next layer (§34.9).',
+    desc: 'Elanthia\'s sky as a living dial — soot-black Katamba, blood-red Yavash and silvery-blue Xibar arc across the heavens with live rise/set countdowns (fed by the community moonwatch script), and the backdrop follows day and night. Check the weather with a click.',
     component: MoonsExperience,
     defaultRect: { x: 0.3, y: 0.05, w: 0.4, h: 0.34 },
     chrome: 'standard',
@@ -281,14 +410,24 @@ export const EXPERIENCES: ExperienceDef[] = [
     // (v0.15.1, Sekmeht: "why would I want sun & sky?" — the old combined
     // toggle conflated hiding the sun with flattening the backdrop).
     options: [
-      { id: 'sun',        label: 'The Sun',           desc: 'The sun itself — riding the sky arc by day, waiting below the horizon by night — plus its countdowns in the footer.' },
-      { id: 'sky',        label: 'Living sky',        desc: 'The backdrop that follows the day: bright at noon, warm at sunrise and sunset, starry at night. Off = a neutral dusk sky.' },
-      { id: 'countdowns', label: 'Countdown labels',  desc: 'The "sets in 88m" / "rises in 152m" chips under each body.' },
-      { id: 'names',      label: 'Name labels',       desc: 'The Katamba / Yavash / Xibar / Sun name plates on each body.' },
+      { id: 'sun',        label: 'The Sun',            desc: 'The sun itself — riding the sky arc by day, sinking behind the horizon at sunset and hidden through the night.' },
+      { id: 'sunglow',    label: 'Sun glow & twilight', desc: 'The warm glow that follows the sun across the sky, plus the afterglow that lingers at dusk and the faint light that returns before dawn.' },
+      { id: 'rays',       label: 'Sunrise / sunset rays', desc: 'Light beams at sunrise and shadow rays at sunset, fanning across the landscape from the sun\'s point on the horizon. (Epilepsy-safe disables the shimmer.)' },
+      { id: 'sky',        label: 'Living sky',         desc: 'The backdrop that follows the day: bright at noon, warm at sunrise and sunset, starry at night. Off = a neutral dusk sky.' },
+      { id: 'moonglow',   label: 'Moon glow',          desc: 'A soft glow around each moon in its own lore colour — ruby Yavash, silver-blue Xibar, dusky Katamba.' },
+      { id: 'sunlight',   label: 'Sun-lit moons',      desc: 'Each moon lit from the sun\'s direction, with a bright side fading to a shadowed one (a terminator). Off = evenly-lit discs.' },
+      { id: 'pill',       label: 'At-a-glance panel',  desc: 'The frosted panel above the footer showing the Sun and three moons with the time to each one\'s next rise or set.' },
+      { id: 'countdowns', label: 'Countdown labels',   desc: 'The "sets in 88m" / "rises in 152m" chips under each body. Off by default — the at-a-glance panel already shows these.', defaultHidden: true },
+      { id: 'names',      label: 'Name labels',        desc: 'The Katamba / Yavash / Xibar / Sun name plates on each body. Off by default — the at-a-glance panel already names them.', defaultHidden: true },
       { id: 'horizon',    label: 'Horizon silhouette', desc: 'The mountain ridgeline along the horizon.' },
-      { id: 'effects',    label: 'Rise & set effects', desc: 'The gentle horizon rings while a body rises or sets. (The epilepsy-safe accessibility setting also disables these.)' },
+      { id: 'landscape',  label: 'Trees & water',      desc: 'A nature scene below the horizon — a distant forest, foreground trees, a winding stream and a reflective lake, lit by day and dark by night. Always shown (no TIME check needed); seasons dress it further.' },
+      { id: 'seasonal',   label: 'Seasonal touches',   desc: 'Dresses the landscape by season — snow, snow-capped trees and an iced-over lake in winter; blossoms in spring; lush greens and fireflies on summer nights; autumn colours and falling leaves. (Needs the season from a TIME check; epilepsy-safe / Effects-off disables the moving parts.)' },
+      { id: 'effects',    label: 'Rise & set effects', desc: 'The gentle horizon rings while a body rises or sets, plus star twinkle and the occasional shooting star. (The epilepsy-safe accessibility setting also disables these.)' },
+      { id: 'weather',    label: 'Weather',            desc: 'The last sky prose you observed (after WEATHER or any sky-glance), shown verbatim. Click ⟳ to check the weather now.' },
+      { id: 'weatherfx',  label: 'Weather effects',    desc: 'Live sky animation matching the detected weather — falling snow or rain, drifting clouds, fog. (The epilepsy-safe accessibility setting also disables these.)' },
+      { id: 'calendar',   label: 'Calendar',           desc: 'The Elanthian date, month, year, season and time of day (from the TIME command). Click ⟳ to refresh — it and the weather are checked silently.' },
     ],
-    textEquivalent: 'The Moons stream panel (moonwatch\'s own window) and `perceive moons`; sunrise/sunset announce themselves in the main window.',
+    textEquivalent: 'The Moons stream panel (moonwatch\'s own window) and `perceive moons`; sunrise/sunset announce themselves in the main window; weather is the WEATHER command / any sky-glance.',
   },
 ]
 

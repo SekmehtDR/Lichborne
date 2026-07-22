@@ -67,6 +67,7 @@ declare global {
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       onMenuAction: (cb: (payload: { action: string }) => void) => () => void
       openUrl: (url: string) => void
+      getAppVersion: () => Promise<string>
       writeClipboard: (text: string) => void
       saveTextFile: (opts: { defaultName: string; content: string; filterName?: string; extensions?: string[] }) => Promise<{ ok: boolean; canceled?: boolean; path?: string }>
       flashWindow: () => void

@@ -46,6 +46,7 @@ export const APP_ACTIONS = [
   'next-character',
   'prev-character',
   'check-updates',
+  'about',
 ] as const
 
 export type SessionMenuAction = typeof SESSION_ACTIONS[number]

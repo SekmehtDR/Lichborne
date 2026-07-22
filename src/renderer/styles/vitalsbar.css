@@ -93,4 +93,12 @@
   font-size: 0.83em;
   letter-spacing: 0.02em;
   text-shadow: 0 0 3px rgba(0, 0, 0, 0.95);
+  /* Optically centre the all-caps/digit labels (Sekmeht 2026-07-17: "compact
+     vitals bar looks slightly offset"). With line-height:1 the flex centres the
+     em BOX, but caps/digits have no descenders so the glyphs sit ~high in that
+     box — visible in the tight 1em compact bar (the v0.13.x line-height:1 fix
+     tamed the worse inherited-leading case; this is the residual). Nudge down a
+     hair so the glyph block, not the em box, reads centred. em-scaled so it
+     tracks the font. */
+  transform: translateY(0.07em);
 }

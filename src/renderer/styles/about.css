@@ -1,0 +1,170 @@
+/* Help → About Lichborne — themed modal (replaced the native message box,
+   v0.17.0). All colors are theme vars or color-mix so it self-corrects on
+   light themes (Principle #4; canonical modal chrome per pitfall #55). App
+   chrome, so rem sizing is deliberate (Principle #9 modal exception). */
+
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;                 /* clears WindowLayer (60) + overlays */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);   /* dark scrim reads fine on light themes too */
+  padding: 1.5rem;
+}
+
+.about-modal {
+  position: relative;
+  width: min(460px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle, var(--border));
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  padding: 0 0 1.25rem;
+}
+
+.about-close {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.6rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.about-close:hover {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  color: var(--text-primary);
+}
+
+/* Tiny mute/unmute toggle for the optional background track, left of ✕. */
+.about-mute {
+  position: absolute;
+  top: 0.55rem;
+  right: 2.35rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.about-mute:hover {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  color: var(--text-primary);
+}
+
+/* Header band — the wordmark + version over a subtle accent-tinted strip. */
+.about-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 1.15rem 1.4rem 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.about-wordmark {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.about-version {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.about-body {
+  padding: 1.1rem 1.4rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.about-blurb {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.about-thanks {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.about-created {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.about-cred-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.about-cred-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+.about-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.about-name {
+  font-size: 0.82rem;
+  line-height: 1;
+  padding: 0.28rem 0.5rem;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* Testers get a quieter, neutral chip so Contributors read as the louder tier. */
+.about-name--tester {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+.about-links {
+  margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1rem;
+}
+.about-link {
+  font-size: 0.82rem;
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+  word-break: break-all;
+}
+.about-link:hover { text-decoration: underline; }

@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   getWindowInfo: (): Promise<{ windowId: number; isPrimary: boolean }> =>
     ipcRenderer.invoke('get-window-info'),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
   setSessionName: (sessionId: SessionId, character: string) =>
     ipcRenderer.send('session:set-name', sessionId, character),
 

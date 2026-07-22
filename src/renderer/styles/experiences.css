@@ -294,6 +294,12 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+  /* Fit-to-container: --tableau-fit (set from JS off the measured stage size,
+     1 by default) scales the figure/gauge em chain DOWN in a small box so the
+     %-positioned figures keep fullscreen spacing and the gauge panel can't hang
+     off the bottom. The header stays at base font (it's in .tableau-scene, not
+     here). See the fitScale note in TableauExperience.tsx. */
+  font-size: calc(var(--game-font-size, 12px) * var(--tableau-fit, 1));
 }
 
 .tableau-room-title {
@@ -378,6 +384,11 @@
   filter: brightness(1.15);
 }
 
+/* You are the foreground figure — always render ABOVE seated figures (incl. a
+   chatting one, which elevates to z-index 2) so an overlap reads as "the crowd
+   behind you", never a seated player drawn on top of your avatar (Sekmeht
+   2026-07-17). */
+.tableau-figure--self { z-index: 3; }
 .tableau-figure--self .tableau-avatar {
   width: 3.2em;
   height: 3.2em;
@@ -581,16 +592,23 @@
   outline-offset: 1px;
 }
 
-/* ── Thought/ESP wisps — telepathy at the scene edge, NEVER a body (§32.2) ── */
+/* ── Thought/ESP wisps — telepathy in a quiet BOTTOM-LEFT "thought log", NEVER a
+   body (§32.2). Moved from the top-right (Sekmeht 2026-07-19: thoughts obscured
+   the scene) to a stable out-of-the-way corner: anchored at the bottom-left, the
+   column flows oldest→newest so the NEWEST sits at the fixed bottom spot and
+   older ones stack UP and age out — a predictable chat/subtitle log the eye can
+   ignore until wanted. Left corner (not right) keeps clear of the A−/A+/⚙ view
+   controls; the bottom-left keeps clear of the centre avatar + bottom-centre
+   gauges. max-width caps it short of the centre so it never crosses a figure. */
 .tableau-wisps {
   position: absolute;
-  top: 3.6em;
-  right: 0.6em;
+  bottom: 0.6em;
+  left: 0.6em;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.35em;
-  max-width: 45%;
+  max-width: 42%;
   z-index: 2;
 }
 
@@ -604,8 +622,13 @@
   padding: 0.3em 0.6em;
   border-radius: 1em;
   animation: tableau-enter 250ms ease-out;
+  transition: opacity 0.3s ease;   /* smooth recede as a thought ages up the stack */
 }
 :root[data-epilepsy-safe='true'] .tableau-wisp { animation: none; }
+/* Recede as they age UP the stack — the newest (bottom, nth-last-child(1)) is
+   freshest at full opacity; older ones above fade so the eye tracks the newest. */
+.tableau-wisp:nth-last-child(2) { opacity: 0.68; }
+.tableau-wisp:nth-last-child(n+3) { opacity: 0.42; }
 
 .tableau-wisp-speaker {
   color: var(--experience-scene-text);
@@ -761,14 +784,20 @@
 .moons-layer--night {
   background: linear-gradient(180deg, #070a18, #141c34 65%, #1c2340);
 }
+/* Day/zenith bases are now more UNIFORM (not brightest at the horizon) — the
+   sun-centric radial glow (SVG) provides the bright focus, so the sky reads as
+   lit by the sun rather than glowing along the whole horizon (Sekmeht). */
 .moons-layer--day {
-  background: linear-gradient(180deg, #4f94cf, #a8cce8 60%, #c8dff0);
+  background: linear-gradient(180deg, #5896cd, #86bce3 58%, #9ec7e8);
 }
 .moons-layer--zenith {
-  background: linear-gradient(180deg, #69aede, #c2e0f4 55%, #eaf5fc);
+  background: linear-gradient(180deg, #7ab2e4, #a4d0ef 52%, #b4d9f4);
 }
+/* Twilight: the full-width mauve wash for dusk/dawn atmosphere, but the horizon
+   orange is SOFTENED — the sun glow now carries the concentrated warm sunrise/
+   sunset colour where the sun actually is. */
 .moons-layer--twilight {
-  background: linear-gradient(180deg, rgba(38, 42, 82, 0.9), rgba(122, 74, 104, 0.8) 55%, rgba(228, 138, 70, 0.85));
+  background: linear-gradient(180deg, rgba(38, 42, 82, 0.88), rgba(118, 74, 104, 0.72) 55%, rgba(210, 132, 88, 0.52));
 }
 
 /* Rising / setting horizon rings: slow (3.2s), soft, two staggered rings —
@@ -791,11 +820,26 @@
   30%  { opacity: 0.45; }
   100% { r: var(--ring-r); opacity: 0; }
 }
-.moons-arc-guide {
-  stroke: currentColor;
-  stroke-width: 1;
+/* The arc guide is the one INSTRUMENT overlay (not sky), so it carries the theme
+   accent (--moons-guide) — blended toward the sky-contrast ink so it stays
+   legible on a bright day AND a dark night. This is the panel's main theme tie
+   (everything else in the scene is fixed realistic sky / lore — Principle #4). */
+/* Halo pass UNDER the dashed guide — the opposite-lightness sky ink (like the
+   scene-text halo) so the arc reads on a bright day and a dark night. */
+.moons-arc-halo {
+  stroke: var(--moons-halo, transparent);
+  stroke-width: 3.4;
   stroke-dasharray: 3 5;
-  opacity: 0.22;
+  opacity: 0.55;
+}
+.moons-arc-guide {
+  /* Lean toward the contrast ink (currentColor) so it stays legible on any sky;
+     the accent still tints it. Heavier + more opaque than before (Sekmeht: arc
+     contrast). */
+  stroke: color-mix(in srgb, var(--moons-guide, currentColor) 50%, currentColor);
+  stroke-width: 1.6;
+  stroke-dasharray: 3 5;
+  opacity: 0.6;
 }
 .moons-horizon {
   stroke: currentColor;
@@ -805,14 +849,13 @@
 /* The earth: a translucent ground veil below the horizon. Underground
    bodies draw BENEATH it, so they read as traveling under the ground
    (Sekmeht's layering); their text renders in a later pass, above. */
-.moons-ground {
-  fill: #05070d;
-  opacity: 0.32;
-}
+/* (The ground is now an OPAQUE season/weather gradient rendered inline — the
+   `lb-ground` <linearGradient> — so it OCCLUDES bodies that have set behind the
+   horizon. The old translucent `.moons-ground` / `.moons-ground--snow` veil was
+   removed.) */
 /* Horizon silhouette — near-black fixed hue (a landscape in shadow reads
-   correctly against every sky state; the twilight glow shows through the
-   fainter far ridge). Drawn AFTER the bodies, so a setting sun or moon
-   sinks behind the peaks. */
+   correctly against every sky state). Drawn AFTER the bodies + the opaque ground,
+   so a setting sun or moon sinks behind the peaks. */
 .moons-ridge {
   stroke: none;
 }
@@ -824,50 +867,350 @@
   fill: #0a0c12;
   opacity: 0.88;
 }
+/* F70 — winter: a bright snow line along the ridge tops + snowier ridge fill
+   (the snowy GROUND itself is handled by the opaque `lb-ground` gradient now).
+   Fixed nature hues (Principle #4 exception, like the weather colours). */
+.moons-ridge--snow {
+  fill: #20262f;
+}
+.moons-ridge-snowcap {
+  stroke: #eef3fb;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  opacity: 0.5;
+}
+
+/* Crepuscular ground rays — a gentle shimmer on the LIGHT beams at sunrise
+   (shadow rays at sunset stay static). Only added when the effects layer is on. */
+.moons-ray--anim {
+  animation: moons-ray-shimmer 5s ease-in-out infinite;
+}
+@keyframes moons-ray-shimmer {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* F67 — star twinkle (only added when the effects layer is on). */
+/* Twinkle animates FILL-OPACITY (not opacity) so it multiplies with each star's
+   own `opacity` reveal level (element-opacity × fill-opacity) instead of overriding it. */
+.moons-star {
+  animation: moons-twinkle 3s ease-in-out infinite;
+}
+@keyframes moons-twinkle {
+  0%, 100% { fill-opacity: 0.45; }
+  50%      { fill-opacity: 1; }
+}
+/* F67 — shooting stars: each streaks from (--sx,--sy) to (--ex,--ey) over its own
+   cycle (--dur), visible for a short window; several are staggered so one flashes
+   every few seconds. Per-star path/timing come from inline custom properties. */
+.moons-shooting {
+  animation: moons-shoot var(--dur, 9s) ease-in infinite;
+  opacity: 0;
+}
+@keyframes moons-shoot {
+  0%   { transform: translate(var(--sx), var(--sy)); opacity: 0; }
+  3%   { opacity: 0.95; }
+  14%  { transform: translate(var(--ex), var(--ey)); opacity: 0; }
+  100% { transform: translate(var(--ex), var(--ey)); opacity: 0; }
+}
+/* F68 — fireflies: a soft glowing drift-and-blink near the ground on summer
+   dusk/nights. --drift is the per-firefly horizontal travel. */
+.moons-firefly {
+  fill: #eaff8f;
+  filter: drop-shadow(0 0 2px #cdff5e);
+  animation-name: moons-firefly-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes moons-firefly-drift {
+  0%, 100% { opacity: 0.15; transform: translate(0, 0); }
+  50%      { opacity: 0.9;  transform: translate(var(--drift, 5px), -6px); }
+}
+
+/* ── Weather effects (⚙ "Weather effects"; off under epilepsy-safe, gated in JSX).
+   Fixed colours like the moon-lore hues — nature data, not theme (Principle #4).
+   All motion is CSS keyframes on the SVG elements, so it costs no React re-render.
+   Snow/rain use `--fall` (= HORIZON_Y) so they vanish at the horizon; clouds use
+   `--cw` (= viewBox width) to drift edge to edge. */
+.moons-clouds ellipse { fill: #9aa0ad; opacity: 0.28; }
+.moons-cloud {
+  animation: moons-cloud-drift linear infinite;
+}
+@keyframes moons-cloud-drift {
+  from { transform: translateX(-140px); }
+  to   { transform: translateX(calc(var(--cw) + 80px)); }
+}
+.moons-snowflake {
+  fill: #eef4ff;
+  animation: moons-snow-fall linear infinite;
+}
+@keyframes moons-snow-fall {
+  0%   { transform: translateY(-6px) translateX(0); opacity: 0; }
+  10%  { opacity: 0.9; }
+  90%  { opacity: 0.9; }
+  100% { transform: translateY(var(--fall)) translateX(var(--sway)); opacity: 0; }
+}
+.moons-leaf {
+  animation: moons-leaf-fall linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes moons-leaf-fall {
+  0%   { transform: translateY(-6px) translateX(0) rotate(0deg); opacity: 0; }
+  12%  { opacity: 0.92; }
+  88%  { opacity: 0.92; }
+  100% { transform: translateY(var(--fall)) translateX(var(--sway)) rotate(240deg); opacity: 0; }
+}
+.moons-raindrop {
+  stroke: #aec4e0;
+  stroke-width: 1;
+  stroke-linecap: round;
+  animation: moons-rain-fall linear infinite;
+}
+@keyframes moons-rain-fall {
+  0%   { transform: translateY(-10px) translateX(0); opacity: 0; }
+  12%  { opacity: 0.55; }
+  88%  { opacity: 0.55; }
+  100% { transform: translateY(var(--fall)) translateX(var(--windx, 0px)); opacity: 0; }
+}
+/* Storm — an occasional lightning flash over the whole sky (quick double-strike
+   every ~7s). Gated on wx.storm; still under the ⚙ + epilepsy-safe umbrella. */
+.moons-lightning {
+  fill: #eaf0ff;
+  opacity: 0;
+  animation: moons-lightning 7s linear infinite;
+}
+@keyframes moons-lightning {
+  0%, 100% { opacity: 0; }
+  1.5% { opacity: 0.5; }
+  3%   { opacity: 0.08; }
+  5%   { opacity: 0.42; }
+  8%   { opacity: 0; }
+}
+
+/* Scene text (names / countdown chips / the DAY word) — currentColor picks up the
+   scene's day↔night ink, and the `--moons-halo` stroke (opposite lightness, drawn
+   BEHIND the fill via paint-order) lifts it off ANY sky, esp. the bright day one
+   (Sekmeht: "contrast really looks bad during the day"). Dilution is FILL-opacity,
+   not element opacity, so the halo stays solid. Stroke-width is in SVG user units
+   (= px here) — kept modest so small chips don't get a fat outline. */
 .moons-name {
   /* 11 viewBox units at the default 12px game font; tracks A−/A+ */
   font-size: calc(var(--game-font-size, 12px) * 0.917);
   fill: currentColor;
-  opacity: 0.9;
+  fill-opacity: 1;
+  stroke: var(--moons-halo, transparent);
+  stroke-width: 3.4px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  font-weight: 600;
 }
 .moons-chip {
   /* 9.5 units at default */
   font-size: calc(var(--game-font-size, 12px) * 0.792);
   fill: currentColor;
-  opacity: 0.65;
+  fill-opacity: 0.97;
+  stroke: var(--moons-halo, transparent);
+  stroke-width: 2.9px;
+  stroke-linejoin: round;
+  paint-order: stroke;
 }
-/* Footer provenance strip — text-height + minimal padding (polish #7), a
-   faint darkened band so it reads as a deliberate bar over any sky, and
-   thin dividers between the facts (polish #5). */
-.moons-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
+/* Time-of-day word on the sky — prominent, uppercase, letter-
+   spaced; sized in game-font units (CSS px = SVG user units) so it tracks A−/A+.
+   currentColor picks up the scene's day/night text contrast automatically. */
+.moons-phase-label {
+  font-size: calc(var(--game-font-size, 12px) * 1.05);
+  fill: currentColor;
+  fill-opacity: 1;
+  stroke: var(--moons-halo, transparent);
+  stroke-width: 3.8px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+}
+/* The fine daypart on its own line below the phase word — smaller, lighter, a
+   thinner halo (a fat stroke on small text over-thickens it). */
+.moons-phase-sub {
+  font-size: calc(var(--game-font-size, 12px) * 0.62);
+  font-weight: 600;
+  fill-opacity: 0.9;
+  stroke-width: 2.4px;
+  letter-spacing: 0.08em;
+}
+/* Header strip — the sky·moons·weather row as a full-width band at the TOP,
+   MIRRORING the footer band (Sekmeht). Normal-flow sibling above .moons-sky (a
+   flex column), so it's over the scene bg like the footer (NOT over the animated
+   sky), and the moons/sun can't overlap it — hence no over-sky halo/pill needed,
+   just the same darkened band + sky-contrast ink as the footer. Inline-flow row
+   wraps a long weather sentence. */
+.moons-header {
   padding: 3px 8px 4px;
   font-size: 0.78em;
-  line-height: 1;
+  line-height: 1.3;
   color: inherit;
-  background: color-mix(in srgb, #000 16%, transparent);
+  text-align: center;   /* center the inline-flow row (Sekmeht) */
+  /* Adaptive strip bg (--moons-band, opposite the sky-ink) so text pops by day
+     AND night; falls back to the fixed dark tint when there's no sun data. A
+     currentColor edge gives the frosted day strip a crisp boundary. */
+  background: var(--moons-band, color-mix(in srgb, #000 16%, transparent));
+  /* Stronger edge (Sekmeht): the currentColor line PLUS an opposite-lightness
+     halo hairline just below it, so the strip/sky boundary reads on any sky. */
+  border-bottom: 1.5px solid color-mix(in srgb, currentColor 48%, transparent);
+  box-shadow: 0 1.5px 0 -0.5px var(--moons-halo, transparent);
 }
-.moons-footer-item {
-  line-height: 1;
-  opacity: 0.78;
+/* Footer — now just the Elanthian date (the sky·moons·weather row moved to the
+   top header strip). A faint darkened band (polish #7); inline-flow `KEY value
+   age` segment with the ⟳. An instrument must never present stale data as live,
+   so the age is shown (polish #8). */
+.moons-footer {
+  padding: 3px 8px 4px;
+  font-size: 0.78em;
+  line-height: 1.3;
+  color: inherit;
+  text-align: center;   /* center the inline-flow row (Sekmeht) */
+  /* Same adaptive strip bg + crisp edge as the header (mirror). */
+  background: var(--moons-band, color-mix(in srgb, #000 16%, transparent));
+  /* Mirror of the header edge — currentColor line + opposite-lightness halo hairline above. */
+  border-top: 1.5px solid color-mix(in srgb, currentColor 48%, transparent);
+  box-shadow: 0 -1.5px 0 -0.5px var(--moons-halo, transparent);
+}
+.moons-foot-row + .moons-foot-row {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+.moons-foot-key {
+  opacity: 0.72;
+  text-transform: uppercase;
+  font-size: 0.85em;
+  letter-spacing: 0.06em;
+  margin-right: 0.35em;
   white-space: nowrap;
 }
-.moons-footer-item + .moons-footer-item {
-  margin-left: 0.8em;
-  padding-left: 0.8em;
-  border-left: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+.moons-foot-v {
+  opacity: 1;
 }
-.moons-sun-chip {
-  opacity: 0.95;
+/* No visible data-age in the strips (Sekmeht) — the "last data received"
+   freshness lives ONLY in the ⟳ refresh button's tooltip. (The former
+   .moons-foot-age / .moons-updated readouts were removed.) */
+/* Faint divider between the two segments in a row (a bar, not a middot, so it
+   doesn't blur into the values' own `·` separators). */
+.moons-foot-sep {
+  opacity: 0.3;
+  margin: 0 0.6em;
 }
-/* The feed-name label reads as a key, its value as the fact. */
-.moons-footer-label {
-  opacity: 0.65;
-  text-transform: uppercase;
-  font-size: 0.9em;
-  letter-spacing: 0.06em;
+.moons-foot-none {
+  font-style: italic;
+  opacity: 0.75;
+}
+/* Indoor house glyph (⌂) in the "sky not visible" weather line — upright (reads as
+   an icon, not italic prose), currentColor so it tracks the day/night ink. */
+.moons-foot-glyph {
+  font-style: normal;
+  margin-right: 0.15em;
+}
+/* ⟳ refresh — sits at the end of the date/weather row (silent TIME + WEATHER). */
+/* Frosted orrery pill — a theme-matched glass readout of the Sun + moons and
+   their next rise/set, centered just above the footer. Frost = a cool icy top
+   sheen over a translucent themed surface + a backdrop blur; theme = the tint,
+   border, and text all come from theme vars (the dot hues are fixed lore/nature
+   colours, like the sky — Principle #4 exception). */
+.moons-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
+  max-width: 96%;
+  padding: 4px;
+  border-radius: 13px;
+  font-size: calc(var(--panel-font-size, var(--game-font-size, 12px)) * 0.74);
+  line-height: 1.15;
+  color: var(--text-primary);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #eaf4ff 24%, transparent), transparent 42%),
+    color-mix(in srgb, var(--bg-raised) 60%, transparent);
+  backdrop-filter: blur(9px) saturate(1.25);
+  -webkit-backdrop-filter: blur(9px) saturate(1.25);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow:
+    0 5px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 32%, transparent);
+}
+.moons-pill-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.moons-pill-cell + .moons-pill-cell {
+  border-left: 1px solid color-mix(in srgb, var(--border) 32%, transparent);
+}
+.moons-pill-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.moons-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.moons-pill-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92em;
+}
+
+.moons-foot-sync {
+  margin-left: 0.5em;
+  background: none;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 3px;
+  color: inherit;
+  opacity: 0.72;
+  cursor: pointer;
+  font-size: 1em;
+  line-height: 1;
+  padding: 0 4px;
+  vertical-align: baseline;
+}
+.moons-foot-sync:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+/* Stale nudge (data > 10 min old): the ⟳ turns amber with a brighter border so
+   the eye lands on it — a suggestion to refresh, never a forced update. The amber
+   is a fixed semantic hue (like the map's directional cues, Principle #4 exception)
+   so it reads on any sky/band. */
+.moons-foot-sync--stale {
+  opacity: 1;
+  color: #f2b01e;
+  border-color: color-mix(in srgb, #f2b01e 60%, transparent);
+  background: color-mix(in srgb, #f2b01e 14%, transparent);
+}
+.moons-foot-sync--stale:hover {
+  background: color-mix(in srgb, #f2b01e 24%, transparent);
+}
+/* Gentle attention pulse — only added when NOT epilepsy-safe (the component omits
+   the --pulse class in that mode, leaving a static amber). */
+.moons-foot-sync--pulse {
+  animation: moons-sync-pulse 1.8s ease-in-out infinite;
+}
+@keyframes moons-sync-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 color-mix(in srgb, #f2b01e 55%, transparent); }
+  50%      { transform: scale(1.14); box-shadow: 0 0 6px 2px color-mix(in srgb, #f2b01e 45%, transparent); }
 }
 .moons-empty {
   padding: 1.4em 1.2em;
@@ -966,11 +1309,18 @@
 /* Combat gauge panel — grouped under the figure: labelled BAL / POS meters with
    continuous fills (they FLOW, not blink) + a RNG pip row. One tidy readout. */
 .tableau-combat-gauges {
+  /* Pinned to the stage bottom-centre (was flow-positioned under the self
+     figure). Absolute so it never enlarges the self figure's footprint or
+     forces the fit-scale to reserve room for it — see the JSX note. */
+  position: absolute;
+  left: 50%;
+  bottom: 0.5em;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 0.28em;
   width: 12.8em;
-  margin: 0.3em auto 0;
+  max-width: 92%;
   padding: 0.34em 0.5em;
   border-radius: 0.4em;
   background: color-mix(in srgb, var(--experience-scene-bg, var(--bg-app)) 74%, transparent);
@@ -978,6 +1328,16 @@
   pointer-events: none;
   font-size: 0.7em;
   line-height: 1;
+  /* Combat fade (Sekmeht 2026-07-17): the gauges are last-known BAL/POS/RNG and
+     used to persist forever after a fight. They now FADE when combat goes idle
+     — the --idle class (set when the 8s-sticky inCombat drops) drives it. This
+     base transition is the QUICK fade-IN when combat resumes; --idle carries the
+     slow fade-OUT. Asymmetric on purpose (snap back on, ease off). */
+  transition: opacity 0.45s ease;
+}
+.tableau-combat-gauges--idle {
+  opacity: 0;
+  transition: opacity 3.5s ease;
 }
 .tableau-gauge { display: flex; align-items: center; gap: 0.4em; }
 .tableau-gauge-label {

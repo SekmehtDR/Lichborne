@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ContextMenu from './ContextMenu'
 import type { GameEvent, TextLine, RoomState, InjuryState, FireLogEntry } from '../../shared/types'
+import { optionShown } from '../experiences'
 import type { HighlightRule } from '../highlights'
 import type { TriggerRule } from '../triggers'
 import RoomPanel from './panels/RoomPanel'
@@ -159,14 +160,14 @@ interface Props {
   // ([e]-badged section below a separator). `experienceDefs` is the registry
   // list (id + label); `renderExperienceTab` renders one by id on the shared
   // GameWindow props bag (MUST ride sharedFrameProps — the B193 rule).
-  experienceDefs?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; desc?: string }> }>
+  experienceDefs?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; desc?: string; defaultHidden?: boolean }> }>
   renderExperienceTab?: (expId: string) => React.ReactNode
   // F55 follow-up: the tab-hosted ⚙ layer popover. Reads/writes the SAME
   // instance `hidden` map the floating Experience window's ⚙ edits (one map
   // per experience — window and tab can never disagree). Both absent when the
   // host doesn't support it; the gear then doesn't render.
   getExperienceHidden?: (expId: string) => Record<string, boolean> | undefined
-  onToggleExperienceOption?: (expId: string, optId: string) => void
+  onSetExperienceOption?: (expId: string, optId: string, hidden: boolean) => void
 }
 
 export default function PanelFrame({
@@ -184,7 +185,7 @@ export default function PanelFrame({
   getPanelFontSize, onAdjustPanelFontSize,
   reorderTabs = false,
   experienceDefs = [], renderExperienceTab,
-  getExperienceHidden, onToggleExperienceOption,
+  getExperienceHidden, onSetExperienceOption,
 }: Props) {
   const [showAddMenu, setShowAddMenu] = useState(false)
   // F55 follow-up: tab-hosted ⚙ popover open state — closed on tab switch so
@@ -370,7 +371,7 @@ export default function PanelFrame({
           const expDef = activeTab.type === 'experience'
             ? experienceDefs.find(d => EXP_TAB_PREFIX + d.id === activeTab.id)
             : undefined
-          const expGear = !!(expDef?.options?.length && onToggleExperienceOption)
+          const expGear = !!(expDef?.options?.length && onSetExperienceOption)
           if (!onAdjustPanelFontSize && !expGear) return null
           const expId = expIdFromTab(activeTab)
           const hidden = expGear ? getExperienceHidden?.(expId) : undefined
@@ -412,8 +413,8 @@ export default function PanelFrame({
                     <label key={opt.id} className="exp-inst-option" title={opt.desc}>
                       <input
                         type="checkbox"
-                        checked={!hidden?.[opt.id]}
-                        onChange={() => onToggleExperienceOption!(expId, opt.id)}
+                        checked={optionShown(hidden, opt)}
+                        onChange={e => onSetExperienceOption!(expId, opt.id, !e.target.checked)}
                       />
                       <span>{opt.label}</span>
                     </label>

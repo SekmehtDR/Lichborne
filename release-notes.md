@@ -1,68 +1,40 @@
-## v0.16.1 — Living Tableau combat cockpit + Lich 5.18 compatibility
+## v0.17.0 — Moons weather & Elanthian calendar + a themed About + combat-scene polish
 
-### Living Tableau (beta): a combat cockpit ⚔️
+### The Moons experience — a living sky 🌙
 
-The **Living Tableau** — Lichborne's experimental visual scene of your room — now draws a heads-up cockpit **around your character** while you fight:
+The **Moons** experience (open it from the **Experiences** shelf, or add it as a panel tab) grew into a full celestial scene — weather, the Elanthian calendar, and a sky that actually behaves like a sky:
 
-- **Readiness rings** hug your avatar: Roundtime, Cast time and Aim time as sweeping cooldown rings in their usual colors, each showing only while it's counting down.
-- **Balance & Position gauges** underneath — red→yellow→green meters with a center mark, so a glance tells you whether you're solidly balanced and holding position or slipping.
-- **Range** (melee / pole / missile) and a **danger pulse** on your avatar when you're stunned, webbed, bleeding, and the like.
+- **The sky follows the sun.** Daylight is now brightest *around the sun*, warming to gold as it nears the horizon; the glow lingers through **dusk** after it sets and returns before **dawn**. The **sun and moons sink behind the horizon** and disappear while set, then crest back up — and an **at-a-glance panel** above the footer shows every body's next rise/set the whole time. The **landscape itself is lit by day and falls into shadow at night**, the shade sweeping in from the side away from where the sun is rising or setting.
+- **The moons look like moons.** Each is **lit from the sun's direction** (a bright side and a shadowed side) and glows in its own colour — ruby/crimson **Yavash**, vivid ice-blue **Xibar** with a silvery-white shine, and soot-dark **Katamba** wreathed in an **ominous violet haze** by day. They also stack by real depth when they overlap.
+- **A living landscape below the horizon** 🌲 — a little wilderness now sits under the sky: a distant forest, foreground trees, a winding **stream** and a **lake** that **reflects the sun and moons**. It has real **depth** (nearer things larger), lights and darkens with the day, and **dresses itself by season** — snow-capped trees and an iced-over lake in winter, blossoms in spring, lush green in summer, autumn colours and **falling leaves** in fall. Toggle it under the scene's ⚙ ("Trees & water").
+- **Sunrise & sunset rays** fan across the landscape — warm light beams at dawn, long shadows at dusk — and now the **trees cast shadows that follow the sun**, swinging from straight-back at midday to long diagonals near sunset.
+- **A deepening night sky** ✨ — the stars now **fill in as the night gets darker**: the brightest appear at dusk, and fainter ones keep emerging the closer it gets to **midnight** (like light pollution clearing), thinning again toward dawn. **Shooting stars** streak from all across a clear sky (clouds hide them, as they should). And the whole scene now **moves smoothly** — the sun, moons, their shadows, the rays and the lake reflections all drift together instead of a jerky redraw.
+- **Time of day on the sky** — a bold **DAY / NIGHT / DAWN / DUSK** word, with the finer Elanthian daypart on its own line once you've checked the time.
+- **Weather & date** — a **⟳** button silently checks the sky (`WEATHER` and `TIME` go out behind the scenes — nothing clutters your game window) and shows the weather in plain words plus a real date like *4 Ka'len the Sea Drake · 457 A.V. · ❄️ winter*. Weather also updates whenever you naturally glance at the sky; indoors it tells you to step outside.
+- **Live weather in the sky** — drifting clouds, wind-slanted snow and rain, a hazy horizon, the odd flicker of lightning; snow settles on the ground and ridgelines in winter. Weather draws over everything else in the sky. All respect your epilepsy-safe setting.
+- **Make it yours.** The scene's **⚙ "Show in this scene"** now toggles every layer — sun, sun glow, rays, living sky, moon glow, sun-lit moons, the at-a-glance panel, seasonal touches, weather, and more. (The per-body name and countdown labels are **off by default** now that the panel shows them, but you can switch them back on.)
 
-And an **ASSESS view** — assess a fight and every creature appears tagged with where it is relative to you (**facing you, flanking, behind you**) plus its range. **Your target is ringed in gold**, creatures at melee range glow as *engaged*, and stunned/off-balance ones look reeling. **Click a creature to face it.**
+Everything you type yourself still shows normally — only the ⟳ button is quiet.
 
-It's **beta** and best seen live — open the Living Tableau from the **Experiences** shelf and pick a fight. Honest limits: the game doesn't tell us which specific creature is swinging at you, so *engaged* means everyone at melee range; and assess is a snapshot, so it's only as current as your last ASSESS.
+### A proper About dialog 💛🎵
 
-### Lich 5.18 compatibility & fixes
+**Help → About Lichborne** is now an in-app page that follows your theme, instead of a plain system box. It carries a short note about why Lichborne exists, credits everyone who's helped build and test it, and has quick links to the **GitHub** repo and our **Discord**. And there's a little **music toggle** — muted by default; click the speaker for a tune (it stops when you close the window). Thank you all.
 
-Lichborne was checked end-to-end against the just-released **Lich 5.18.0**, and everything works as before — no reconnect, no re-setup needed. Two small accuracy fixes came out of the review:
+### Living Tableau (beta) — combat scene polish ⚔️
 
-- **The map keeps tracking you even with Lich's room-id display on.** If you'd turned on Lich's `display_uid` room-number display, the map could lose your exact location and fall back to fuzzy name matching. It now reads the room id correctly in every case.
-- **Living Tableau (beta) seats sitting/prone people correctly** even if you play with the game's short posture strings.
+Lots of refinement to the combat scene added last release:
 
-**Heads-up if you update Lich to 5.18:** Lich 5.18 now **requires Ruby 4.0**. If Lich won't launch after you update it, that's almost certainly the cause — update Ruby (Lich's install guide covers it) and you're set. Lichborne itself is unaffected.
+- **Fits its space** — figures now scale to the panel/tab instead of overflowing a small one, the balance/position gauges sit pinned at the bottom where they can't clip, and you always stand clear at the front.
+- **The ASSESS arena keeps up with the fight** — creatures you've felled linger as marked **corpses** until they decay instead of vanishing, a killed creature no longer lingers as a "threat," and retreating to a new room no longer drags the old room's creatures along.
+- **Calmer by default** — a harmless bystander is no longer flagged as a threat, and the balance/position gauges **fade out** once the fight is over instead of lingering.
+- **Thoughts moved out of the way** — telepathic thoughts now collect in a quiet **bottom-left log** (newest at the bottom, older ones fading up) so they never cover the scene.
 
-Everything from **v0.16.0** below also ships in this build.
+### Windowed Panels — nicer window chrome
 
----
-
-## What's new in v0.16.0
-
-### AI features — bring your own key 🔑
-
-Lichborne can now use **Claude** to help you out. It's **completely optional and off by default** — you plug in your own Anthropic API key, and nothing is ever sent anywhere unless you enable a feature and accept its disclosure.
-
-**AI advises and summarizes. It never plays the game for you** — it cannot send commands, and it never will.
-
-**Setting it up:** Settings → **AI** → paste your key → **Test** → then `/ai on`. Your key is encrypted on your machine and never leaves it except to talk to Anthropic. You can pick your model tier while you're there — Haiku is the default: fast, and a fraction of a cent per summary.
-
-**On cost:** because it's your key, Anthropic bills *you* for what you use — Lichborne shows a running token count for the session in Settings, tells you before each request what it's about to send, and Haiku (the default) runs well under a cent per summary. Higher model tiers cost more.
-
-### Catch Me Up — "what did I miss?"
-
-The first AI feature. Type **`/ai catchup`** and get a short summary of what happened.
-
-```
-/ai catchup          → the last 30 minutes
-/ai catchup 27m      → the last 27 minutes
-/ai catchup 1.5h     → the last hour and a half
-/ai catchup 1h30m    → same thing
-```
-
-It reads **what's on your screen** — your scrollback *and* every open stream panel, so it sees your thoughts, arrivals and conversation panels too, not just the main window.
-
-The summary streams in as it's written, and it always tells you exactly what window it looked at. `/ai stop` cancels one mid-flight.
-
-### The `lbAI` panel
-
-AI output has its own stream, **`lbAI`**. By default summaries appear in your main game window; add `lbAI` to any window or panel (Panel Manager → Available Streams, or `/panel open lbai`) and they go there instead — handy if you'd rather keep your scroll clean.
-
-### Settings is much easier to read
-
-The Settings window used to stretch across your whole screen, leaving every toggle marooned miles from its label. It's now a **sensible width** — a single, comfortable column that actually reads like a settings page.
+Floating-panel title bars are slimmer and softer (a subtle gradient and hairline instead of a hard grey block), the show/hide-name button is a quiet chevron that appears on hover, and the header no longer jumps height when you toggle the name. All theme-aware.
 
 ### Also in this release
 
-- **`/ai ` and `/colors ` now list their sub-commands** and Tab-complete them, the way `/trigger` always has. Previously typing `/ai ` just left you stuck.
-- **Summaries are easy to read** — they render in your game-text color (not a dim grey), sit cleanly apart from the surrounding text, and if a request fails partway through you get a clear error instead of a silent half-answer.
-- **`/ai status`** shows a friendly model name ("Haiku 4.5"), the AI Settings section spells out what each choice does and costs, and `/ai catchup` tells you up front if you haven't added a key yet.
-- `/help ai` explains everything above.
+- **Command bar trimmed** so it isn't oversized next to the slim chrome, with the roundtime/cast/aim timer strips kept clear of the text cursor.
+- **Launcher top-bar buttons centred**, and a small compact-vitals text-centring fix.
+- **Re-verified against Lich 5.19.1.** No changes needed. One heads-up: **Lich 5.19.0 specifically** had a bug that could show raw protocol text instead of the game — that's fixed in **5.19.1**, so if you see garbage, update Lich to 5.19.1 or later.

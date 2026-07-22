@@ -32,7 +32,7 @@ import PanelManager from './PanelManager'
 import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
-import { EXPERIENCES, experienceById, loadExperiences, saveExperiences, parseMoonLine, SUN_RISE_RE, SUN_SET_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState } from '../experiences'
+import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
 import { nanoid } from 'nanoid'
@@ -175,6 +175,10 @@ const MAX_STREAM_LINES = 500
 // fires or XML quirks without scrolling out of view mid-event.
 const MAX_DEBUG_EVENTS = 2000
 const MAX_RAW_XML_LINES = 2000
+// Backstop timeout for a ⟳ sky-sync: if a silent reply never arrives, the
+// arm-flags expire after this so they can't later eat a typed TIME/WEATHER. The
+// normal case clears them the instant the reply batch is consumed (see below).
+const SKY_SYNC_WINDOW_MS = 8000
 
 // B171: the ONE way to append to the main-window scrollback. Hysteresis trim
 // (see the TRIM_CHUNK comment above): grow freely until MAX_LINES + TRIM_CHUNK,
@@ -383,6 +387,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (sessionIdRef.current !== session.sessionId) {
       setDropped(false)
       setDisconnecting(false)
+      // Reset transient sky-sync / weather-capture flags on a reconnect-in-place
+      // (pitfall #69): the sessionId swaps without a remount, so an in-flight ⟳
+      // sync arm-flag or an armed weather-glance would otherwise carry over and
+      // over-suppress or mis-capture the first main line of the new connection.
+      // The persistent weather/calendar STATE is intentionally kept (same char).
+      silentSyncRef.current = { time: false, weather: false, at: 0 }
+      awaitingWeatherRef.current = false
     }
     sessionIdRef.current = session.sessionId
   }, [session.sessionId])
@@ -633,6 +644,25 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const assessAccumRef = useRef<AssessEntity[]>([])
   const [assessCast, setAssessCast] = useState<AssessEntity[]>([])
   const [assessAt, setAssessAt] = useState(0)
+  // Clear the assess snapshot when the ROOM changes (Sekmeht 2026-07-18: after
+  // fleeing to a new room the Tableau kept showing the OLD room's creatures).
+  // Assess is an on-demand snapshot with NO room binding, so it outlives a move;
+  // the arena's name-mismatch fallback then surfaces the stale creatures when
+  // the new room happens to have creatures of its own. Dropping it on any room
+  // change (title OR id — a nav-only teleport changes id without a new title,
+  // pitfall #46) makes the new room re-assess fresh; an empty new room falls
+  // back to the now-cleared live cast. A false clear (e.g. the id flag toggling
+  // in-place) is harmless — you just re-assess.
+  const assessRoomRef = useRef<string | null>(null)
+  useEffect(() => {
+    const key = `${roomState.title ?? ''}|${roomState.roomId ?? ''}`
+    if (assessRoomRef.current === null) { assessRoomRef.current = key; return }
+    if (key !== assessRoomRef.current) {
+      assessRoomRef.current = key
+      if (assessAccumRef.current.length > 0) assessAccumRef.current = []
+      setAssessCast(prev => (prev.length > 0 ? [] : prev))
+    }
+  }, [roomState.title, roomState.roomId])
   // Combat state for the G1 Combat HUD facet (Tableau) — memoized so the fresh
   // object doesn't defeat the memo'd Experience components on every GameWindow
   // re-render (pitfall #82c). Only re-issues when a combat value actually
@@ -768,6 +798,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // pre-gate (pitfall #82a). The `moons` PROP stays undefined until a moon
   // line has arrived — that drives the component's setup empty state.
   const [moonData, setMoonData] = useState<(Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> & { reportedAt: number }) | null>(null)
+  // Weather (Moons Tier 2): last sky-glance prose. `awaitingWeatherRef` is armed
+  // when a sky-glance marker is seen, so the NEXT main line is captured as the
+  // weather text (the two lines are consecutive in one server turn; a ref rides
+  // an unlikely batch boundary). Never persisted — weather goes stale by nature;
+  // the footer shows its age. In-session only, so no profile-shape change.
+  const [weather, setWeather] = useState<WeatherInfo | null>(null)
+  const [calendar, setCalendar] = useState<CalendarInfo | null>(null)
+  const awaitingWeatherRef = useRef(false)
+  // Silent-sync state, armed by an EXPLICIT ⟳ click. `time`/`weather` each stay
+  // true until OUR reply block's LAST line is consumed (cleared in-loop, batch-
+  // agnostic), so ONLY the click's replies are hidden — a TIME/WEATHER you type
+  // yourself always shows (Sekmeht). `at` backstops a missing reply via SKY_SYNC_WINDOW_MS.
+  const silentSyncRef = useRef<{ time: boolean; weather: boolean; at: number }>({ time: false, weather: false, at: 0 })
   // Sun anchors: the last OBSERVED sunrise/sunset moments. The sun cycle is
   // periodic in real time (SUN_CYCLE_MINUTES — moonwatch's own 360-minute
   // constant), so an anchor keeps positioning the sun indefinitely — which is
@@ -1894,6 +1937,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // applied after the loop (one setState per batch at most).
       let batchMoons: ReturnType<typeof parseMoonLine> = null
       let batchSun: boolean | null = null
+      let batchWeather: string | null = null
+      let batchWeatherIndoor = false
+      let batchCalendar: Partial<CalendarInfo> | null = null
       // G1 Combat HUD facet: last combat position + closest incoming range
       // parsed this batch (applied once after the loop).
       let batchPosition: number | null = null
@@ -1914,9 +1960,55 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
             const stream = rawStream
             const lineText = segments.map(s => s.text).join('')
             const mkLine = () => ({ id: lineId++, segments, timestamp: Date.now(), ...(mono ? { mono } : {}), ...(prompt ? { prompt: true } : {}) })
+            // Sky info (Moons Tier 2): the ⟳ sends TIME + WEATHER RAW (no echo), so
+            // ONLY that click's reply block must be CONSUMED — never shown, logged,
+            // or fed to triggers. Capture happens either way; `suppressSync` fires
+            // only for the armed reply block (a natural sky-glance, or a TIME/WEATHER
+            // you type yourself, is never suppressed — it shows normally). Computed
+            // BEFORE the log push below so a suppressed line reaches neither the log
+            // nor the display. Weather/calendar lines are on main.
+            let suppressSync = false
+            if (stream === 'main') {
+              // Suppress ONLY the reply block from a ⟳ click — never a TIME/WEATHER
+              // you type yourself. Each flag is armed by the click and cleared
+              // AFTER the batch that consumed its reply (see post-loop), so a later
+              // typed command always shows. `live` backstops a reply that never comes.
+              const s = silentSyncRef.current
+              const live = Date.now() - s.at < SKY_SYNC_WINDOW_MS
+              const silentTime = s.time && live
+              const silentWeather = s.weather && live
+              let hit = false
+              // Weather: CAPTURE always (a passive sky-glance shows AND updates the
+              // chip); suppress only our silent reply. Block = glance + desc, or
+              // refusal — clear s.weather at the block's LAST line (desc/refusal),
+              // NOT post-batch, so a glance+desc split across flushes still hides both.
+              if (awaitingWeatherRef.current && lineText.trim()) {
+                batchWeather = lineText.trim(); awaitingWeatherRef.current = false
+                if (silentWeather) { hit = true; s.weather = false }
+              } else if (lineText.includes('glance') && WEATHER_GLANCE_RE.test(lineText)) {
+                awaitingWeatherRef.current = true
+                if (silentWeather) hit = true   // glance; block continues to the desc
+              } else if (silentWeather && lineText.includes('hard to do while inside')) {
+                batchWeatherIndoor = true; hit = true; s.weather = false
+              }
+              // Calendar: parse + suppress ONLY our silent TIME reply (line 3's "It
+              // is currently…" isn't unique enough to trust from arbitrary prose, so
+              // a typed TIME is NOT parsed — the chip updates via ⟳ only). TIME is a
+              // 4-line block; keep s.time armed until its LAST line (L4, roisaen/Anlas)
+              // so ALL four parse even when they split across flushes — clearing
+              // post-batch dropped month/season/daypart on a split (B: "Day 44 · 457
+              // A.V." with no month). A typed TIME is never armed, so it always shows.
+              if (silentTime && lineText.startsWith('It ')) {
+                const cal = parseTimeLine(lineText)
+                if (cal) { batchCalendar = { ...(batchCalendar ?? {}), ...cal }; hit = true }
+              } else if (silentTime && (lineText.includes('roisaen') || lineText.includes('the Anlas of'))) {
+                hit = true; s.time = false   // L4 = block end
+              }
+              if (hit) suppressSync = true
+            }
             // Session-log capture — skip room sub-streams (current state, not
-            // history) and `raw`/blank lines. One record per non-empty line.
-            if (stream !== 'raw' && !ROOM_STREAMS.has(stream) && lineText.trim()) {
+            // history), `raw`/blank lines, and consumed sky-sync replies.
+            if (stream !== 'raw' && !ROOM_STREAMS.has(stream) && lineText.trim() && !suppressSync) {
               logRecords.push({ ts: Date.now(), stream, text: lineText })
             }
             if (/^--- Map loaded .+\.json$/i.test(lineText.trim())) setLichMapVersion(v => v + 1)
@@ -1946,7 +2038,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 const d = descSegs.map(s => s.text).join('').trim()
                 if (d) batchRoomDesc = d
               }
-              if (!isExpReadout(segments)) newMain.push(mkLine())
+              if (!isExpReadout(segments) && !suppressSync) newMain.push(mkLine())
               // Weather & Moons: DR announces sunrise/sunset as ambient main
               // prose (pattern set mirrored verbatim from moonwatch.lic's own
               // detection). Cheap substring pre-gate before the regexes
@@ -1955,9 +2047,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                 if (SUN_RISE_RE.test(lineText)) batchSun = true
                 else if (SUN_SET_RE.test(lineText)) batchSun = false
               }
-              processLineRef.current('main', lineText)
-              processHighlightSoundsRef.current(lineText)
-              logHighlightFiresRef.current(lineText, 'main')
+              // (Weather + calendar capture, and silent-sync suppression, run at
+              // the TOP of this case — before the log push — via suppressSync.)
+              if (!suppressSync) {
+                processLineRef.current('main', lineText)
+                processHighlightSoundsRef.current(lineText)
+                logHighlightFiresRef.current(lineText, 'main')
+              }
             } else if (stream === 'raw') {
               // discard
             } else if (stream === 'room') {
@@ -2276,6 +2372,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         else sunObservedRef.current.set = true
         setSunState(prev => isRise ? { ...prev, riseAt: Date.now() } : { ...prev, setAt: Date.now() })
       }
+      if (batchWeather != null) setWeather({ text: batchWeather, observedAt: Date.now() })
+      else if (batchWeatherIndoor) setWeather({ text: '', indoor: true, observedAt: Date.now() })
+      // Merge accumulated calendar fields (the TIME lines can span a flush
+      // boundary; merging with prev keeps any earlier-batch fields).
+      if (batchCalendar) setCalendar(prev => ({ ...prev, ...batchCalendar, observedAt: Date.now() }))
+      // (The silent-sync arm-flags are cleared at each reply block's LAST line in
+      // the loop above — batch-agnostic — with SKY_SYNC_WINDOW_MS backstopping a
+      // reply that never completes.)
       if (batchPosition !== null) setCombatPosition(batchPosition)
       if (batchBalance !== null) setCombatBalance(batchBalance)
       if (batchRange) setCombatRange(batchRange)
@@ -3722,7 +3826,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // map the floating window uses. Plain per-render closures (PanelFrame is
     // not memoized — F46 note — so identity churn is free here).
     getExperienceHidden: (expId: string) => experiences.find(i => i.id === expId)?.hidden,
-    onToggleExperienceOption: toggleExperienceOption,
+    onSetExperienceOption: setExperienceOption,
   }
 
   // ── Free Layout handlers (DESIGN.md §33) ───────────────────────────────────
@@ -3896,19 +4000,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // record. It's the same ONE `hidden` map the floating window's ⚙ edits, so
   // window and tab can never disagree; rides the existing experiences
   // persistence (state → YAML → Transfer) unchanged.
-  function toggleExperienceOption(expId: string, optId: string) {
+  function setExperienceOption(expId: string, optId: string, hiddenValue: boolean) {
     setExperiences(prev => {
       const existing = prev.find(i => i.id === expId)
       if (existing) {
         return prev.map(i => i.id === expId
-          ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: !i.hidden?.[optId] } }
+          ? { ...i, hidden: { ...(i.hidden ?? {}), [optId]: hiddenValue } }
           : i)
       }
       const def = experienceById(expId)
       if (!def) return prev
       const maxZ = prev.reduce((m, i) => Math.max(m, i.z), 0)
-      // First-ever toggle necessarily goes from "all visible" to hiding optId.
-      return [...prev, { id: expId, rect: def.defaultRect, z: maxZ + 1, showTitle: true, open: false, hidden: { [optId]: true } }]
+      // Seed the registry's default-hidden layers (so the prefs record matches the
+      // defaults), then apply this explicit choice.
+      return [...prev, { id: expId, rect: def.defaultRect, z: maxZ + 1, showTitle: true, open: false, hidden: { ...defaultHiddenMap(def), [optId]: hiddenValue } }]
     })
   }
 
@@ -3921,6 +4026,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // game batch). setState setters are stable, so [] deps are correct.
   const openContactPopover = useCallback((contactId: string, x: number, y: number) => {
     setContactPopover({ contactId, x, y })
+  }, [])
+  // Refresh the sky info: SILENTLY send TIME + WEATHER (raw window.api.sendCommand,
+  // NOT the echoing sendCommand — pitfall #53's silent-send pattern) so the
+  // player never sees `>time`/`>weather`; their replies are consumed by the
+  // suppressSync window keyed off silentSyncRef. Uses sessionIdRef.current
+  // for the live id (pitfall #86). Stable for memo ([] — refs/api are stable).
+  const syncSky = useCallback(() => {
+    silentSyncRef.current = { time: true, weather: true, at: Date.now() }
+    window.api.sendCommand(sessionIdRef.current, 'time')
+    window.api.sendCommand(sessionIdRef.current, 'weather')
   }, [])
 
   function renderExperienceContent(expId: string, hidden?: Record<string, boolean>): React.ReactNode {
@@ -3944,6 +4059,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         hidden={hidden}
         moons={moonsState}
         combat={experienceCombat}
+        weather={weather ?? undefined}
+        calendar={calendar ?? undefined}
+        onSyncSky={syncSky}
       />
     )
   }

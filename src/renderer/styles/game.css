@@ -426,7 +426,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
+  /* Slim outer padding (was 7px) — the input carries its own, so the strip only
+     needs a hair. Keeps the command bar from reading oversized next to the slim
+     vitals/title chrome (Sekmeht 2026-07-18: "the input bar looks so large"). */
+  padding: 3px 12px;
   background: linear-gradient(180deg, var(--bg-sunken), var(--bg-base));
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -456,7 +459,7 @@
 .cmd-bar {
   position: absolute;
   left: 0;
-  height: 6px;
+  height: 5px;
   pointer-events: none;
   transition: width 0.1s linear;
   z-index: 1;
@@ -510,7 +513,7 @@
 .cmd-chip {
   width: 16px;
   flex-shrink: 0;
-  height: 8px;
+  height: 6px;   /* trimmed from 8px with the slimmer command bar (still clears the caret) */
   border-radius: 2px;
   animation: chip-pulse 1.1s ease-in-out infinite;
 }
@@ -563,7 +566,15 @@
   color: var(--text-primary);
   font-family: inherit;
   font-size: 1.2em;
-  padding: 6px 10px;
+  /* Pin the line-height (was inherited from --game-line-height, the PROSE
+     setting — 1.4–1.6). The text CARET is as tall as the line box, so a large
+     prose line-height made the caret reach the RT/CT/aim timer strips pinned at
+     the input's top/bottom edges (Sekmeht 2026-07-17: "the caret overlaps the
+     time bars/chips"). A tight, fixed line-height keeps the caret short
+     regardless of the user's line-height setting; the 7px top/bottom padding
+     clears the 5px bars + 6px chip strips (both slimmed 2026-07-18). */
+  line-height: 1.2;
+  padding: 7px 10px;
   outline: none;
 }
 

@@ -46,23 +46,55 @@
 .fl-titlebar {
   display: flex;
   align-items: center;
-  gap: 0.35em;
-  /* ~50% shorter than before (was 1.9em @ 0.9em font): a slimmer drag/title
-     strip. Smaller font too so the title + T/× still fit the shorter bar. */
-  height: 1.3em;
-  padding: 0 0.5em;
+  gap: 0.3em;
+  /* Slim drag/title strip (Sekmeht 2026-07-18: "the grey title bar is ~2× too
+     tall"). Slimmed from the old 1.3em@0.7em (~11px) to ~8px, with the FONT
+     dropped to 0.5em. Two constraints keep it from going to a literal half:
+     (a) the text needs vertical slack for `align-items:center` to actually
+     centre it — too tight and the glyphs read top-aligned (Sekmeht); (b) it
+     must stay TALLER than the 4px top resize handle (below) so there's a
+     drag-to-move zone. The GRIP (name hidden) is matched to this SAME height
+     so toggling the name never changes the header thickness (that jump was the
+     bug — the grip used to be thicker than the shrunken titlebar). */
+  height: 1.4em;         /* ≈ 8px @ 12px game font; box > text so it centres */
+  /* Floor so the drag-to-move band below the fixed 4px top resize handle stays
+     grabbable at the MINIMUM game font (8px → the em height would be ~5.6px,
+     leaving only ~1.6px to grab). MUST match the grip's min-height so the two
+     stay equal-height at small fonts too. */
+  min-height: 9px;
+  line-height: 1;
+  padding: 0 0.4em 0 0.55em;
   flex-shrink: 0;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border-subtle);
+  /* Soft "light handle" instead of a hard grey block (step-2 polish): a gentle
+     top-lighter gradient blended toward the window body, so it reads as chrome,
+     not a heavy bar. color-mix keeps it theme-safe — on light themes the
+     bg-hover↔bg-app scale is compressed so it self-quiets to near the body, and
+     the hairline below carries the separation (Principle #4; eyeballed light). */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-hover) 80%, var(--bg-app)) 0%,
+    color-mix(in srgb, var(--bg-hover) 52%, var(--bg-app)) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
   cursor: move;
   user-select: none;
-  font-size: 0.7em;
+  font-size: 0.5em;
+}
+/* Focus cue: a crisp 1px accent line along the top of the focused window's
+   title bar (inset, so it never casts onto windows beneath it on light themes —
+   the reason .fl-window--focused deliberately avoids an outer shadow). Pairs
+   with the accent title text below. */
+.fl-window--focused .fl-titlebar {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
 .fl-title {
   flex: 1;
   min-width: 0;
+  /* Quiet, refined label — letter-spaced + slightly bold reads as a deliberate
+     title rather than raw text; stays muted so it never competes with content. */
   color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -90,31 +122,53 @@
   border: none;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: 1em;
+  font-size: 1.15em;   /* the glyphs read small at the 0.5em bar font; bump them */
   line-height: 1;
-  padding: 0.1em 0.35em;
+  /* No vertical padding — the slim title bar is ~1 line tall, so the glyphs sit
+     flush; horizontal padding keeps a click target. */
+  padding: 0 0.25em;
   border-radius: 3px;
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
-  /* Above the corner resize handles so the T / × buttons stay clickable. */
+  /* QUIET BY DEFAULT (CLAUDE.md polish #1): the collapse/close controls are
+     hidden until you hover or focus the window, so an idle window is just its
+     muted name — no glyphs competing with content. They still occupy their slot
+     (opacity, not display) so the title width never jumps. */
+  opacity: 0;
+  transition: color 0.12s, background 0.12s, opacity 0.12s;
+  /* Above the corner resize handles so the buttons stay clickable. */
   position: relative;
   z-index: 1;
 }
+.fl-window:hover .fl-tb-btn,
+.fl-window--focused .fl-tb-btn { opacity: 0.6; }
 .fl-tb-btn:hover {
+  opacity: 1;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
-.fl-tb-close:hover { color: var(--color-danger); background: rgba(200, 60, 60, 0.15); }
+/* The collapse chevron is a touch smaller/quieter than the close × */
+.fl-tb-collapse { font-size: 0.95em; }
+.fl-tb-close:hover { opacity: 1; color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 15%, transparent); }
 
 /* Title hidden → a thin draggable grip lip (saves vertical space). A centered
    handle bar makes it findable/grabbable (otherwise it reads as a border). */
 .fl-grip {
-  height: 11px;       /* tall enough to drag below the top resize handle */
+  /* MATCHES .fl-titlebar height (1.4em × 0.5em font = 0.7em) so showing/hiding
+     the window name never changes the header thickness (Sekmeht 2026-07-18).
+     Same soft gradient + hairline as the title bar (step-2 polish). */
+  height: 0.7em;
+  min-height: 9px;   /* MUST equal .fl-titlebar's floor — keeps them matched at small fonts */
   flex-shrink: 0;
   cursor: move;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-hover) 80%, var(--bg-app)) 0%,
+    color-mix(in srgb, var(--bg-hover) 52%, var(--bg-app)) 100%);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
   position: relative;
+}
+.fl-window--focused .fl-grip {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .fl-grip::after {
   content: '';
@@ -122,8 +176,8 @@
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 26px;
-  height: 3px;
+  width: 22px;
+  height: 2px;
   border-radius: 2px;
   background: var(--text-faint);
 }
@@ -192,7 +246,7 @@
    have its top/side handles fall outside the layer's overflow:hidden and become
    unreachable. */
 .fl-rz { position: absolute; }
-.fl-rz-n  { top: 0;    left: 10px; right: 10px; height: 6px;  cursor: ns-resize; }
+.fl-rz-n  { top: 0;    left: 10px; right: 10px; height: 4px;  cursor: ns-resize; }
 .fl-rz-s  { bottom: 0; left: 10px; right: 10px; height: 6px;  cursor: ns-resize; }
 .fl-rz-e  { right: 0;  top: 10px;  bottom: 10px; width: 6px;  cursor: ew-resize; }
 .fl-rz-w  { left: 0;   top: 10px;  bottom: 10px; width: 6px;  cursor: ew-resize; }

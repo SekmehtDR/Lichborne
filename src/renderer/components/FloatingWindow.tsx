@@ -71,10 +71,10 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
   }
 
   // Chrome strips (command / vitals / icon) keep their conversion size but are
-  // user-resizable in BOTH axes like panels (Sekmeht wants to shrink the command
-  // bar's padding). Height stays explicit/deterministic — never `height:
-  // undefined` auto-height, which measured 0-tall and shoved the layout. The bar
-  // is centered in the body (CSS), so growing/shrinking pads/clips symmetrically.
+  // user-resizable in BOTH axes like panels. Height stays explicit/deterministic
+  // — never `height: undefined` auto-height, which measured 0-tall on first
+  // paint and shoved the layout (pitfall #74). The bar is centered in the body
+  // (CSS), so growing/shrinking pads/clips symmetrically.
   const isChrome = win.kind === 'command' || win.kind === 'vitals' || win.kind === 'icon'
 
   // Show/position the shared snap guide lines (imperative — no re-render).
@@ -89,7 +89,9 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
     const startX = e.clientX, startY = e.clientY
     const start = { ...px }
     const el = rootRef.current
-    // Use the rendered size for bound-clamping (accurate for auto-height chrome).
+    // Use the RENDERED size for bound-clamping — it can differ from px.height
+    // (rect × container) because chrome headers carry a min-height floor, so a
+    // small-font window renders slightly taller than its fractional rect.
     const elW = el?.offsetWidth ?? start.width
     const elH = el?.offsetHeight ?? start.height
     const targets = getSnapTargets(win.id)
@@ -239,14 +241,16 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
             <span className="fl-title">{win.title ?? 'Window'}</span>
           )}
           <button
-            className="fl-tb-btn"
-            title="Hide window name"
+            className="fl-tb-btn fl-tb-collapse"
+            title="Collapse title into a grip"
+            aria-label="Collapse title into a grip"
             onMouseDown={e => e.stopPropagation()}
             onClick={() => onChange(win.id, { showTitle: false })}
-          >T</button>
+          >⌃</button>
           <button
             className="fl-tb-btn fl-tb-close"
             title="Close window"
+            aria-label="Close window"
             onMouseDown={e => e.stopPropagation()}
             onClick={() => onClose(win.id)}
           >×</button>

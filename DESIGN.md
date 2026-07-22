@@ -5781,7 +5781,7 @@ exp components, contacts — are a goldmine that most of these consume with litt
   > should sit around the player's bubble" — rings/dials/gauges, no floating corner text):** *readiness
   > rings* hug the avatar (RT/CT/aim depleting), *range bands* ring it further out (melee inner →
   > missile outer, threatened band lit), a *position gauge* sits under it (foe ↔ even ↔ you), the avatar
-  > *pulses* on danger conditions, and *threat* markers glow on each creature figure. This **subsumes a hard Social⇄Combat mode
+  > *pulses* on danger conditions, and *threat/engaged* flare is drawn on creature figures — **driven by ASSESS (v0.17.0/B220), not a blanket "combat is live" flag** (the original blanket marker flagged harmless NPCs mid-fight; only ASSESS can tell friend from foe, so the flare lives in the assess view). This **subsumes a hard Social⇄Combat mode
   > toggle**: all combat layers off = today's pure social Tableau; social layers off + combat on = a
   > combat cockpit rendered on the scene; both on = a combat-aware gather scene. **What the merge does
   > and does NOT save:** it saves the *rendering* scaffold (shared figure / seating / scene engine —
@@ -6171,6 +6171,14 @@ A wrapper hosting either a `PanelFrame` (passing `sharedFrameProps`) or a chrome
 - **Title bar**: shows the title + controls (rename on dbl-click, title hide/show toggle, close ×).
   When `showTitle === false`, collapse to a **thin draggable grip lip** at the top edge (saves vertical
   space for cramped users) — resize handles remain; **Alt+drag anywhere** also moves (snapping-off too).
+  **v0.17.0 chrome polish (Sekmeht):** the title bar is a slim ~8px header, and **the titlebar and grip
+  heights MUST stay matched** (else showing/hiding the name jumps the header — B217); title text needs a
+  box taller than its glyphs to centre; the top resize handle is 4px so the slim bar keeps a drag zone.
+  The hide-name control is a **chevron**, and collapse/close are **hidden until window hover/focus**
+  (quiet by default). Visuals: soft gradient + hairline + a 1px inset accent focus line, all `color-mix`
+  (theme-safe). **Chrome windows keep an EXPLICIT height — an auto-hug (measure content → resize +
+  persist) was tried in v0.17.0 and REVERTED: it corrupted saved heights and clipped the vitals bar
+  (pitfall #93; the deterministic-height rule is pitfall #74).**
 - **Keyboard**: when focused, arrow keys nudge 1px (Shift = 10px) for pixel placement; sized/positioned
   values stay fraction-backed.
 - Lives in a `WindowLayer` (`position: absolute; inset: 0` over a `position: relative` game-area),
@@ -6584,9 +6592,10 @@ gates** (procedural fallbacks always).
      the G1 plan prescribed for combat.
    - **Phase 2 — choreography & channels:** typed arrival/departure events with direction
      (slide in from the matching edge), emote action-captions + physical beats, whisper-to-you
-     dotted-tail bubbles, thought/ESP wisps at the screen edges (**never a body in the room** —
-     the speaker isn't physically present), and the crowd cap (real avatars for active/known
-     speakers, a "+N others" silhouette, promote-on-speak).
+     dotted-tail bubbles, thought/ESP wisps (**never a body in the room** — the speaker isn't
+     physically present; v0.17.0/B221 collected into a quiet **bottom-left "thought log"**, newest
+     at the bottom and older receding up, so they don't obscure the scene), and the crowd cap (real
+     avatars for active/known speakers, a "+N others" silhouette, promote-on-speak).
    - **Phase 3 — the AI tier** (needs the `AIProvider` adapter, §32.4): cached per-room-id
      backdrops from room prose, LOOK-derived portraits cached per name, optional emote
      interpretation — all opt-in; the procedural/flat-themed fallback remains the baseline forever
@@ -6653,8 +6662,9 @@ gates** (procedural fallbacks always).
      collision avoidance** (per-render `placeChip` claims in draw order, estimated widths — sky
      chips step down, underground chips flip above their disc). Parked from the same review:
      constellations (real names live in `base-constellations.yaml`), empty-state-as-scene,
-     small-caps names, Moon Mage castable cues, and three telemetry asks (`perceive moons` phase
-     prose, TIME-verb Elanthian calendar, weather corpus).
+     small-caps names, Moon Mage castable cues, and `perceive moons` phase prose. (The other two
+     telemetry asks from that review — the TIME-verb Elanthian calendar and weather — SHIPPED in
+     v0.17.0, see the Tier 2 bullet below.)
    - **Boundaries:** `parseMoonLine` / `computeSunPhase` are pure exported functions (harness: 56
      cases against the real bundle, incl. moonwatch's NEGATIVE overdue timers `[x]-(-2)`); the
      stream-id match is read-only (routing/discovery untouched — the `moonWindow` stream stays
@@ -6673,11 +6683,191 @@ gates** (procedural fallbacks always).
      sun toggle because the SKY needs it) via `ExperienceDef.options` — zero new UI. No slash
      command by design (the shelf is the surface; pre-merge check #5, the F53 precedent). No
      profile-shape change (`moonSun` is a new optional per-character state suffix).
-   - **Phase 2 (recorded ambition, not scheduled):** WEATHER — Genie was researched at Sekmeht's
-     ask and tracks NO weather anywhere in its source (only `$gametime` from `<prompt time=>`,
-     which we already parse per pitfall #87), so there is nothing to borrow: weather means
-     classifying DR's ambient weather prose ourselves (a corpus problem, §35-style capturer
-     registry). Noon/game-time readouts from the prompt clock are the other natural layer.
+   - **Tier 1 — time-of-day WORD (SHIPPED v0.17.0):** DAY / NIGHT / DAWN / DUSK on the sky
+     (`skyPhaseLabel`), derived from the SAME sun elevation the gradient uses so the word can never
+     disagree with the backdrop; centered just above the horizon (clear of the moons/sun that rise
+     and set at the left/right ends); follows the ⚙ "Living sky" layer. No new data — it rides the
+     sun phase already computed. **Once TIME is captured, the fine Elanthian DAYPART is appended in
+     parens** (`Night (late evening)`, from `calendar.timeOfDay`) — so the daypart moved OFF the
+     footer date line (which now reads month · year · season). Absent before a sync (just `Night`).
+   - **Tier 2 — weather + the Elanthian calendar (SHIPPED v0.17.0). NOT called "Almanac"** (that's
+     Simutronics' separate, later feature — the term is banned; this is the "Moons" experience).
+     DR exposes NEITHER passively (verified across drinfomon/DRStats/Vars/XML — the ONLY sources are
+     the `WEATHER` and `TIME` commands; no moonwatch-style community script stores them, and
+     `almanac.lic` is an unrelated skill-training grinder). So both are **command pulls**, but the
+     ⟳ is **SILENT** (Sekmeht: "don't want players to see the command go through") — it sends
+     `TIME` + `WEATHER` via RAW `window.api.sendCommand` (pitfall #53's no-echo pattern) and their
+     replies are CONSUMED (never shown, logged, or triggered).
+     - **Weather** is PASSIVE-capturable too: the glance marker (BOTH `You glance up at the sky.`
+       outdoors AND `You glance outside.` indoors-with-a-window — `WEATHER_GLANCE_RE`) is followed
+       on the NEXT main line by the weather prose, shown VERBATIM; any natural sky-glance updates
+       the chip. The enclosed refusal `That's a bit hard to do while inside.` is a GENERIC refusal
+       (never matched passively) → "indoors" only inside a ⟳ sync.
+     - **Calendar** parses ONLY a ⟳ sync's TIME reply (line 3's `It is currently X and it is Y`
+       isn't unique enough to trust from room prose): `parseTimeLine` → day/month/year/season/
+       daypart, with day-of-YEAR (0-indexed "N days since the Victory") → day-of-MONTH via the new
+       platform reference [elanthianTime.ts](src/shared/elanthianTime.ts) (uniform 40-day months),
+       so it reads `4 Ka'len the Sea Drake · 457 A.V. · ❄️ winter` (the daypart moved to the sky
+       label — Tier 1). Season/daypart are taken VERBATIM from TIME line 3 (winter wraps the year
+       boundary, so a naïve day→season quartering would be wrong).
+     - **Weather-effect sky animations + season icons (v0.17.0):** `detectWeather(prose)` regexes the
+       captured weather line into `WeatherFx` flags (snow / rain / clouds / fog / wind / storm / clear
+       / heavy — `\b`-anchored keyword sets; `gale` is WIND not storm; storm ⇒ rain+heavy+clouds; any
+       precip ⇒ clouds) that drive CSS-keyframed SVG layers over the sky: drifting clouds behind the
+       bodies, falling snow / rain slanted & sped by wind, a horizon fog gradient, an occasional storm
+       lightning flash. Particle arrays are DETERMINISTIC (index-hashed, no `Math.random`); motion is
+       gated by the ⚙ "Weather effects" layer AND `epilepsySafe`, and the SVG helpers are module-
+       hoisted (pitfall #4, no hooks) so nothing re-renders per frame. A **season icon** (❄️/🌱/🌻/🍂)
+       prefixes the season on the date line. Indoors, the weather line shows a **⌂** glyph + "sky not
+       visible — step outside" (a UX call over a literal house-in-sky). `wx` is a PLAIN const (NOT a
+       hook) placed after the `if (!moons) return` — a `useMemo` there changed the hook count when
+       moon data arrived and crashed the mount (Rules-of-Hooks).
+     - **Suppression is per-REPLY-BLOCK, not a time window** (`silentSyncRef {time,weather,at}`) —
+       the load-bearing fix so a `TIME`/`WEATHER` you type YOURSELF always shows (an 8s window ate
+       typed commands). Each flag clears at its reply block's **LAST line** IN-LOOP (weather =
+       desc/refusal; TIME = L4 roisaen/Anlas), **NOT post-batch** — a post-batch clear dropped TIME's
+       month/season/daypart when its 4 lines split across flushes ("Day 44 · 457 A.V." with no
+       month); block-end clearing is batch-agnostic (`at`+`SKY_SYNC_WINDOW_MS` backstop a reply that
+       never completes). Computed at the top of the main `stream-text` case, `suppressSync` gates the
+       log record + the `newMain` push + triggers; capture runs regardless. `silentSyncRef` +
+       `awaitingWeatherRef` are RESET on a reconnect-in-place (pitfall #69) so a mid-sync/mid-glance
+       flag can't carry over and mis-capture the new connection's first line.
+     - **UI — a HEADER strip + a FOOTER strip** (Sekmeht): the header holds "what's happening in
+       the sky now" (sky phase · moons · weather), the footer holds the Elanthian date — full-width
+       bands, siblings in the `.moons-scene` flex column, CENTERED inline-flow rows so the weather
+       sentence wraps; consistent `KEY value age` segments divided by a faint bar; a ⟳ ends BOTH strips
+       (header + footer — the footer one alone was easy to miss; same silent pull, same tooltip). (Iterated hard — don't re-litigate:
+       footer-only run-on → too-tall 4-row grid → 2-row footer → a floating top pill (rejected) →
+       these two strips.) Three ⚙ layers ("Weather", "Weather effects", "Calendar"); no slash command (§34.6). No
+       profile-shape change (weather/calendar are in-session only — they go stale by nature).
+     - **CONTRAST is sky-adaptive** (`sceneInk` lerps off `wDay`): the text `color` (dark by day →
+       light by night), a `--moons-halo` (opposite lightness — an SVG `paint-order:stroke` behind
+       the scene text so names/chips/the DAY word read on any sky; day was the weak case), and a
+       `--moons-band` (opposite the text — a frosted-light strip by day behind dark ink, a dark
+       strip by night behind light ink; a fixed dark tint was low-contrast by day). Scene text fades
+       via `fill-opacity` so the halo stays solid. The one THEMEABLE cue is the arc guide
+       (`--moons-guide` → `var(--accent)`, blended toward the sky-ink); the sky gradients / moon lore
+       colors / shadow landscape stay FIXED realistic-lore data (Principle #4 exception, like the
+       map's baked tiles). Bug-checked comprehensively (2026-07-20): no blocking bugs; residuals
+       (skill-dependent TIME L4 leak; 8s over-suppression of a typed cmd after a DROPPED ⟳ reply)
+       are minor + documented.
+     - TIME line 4 (skill-dependent fine clock) is consumed-not-parsed via `roisaen`/`Anlas`
+       tokens (an exotic low-skill variant may leak a line — refine with a sample).
+     - **elanthianTime.ts** is the platform-wide Elanthian date/time reference (unit conversions,
+       month names, seasons, 7-year cycle, dayparts, `dayOfMonth`/`monthIndex`) — reuse it for any
+       future Earth↔Elanthia conversion.
+     - **Living-sky visual pass (SHIPPED v0.17.0, Sekmeht):**
+       - **Sun-centric sky glow.** The day's brightness now FOLLOWS THE SUN, not the horizon — a
+         userSpace radial (`lb-sunglow`) centered on the sun's arc position, warm-white broad at noon,
+         tightening + warming to gold near the horizon (so sunrise/sunset glow tracks the sun through
+         dawn/dusk), fading out below the horizon so NIGHT STAYS NIGHT. The base day/zenith gradients
+         were flattened (were brightest at the bottom → uniform) and the full-width twilight orange
+         softened, so the sun is the bright focus rather than the whole horizon.
+       - **F69 — sun-lit moons.** Each up-moon is lit from the sun's on-screen direction: a per-moon
+         `radialGradient` with the highlight offset toward the sun (tinted by the sun's colour/strength
+         via `color-mix`, applied through `style` not the SVG attribute) fading to a shadowed far side
+         (terminator), plus a sun-facing specular glow. The moon's own palette (`MoonStyle.tones`)
+         drives the hue — Yavash warm-red, Xibar cold-silver, Katamba sooty. Underground moons keep the
+         flat fill. *Lore caveat: renders as lit/phased regardless of whether DR moons actually phase —
+         dial the terminator toward "subtle sheen" if lore purists object.*
+       - **Twilight glow (Sekmeht).** The sun glow PERSISTS below the horizon through dusk (fading out)
+         and pre-dawn (fading in), reaching 0 by `sunElev = -0.16` (formal night) → no deep-night leak,
+         anchored at the horizon crossing (y clamped to the horizon when the sun is below).
+       - **Crepuscular ground rays.** A fan from the sun's horizon point across the landscape (`RAY_FRACS`
+         → the bottom edge): warm LIGHT beams at sunrise, dark SHADOW rays at sunset (`rising = progress
+         < 0.5`), + a warm light-pool at the crossing. Drawn OVER the ground, UNDER the ridges (backlit
+         mountains); fades past golden hour. *Known: the sunset shadow is low-contrast on the dark earth
+         ground (dark-on-dark) — pops on snow; boost if a tester wants it bolder.*
+       - **Day/night landscape shade (`groundShade`).** The whole ground is lit + normal by day and
+         falls into SHADOW at night — a dark overlay over the ground region whose opacity tracks
+         `sunElev` (0 by day → deepest at night, lifting through dawn). It's DIRECTIONAL: a radial
+         anchored at the sun's horizon crossing (`sunLightPos.x`), so the side where the sun rises/sets
+         stays lit longest and the far side darkens first (the shade sweeps as the sun moves). Drawn over
+         the ground + rays so the sunset shadow deepens into night and dawn light lifts it.
+       - **Real horizon occlusion + fixed-duration set (Sekmeht).** The bottom half is now an OPAQUE
+         season/weather ground (`lb-ground`), and bodies are drawn BEHIND it so a setting sun/moon SINKS
+         behind the horizon. Instead of crawling the slow underground arc (which looked "stuck" for
+         ~40 min), a set body SINKS below over a FIXED `SET_MIN` (4) minutes then is HIDDEN, and EMERGES
+         over 4 min before rise (`crestPos`; the sun needs `SunPhase.phaseMin` = the current phase's
+         length). The **orrery pill** (`.moons-pill`, frosted theme-matched glass above the footer)
+         carries every body's next rise/set while it's hidden. Down-body scene text was removed; the sun
+         text is day-only. Weather clouds + the shooting star now render IN FRONT of the bodies.
+       - **F67 — twinkling stars + a rare shooting star** (one element on a ~22s CSS cycle, clear nights).
+       - **F68 — fireflies** on SUMMER dusk/nights. **Aurora was REMOVED** (it read as moving colour
+         squares). **F70 — seasonal horizon:** a snow-field ground + a bright snow line on the ridge tops
+         in winter (all gate on the ⚙ Seasonal touches layer).
+       - **Every layer is a ⚙ toggle (15).** sun / sunglow / rays / sky / moonglow / sunlight / pill /
+         countdowns / names / horizon / seasonal / effects / weather / weatherfx / calendar — each gates
+         exactly its own layer. **Countdowns + names default OFF** (the pill covers them): registry
+         `defaultHidden: true` + `optionShown(hidden, opt)` / `defaultHiddenMap(def)` helpers so the ⚙
+         checkbox, the component gating, and the STORED value always agree; toggles store the EXPLICIT
+         hidden value (not a blind flip), new instances are seeded with the defaults so the default
+         PERSISTS to the profile (the `onSetExperienceOption` path in GameWindow + ExperienceLayer +
+         PanelFrame). **Bug fixed:** the sun's GEOMETRIC elevation is `sunElev` (independent of the
+         Living-sky toggle); the sky-gradient weight source `elev = showSky ? sunElev : null`. Before the
+         split, turning Living-sky OFF also killed the sun glow / rays / moon-lighting (they shared `elev`)
+         — those are separate ⚙ layers and must stay independent.
+       - All ANIMATED ambient (F67/F68 + the ray shimmer) gates on the ⚙ Effects layer + `!epilepsySafe`
+         (via `anim`); F69/F70, the sun glow, rays, occlusion, and the pill are STATIC (always on when the
+         data + their own toggle support them). The daypart moved to its OWN smaller line BELOW the
+         DAY/NIGHT word; header/footer borders gained a stronger edge + halo hairline; freshness collapsed
+         into the ⟳ TOOLTIP with an amber **stale** pulse (>10 min, nudge not a forced refresh).
+     - **Living LANDSCAPE below the horizon (SHIPPED v0.17.0, Sekmeht — "I like nature").** The ground band
+       hosts a persistent, data-free NATURE scene (`MoonsLandscape`, module-hoisted no-hooks sub-component)
+       under a new ⚙ **"Trees & water"** option (id `landscape`, default on): a distant forest edge, mid +
+       large foreground trees (mixed pine + round), a winding **stream** into a reflective **lake**. (A first
+       "village in the foothills" draft — buildings with night-lit windows — was REPLACED by nature at
+       Sekmeht's ask; the option id stayed `landscape` so saved prefs carry over. Don't reintroduce buildings
+       without a fresh ask.) Model:
+       - **Perspective** — element size scales with baseline y (`persp` 0.5 near horizon → ~1.45 near the
+         bottom), distant pieces fade toward a pale haze (atmospheric perspective), everything LIGHTENS by
+         day / DARKENS at night via `landNight` (from `sunElev`, no TIME check). Colours lerp through a
+         module-level **`mixHex`** (Principle #4 realistic-colour exception; NOT color-mix-as-SVG-attribute).
+       - **Daytime contrast** (Sekmeht: "hard to tell what they are") — saturated foliage vs a desaturated
+         neutral ground, dark **edge outlines** on canopies, **contact shadows**, a **dark rim** on the lake.
+       - **Sun-DIRECTIONAL shadows** — cast along the SAME radial fan as the crepuscular rays: from the sun's
+         horizon point `(sun.x, horizonY)` THROUGH the object base, so straight down under the sun, ~4–5
+         o'clock toward the far side, longer as the sun sinks, flatter near the horizon (depth); a rotated
+         ellipse renders the angle; soft ambient blob at dusk/night.
+       - **Lake reflections** — shimmering columns for the sun (day) + the lit moons (Yavash/Xibar) where
+         they pass above the pool (clipped to the lake's height at that x, no clipPath); **Katamba excluded**
+         (no light); skipped when the lake is **iced** (winter).
+       - **Seasonal dressing** (rides the existing ⚙ "Seasonal touches" + a known season, else neutral): a
+         per-season foliage palette (`SEASON_CFG`) + winter snow-caps & **iced lake/stream**, spring
+         **blossoms**, summer lushness (+ fireflies), autumn recolour + **falling leaves** (`LEAVES` +
+         `.moons-leaf` keyframe, gated on `anim`/epilepsy-safe).
+     - **Moon-body colour + glow corrections (v0.17.0, Sekmeht, from the in-game illustrations).** Katamba =
+       soot-black disc + **grey** rim + an **ominous miasmatic dark-violet glow** (`#2a123f`) that HOLDS
+       through day+dusk and fades only into true night (`clamp01((sunElev+0.35)/0.3)`). **A pure-black glow
+       was tried and is INVISIBLE on a dark sky** — black only darkens, so a "shadow" glow that must read at
+       night has to be a coloured haze. Yavash = ruby/crimson (glow `#e01430`); Xibar = vivid ice-blue disc +
+       a darker **blue** rim (`#88bce6`) + a **silvery-white** glow (`#dbe9f5` — no atmosphere → ice-field
+       shine). `MoonStyle` gained `glowStrength` (>1 = more intense) + `glowR` (halo radius × disc r);
+       overlapping bodies paint in **`MOON_DEPTH` z-order** (furthest→closest: Sun, Yavash, Katamba, Xibar).
+       Pill dots mirror the corrected hues. **B222:** all Moons gradient ids are per-instance via `useId()`
+       (a `display:none` background tab is still mounted; `url(#id)` resolves to the first document match, so
+       a second instance hijacked the first's fills — CLAUDE.md pitfall #95).
+     - **Night-sky motion + polish (v0.17.0, Sekmeht).** The scene's tick dropped **30s → 2s** so bodies AND
+       everything derived from the sun's position (shadows, rays, lake reflections) advance together in
+       sub-pixel steps — a disc-only CSS glide was tried and REVERTED (it desynced the discs from the
+       recomputed shadows/rays; the fix is ONE smoothly-advancing clock, not per-element transitions). The
+       **star field** grew 9 → **70 deterministic stars**, each with a brightness + a `reveal` threshold so
+       brighter stars show at dusk and fainter ones reveal toward **true midnight** (light-pollution
+       clearing), driven by **`nightDepth = clamp01(-sunElev)`** which PEAKS at midnight (unlike `wNight`,
+       which saturates past dusk); twinkle moved to `fill-opacity` so it composes with the per-star reveal.
+       **Shooting stars**: 1 fixed → **6 scattered** (varied paths, staggered, still clear-night-only — clouds
+       hide them). **FX draw order**: sky+stars (bg) → bodies → ground/landscape → day/night FX (shooting
+       stars, fireflies, leaves) FOREGROUND → weather FX (clouds, precip) FRONTMOST.
+     - **Moons feature backlog (numbered, Sekmeht 2026-07-21).** SHIPPED v0.17.0: **F67** stars+shooting,
+       **F68** aurora/fireflies, **F69** sun-lit moons, **F70** seasonal horizon, plus the living landscape +
+       moon-colour corrections above. PLANNED: **F64** moon
+       utility layer (which moons are up + lore affinity + moonlight strength — the Moon Mage hook),
+       **F65** conjunction detection (2–3 moons clustering → highlight), **F66** consolidated "next event"
+       readout (replace the repeated "rises in Nm" chips), **F71** iconified strip labels (☀🌙☁ vs the
+       SKY/MOONS/WEATHER words), **F72** stale-as-atmosphere (the whole sky desaturates/dims when data is
+       stale, blooms back on refresh — a scene-wide extension of the F-current amber ⟳ nudge), **F73**
+       compact mode (a minimal horizon-band layout for small tabs). Priority order for the next pass:
+       F64 + F65 (utility), then F72.
 4. **Combat facet of X1 (the G1 fold, 2026-07-16):** G1 is no longer a second Experience — it ships as
    auto-revealing **combat LAYERS on the Living Tableau** (full decision in §32.1's G1 entry). Phase 1
    uses existing typed events only (readiness ring, CT ring, stance figure, condition border, hands,

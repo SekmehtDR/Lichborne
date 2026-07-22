@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Contact, ContactTemplate } from '../../contacts'
 import type { ExperienceProps, SceneSpeechItem, SceneMoveItem } from '../../experiences'
 import type { SceneCreature } from '../../../shared/types'
@@ -30,6 +30,12 @@ function assessZone(rel: string): 'front' | 'flank' | 'behind' {
 const ASSESS_REELING = /stunned|imbalanced|unbalanced/i
 const ASSESS_ZONE_ORDER: Record<string, number> = { front: 0, flank: 1, behind: 2 }
 const ASSESS_TTL_MS = 30_000  // assess is on-demand/script-driven; age it out after a fight
+// Normalise a creature name for cast↔assess reconciliation: lowercase + strip a
+// leading article/number word (the same set sceneExtract's LEADING_ARTICLE
+// strips from the cast, plus "the"), applied to BOTH sides so "A lava drake"
+// (assess, article kept) matches "lava drake" (cast, article already stripped).
+const ASSESS_NAME_ARTICLE = /^(?:a|an|the|some|two|three|four|five|six|seven|eight|nine|ten)\s+/
+const normAssessName = (n: string) => n.toLowerCase().replace(ASSESS_NAME_ARTICLE, '').trim()
 
 // The READINESS RING around the player avatar (DESIGN §32.1 — the combat HUD
 // "sits around the player's bubble", Sekmeht 2026-07-16). ONE cooldown sweep,
@@ -259,6 +265,19 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
     return () => ro.disconnect()
   }, [])
 
+  // Measured height of the bottom-pinned gauge panel, so the self figure can be
+  // held clear of it in a short stage (Sekmeht 2026-07-17: in a constricted
+  // panel the self's NAME overlapped the gauge bars). Measured (not estimated)
+  // so it tracks the font size + fit-scale automatically. useLayoutEffect reads
+  // offsetHeight AFTER layout but BEFORE paint, so the clamp lands the same
+  // frame the gauges appear (no one-frame overlap flash).
+  const gaugeRef = useRef<HTMLDivElement>(null)
+  const [gaugeH, setGaugeH] = useState(0)
+  useLayoutEffect(() => {
+    const h = gaugeRef.current?.offsetHeight ?? 0
+    setGaugeH(prev => (prev === h ? prev : h))
+  })
+
   // Re-render once a second while any bubble is still live so expiry is
   // visible without new events; the interval retires itself once everything
   // has aged out (and restarts on the next speech via the deps).
@@ -307,16 +326,64 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
   const posFrac = pos === null ? null : pos / 9
   const balFrac = bal === null ? null : ((bal - 8) >= 0 ? (bal - 8) / 3 : (bal - 8) / 8)
   const showReadiness = !hidden?.readiness && timersLive
-  const showThreat = !hidden?.threat && inCombat
-  // Gauges STAY ON once there's data (Sekmeht 2026-07-17: "just leave these on")
-  // — a persistent HUD showing last-known balance/position/range, not tied to
-  // active combat. The ⚙ "Combat gauges" layer (hidden.position) is the on/off.
+  // The "engaged" flare (a creature attacking you) — driven by ASSESS (which
+  // knows who's actually at melee range), NOT a blanket "combat is live" flag.
+  // The old blanket marker flared EVERY creature while in combat, so a harmless
+  // NPC that wandered in got flagged as a threat (Sekmeht 2026-07-18). Only the
+  // assess arena can tell friend from foe, so threat styling lives there.
+  const showEngaged = !hidden?.threat
+  // Gauges render once there's data (last-known BAL/POS/RNG), but FADE out when
+  // combat goes idle rather than persisting forever (Sekmeht 2026-07-17: "let's
+  // do the combat fade" — reversing the earlier "just leave these on"). They
+  // stay rendered while faded (opacity, not unmount) so they snap back the
+  // instant combat resumes; the fade itself rides the `!inCombat` class +
+  // asymmetric CSS transition (quick in, slow out) through the 8s inCombat hold.
+  // The ⚙ "Combat gauges" layer (hidden.position) is still the hard on/off.
   const showGauges = !hidden?.position && (bal !== null || pos !== null || range !== null)
   // Assess arena (B): show id'd creatures by their relation to you when a fresh
   // assess is in hand (ages out after ASSESS_TTL_MS — it's on-demand). Self/PC
   // rows are excluded; the self row's target is your current target.
   const showAssess = !hidden?.creatures && !!combat && combat.assess.length > 0 && (Date.now() - combat.assessAt) < ASSESS_TTL_MS
-  const assessCreatures = showAssess ? combat!.assess.filter(e => !e.self && !e.pc && !!e.id) : []
+  // Reconcile the assess SNAPSHOT against the LIVE creature cast (Sekmeht
+  // 2026-07-17: "killing them doesn't update — they stay alive until a new
+  // creature enters; some NPCs remain a threat after moving on"). Assess is
+  // on-demand, so a creature you've since KILLED or that DECAYED/left lingers in
+  // the arena — drawn alive and still --engaged ("a threat") — until the 30s TTL
+  // or the next assess. The SceneParser cast (`creatures`) IS live (death/decay
+  // diffing), so it's the truth for who's still here. Creature death is
+  // ANONYMOUS (no id in the narration — the arena keys on id, the cast on name),
+  // so reconcile by NAME COUNT: keep at most the ALIVE count per name (dropping
+  // the dead/decayed excess, and any name the cast no longer lists at all → cap
+  // 0). The specific surviving id may differ from reality, but no dead/departed
+  // creature shows — which is the fix. Only runs when creatures aren't hidden
+  // (showAssess already gates that), so `creatures` is the real cast here.
+  const liveAssessCap = new Map<string, number>()
+  for (const c of creatures) {
+    const total = c.count ?? 1
+    const alive = Math.max(0, total - (c.deadCount ?? (c.dead ? total : 0)))
+    if (alive > 0) {
+      const k = normAssessName(c.name)
+      liveAssessCap.set(k, (liveAssessCap.get(k) ?? 0) + alive)
+    }
+  }
+  const assessRaw = showAssess ? combat!.assess.filter(e => !e.self && !e.pc && !!e.id) : []
+  const assessSeen = new Map<string, number>()
+  const assessReconciled = assessRaw.filter(e => {
+    const k = normAssessName(e.name)
+    const used = assessSeen.get(k) ?? 0
+    if (used >= (liveAssessCap.get(k) ?? 0)) return false
+    assessSeen.set(k, used + 1)
+    return true
+  })
+  // Safety net: if reconciliation dropped EVERYTHING but the cast still lists
+  // live creatures, the names disagree between assess and the room-creature
+  // parse — show the raw snapshot rather than blank the arena (which REPLACES
+  // the normal creature figures, so a blank = no creatures at all). Never worse
+  // than pre-fix. When the cast is empty (you left / all decayed), blanking is
+  // correct, so this fallback deliberately doesn't fire there.
+  const assessCreatures = (assessReconciled.length === 0 && assessRaw.length > 0 && liveAssessCap.size > 0)
+    ? assessRaw
+    : assessReconciled
   const assessTargetId = showAssess ? (combat!.assess.find(e => e.self)?.targetId ?? null) : null
   // No pulsing under the epilepsy-safe accessibility setting (the ring depletion
   // is a smooth transition, not a flashing loop, so it stays).
@@ -468,6 +535,65 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
     }
   }
 
+  // Fit-to-container scale (Sekmeht 2026-07-17). Figures are %-POSITIONED but
+  // em-SIZED, so at a fixed font a small stage keeps figures full-size while the
+  // % gaps collapse and they overlap; scaling the stage font by its size makes
+  // the em sizes track the box so the % spacing reads the same at every size.
+  // WIDTH-DOMINANT: horizontal crowding (figures side-by-side across the width)
+  // is the real overlap constraint; figures are %-positioned so they never
+  // overflow VERTICALLY by position, and the gauges are bottom-pinned (not hung
+  // under the self), so height almost never needs to constrain. An early version
+  // weighted height equally (ref 500) and a normal wide-short panel tab
+  // (~715×250) fit to ~0.5 → 6px figures = "way too tiny, have to A+ a lot"
+  // (Sekmeht). Now width drives it with only a GENTLE height floor (ref 240).
+  // Capped at 1 (never past base — A−/A+ owns zoom-in) and floored at 0.6.
+  const FIT_REF_W = 520, FIT_REF_H = 240
+  const fitScale = sceneSize.w > 0 && sceneSize.h > 0
+    ? Math.min(1, Math.max(0.6, Math.min(sceneSize.w / FIT_REF_W, sceneSize.h / FIT_REF_H)))
+    : 1
+
+  // Hold the self figure CLEAR of the bottom-pinned gauge panel in a short stage
+  // (Sekmeht 2026-07-17: in a constricted panel the self's NAME overlapped the
+  // gauge bars). Reserve ~2× the measured gauge height from the bottom (gauge
+  // zone + the self's own avatar/name below its centre — the two are ~equal
+  // heights at the same font), and clamp the self's y up so it clears it. Only
+  // limits in a SHORT stage: in a tall one the reserve is a small %, so the
+  // min() keeps the normal foreground y (78%). Measured gaugeH tracks font/fit
+  // automatically. Floored at 46% so an extreme-short box doesn't shove the self
+  // up into the seated band. Applied to selfPos IN PLACE so the self's speech
+  // bubble anchor (below) and the figure render both use the clamped position.
+  if (showGauges && gaugeH > 0 && sceneSize.h > 0) {
+    const clearY = Math.max(46, ((sceneSize.h - 2 * gaugeH) / sceneSize.h) * 100)
+    if (clearY < selfPos.y) selfPos = { x: selfPos.x, y: clearY }
+  }
+
+  // Keep OTHER figures out of the SELF's personal space (Sekmeht 2026-07-20: a
+  // seated player landing right behind your own avatar makes it unreadable — the
+  // z-index puts you in front, but their name/avatar still clutters around you).
+  // The self-gravity floats you UP toward the conversation (min y≈58%) so a
+  // centre-seated player (y≈56%) — or a partner you've drifted onto — can end up
+  // stacked on you. Push any seated figure within SELF_CLEAR_R of the FINAL
+  // selfPos out to that radius along the self→figure vector (straight up if it's
+  // dead-centre on you), clamped on-screen. Figures can still be ADJACENT (a
+  // chat pair reads as together), just never fully overlapping the self. This
+  // runs after the float + gauge-clamp so it uses the self's real position, and
+  // mutates seatedPosByKey so the bubble anchors + figure render both follow.
+  const SELF_CLEAR_R = 12
+  for (const [k, pos] of seatedPosByKey) {
+    if (selfKeys.has(k)) continue
+    const dx = pos.x - selfPos.x, dy = pos.y - selfPos.y
+    const d = Math.hypot(dx, dy)
+    if (d >= SELF_CLEAR_R) continue
+    const ux = d > 0.1 ? dx / d : 0
+    const uy = d > 0.1 ? dy / d : -1   // exactly on the self → shove straight up
+    const push = SELF_CLEAR_R - d
+    seatedPosByKey.set(k, {
+      ...pos,
+      x: Math.min(96, Math.max(4, pos.x + ux * push)),
+      y: Math.min(90, Math.max(6, pos.y + uy * push)),
+    })
+  }
+
   const descExcerpt = useMemo(() => {
     const d = roomState.desc.trim()
     if (!d) return ''
@@ -564,7 +690,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
           NPCs/avatars can never render over the room title/description at close
           zoom or odd aspect ratios (Sekmeht 2026-07-17). sceneRef measures the
           stage, so bubble layout stays inside it too. */}
-      <div ref={sceneRef} className="tableau-stage">
+      <div ref={sceneRef} className="tableau-stage" style={{ ['--tableau-fit' as string]: fitScale } as React.CSSProperties}>
       {/* Combat HUD facet (G1): the cockpit — readiness/range rings, danger
           pulse and position gauge — renders AROUND the player avatar below
           (Sekmeht 2026-07-16: "the combat flavor should sit around the player's
@@ -598,8 +724,33 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
             (a, b) => ASSESS_ZONE_ORDER[assessZone(a.relation)] - ASSESS_ZONE_ORDER[assessZone(b.relation)])
           const slots = sorted.length
           const top = isLarge ? '13%' : '20%'
+          // Dead creatures REMAIN as corpses until they DECAY out of the live
+          // cast (Sekmeht 2026-07-18: "when creatures die, keep their icons").
+          // A corpse has no assess relation, so it isn't in `assessCreatures`
+          // (reconciliation caps that at the ALIVE count) — pull the dead tally
+          // straight from the cast and render them as a ✕ row ABOVE the live
+          // tactical row (further "back", out of the fight). Capped at 10.
+          const deadInstances: { name: string; ord: number }[] = []
+          for (const c of creatures) {
+            const deadN = c.deadCount ?? (c.dead ? (c.count ?? 1) : 0)
+            for (let i = 0; i < deadN; i++) deadInstances.push({ name: c.name, ord: i + 1 })
+          }
+          const deadShown = deadInstances.slice(0, 10)
+          const deadSlots = deadShown.length
+          const deadTop = isLarge ? '5%' : '7%'
           return (
             <>
+              {deadShown.map((c, i) => (
+                <div
+                  key={`asdead-${c.name}-${c.ord}`}
+                  className="tableau-figure tableau-figure--creature tableau-figure--dead"
+                  style={{ left: `${8 + ((i + 0.5) / Math.max(deadSlots, 1)) * 84}%`, top: deadTop }}
+                  title={`${c.name} (dead)`}
+                >
+                  <div className="tableau-avatar tableau-avatar--creature">✕</div>
+                  <div className="tableau-name">{c.name}</div>
+                </div>
+              ))}
               {sorted.map((e, i) => {
                 const zone = assessZone(e.relation)
                 const isTarget = e.id === assessTargetId
@@ -608,7 +759,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
                 return (
                   <div
                     key={`as-${e.id}`}
-                    className={`tableau-figure tableau-figure--creature tableau-figure--assess tableau-assess--${zone}${isTarget ? ' tableau-assess--target' : ''}${e.range === 'melee' ? ' tableau-assess--engaged' : ''}${reeling ? ' tableau-assess--reeling' : ''}${onCommand ? ' tableau-assess--clickable' : ''}`}
+                    className={`tableau-figure tableau-figure--creature tableau-figure--assess tableau-assess--${zone}${isTarget ? ' tableau-assess--target' : ''}${showEngaged && e.range === 'melee' ? ' tableau-assess--engaged' : ''}${reeling ? ' tableau-assess--reeling' : ''}${onCommand ? ' tableau-assess--clickable' : ''}`}
                     style={{ left: `${8 + ((i + 0.5) / Math.max(slots, 1)) * 84}%`, top }}
                     title={`${e.name}${e.number != null ? ` #${e.number}` : ''} — ${ASSESS_LABEL[e.relation] ?? e.relation}, ${e.range} range${e.status ? ` (${e.status})` : ''}${isTarget ? ' — your target' : ''}${onCommand ? '\nClick to face' : ''}`}
                     onClick={onCommand && e.id ? () => onCommand(`face #${e.id}`) : undefined}
@@ -644,7 +795,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
             {shown.map((c, i) => (
               <div
                 key={`cr-${c.name}-${c.ord}`}
-                className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}${showThreat && !c.dead ? ' tableau-figure--threat' : ''}`}
+                className={`tableau-figure tableau-figure--creature${c.dead ? ' tableau-figure--dead' : ''}`}
                 style={{ left: `${8 + ((i + 0.5) / Math.max(slots, 1)) * 84}%`, top }}
                 title={`${c.name}${c.total > 1 ? ` #${c.ord}` : ''}${c.dead ? ' (dead)' : ''}`}
               >
@@ -778,32 +929,6 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
               </div>
             </div>
             <div className="tableau-name">{character}</div>
-            {/* Combat gauge panel — balance + position meters (continuous fills,
-                so they FLOW instead of blinking) and a range row, grouped in one
-                readout under the figure. */}
-            {showGauges && (
-              <div className="tableau-combat-gauges" aria-hidden="true">
-                {bal !== null && balFrac !== null && (
-                  <BipolarGauge label="BAL" frac={balFrac} title={`Balance: ${balanceLabel(bal)} (solidly = baseline)`} />
-                )}
-                {pos !== null && posFrac !== null && (
-                  <BipolarGauge label="POS" frac={posFrac}
-                    title={`Position: ${positionLabel(pos)}${pos !== 0 ? (pos > 0 ? ' (you lead)' : ' (foe leads)') : ' (even)'}`} />
-                )}
-                {range !== null && (
-                  <div className="tableau-gauge tableau-gauge--range" title={`Closest threat: ${range} range`}>
-                    <span className="tableau-gauge-label">RNG</span>
-                    <span className="tableau-range-pips">
-                      {RANGE_ORDER.map(r => (
-                        <span key={r} data-r={r} className={`tableau-range-pip${r === range ? ' tableau-range-pip--on' : ''}`}>
-                          {RANGE_LETTER[r]}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
             {selfStatuses.length > 0 && (
               <div className="tableau-self-status">
                 {selfStatuses.map(s => (
@@ -818,6 +943,36 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
           </div>
         )
       })()}
+
+      {/* Combat gauge readout (BAL/POS/RNG) — PINNED to the stage bottom-centre
+          rather than hung under the self figure (Sekmeht 2026-07-17). Hanging it
+          off the self (at y:78%) forced the fit-scale to reserve vertical room
+          for it, which shrank the whole scene in a short panel tab; anchored to
+          the bottom it can never clip regardless of container height, so the fit
+          can stay generous. Fades with combat via --idle (the inCombat gate). */}
+      {showGauges && (
+        <div ref={gaugeRef} className={`tableau-combat-gauges${!inCombat ? ' tableau-combat-gauges--idle' : ''}`} aria-hidden="true">
+          {bal !== null && balFrac !== null && (
+            <BipolarGauge label="BAL" frac={balFrac} title={`Balance: ${balanceLabel(bal)} (solidly = baseline)`} />
+          )}
+          {pos !== null && posFrac !== null && (
+            <BipolarGauge label="POS" frac={posFrac}
+              title={`Position: ${positionLabel(pos)}${pos !== 0 ? (pos > 0 ? ' (you lead)' : ' (foe leads)') : ' (even)'}`} />
+          )}
+          {range !== null && (
+            <div className="tableau-gauge tableau-gauge--range" title={`Closest threat: ${range} range`}>
+              <span className="tableau-gauge-label">RNG</span>
+              <span className="tableau-range-pips">
+                {RANGE_ORDER.map(r => (
+                  <span key={r} data-r={r} className={`tableau-range-pip${r === range ? ' tableau-range-pip--on' : ''}`}>
+                    {RANGE_LETTER[r]}
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* The bubble layer — constant game-font size, collision-spaced,
           speaker-named, newest on top. */}
