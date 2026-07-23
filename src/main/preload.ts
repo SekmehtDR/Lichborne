@@ -4,6 +4,7 @@ import type {
   LichScriptsUpdatePayload, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
+  CatchupDigest, CatchupProgress,
   AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
 } from '../shared/types'
 
@@ -292,6 +293,20 @@ contextBridge.exposeInMainWorld('api', {
   // 80k+ lines/day and a line-capped tail can't bound a TIME window (pitfall #92).
   sessionLogReadWindow: (character: string, fromTs: number, toTs: number, maxRows: number): Promise<SessionLogWindowRow[]> =>
     ipcRenderer.invoke('session-log:read-window', character, fromTs, toTs, maxRows),
+
+  // Catch Me Up over the LOG (v0.17.1). The whole pipeline (read → dedup →
+  // extract) runs in MAIN and only the compact digest comes back — a 1-year
+  // window is ~29M lines, so rows must never cross IPC. Progress is pushed on
+  // `session-log:catchup-progress` for EVERY phase so the UI can say what it's
+  // doing (Sekmeht: "Working on it" during parsing/dedup/extraction, not just the
+  // final summary). Filter by requestId — every window hears the channel.
+  sessionLogCatchupDigest: (requestId: string, character: string, fromTs: number, toTs: number, maxBodyChars: number, redactLiterals: string[]): Promise<CatchupDigest> =>
+    ipcRenderer.invoke('session-log:catchup-digest', requestId, character, fromTs, toTs, maxBodyChars, redactLiterals),
+  onCatchupProgress: (cb: (p: CatchupProgress) => void) => {
+    const h = (_e: unknown, p: CatchupProgress) => cb(p)
+    ipcRenderer.on('session-log:catchup-progress', h)
+    return () => ipcRenderer.removeListener('session-log:catchup-progress', h)
+  },
 
   // ── AI (BYOK, capability-routed — DESIGN §10) ────────────────────────────────
   // Keys go DOWN (set/clear) but never come back up — aiKeyStatus returns only

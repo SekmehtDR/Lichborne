@@ -120,6 +120,14 @@
 .injury-wound-3 { background: color-mix(in srgb, var(--injury-wound3-color) 20%, transparent); }
 .injury-wound-3 .injuries-part-severity { color: var(--injury-wound3-color); }
 
+/* B224 — a SCAR is healed history, NOT active damage. Deliberately neutral (no
+   wound hue, no fill) and muted so it can never be mistaken for a live wound at a
+   glance (polish standard #1: every loud glyph should mean "look at me"). Drawn
+   from the text ramp only, so it stays legible on light themes (Principle #4). */
+.injury-scar { background: transparent; opacity: 0.72; }
+.injury-scar .injuries-part-name { color: var(--text-muted); }
+.injury-scar .injuries-part-severity { color: var(--text-dim); font-style: italic; }
+
 /* ============================================================
    Room panel
    ============================================================ */

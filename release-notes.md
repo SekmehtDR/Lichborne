@@ -1,40 +1,41 @@
-## v0.17.0 — Moons weather & Elanthian calendar + a themed About + combat-scene polish
+## v0.17.1 — Catch Me Up reads your logs 🤖 · the scroll stays put 📜
 
-### The Moons experience — a living sky 🌙
+### Catch Me Up now covers the whole window you ask for
 
-The **Moons** experience (open it from the **Experiences** shelf, or add it as a panel tab) grew into a full celestial scene — weather, the Elanthian calendar, and a sky that actually behaves like a sky:
+If you did a **2.5-hour** `/ai catchup` and only got the last few minutes — that's fixed. It used to summarize only what was still on your screen, which can't reach back very far. Now it reads **your session log** for that character across the exact window you asked for.
 
-- **The sky follows the sun.** Daylight is now brightest *around the sun*, warming to gold as it nears the horizon; the glow lingers through **dusk** after it sets and returns before **dawn**. The **sun and moons sink behind the horizon** and disappear while set, then crest back up — and an **at-a-glance panel** above the footer shows every body's next rise/set the whole time. The **landscape itself is lit by day and falls into shadow at night**, the shade sweeping in from the side away from where the sun is rising or setting.
-- **The moons look like moons.** Each is **lit from the sun's direction** (a bright side and a shadowed side) and glows in its own colour — ruby/crimson **Yavash**, vivid ice-blue **Xibar** with a silvery-white shine, and soot-dark **Katamba** wreathed in an **ominous violet haze** by day. They also stack by real depth when they overlap.
-- **A living landscape below the horizon** 🌲 — a little wilderness now sits under the sky: a distant forest, foreground trees, a winding **stream** and a **lake** that **reflects the sun and moons**. It has real **depth** (nearer things larger), lights and darkens with the day, and **dresses itself by season** — snow-capped trees and an iced-over lake in winter, blossoms in spring, lush green in summer, autumn colours and **falling leaves** in fall. Toggle it under the scene's ⚙ ("Trees & water").
-- **Sunrise & sunset rays** fan across the landscape — warm light beams at dawn, long shadows at dusk — and now the **trees cast shadows that follow the sun**, swinging from straight-back at midday to long diagonals near sunset.
-- **A deepening night sky** ✨ — the stars now **fill in as the night gets darker**: the brightest appear at dusk, and fainter ones keep emerging the closer it gets to **midnight** (like light pollution clearing), thinning again toward dawn. **Shooting stars** streak from all across a clear sky (clouds hide them, as they should). And the whole scene now **moves smoothly** — the sun, moons, their shadows, the rays and the lake reflections all drift together instead of a jerky redraw.
-- **Time of day on the sky** — a bold **DAY / NIGHT / DAWN / DUSK** word, with the finer Elanthian daypart on its own line once you've checked the time.
-- **Weather & date** — a **⟳** button silently checks the sky (`WEATHER` and `TIME` go out behind the scenes — nothing clutters your game window) and shows the weather in plain words plus a real date like *4 Ka'len the Sea Drake · 457 A.V. · ❄️ winter*. Weather also updates whenever you naturally glance at the sky; indoors it tells you to step outside.
-- **Live weather in the sky** — drifting clouds, wind-slanted snow and rain, a hazy horizon, the odd flicker of lightning; snow settles on the ground and ridgelines in winter. Weather draws over everything else in the sky. All respect your epilepsy-safe setting.
-- **Make it yours.** The scene's **⚙ "Show in this scene"** now toggles every layer — sun, sun glow, rays, living sky, moon glow, sun-lit moons, the at-a-glance panel, seasonal touches, weather, and more. (The per-body name and countdown labels are **off by default** now that the panel shows them, but you can switch them back on.)
+- **Ask for any window** — `/ai catchup 30m`, `1.5h`, `2.5h`, `7d`, even `1y` (units: minutes `m`, hours `h`, days `d`, months `mo`, years `y`).
+- **It pays attention to what matters coming back** — ranks and skills you gained, what was attacking you and any wounds, deaths, who spoke to you and how it went, work orders finished, and money earned or banked.
+- **It reads like a companion catching you up**, not a status report, and it tunes itself to the window — a quick "what did I miss" for 30 minutes, a proper retrospective for a year.
+- **"Working on it…"** — for long windows it shows progress while it reads and sifts your logs, then the recap streams in. It always tells you honestly what it covered (and how far back your logs actually go).
+- **Keep logging off?** It safely falls back to summarizing your screen — and says so. Everything stays **per-character** and on your own key.
+- **Your private info is scrubbed before anything is sent.** Your account PIN / identification numbers, passwords, and account username are removed from the text on its way to the AI — while your log on disk stays completely untouched. There's a new **[AINOTICE.md](AINOTICE.md)** explaining exactly what is and isn't sent, linked right in **Help → About Lichborne**.
 
-Everything you type yourself still shows normally — only the ⟳ button is quiet.
+*(New territory — this reads real log files across up to a year, so if a summary looks off, let us know the window and what seemed wrong.)*
 
-### A proper About dialog 💛🎵
+### Fixed: the Injuries panel showing wounds you don't have
 
-**Help → About Lichborne** is now an in-app page that follows your theme, instead of a plain system box. It carries a short note about why Lichborne exists, credits everyone who's helped build and test it, and has quick links to the **GitHub** repo and our **Discord**. And there's a little **music toggle** — muted by default; click the speaker for a tune (it stops when you close the window). Thank you all.
+If your Injuries panel has been listing wounds that never go away — even when `HEAL` tells you *"you have no significant injuries"* — those were your **scars** being displayed as if they were fresh wounds.
 
-### Living Tableau (beta) — combat scene polish ⚔️
+The game reports a healed wound as a **scar**, and Lichborne was reading every one of them as an active injury (and reusing the severity number), so they'd sit in the panel permanently — right through dying and being healed.
 
-Lots of refinement to the combat scene added last release:
+Now scars are shown for what they are: listed **separately in a quiet, muted style** ("Light scar", "Moderate scar"), while actual wounds keep their usual colour-coding. If you have no active wounds, the panel says so — even when scars remain. **The panel now agrees with `HEAL`.**
 
-- **Fits its space** — figures now scale to the panel/tab instead of overflowing a small one, the balance/position gauges sit pinned at the bottom where they can't clip, and you always stand clear at the front.
-- **The ASSESS arena keeps up with the fight** — creatures you've felled linger as marked **corpses** until they decay instead of vanishing, a killed creature no longer lingers as a "threat," and retreating to a new room no longer drags the old room's creatures along.
-- **Calmer by default** — a harmless bystander is no longer flagged as a threat, and the balance/position gauges **fade out** once the fight is over instead of lingering.
-- **Thoughts moved out of the way** — telepathic thoughts now collect in a quiet **bottom-left log** (newest at the bottom, older ones fading up) so they never cover the scene.
+### Fixed: the story window un-pinning itself
 
-### Windowed Panels — nicer window chrome
+If you've ever been reading along and the main window suddenly **stopped following new text** — scrolling locked, a **"New Lines"** badge appeared, and you hadn't touched anything — that's fixed.
 
-Floating-panel title bars are slimmer and softer (a subtle gradient and hairline instead of a hard grey block), the show/hide-name button is a quiet chevron that appears on hover, and the header no longer jumps height when you toggle the name. All theme-aware.
+It turned out to be a tug-of-war. Once your scrollback fills up, Lichborne trims the oldest lines in one go (and again every so often after that). The list engine reacts to that trim by nudging the view **upward**, while Lichborne pulls it back down to the bottom — and if you watched closely you could actually see it: **the scrollbar thumb quivering, trying to move and snapping back.** Every so often one of those nudges slipped through and got mistaken for *you* scrolling up, which locked the scroll and started the badge.
 
-### Also in this release
+Two changes:
 
-- **Command bar trimmed** so it isn't oversized next to the slim chrome, with the roundtime/cast/aim timer strips kept clear of the text cursor.
-- **Launcher top-bar buttons centred**, and a small compact-vitals text-centring fix.
-- **Re-verified against Lich 5.19.1.** No changes needed. One heads-up: **Lich 5.19.0 specifically** had a bug that could show raw protocol text instead of the game — that's fixed in **5.19.1**, so if you see garbage, update Lich to 5.19.1 or later.
+- **A momentary blip no longer unlocks the scroll.** Lichborne now double-checks that you're *really* still scrolled away before it stops following — a self-correcting jitter is ignored, but genuine scrolling works exactly as before (wheel, scrollbar, PageUp/Home all unchanged).
+- **If it does happen while you're away, it heals itself.** Previously, once un-pinned it would stay that way — which is why you'd come back from another app and find the badge sitting there. Now, returning to the window puts you back at the bottom, as long as the un-pin happened while you were away. If *you* scrolled up before switching away, your place is kept.
+
+**One thing you may still notice:** the scrollbar can still quiver a little after a trim. That's the underlying tug-of-war, which is untouched here — it no longer costs you your scroll position, which was the actual problem. If the jitter itself bothers you, say so and it can be looked at separately.
+
+### New: a proper User Guide 📖
+
+There's now a **[Lichborne User Guide](Lichborne-User-Guide.md)** — a friendly, start-to-finish primer anyone can pick up: installing, connecting (with or without Lich), a tour of every feature and how to configure it, a **with-Lich vs without-Lich** feature matrix, and appendices (slash-command reference, where your settings live, troubleshooting). New here? Start there. Also new: **[AINOTICE.md](AINOTICE.md)**, a plain-language note on exactly how the AI features handle your data.
+
+*Run into anything? Come say hi on **Discord** — the link is in **Help → About Lichborne**.*

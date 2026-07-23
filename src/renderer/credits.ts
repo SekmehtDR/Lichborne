@@ -3,13 +3,15 @@
 // CONTRIBUTORS have filed logged reports/fixes; TESTERS are the rest of the
 // pool (no logged reports yet). Both ordered by logged contribution volume
 // (count BUGS.md mentions, combining aliases — see CLAUDE.md's About-credits
-// rule). Identity notes honored here: Rakkor≡TheTargonian; JadedSoul≡Jaded;
+// rule). Identity notes honored here: Rakkor≡TheTargonian; Illiahanna is the
+// renamed JadedSoul (≡ Jaded — one person, counts combined; BUGS.md still says
+// "JadedSoul"/"Jaded", so count those toward Illiahanna);
 // Elore is the renamed Aubrey AND ≡ Cherisse (one person, combined count → 3rd);
 // Binu is a co-CREATOR (in DEVELOPERS, never a credits list).
 export const DEVELOPERS = ['Sekmeht', 'Binu']
 
 export const CONTRIBUTORS = [
-  'Rakkor', 'JadedSoul', 'Elore', 'Morress', 'Legiro', 'Rhorgul', 'Thanator', 'Mahtra',
+  'Rakkor', 'Illiahanna', 'Elore', 'Morress', 'Legiro', 'Rhorgul', 'Thanator', 'Mahtra',
 ]
 
 export const TESTERS = [
@@ -17,6 +19,9 @@ export const TESTERS = [
 ]
 
 export const REPO_URL = 'https://github.com/SekmehtDR/Lichborne'
+// The AI Processing & Privacy notice (AINOTICE.md) — future GitHub location; the
+// file is committed at the repo root, so it resolves once the repo is public.
+export const AI_NOTICE_URL = 'https://github.com/SekmehtDR/Lichborne/blob/main/AINOTICE.md'
 // Discord invite — ALSO hardcoded in main.ts's Help → Discord menu item; keep
 // the two in sync and rotate BOTH per major version (see CLAUDE.md's Discord
 // rotation rule).

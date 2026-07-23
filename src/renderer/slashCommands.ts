@@ -234,20 +234,30 @@ function listRules<T>(kind: string, rules: T[], filter: string | undefined, summ
 //   27m · 4m · 90 (bare = minutes) · 2h · 2.7h · 1.5h · 1h30m · 1h30
 // Fractions are allowed on either unit and the result is rounded to whole
 // minutes. Returns minutes, or null when the token isn't a duration at all.
-export const CATCHUP_MAX_MINUTES = 24 * 60
+// Ceiling raised 24h → 1 YEAR in v0.17.1: Catch Me Up now reads the session LOG
+// (day-by-day in main), so long windows are supported. The 24h cap was a leftover
+// from the screen-only era (the screen buffer couldn't reach past a few thousand
+// lines anyway). Keep it aligned with the largest CATCHUP_TIERS window.
+export const CATCHUP_MAX_MINUTES = 366 * 24 * 60
 export function parseDuration(token: string): number | null {
   const t = token.trim().toLowerCase()
   if (!t) return null
   const num = String.raw`\d+(?:\.\d+)?`
   // Combined form first, so "1h30m" doesn't get mistaken for a bare "1h".
   const combo = new RegExp(`^(${num})\\s*h\\s*(${num})\\s*m?$`).exec(t)
-  const single = combo ? null : new RegExp(`^(${num})\\s*([mh])?$`).exec(t)
+  // Units (Sekmeht): m=minute, h=hour, d=day, mo=month, y=year. `mo` MUST be
+  // matched before `m` — the alternation is longest-first, otherwise "2mo" would
+  // read as 2 minutes with a stray "o" (and, with `$` anchored, fail outright).
+  // Bare number = minutes, as before.
+  const UNIT_MINUTES: Record<string, number> = {
+    m: 1, h: 60, d: 60 * 24, mo: 60 * 24 * 30, y: 60 * 24 * 365,
+  }
+  const single = combo ? null : new RegExp(`^(${num})\\s*(mo|m|h|d|y)?$`).exec(t)
   let mins: number
   if (combo) {
     mins = Number(combo[1]) * 60 + Number(combo[2])
   } else if (single) {
-    const n = Number(single[1])
-    mins = single[2] === 'h' ? n * 60 : n
+    mins = Number(single[1]) * (UNIT_MINUTES[single[2] ?? 'm'] ?? 1)
   } else {
     return null
   }
@@ -1080,17 +1090,17 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
   },
   {
     noun: 'ai', nounAliases: [], verb: 'catchup',
-    args: [{ name: 'duration', required: false, kind: 'word', hint: 'how far back — 27m · 2h · 1.5h · 1h30m · 90 (bare = minutes). Omit for the last 30m' }],
+    args: [{ name: 'duration', required: false, kind: 'word', hint: 'how far back — 30m · 2h · 1.5h · 7d · 1mo · 1y (m/h/d/mo/y; bare = minutes). Omit = the last 30m. Big windows (days+) read a LOT of log and cost more on your key — use sparingly' }],
     options: [], flags: [],
-    description: 'Summarize what happened (AI) — /ai catchup 27m',
+    description: 'Summarize what you missed (AI) — reads your log; default 30m. /ai catchup 2h',
     example: '/ai catchup 1.5h',
     run: (ctx, p) => {
       const tok = p.args[0]?.trim()
       let minutes: number | null = null
       if (tok) {
         minutes = parseDuration(tok)
-        if (minutes === null) return err(`"${tok}" isn't a duration — try 27m, 2h, 1.5h, or 1h30m.`)
-        if (minutes > CATCHUP_MAX_MINUTES) return err('The most you can catch up on at once is 24h.')
+        if (minutes === null) return err(`"${tok}" isn't a duration — try 30m, 2h, 7d, 1mo, or 1y.`)
+        if (minutes > CATCHUP_MAX_MINUTES) return err('The most you can catch up on at once is 1 year (1y).')
       }
       const st = ctx.aiCatchup(minutes)
       if (st === 'disabled') return err('AI is off — /ai on to enable (set a key in Settings → AI first).')

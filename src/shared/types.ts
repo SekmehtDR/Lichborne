@@ -673,6 +673,69 @@ export interface AIChatRequest {
 // big data never crosses IPC, only the spec and the result).
 export interface SessionLogWindowRow { ts: number; stream: string; text: string }
 
+// ── Catch Me Up over the session LOG (v0.17.1) ────────────────────────────────
+// The whole pipeline runs in MAIN and returns a COMPACT digest, never raw rows:
+// a 1-year window is ~29M lines (80k/day), so shipping rows over IPC — or looping
+// them synchronously — would freeze every session. `buildCatchupDigest` walks
+// DAY BY DAY and yields between days, reporting progress so the UI can say what
+// it's doing. Token cost then depends on the digest, NOT the window length, which
+// is what makes a 2.5h (or 1y) request actually cover its whole window instead of
+// tail-truncating to "only recent items" (the bug this replaces).
+export type CatchupPhase = 'reading' | 'deduping' | 'extracting' | 'summarizing'
+export interface CatchupProgress {
+  requestId: string
+  phase: CatchupPhase
+  done: number          // units completed in this phase (e.g. days read)
+  total: number         // units expected (0 = indeterminate)
+  lines: number         // lines seen so far (running)
+}
+// A speaker's full exchange, kept whole — low volume, high value ("summarize the
+// entire flow of that interaction with the same person").
+// A speaker + how many lines they spoke in the window (the verbatim lines live in
+// the digest `body`, so re-shipping them here was redundant — this is just the
+// "who was most talkative" anchor for the summary).
+export interface CatchupThread { who: string; count: number }
+export interface CatchupDigest {
+  from: number
+  to: number
+  // The EARLIEST line actually found. If the logs don't reach back as far as the
+  // request, the header must say so rather than imply full coverage.
+  coveredFrom: number | null
+  totalLines: number      // lines in the window before dedup
+  keptLines: number       // after dedup
+  duplicates: number
+  daysScanned: number
+  threads: CatchupThread[]
+  // Skill ranks gained, tallied across the window from the GAME's own message
+  // ("You've gained a new rank in …") — script-independent, works for everyone.
+  // (The `DRExpMonitor: Skill(+N)` line is the mindstate/learning-rate ticker, NOT
+  // ranks — it's filtered out as churn.) Absent → the category is simply omitted.
+  exp: { skill: string; ranks: number }[]
+  // Combat damage TAKEN, tallied pre-dedup (identical hits are separate real
+  // hits). `attackers` is best-effort: the subject of a "* <Attacker> <verb>…"
+  // combat line. Only damage lines that actually name a body part are counted,
+  // so a miss/parry never inflates it.
+  combat: {
+    attackers: { name: string; hits: number }[]
+    byPart:    { part: string; hits: number }[]
+    worst:     string | null
+    totalHits: number
+  }
+  // Bank BALANCE snapshots per town (DRBanking script). first->last = money flow;
+  // amounts stay verbatim strings (DR coin ratios unverified — never invent math).
+  banking: { town: string; first: string; last: string; netCopper: number; updates: number }[]
+  // Completed crafting work orders + pay, summed PER CURRENCY (no cross-currency
+  // math — exchange rates unverified).
+  workorders: number
+  workorderPay: { currency: string; total: number }[]
+  deaths: number[]                              // timestamps; pre-dedup (2 deaths = 2)
+  // FULL deduped log for the window, trimmed to the caller budget (most recent
+  // kept if it overflows). This is the CONTENT the AI analyses; everything above
+  // is emphasis. `truncated` = the body was cut to fit.
+  body: string[]
+  truncated: boolean
+}
+
 export interface AIChatChunk { requestId: string; delta: string }
 export interface AIUsage     { inputTokens: number; outputTokens: number }
 export interface AIChatDone  { requestId: string; usage?: AIUsage }

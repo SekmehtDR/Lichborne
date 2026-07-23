@@ -5,7 +5,9 @@ import * as zlib from 'zlib'
 import type {
   SessionLogRecord, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
+  CatchupDigest, CatchupProgress, CatchupThread,
 } from '../shared/types'
+import { redactForAI } from '../shared/redact'
 
 // ── Session Log writer ────────────────────────────────────────────────────────
 // Per-character buffered writer. Captured records arrive from the renderer via
@@ -376,8 +378,12 @@ function readWindow(
   const rows: SessionLogWindowRow[] = []
   const day  = new Date(fromTs); day.setHours(0, 0, 0, 0)
   const last = new Date(toTs);   last.setHours(0, 0, 0, 0)
-  // Guard the loop, not the data: a window can legitimately span a couple of days.
-  for (let i = 0; i < 8 && day.getTime() <= last.getTime(); i++) {
+  // Guard the loop, not the data. Raised 8 → 366 so a Catch Me Up can span up to a
+  // year (Sekmeht). NOTE: this SYNCHRONOUS reader is fine for the short windows the
+  // log viewer uses — for a long catchup window use `buildCatchupDigest`, which
+  // walks day by day and YIELDS between days; looping a year (~29M lines) without
+  // yielding would block main and freeze every session, not just the caller's.
+  for (let i = 0; i < 366 && day.getTime() <= last.getTime(); i++) {
     const date = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
     const file = resolveDayFile(character, date)
     const raw = file ? readLogFile(file) : null
@@ -394,6 +400,272 @@ function readWindow(
   }
   rows.sort((a, b) => a.ts - b.ts)
   return rows.length > maxRows ? rows.slice(-maxRows) : rows
+}
+
+// Streams that are STATE readouts (they clear+rewrite) rather than history — the
+// same set the renderer skips for Catch Me Up. Feeding these to a summary sends a
+// stale TABLE instead of events (measured: 1,173 `spells` + 2,574 `inv` lines in a
+// single 11-minute window). Keep in sync with CATCHUP_SKIP_STREAMS in GameWindow.
+const DIGEST_SKIP_STREAMS = new Set([
+  'exp', 'inv', 'spells', 'activespells', 'percwindow', 'moonwindow', 'lichscripts', 'debug', 'raw', 'lbai',
+])
+// Conservative speaker match. DR speech is "<Name> says, ..." / asks / exclaims /
+// whispers. Deliberately narrow: a missed thread costs a little context, a WRONG
+// one puts words in someone's mouth. `You` is excluded — that's the player, not a
+// correspondent. (Not yet corpus-verified for every locale/emote form — treat as
+// the conservative floor and widen only against a real capture, §35 discipline.)
+const DIGEST_SPEECH_RE = /^([A-Z][\w''-]{1,20}(?: [A-Z][\w''-]{1,20})?) (?:says|asks|exclaims|whispers)[ ,]/
+const yieldToLoop = () => new Promise<void>(r => setImmediate(r))
+
+// Build a COMPACT digest of a time window, day by day, yielding between days so a
+// long window can't block main. `onProgress` drives the UI's "working on it" status
+// across EVERY phase (reading → deduping → extracting), not just the log read.
+async function buildCatchupDigest(
+  character: string, fromTs: number, toTs: number, maxBodyChars: number, redactLiterals: string[],
+  onProgress: (p: { phase: 'reading' | 'deduping' | 'extracting'; done: number; total: number; lines: number }) => void,
+): Promise<CatchupDigest> {
+  const day  = new Date(fromTs); day.setHours(0, 0, 0, 0)
+  const last = new Date(toTs);   last.setHours(0, 0, 0, 0)
+  const totalDays = Math.min(366, Math.floor((last.getTime() - day.getTime()) / 86_400_000) + 1)
+
+  const rows: Array<{ ts: number; stream: string; text: string }> = []
+  let daysScanned = 0
+  for (let i = 0; i < 366 && day.getTime() <= last.getTime(); i++) {
+    const date = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`
+    const file = resolveDayFile(character, date)
+    const raw = file ? readLogFile(file) : null
+    if (raw != null) {
+      for (const line of raw.split('\n')) {
+        const m = EXPORT_LINE_RE.exec(line)
+        if (!m) continue
+        const stream = (m[3] || 'main').toLowerCase()
+        if (DIGEST_SKIP_STREAMS.has(stream)) continue
+        const ts = new Date(`${m[1] || date}T${m[2]}`).getTime()
+        if (!Number.isFinite(ts) || ts < fromTs || ts > toTs) continue
+        const text = m[4]
+        if (!text || !text.trim()) continue
+        // Bare prompts carry no information for a summary and are extremely
+        // high-volume; the DRExpMonitor line is the learning-rate (mindstate)
+        // TICKER, which churns constantly and is not an event. Both are dropped
+        // here so they can't crowd out real content in the sample. (Ranks come
+        // from the game's own "You've gained a new rank in …" message instead.)
+        if (/^[A-Za-z]?>$/.test(text.trim()) || text.startsWith('DRExpMonitor:')) continue
+        rows.push({ ts, stream, text })
+      }
+    }
+    daysScanned++
+    onProgress({ phase: 'reading', done: daysScanned, total: totalDays, lines: rows.length })
+    day.setDate(day.getDate() + 1)
+    await yieldToLoop()          // keep main responsive across a year of files
+  }
+  rows.sort((a, b) => a.ts - b.ts)
+  const totalLines = rows.length
+  const coveredFrom = rows.length ? rows[0].ts : null
+
+  // ── RANKS gained, tallied BEFORE dedup. The real message (verified capture,
+  // Sekmeht): "You've gained a new rank in your overall defensive maneuvering."
+  // — one rank per line, so the tally is a COUNT of matching lines per skill.
+  //
+  // Do NOT use the `DRExpMonitor: Arcana(+2), ...` lines for this: that is the
+  // community script's LEARNING-RATE (mindstate) ticker, not ranks. Counting it
+  // as ranks inflates the number wildly — nearly shipped exactly that mistake.
+  // Those ticker lines are filtered out of the sample below as pure churn.
+  //
+  // CRITICAL: this runs over `rows`, NOT the deduped `kept` — two identical rank
+  // lines are two REAL ranks, and dedup would silently halve the tally. Any future
+  // COUNTING extractor must likewise tally pre-dedup.
+  const expTally = new Map<string, number>()
+  for (const r of rows) {
+    // Straight or curly apostrophe; optional trailing period.
+    const m = /^You['’]ve gained a new rank in (.+?)\.?$/.exec(r.text)
+    if (!m) continue
+    const skill = m[1].replace(/^your\s+/i, '').trim()
+    if (skill) expTally.set(skill, (expTally.get(skill) ?? 0) + 1)
+  }
+  const exp = [...expTally.entries()]
+    .map(([skill, ranks]) => ({ skill, ranks }))
+    .sort((a, b) => b.ranks - a.ranks)
+
+  // ── Combat damage TAKEN, also tallied pre-dedup (identical hits are separate
+  // real hits). Verified capture (Sekmeht), stream `combat`:
+  //   "* A lava drake bares its teeth and swings at you.  You attempt to dodge.
+  //    The flaming tail lands a light hit (1/23) to your chest."
+  // Two independent reads, so a failure of one doesn't poison the other:
+  //  • DAMAGE — "lands a <level> (n/m) to your <part>", where <level> is a full
+  //    DR damage descriptor ending in "hit" OR "strike" — the ladder ALTERNATES
+  //    the two ("good hit" vs "good strike", "heavy strike", "powerful strike"),
+  //    so a "hit"-only pattern silently MISSED every strike-level hit (real bug,
+  //    caught from GM Kodius's verified damage-values list). Requires the body
+  //    part, so a miss/parry/dodge can never inflate the count.
+  //  • ATTACKER — the subject of the "* <Attacker> <verb>s …" opener. Best-effort
+  //    by nature: DR combat narration is largely anonymous (§32.1), so this is the
+  //    line's own subject, NOT an inference about who dealt the damage.
+  // Body part must run to the end of the clause — a plain `\b` stops at the first
+  // word boundary and turns "left leg" into "left" (caught in verification).
+  const DAMAGE_RE = /\blands? an? ([a-z -]+? (?:hit|strike)) \((\d+)\/(\d+)\) to your ([a-z ]+?)\s*(?=[.!,]|$)/i
+  const ATTACKER_RE = /^\*\s+(?:An?|The)\s+([a-z][a-z' -]{2,30}?)\s+[a-z]+(?:s|es)\b/i
+  // VERIFIED severity ladder (GM Kodius, via Sekmeht), least → most. Ranked by the
+  // FULL descriptor because "good hit" and "good strike" are ADJACENT-but-distinct
+  // levels. The no-damage descriptors (grazing/glancing/…) aren't here — they're
+  // phrased differently and never match DAMAGE_RE, so they can't be counted.
+  const HIT_LADDER = [
+    'light hit', 'good hit', 'good strike', 'solid hit', 'hard hit', 'strong hit',
+    'heavy strike', 'very heavy hit', 'extremely heavy hit', 'powerful strike',
+    'massive strike', 'awesome strike', 'vicious strike', 'earth-shaking strike',
+    'demolishing hit', 'spine-rattling strike', 'devastating hit', 'overwhelming strike',
+    'obliterating hit', 'annihilating strike', 'cataclysmic strike', 'apocalyptic strike',
+  ]
+  const atk = new Map<string, number>()
+  const part = new Map<string, number>()
+  let totalHits = 0
+  let worst: string | null = null
+  for (const r of rows) {
+    const d = DAMAGE_RE.exec(r.text)
+    if (!d) continue            // only landed-damage lines — a miss/parry/arrival is not a hit
+    totalHits++
+    const p = d[4].trim()
+    part.set(p, (part.get(p) ?? 0) + 1)
+    const lvl = d[1].trim().toLowerCase()   // full descriptor, e.g. "very heavy hit"
+    if (HIT_LADDER.includes(lvl) && (worst == null || HIT_LADDER.indexOf(lvl) > HIT_LADDER.indexOf(worst))) worst = lvl
+    // Attacker is counted ONLY on a line that landed damage — so `atk` is hits-per-
+    // attacker (reconciles with totalHits) and a MISS or a creature ARRIVAL line
+    // ("* A lava drake arrives from the north.") can never inflate it. Best-effort:
+    // a hit line without the "* <Attacker>" opener leaves that hit unattributed.
+    const a = ATTACKER_RE.exec(r.text)
+    if (a) { const n = a[1].trim(); atk.set(n, (atk.get(n) ?? 0) + 1) }
+  }
+  const combat = {
+    attackers: [...atk.entries()].map(([name, hits]) => ({ name, hits })).sort((x, y) => y.hits - x.hits).slice(0, 12),
+    byPart:    [...part.entries()].map(([p, hits]) => ({ part: p, hits })).sort((x, y) => y.hits - x.hits),
+    worst, totalHits,
+  }
+
+  // ── Banking. Verified capture (Sekmeht), from the DRBanking Lich script:
+  //   "DRBanking: Updated Shard balance to 5331 platinum, 7 silver, 7 bronze"
+  // NOTE this is a BALANCE SNAPSHOT per town, not a deposit amount — so money
+  // FLOW is the change between the first and last snapshot in the window. The
+  // amounts are kept as VERBATIM strings: converting DR's coin denominations to a
+  // single number needs exchange ratios I have not verified, and inventing them
+  // would produce confidently wrong totals. The model reports "went from X to Y".
+  const bankFirst = new Map<string, string>()
+  const bankLast  = new Map<string, string>()
+  const bankHits  = new Map<string, number>()
+  for (const r of rows) {
+    const m = /^DRBanking:\s*Updated\s+(.+?)\s+balance to\s+(.+?)\s*$/.exec(r.text)
+    if (!m) continue
+    const town = m[1].trim()
+    if (!bankFirst.has(town)) bankFirst.set(town, m[2].trim())
+    bankLast.set(town, m[2].trim())
+    bankHits.set(town, (bankHits.get(town) ?? 0) + 1)
+  }
+  // Coin denomination → copper, VERIFIED from Lich drbanking.rb DENOMINATION_VALUES
+  // (not invented — the exact ratios within one currency). Lets us reduce a balance
+  // string to a single number and report real money FLOW (net change) per town.
+  const DENOM: Record<string, number> = { platinum: 10_000, gold: 1_000, silver: 100, bronze: 10, copper: 1 }
+  const toCopper = (balance: string): number => {
+    let c = 0
+    for (const g of balance.matchAll(/(\d[\d,]*)\s+(platinum|gold|silver|bronze|copper)/gi)) {
+      c += Number(g[1].replace(/,/g, '')) * (DENOM[g[2].toLowerCase()] ?? 1)
+    }
+    return c
+  }
+  const banking = [...bankLast.entries()].map(([town, last]) => {
+    const first = bankFirst.get(town) ?? last
+    return { town, first, last, netCopper: toCopper(last) - toCopper(first), updates: bankHits.get(town) ?? 0 }
+  })
+
+  // ── Work orders. Verified capture (Sekmeht), crafting turn-in:
+  //   "You hand Serric your logbook and bundled items, and are given 4,624
+  //    Dokoras in return."
+  // One line = one completed order, so the count is the number of matches — hence
+  // tallied pre-dedup like the others (identical turn-ins are separate orders).
+  // Payment is summed PER CURRENCY NAME (Dokoras is one town's local coin; others
+  // differ) — no cross-currency math, which would need unverified exchange rates.
+  const woEarned = new Map<string, number>()
+  let workorders = 0
+  for (const r of rows) {
+    const m = /^You hand (\S+) your logbook[^.]*?\band are given ([\d,]+)\s+([A-Za-z]+) in return/.exec(r.text)
+    if (!m) continue
+    workorders++
+    const amt = Number(m[2].replace(/,/g, ''))
+    if (Number.isFinite(amt)) woEarned.set(m[3], (woEarned.get(m[3]) ?? 0) + amt)
+  }
+  const workorderPay = [...woEarned.entries()].map(([currency, total]) => ({ currency, total }))
+
+  // ── Deaths, tallied pre-dedup (dying twice is two deaths). Pattern from
+  // Sekmeht's own notification script (battle-tested against live DR). A dedicated
+  // "directed speech" extractor was removed as REDUNDANT: those lines are in the
+  // body already, and a bare "N lines were addressed to you" count told the model
+  // nothing it couldn't see — the `threads` speaker list is the useful anchor.
+  const deaths: number[] = []
+  for (const r of rows) {
+    if (/^Your death cry echoes in your brain\b/i.test(r.text)) deaths.push(r.ts)
+  }
+
+  // ── Dedup. Grinding repeats the same line thousands of times; collapsing it is
+  // what makes a long window affordable at all. Keyed on TEXT ALONE (not
+  // stream+text) — the SAME reason the screen path does (pitfall #49): DR
+  // double-emits speech (once inside the pushStream block, once to `main`), so a
+  // stream+text key keeps BOTH copies — doubling the body AND the per-speaker
+  // "who spoke" count (derived from `kept`). Every COUNTING tally runs over raw
+  // `rows` ABOVE, so dedup never changes a fact — only what the model reads.
+  onProgress({ phase: 'deduping', done: 0, total: totalLines, lines: totalLines })
+  await yieldToLoop()
+  const seen = new Set<string>()
+  const kept: Array<{ ts: number; stream: string; text: string }> = []
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]
+    const key = r.text
+    if (seen.has(key)) continue
+    seen.add(key)
+    kept.push(r)
+    if ((i & 0x3fff) === 0) { onProgress({ phase: 'deduping', done: i, total: totalLines, lines: totalLines }); await yieldToLoop() }
+  }
+
+  // ── Extract the speaker list ("who was most talkative") — a soft anchor for the
+  // summary. Counted over the DEDUPED lines so it matches what the model sees in
+  // the body (an exact-repeat spammer collapses); the verbatim speech is in the
+  // body, so we keep only who + count here (no re-shipping lines — that was waste).
+  onProgress({ phase: 'extracting', done: 0, total: kept.length, lines: totalLines })
+  await yieldToLoop()
+  const byWho = new Map<string, number>()
+  for (let i = 0; i < kept.length; i++) {
+    const m = DIGEST_SPEECH_RE.exec(kept[i].text)
+    if (m && m[1] !== 'You') byWho.set(m[1], (byWho.get(m[1]) ?? 0) + 1)
+    if ((i & 0x3fff) === 0) { onProgress({ phase: 'extracting', done: i, total: kept.length, lines: totalLines }); await yieldToLoop() }
+  }
+  const threads: CatchupThread[] = [...byWho.entries()]
+    .map(([who, count]) => ({ who, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 12)
+
+  // FULL deduped narrative for the AI to analyse — NOT a sample (Sekmeht:
+  // "analyze everything ... just have particular insight into certain things").
+  // The extractions above are EMPHASIS/anchors, not a substitute for the content.
+  // Rendered stream-tagged. If it still exceeds the caller's budget, keep the MOST
+  // RECENT that fits (a "what did I miss" weights recent) — but the tallies above
+  // already cover the WHOLE window, so a trimmed narrative never loses the counts,
+  // and the header says when this happened. Dedup is what makes "everything"
+  // affordable: grinding's repetition collapses, so a realistic window's UNIQUE
+  // content is a fraction of its raw size.
+  const rendered = kept.map(r => (r.stream === 'main' ? r.text : `[${r.stream}] ${r.text}`))
+  let bodyStart = 0
+  let bodyChars = rendered.reduce((n, s) => n + s.length + 1, 0)
+  while (bodyStart < rendered.length && bodyChars > maxBodyChars) {
+    bodyChars -= rendered[bodyStart].length + 1
+    bodyStart++
+  }
+  // REDACT sensitive content on the way to the AI ONLY — the log on disk is
+  // untouched (Sekmeht: the log must stay pristine; scrub only the AI copy). Done
+  // on the final (trimmed) body so we redact ≤ budget lines, not every raw row.
+  const body = rendered.slice(bodyStart).map(line => redactForAI(line, redactLiterals))
+
+  return {
+    from: fromTs, to: toTs, coveredFrom,
+    totalLines, keptLines: kept.length, duplicates: totalLines - kept.length,
+    daysScanned, threads, exp, combat, banking, workorders, workorderPay, deaths,
+    body, truncated: bodyStart > 0,
+  }
 }
 
 function searchLogs(
@@ -617,6 +889,22 @@ export function registerSessionLogHandlers(): void {
     const buf = buffers.get(character?.toLowerCase() ?? '')
     if (buf) flushBuffer(buf)
     return readWindow(character, fromTs, toTs, maxRows)
+  })
+
+  // Catch Me Up over the log. Runs the WHOLE pipeline in main and returns only the
+  // compact digest (build-export precedent). Progress is pushed back to the ASKING
+  // window on `session-log:catchup-progress` so the UI can say what it's doing for
+  // every phase — a 1-year window is minutes of gunzipping, not an instant call.
+  // `redactLiterals` = extra strings scrubbed from the AI copy (the account
+  // username). Generic credential/PIN patterns are handled by redactForAI itself.
+  ipcMain.handle('session-log:catchup-digest', async (e, requestId: string, character: string, fromTs: number, toTs: number, maxBodyChars: number, redactLiterals: string[]): Promise<CatchupDigest> => {
+    const buf = buffers.get(character?.toLowerCase() ?? '')
+    if (buf) flushBuffer(buf)
+    const send = (p: { phase: 'reading' | 'deduping' | 'extracting'; done: number; total: number; lines: number }) => {
+      // The sender can go away mid-run (tab closed, window decoupled) — never throw.
+      if (!e.sender.isDestroyed()) e.sender.send('session-log:catchup-progress', { requestId, ...p } as CatchupProgress)
+    }
+    return buildCatchupDigest(character, fromTs, toTs, maxBodyChars, redactLiterals ?? [], send)
   })
 
   ipcMain.handle('session-log:search', (_e, character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string }) => {

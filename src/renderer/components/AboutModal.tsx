@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { DEVELOPERS, CONTRIBUTORS, TESTERS, REPO_URL, DISCORD_URL, ABOUT_BLURB } from '../credits'
+import { DEVELOPERS, CONTRIBUTORS, TESTERS, REPO_URL, DISCORD_URL, AI_NOTICE_URL, ABOUT_BLURB } from '../credits'
 import { parseMidi, createMidiPlayer, loadArrayBuffer, type MidiPlayback } from '../midiPlayer'
 import '../styles/about.css'
 
@@ -110,6 +110,11 @@ export default function AboutModal({ onClose }: { onClose: () => void }) {
               href={DISCORD_URL}
               onClick={e => { e.preventDefault(); window.api.openUrl(DISCORD_URL) }}
             >Join our Discord</a>
+            <a
+              className="about-link"
+              href={AI_NOTICE_URL}
+              onClick={e => { e.preventDefault(); window.api.openUrl(AI_NOTICE_URL) }}
+            >Lichborne's AI Notice</a>
           </div>
         </div>
       </div>

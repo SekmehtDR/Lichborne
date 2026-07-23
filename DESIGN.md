@@ -320,7 +320,7 @@ The main text window has one job: never lose game text, never lose your place.
 - **Trim with HYSTERESIS while pinned (B171, v0.13.4)** — the buffer grows to `MAX_LINES + TRIM_CHUNK` (2400), then is cut back to MAX_LINES (2000) in ONE slice (`appendTrimmed()`, the single append/trim primitive every `setLines` site uses). A per-batch trim that held the length exactly AT the cap was the long-unsolved "text hops after a while": it shifted every virtuoso row index per batch (stale size cache → visible backward jumps) and, with the count constant, starved `totalListHeightChanged` — the only per-batch re-pin trigger. See §23 and CLAUDE.md pitfall #81.
 - **Keyboard scroll** — `PageUp`/`PageDown` scroll the text window by one screen; `Home` jumps to the top of history; `End` returns to the bottom and re-pins auto-scroll. All four keys are suppressed when any text field is focused so they don't interfere with typing.
 - **Scrollbar arrows** — up/down arrow buttons rendered via `::-webkit-scrollbar-button` with SVG data-URI triangles (Chromium removes native arrows by default). Clicking scrolls one line; hover darkens the button background for feedback.
-- **Scroll pinning implementation** — `pinnedRef` (a React ref, not state) tracks whether auto-scroll is active. `overflow-anchor: none` on the scroll container prevents Chromium from competing with our manual scroll management. **NOTE: the live auto-scroll engine was rewritten since this paragraph** (the `useLayoutEffect`/`scrollIntoView` model became `followOutput: false` + the single `stickToBottom()` rAF settle loop, v0.11.6–v0.11.8) — **CLAUDE.md pitfalls #68 (the settle-loop architecture) and #71 (rAF-throttled-while-hidden) are the current reference.** Re-pinning is via `scrollToBottom()` (badge click / End) and the refocus re-snap; `handleVirtuosoScroll` only un-pins. **B191 (v0.14.1): `handleVirtuosoScroll` skips entirely while `document.hidden`** — when the window is occluded (another app covering it, not just minimize) rAF throttles, the settle loop stalls, and an async-measurement scroll event would otherwise un-pin the active char with no user action (the spurious "New Lines" badge after tabbing away). A user can't scroll a hidden window, so any scroll signal there is layout, not intent.
+- **Scroll pinning implementation** — `pinnedRef` (a React ref, not state) tracks whether auto-scroll is active. `overflow-anchor: none` on the scroll container prevents Chromium from competing with our manual scroll management. **NOTE: the live auto-scroll engine was rewritten since this paragraph** (the `useLayoutEffect`/`scrollIntoView` model became `followOutput: false` + the single `stickToBottom()` rAF settle loop, v0.11.6–v0.11.8) — **CLAUDE.md pitfalls #68 (the settle-loop architecture) and #71 (rAF-throttled-while-hidden) are the current reference.** Re-pinning is via `scrollToBottom()` (badge click / End) and the refocus re-snap; `handleVirtuosoScroll` only un-pins. **B191 (v0.14.1): `handleVirtuosoScroll` skips entirely while `document.hidden`** — when the window is occluded (another app covering it, not just minimize) rAF throttles, the settle loop stalls, and an async-measurement scroll event would otherwise un-pin the active char with no user action (the spurious "New Lines" badge after tabbing away). A user can't scroll a hidden window, so any scroll signal there is layout, not intent. **B223 (v0.17.1) — the un-pin now requires PERSISTENCE, and two claims in this paragraph turned out to be wrong.** The long-standing intermittent "un-pins itself, badge appears, never recovers" bug was traced to react-virtuoso's **upward-scroll compensation**: `appendTrimmed`'s 400-line slice makes Virtuoso read `scrollDirection === 'up'` (the gate for that compensation) with an index-stale size tree, and its rAF-batched re-measures then `scrollBy(-k)` — an unsuppressed scroll that `stickToBottom`'s loop fights back each frame (**the "quivering scrollbar" the tester spotted**). Since `handleVirtuosoScroll` cannot tell a library scroll from a user one, one landing after the settle loop exits un-pinned the view. **Fix:** the `dist > 40` branch now re-checks 2 frames later and only commits if the distance persists (wheel-up / PageUp / Home un-pin directly and never reach it, so no real path is affected); and `onRefocus` self-heals when the un-pin happened *after* the blur. **Corrections to the above:** (1) the **`document.hidden` guard is probably INERT** — `backgroundThrottling: false` also affects the Page Visibility API per Electron's own typings, so `document.hidden` likely stays false while minimized/occluded; the B223 fix is deliberately source-agnostic so it holds regardless. (2) **`overflow-anchor: none` is no longer in `src/`** — Chromium anchoring is neutralized only because Virtuoso stamps it on every item element; the app-level guarantee this paragraph describes no longer exists. Full write-up: CLAUDE.md pitfall #96.
 - **Batched updates** — if many lines arrive in a single tick, they are rendered in one React update, not one per line.
 
 ### 2.9 Link Rendering
@@ -451,7 +451,7 @@ Beyond text streams, the server pushes structured XML elements that drive UI com
 | `<streamWindow id="LichScripts" title="Lich Scripts"/>` | Declares a named stream and its display title before any content is pushed | Stream discovery — emits `stream-declare` event; panel becomes available in Panel Manager at login |
 | `<d cmd='go south'>text</d>` | Inline clickable command link with explicit command | Rendered as dotted-underline clickable span; click sends `cmd` to game |
 | `<d>south</d>` | Bare exit label or help command — text content IS the command | Same dotted-underline rendering; text content sent directly as command on click |
-| `<dialogData id="injuries"><image id="head" name="head" height="0" width="0"/>…</dialogData>` | Per-body-part wound state — 15 parts (head, neck, chest, abdomen, back, rightArm/Hand, leftArm/Hand, rightLeg/Foot, leftLeg, rightEye, leftEye, nsys); `height=0/width=0` = no wound; non-zero = wound present; severity in `name` suffix (e.g. `"head1"` = light, `"head3"` = severe) | Injuries panel — grouped by section, color-coded by severity; "No active wounds." when clear |
+| `<dialogData id="injuries"><image id="chest" name="Injury2" …/>…</dialogData>` | Per-body-part damage — 15 parts (head, neck, chest, abdomen, back, rightArm/Hand, leftArm/Hand, rightLeg/Foot, leftLeg, rightEye, leftEye, nsys). **The `name` encodes BOTH the kind and the rank, and a WOUND and a SCAR are different states** — verified against Lich's parser (`lib/common/xmlparser.rb` ~681-690), the authority here: `Injury<n>` = an **active wound** of rank n; `Scar<n>` = that wound has **HEALED** (wound → 0) leaving a **scar** of rank n; `Nsys<n>` = nerve damage; anything else (incl. `name === id`) = healthy. **Do NOT infer severity from a trailing digit on an arbitrary name** — this table previously described the name as the part id plus a digit (`"head1"`), which is what caused B224: scars were rendered as permanent wounds. Derive "healthy" from the ABSENCE of Injury/Scar/Nsys, not from a sentinel equality. | Injuries panel — wounds grouped by section and colour-coded by severity; **scars listed separately in a muted, neutral style** (healed history, never active damage); "No active wounds." when no wound is present |
 | `<dialogData id="injuries"><progressBar id="health2" …/>` | Secondary health bar within the injury diagram UI | Parsed but currently not displayed separately (main health bar is authoritative) |
 | `<nav/>` | Frame marker sent before room-change data arrives | Silently consumed — room state updates when new component data arrives |
 
@@ -1187,10 +1187,58 @@ enough that testers actually enable it).
   Test button, model-tier picker (Haiku default / Sonnet 5), per-feature consent list, cost tally. Theme-audit
   on a light theme (Principle #4); every consent toggle must actually gate its feature (Principle #9).
 
-### 10.3 First shipping slice — Catch Me Up (AI4) — SHIPPED v0.16.0
+### 10.3 First shipping slice — Catch Me Up (AI4) — SHIPPED v0.16.0; LOG-BACKED v0.17.1
 
-The vertical slice that exercises the whole stack (key → consent → main-process call → stream → render →
-log) on the cheapest possible input. **What shipped:**
+**⚠️ v0.17.1 reverses the "screen-only" scope of this section.** Catch Me Up now reads the per-character
+**session log** for the requested window, tier-scoped. The rest of §10.3 documents the v0.16.0 screen-buffer
+slice — still the FALLBACK path (used when session logging is off, or a log read fails), so keep it — but the
+default source is now the log. The new architecture (why it works when the v0.16.x log attempt was reverted
+for scale, §10.4):
+
+- **Whole pipeline in MAIN** — `buildCatchupDigest` ([sessionLog.ts](src/main/sessionLog.ts)) reads →
+  dedups → extracts and returns only a COMPACT digest (build-export precedent — a year is ~29M lines, so raw
+  rows must never cross IPC). Walks **day by day, yielding between days** so a long window can't block main;
+  pushes progress on `session-log:catchup-progress` for every phase ("Working on it — reading day 42/365 →
+  deduping → extracting → summarizing"). `readWindow`'s day cap was raised 8 → 366.
+- **Duration units** — `parseDuration` gained `d`/`mo`/`y` (plus `m`/`h` and `1h30m`); `mo` alternated before
+  `m`. Windows run 30m → **1 year**.
+- **Six TIME-SCOPED tiers** (`CATCHUP_TIERS`) — recent ≤45m → session → extended → day → period →
+  historical ≤1y — each with its own prompt guidance (narrative at 30m, retrospective at 1y), `maxTokens`,
+  and `maxChars` budget (45k→240k).
+- **The model analyses EVERYTHING, not a sample (Sekmeht)** — the payload is the FULL deduped log body (up to
+  the tier budget) + an EMPHASIS fact-sheet of exact whole-window tallies. **Dedup makes "everything"
+  affordable**; if the deduped body still overflows, the most-recent fits and the tallies still cover the full
+  period (header says so).
+- **Extractors (emphasis), each verified against a real log line** — ranks (game `You've gained a new rank in
+  …`), combat damage taken (attacker/part/severity), deaths, directed speech, work orders + pay, banking with
+  Lich's VERIFIED coin ratios (`drbanking.rb`: plat=10000…copper=1) → net money flow. **Rules:** tally counts
+  BEFORE dedup (identical lines are separate real events); never invent DR math (mine `drinfomon`, which ships
+  spec files = verified inputs, or omit); the `DRExpMonitor: Skill(+N)` line is the mindstate LEARNING-RATE
+  ticker, NOT ranks (filtered out as churn). **Combat severity uses the VERIFIED 22-level GM-Kodius ladder**
+  (`light hit`→`apocalyptic strike`), which **alternates `hit`/`strike`** — the damage regex matches both
+  (`(?:hit|strike)`) or every strike-level hit silently drops (a real bug shipped-then-fixed with a made-up
+  `moderate`/`severe` scale); attackers are counted ONLY on damage lines (never on arrivals/misses). Speech
+  dedup keys on **text alone** (not stream+text) so DR's speech double-emit (§31 pitfall #49) can't double the
+  body OR the per-speaker "who spoke" count; `/ai stop` cancels mid-build (a `buildCancelled` flag), not just
+  mid-stream.
+- **PII / credential redaction — nothing sensitive reaches the model (Sekmeht, v0.17.1).** A shared
+  `redactForAI` ([src/shared/redact.ts](src/shared/redact.ts)) is applied to the AI-bound copy at BOTH paths
+  (the log digest in main, the screen fallback in the renderer): it removes the Simutronics **PIN block**
+  (Character Index / Player Identification Number / `PIN#`), labelled **passwords / account numbers**, card-
+  length digit runs, and the **logged-in account username** (passed in as a literal). It is **conservative by
+  design** — it targets known credential SHAPES, never ordinary game numbers (coins, room ids, damage), so it
+  can't damage a summary — and an UNLABELLED secret typed as raw prose is undetectable (a safety net, not a
+  guarantee). Crucially, redaction runs **only on the copy handed to the AI** — the **session log on disk stays
+  pristine** (Sekmeht: *"the log needs to be pristine … it's just during the AI processing part"*). The user-
+  facing [AINOTICE.md](AINOTICE.md) documents exactly what is/isn't sent; the About dialog links it
+  (`AI_NOTICE_URL`). **Any future AI feature that sends game text must route it through `redactForAI` first.**
+- **Per-character; fallback to screen if logging off / read fails, stated in the header** (AI-enhances-never-
+  gates). **Not yet done:** live-game test; game-native banking patterns (currently keys on the `DRBanking:`
+  script line); injury-message extractor; a full port of `drinfomon` patterns into a verified capturer
+  registry.
+
+The v0.16.0 slice (below) exercised the whole stack (key → consent → main-process call → stream → render →
+log) on the cheapest input. **What shipped in v0.16.0:**
 
 - **Invocation:** the `/ai` slash family ([slashCommands.ts](src/renderer/slashCommands.ts)) — `/ai` /
   `/ai status` (on-off / key / model), `/ai on|off` (master toggle), `/ai key` (points at Settings — a key is

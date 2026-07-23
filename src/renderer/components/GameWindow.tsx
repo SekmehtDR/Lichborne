@@ -2,6 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
 import { normalizeStreamId } from '../../shared/streamAliases'
+import { redactForAI } from '../../shared/redact'
 import { TextLineRow } from './TextLineRow'
 import { ScrollbackSearch } from './ScrollbackSearch'
 import { buildNameRegex } from '../utils/renderWithContacts'
@@ -109,6 +110,35 @@ const CATCHUP_SKIP_STREAMS = new Set([
   'exp', 'inv', 'spells', 'activespells', 'percwindow', 'moonwindow', 'lichscripts', 'debug', 'raw',
 ])
 
+// ── Time-scoped review tiers (Sekmeht) ────────────────────────────────────────
+// "Clearly a 30 minute review is different than a 2 hour, 6 hour, 1 day, or
+// multiple days." As the window grows the ask shifts from NARRATIVE ("what did I
+// miss") to REPORT (totals, trends, milestones), and the answer earns more room.
+// Picked by window length alone — no hidden state (§10.3: never a black box).
+// `maxChars` = how much of the FULL deduped log body to feed the model (chars ≈
+// tokens/4). Grows with the window because bigger reviews want more source AND the
+// answer earns more room. All well within the model context; cost is BYOK. When
+// the deduped body exceeds this, the most-recent fits and the extracted TALLIES
+// still cover the whole window (main trims; header says so).
+interface CatchupTier { id: string; guidance: string; maxTokens: number; maxChars: number }
+const CATCHUP_TIERS: Array<{ maxMinutes: number; tier: CatchupTier }> = [
+  { maxMinutes: 45, tier: { id: 'recent', maxTokens: 500, maxChars: 45_000, guidance:
+    'This was a SHORT time away, so keep it close to what just happened, roughly in order. Quote or closely paraphrase anything that was said to you. It is fine to mention individual moments here rather than totals.' } },
+  { maxMinutes: 180, tier: { id: 'session', maxTokens: 700, maxChars: 90_000, guidance:
+    'This is about one play session. Give them a short, friendly recap — the conversations you had and how they went, what you fought or worked on, and anything worth knowing — starting to sum up repetitive activity instead of listing every instance.' } },
+  { maxMinutes: 720, tier: { id: 'extended', maxTokens: 900, maxChars: 140_000, guidance:
+    'This was a LONG session — a script likely ran on its own for much of it. Focus on the outcomes (what you gained, what you killed, anything that went wrong) and the few genuinely notable moments, and glide past routine repetition rather than narrating it.' } },
+  { maxMinutes: 2160, tier: { id: 'day', maxTokens: 1000, maxChars: 170_000, guidance:
+    "This covers about a day. Give them the shape of the day — the progress you made, any setbacks or deaths, money in and out, who you talked to — leaning on the outcomes and only calling out individual moments when they matter." } },
+  { maxMinutes: 20160, tier: { id: 'period', maxTokens: 1200, maxChars: 200_000, guidance:
+    'This spans several days, so talk in trends rather than moment-to-moment: how you progressed overall, what you spent your time on, who you saw most, and how things changed — naming a specific day only for a real standout.' } },
+  { maxMinutes: Infinity, tier: { id: 'historical', maxTokens: 1500, maxChars: 240_000, guidance:
+    'This is a long-term look back (weeks to a year). Give them a warm retrospective — the milestones, how you progressed, money over time, the people who kept turning up, and how your activity shifted — rather than a play-by-play.' } },
+]
+function catchupTier(minutes: number): CatchupTier {
+  return (CATCHUP_TIERS.find(t => minutes <= t.maxMinutes) ?? CATCHUP_TIERS[CATCHUP_TIERS.length - 1]).tier
+}
+
 function fmtDuration(ms: number): string {
   const mins = Math.max(1, Math.round(ms / 60_000))
   if (mins < 60) return `${mins} min`
@@ -119,18 +149,28 @@ function fmtDuration(ms: number): string {
 
 // Naming the character is the highest-value line in this prompt: without it the
 // model has to GUESS which name in raw game text is the player.
-function catchupSystem(character: string): string {
+function catchupSystem(character: string, tier: CatchupTier, windowLabel: string): string {
   return [
-    `You are catching up ${character}'s player, who stepped away from DragonRealms (a text MUD) and just got back.`,
-    'Lines from side channels are tagged like [thoughts]; untagged lines are the main game window.',
-    `"You" and "your" in the text refer to ${character}.`,
+    // VOICE (Sekmeht): sound like the player's in-client companion catching them
+    // up — warm, natural, flowing — NOT a report generator emitting disjointed
+    // "The character was primarily stationary" lines.
+    `You are ${character}'s personal assistant inside their DragonRealms game client. ${character} stepped away and just came back, and you're filling them in on what they missed over ${windowLabel}.`,
+    `Write straight to them, in a warm and natural voice, like a helpful companion — not a status report. Refer to their character as "you" (the player IS ${character}); a script may have kept their character acting while they were away, so "you" covers that too.`,
+    'The text below is their game log. Lines tagged like [thoughts] are side channels; untagged lines are the main game window. "You"/"your" inside the log refer to them.',
     '',
-    'In a few short prose lines, tell them what they missed:',
-    'what was said to them or around them, who came and went, any combat or notable events,',
-    `and what ${character} was doing (a script often keeps acting while the player is away).`,
+    tier.guidance,
     '',
-    'Be concise and factual. No preamble, no headers, no markdown. Never invent detail.',
-    'If nothing notable happened, say so in one line.',
+    // Weave these in where the log supports them — NOT as a checklist (that's what
+    // produced the disjointed output). Absent categories are simply left out.
+    'Lead with whatever genuinely matters most or is most interesting, and let it read as a few smooth paragraphs — no headings, no bullet list, one topic flowing into the next. Where the log supports it, naturally work in:',
+    '- any deaths or close calls, and what threatened you',
+    '- fights — what was attacking you, and any wounds taken',
+    '- skills or ranks you gained',
+    '- who spoke to you and how those conversations went',
+    '- crafting or work orders finished, and money earned, spent, or banked',
+    '',
+    'Ground every statement in the log — never invent a detail. Skip anything the log gives you no evidence for rather than pointing out that it did not happen (do NOT end with a list of things that did not occur). If it was genuinely a quiet stretch, just say so warmly in a sentence.',
+    'Plain conversational prose only — no headers, no bullet points, no markdown.',
   ].join('\n')
 }
 
@@ -1539,6 +1579,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const scrollRef             = useRef<HTMLDivElement | null>(null)
   const pinnedRef          = useRef(true)
   const suppressUntilRef   = useRef(0)
+  // Pending 2-frame "did that scroll PERSIST?" check (see the un-pin branch).
+  const unpinConfirmRef    = useRef<number | null>(null)
+  // WHEN we last un-pinned, and when we last lost focus. The refocus self-heal
+  // compares them: an un-pin that happened while the window was away CANNOT have
+  // been the user (they weren't here), so it's safe to undo. This is deliberately
+  // a timestamp comparison rather than "did we see a user input?" — detecting a
+  // scrollbar-drag `pointerdown` is not something we can rely on, and guessing
+  // wrong there would yank a reader who HAD scrolled up. 0 = never un-pinned,
+  // which fails the comparison and correctly leaves the view alone.
+  const unpinAtRef    = useRef(0)
+  const lastBlurAtRef = useRef(0)
   // Stable scroll handler — re-pins when user scrolls back to bottom, and now
   // also unpins when the user scrolls away from the bottom outside the
   // suppression window. The unpin branch catches scrollbar arrow-button clicks
@@ -1563,13 +1614,50 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
     if (dist <= 10) {
+      if (unpinConfirmRef.current != null) {      // a pending un-pin was disproved
+        cancelAnimationFrame(unpinConfirmRef.current)
+        unpinConfirmRef.current = null
+      }
       if (!pinnedRef.current) {
         pinnedRef.current = true
         newLineCountRef.current = 0
         setNewLineCount(0)
       }
     } else if (dist > 40 && pinnedRef.current) {
-      pinnedRef.current = false
+      // PERSISTENCE CONFIRMATION — do NOT un-pin on a single scroll event.
+      // This branch can't tell a USER scroll from a LAYOUT/library one, and
+      // react-virtuoso actively scrolls us UP on its own: the scrollback trim
+      // (appendTrimmed cuts 400 lines at once) makes scrollTop collapse, which
+      // Virtuoso reads as scrollDirection 'up' — the gate for its upward-scroll
+      // compensation — while its index-keyed size tree is stale by 400 rows. Its
+      // rAF-batched re-measures then fire `scrollBy(-k)` that NOTHING suppresses.
+      // Our settle loop slams the bottom back each frame: that fight IS the
+      // "quivering scrollbar", and any compensation landing after the loop exits
+      // (2 stable frames) + the 250ms suppress tail used to un-pin with no user
+      // involvement → the spurious "New Lines" badge (Sekmeht, many versions).
+      //
+      // A real user scroll holds dist > 40 indefinitely; a compensation is undone
+      // within a frame or two. So require the distance to PERSIST across 2 frames
+      // before committing. Safe by construction: wheel-up (onWheel) and PageUp/
+      // Home un-pin directly and never reach here, so the only paths affected —
+      // scrollbar drag/arrow/track, touch — merely commit ~2 frames later.
+      // Deliberately source-agnostic: it holds whether the mover is Virtuoso, the
+      // trim clamp, or a stalled-rAF window, and does NOT depend on
+      // `document.hidden` being trustworthy (backgroundThrottling:false also
+      // affects the Page Visibility API, so the guard above may never fire).
+      if (unpinConfirmRef.current == null) {
+        unpinConfirmRef.current = requestAnimationFrame(() => {
+          unpinConfirmRef.current = requestAnimationFrame(() => {
+            unpinConfirmRef.current = null
+            const el2 = scrollRef.current
+            if (!el2 || !pinnedRef.current) return
+            if (el2.scrollHeight - el2.scrollTop - el2.clientHeight > 40) {
+              pinnedRef.current = false
+              unpinAtRef.current = Date.now()
+            }
+          })
+        })
+      }
     }
   })
   const newLineCountRef  = useRef(0)
@@ -2805,12 +2893,36 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // we re-snap (gated on this being the ACTIVE tab and still pinned). Mount-
   // once; stickToBottom only touches refs so the captured closure stays valid.
   useEffect(() => {
-    const onRefocus = () => { if (!document.hidden && isActiveRef.current && pinnedRef.current) stickToBottom(true) }
+    const onBlur = () => { lastBlurAtRef.current = Date.now() }
+    const onRefocus = () => {
+      if (document.hidden || !isActiveRef.current) return
+      if (pinnedRef.current) { stickToBottom(true); return }
+      // SELF-HEAL: we're un-pinned but the user never touched the scroller while
+      // we were away — so the un-pin was layout-driven, not intent. Re-pin.
+      // Previously this whole handler was gated on `pinnedRef.current`, so a
+      // spurious un-pin that happened while the window was in the background
+      // could NEVER heal — which is why the badge was still sitting there when
+      // you came back. Provably safe: it only fires when the un-pin timestamp is
+      // AFTER the blur — i.e. it happened while the user was away and so cannot
+      // have been theirs. An un-pin from before the blur (they scrolled up, then
+      // alt-tabbed) has unpinAt < away and is left strictly alone, as is the
+      // never-un-pinned default (0).
+      const away = lastBlurAtRef.current
+      if (away && unpinAtRef.current > away) {
+        pinnedRef.current = true
+        newLineCountRef.current = 0
+        setNewLineCount(0)
+        stickToBottom(true)
+      }
+    }
+    window.addEventListener('blur', onBlur)
     window.addEventListener('focus', onRefocus)
     document.addEventListener('visibilitychange', onRefocus)
     return () => {
+      window.removeEventListener('blur', onBlur)
       window.removeEventListener('focus', onRefocus)
       document.removeEventListener('visibilitychange', onRefocus)
+      if (unpinConfirmRef.current != null) cancelAnimationFrame(unpinConfirmRef.current)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3368,9 +3480,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // ── Window. ALWAYS a time range [from, now]: an explicit duration, or the
     // default. Nothing else, and nothing hidden.
     const now = Date.now()
-    const from = now - (minutes ?? CATCHUP_DEFAULT_MINUTES) * 60_000
+    const mins = minutes ?? CATCHUP_DEFAULT_MINUTES
+    const from = now - mins * 60_000
     // Say exactly what window was used — the feature must never be a black box.
     const label = `the last ${fmtDuration(now - from)}`
+    // Scope the prompt + answer length to the window (30m narrative vs 1y report).
+    const tier = catchupTier(mins)
+    // A day+ window reads a lot of log and costs more on the user's key — mark it
+    // so the header nudges "use sparingly" (default is 30m, so this is opt-in).
+    const heavy = mins >= 24 * 60
 
     // Route output to the lbAI stream panel if it's open, else the main window.
     const toStream = watchedStreamsRef.current.has(AI_STREAM)
@@ -3386,39 +3504,131 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const liveId = lineId++
     appendLine({ id: liveId, segments: [{ text: '— Catching you up…', preset: 'internal-system' }], timestamp: Date.now() })
 
-    // ── Gather what's on screen for the window (see gatherWindow).
-    const rows = gatherWindow(from, now)
-
-    const total = rows.length
-    if (total === 0) {
+    const status = (text: string) => updateLive(liveId, [
+      { text: `— Catch Me Up · ${label}\n${text}\n`, preset: 'internal-system' },
+    ])
+    const nothing = () => {
       aiCatchupInFlight.current = false
-      updateLive(liveId, [{
-        text: `— Catch Me Up · ${label}\nNothing happened.\n`,
-        preset: 'internal-system',
-      }])
-      return
+      updateLive(liveId, [{ text: `— Catch Me Up · ${label}\nNothing happened.\n`, preset: 'internal-system' }])
     }
 
-    // ── Budget: take as much of the TAIL as the char budget allows (most recent
-    // matters most), and say so honestly in the header when we couldn't fit it all.
-    // A flat tail is fine HERE precisely because the source is the screen buffer,
-    // not the log — it's already bounded by MAX_LINES, so the ratio of noise to
-    // signal is nothing like a 80k-line/day log file.
-    const rendered = rows.map(r => (r.stream === 'main' ? r.text : `[${r.stream}] ${r.text}`))
-    let start = rendered.length
-    let used = 0
-    while (start > 0 && used + rendered[start - 1].length + 1 <= CATCHUP_MAX_CHARS) {
-      start--
-      used += rendered[start].length + 1
+    // ── SCREEN path: the pre-v0.17.1 behaviour. Used when session logging is off
+    // (the safeguard — "AI enhances, never gates", §32: the feature still works,
+    // it just can't reach past what's on screen). A flat TAIL is acceptable here
+    // precisely because the screen buffer is bounded by MAX_LINES.
+    const runFromScreen = (why: string) => {
+      const rows = gatherWindow(from, now)
+      if (rows.length === 0) return nothing()
+      // Redact sensitive content before the AI, same as the log path (the screen
+      // buffer can hold a PIN/credential the user viewed). Display is untouched.
+      const rendered = rows.map(r => redactForAI(r.stream === 'main' ? r.text : `[${r.stream}] ${r.text}`, [session.account]))
+      let start = rendered.length
+      let used = 0
+      while (start > 0 && used + rendered[start - 1].length + 1 <= CATCHUP_MAX_CHARS) {
+        start--
+        used += rendered[start].length + 1
+      }
+      const clipped = start > 0 ? `, most recent ${rendered.length - start}` : ''
+      startSummary(rendered.slice(start).join('\n'),
+        `— Catch Me Up · ${label} · ${rows.length} line${rows.length === 1 ? '' : 's'}${clipped} · ${why}`)
     }
-    const buffer = rendered.slice(start).join('\n')
-    const clipped = start > 0 ? `, summarizing the most recent ${rendered.length - start}` : ''
-    const header = `— Catch Me Up · ${label} · ${total} line${total === 1 ? '' : 's'}${clipped}`
 
+    // ── LOG path: read the actual window from this CHARACTER's session log. The
+    // whole pipeline runs in main and returns a compact digest, so cost tracks the
+    // DIGEST, not the window — which is what lets `/ai catchup 2.5h` (or 1y) really
+    // cover its window instead of tail-truncating to "only recent items".
+    if (!loadSessionLogSettings().enabled) {
+      runFromScreen('session log off, screen only')
+    } else {
+      const requestId = `catchup-${session.character}-${now}`
+      // Every window hears this channel — filter by requestId (pitfall #6).
+      const offProgress = window.api.onCatchupProgress(p => {
+        if (p.requestId !== requestId) return
+        const pct = p.total > 0 ? ` ${Math.min(100, Math.round((p.done / p.total) * 100))}%` : ''
+        status(p.phase === 'reading'   ? `Working on it — reading logs${p.total > 1 ? ` (day ${p.done} of ${p.total})` : ''}…`
+             : p.phase === 'deduping'  ? `Working on it — removing repeated lines${pct}…`
+             :                           `Working on it — extracting what happened${pct}…`)
+      })
+      status('Working on it — reading logs…')
+      // Let /ai stop cancel DURING the (possibly long) log read — startSummary
+      // later installs its own aiCancelRef for the streaming phase. main can't be
+      // aborted mid-read, so it finishes in the background (bounded); we just stop
+      // waiting and free the in-flight guard.
+      let buildCancelled = false
+      aiCancelRef.current = () => {
+        buildCancelled = true
+        offProgress()
+        aiCatchupInFlight.current = false
+        aiCancelRef.current = null
+        updateLive(liveId, [{ text: `— Catch Me Up · ${label}\n(stopped)\n`, preset: 'internal-system' }])
+      }
+      window.api.sessionLogCatchupDigest(requestId, session.character, from, now, tier.maxChars, [session.account])
+        .then(d => {
+          if (buildCancelled) return
+          offProgress()
+          if (d.keptLines === 0) return nothing()
+          status('Working on it — summarizing…')
+          // Be honest about REAL coverage: if the logs don't reach back as far as
+          // asked, say so rather than implying the full window was reviewed.
+          const short = d.coveredFrom && d.coveredFrom > from + 60_000
+            ? ` · log reaches back ${fmtDuration(now - d.coveredFrom)}` : ''
+          const dedup = d.duplicates > 0 ? ` · ${d.duplicates} repeat${d.duplicates === 1 ? '' : 's'} collapsed` : ''
+          const cut = d.truncated ? ` · analysed the most recent portion (totals cover the full period)` : ''
+          const big = heavy ? ` · large window — use sparingly` : ''
+          const header = `— Catch Me Up · ${label} · ${d.totalLines} line${d.totalLines === 1 ? '' : 's'}${dedup}${short}${cut}${big}`
+
+          // Payload = an EMPHASIS fact-sheet (exact whole-window tallies the model
+          // should anchor on) + the FULL deduped log body (the content it analyses,
+          // Sekmeht: "analyze everything"). The facts are counts the body's raw
+          // lines don't sum on their own; the body already contains the speech,
+          // combat, etc., so we do NOT re-dump verbatim conversations here (that
+          // was redundant and ate the budget). Main already trimmed the body to
+          // tier.maxChars, so no second truncation is needed.
+          const facts: string[] = ['=== KEY FACTS (exact totals for the whole period — anchor your summary on these) ===']
+          if (d.deaths.length) facts.push(`Deaths: ${d.deaths.length}`)
+          if (d.exp.length) {
+            const top = d.exp.filter(e => e.ranks > 0).slice(0, 30)
+            if (top.length) facts.push(`Skill ranks gained: ${top.map(e => `${e.skill} +${e.ranks}`).join(', ')}`)
+          }
+          if (d.combat.totalHits > 0) {
+            facts.push(`Damage taken: ${d.combat.totalHits} hits${d.combat.worst ? `, worst a ${d.combat.worst}` : ''}`
+              + (d.combat.attackers.length ? `; by: ${d.combat.attackers.map(a => `${a.name} (${a.hits})`).join(', ')}` : '')
+              + (d.combat.byPart.length ? `; parts: ${d.combat.byPart.map(p => `${p.part} (${p.hits})`).join(', ')}` : ''))
+          }
+          if (d.workorders > 0) facts.push(`Work orders completed: ${d.workorders}`
+            + (d.workorderPay.length ? `, earning ${d.workorderPay.map(p => `${p.total.toLocaleString()} ${p.currency}`).join(' + ')}` : ''))
+          if (d.banking.length) facts.push(`Bank: ${d.banking.map(b => {
+            // netCopper uses Lich's verified denomination ratios (plat=10k copper).
+            const net = b.netCopper === 0 ? 'no change'
+              : `${b.netCopper > 0 ? '+' : '−'}${Math.abs(b.netCopper).toLocaleString()} copper`
+            return `${b.town} ${b.first} → ${b.last} (${net})`
+          }).join('; ')}`)
+          // Names only, most-talkative first (main sorts by count) — a bare count
+          // here just tempts the model into robotic "you exchanged 12 lines with X".
+          if (d.threads.length) facts.push(`People who spoke near you (most talkative first): ${d.threads.map(t => t.who).join(', ')}`)
+
+          const buffer = [
+            ...(facts.length > 1 ? facts : []),
+            '',
+            '=== FULL ACTIVITY LOG for the period (analyse everything below) ===',
+            ...d.body,
+          ].join('\n')
+          startSummary(buffer, header)
+        })
+        .catch(err => {
+          if (buildCancelled) return
+          offProgress()
+          // A log read that fails must not kill the feature — degrade to screen.
+          runFromScreen(`log unreadable (${err instanceof Error ? err.message : String(err)}), screen only`)
+        })
+    }
+
+    // Hoisted so the async LOG path above can call it once its digest lands.
     // Header stays quiet (internal-system); the SUMMARY body uses the 'ai' preset,
     // which follows the game-text color rather than the dim system grey (it's content
     // you read, not a notice). Trailing newline separates it from the next paragraph
     // WITHOUT a spacer row (which would take its own [HH:MM] when timestamps are on).
+    function startSummary(buffer: string, header: string) {
     const live = (body: string, bodyPreset: string) => updateLive(liveId, [
       { text: header + '\n', preset: 'internal-system' },
       { text: body, preset: bodyPreset },
@@ -3433,7 +3643,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     let handle: { abort: () => void }
     try {
       handle = aiChatStream(
-        { system: catchupSystem(session.character), messages: [{ role: 'user', content: buffer }], maxTokens: 500 },
+        { system: catchupSystem(session.character, tier, label), messages: [{ role: 'user', content: buffer }], maxTokens: tier.maxTokens },
         {
           onDelta: d => { acc += d; live(acc, 'ai') },
           onDone: () => {
@@ -3460,6 +3670,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     aiCancelRef.current = () => {
       handle.abort()
       settle(acc.trim() ? `${acc.trim()}\n(stopped)` : '(stopped)', 'ai')
+    }
     }
   }
 
@@ -4187,7 +4398,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const textAreaNode = (
           <div className="text-area">
             <div className="text-window"
-              onWheel={e => { if (e.deltaY < 0) pinnedRef.current = false }}
+              onWheel={e => { if (e.deltaY < 0) { pinnedRef.current = false; unpinAtRef.current = Date.now() } }}
               onClick={() => inputRef.current?.focus()}
               onContextMenu={e => {
                 e.preventDefault()
@@ -4204,18 +4415,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                   scrollResizeObsRef.current?.disconnect()
                   scrollResizeObsRef.current = null
                   scrollRef.current = el as HTMLDivElement | null
-                  if (el) {
-                    if (el instanceof HTMLElement) {
-                      el.style.overflowX = 'hidden'
-                      // Hint the compositor to keep this scroll container on
-                      // its own GPU layer. Scrolling then resolves to a pure
-                      // transform of the cached layer rather than re-rasterizing
-                      // text — directly addresses the "jerks/tearing during
-                      // heavy scroll" symptom. `scroll-position` is the
-                      // specific value (not `transform`); `transform` would
-                      // hint the wrong axis and some browsers ignore it.
-                      el.style.willChange = 'scroll-position'
-                    }
+                  // react-virtuoso types scrollerRef as HTMLElement | Window;
+                  // our scroller is always the inner <div>, so narrow to
+                  // HTMLElement once here (the Window case is impossible for a
+                  // custom scroller). This single guard also covers el.clientHeight
+                  // and ro.observe(el) below — no per-site casts.
+                  if (el instanceof HTMLElement) {
+                    el.style.overflowX = 'hidden'
+                    // Hint the compositor to keep this scroll container on
+                    // its own GPU layer. Scrolling then resolves to a pure
+                    // transform of the cached layer rather than re-rasterizing
+                    // text — directly addresses the "jerks/tearing during
+                    // heavy scroll" symptom. `scroll-position` is the
+                    // specific value (not `transform`); `transform` would
+                    // hint the wrong axis and some browsers ignore it.
+                    el.style.willChange = 'scroll-position'
                     el.addEventListener('scroll', handleVirtuosoScrollRef.current, { passive: true })
                     // B155: re-snap when the SCROLLER ITSELF resizes (its visible
                     // viewport HEIGHT changes), as opposed to its CONTENT growing

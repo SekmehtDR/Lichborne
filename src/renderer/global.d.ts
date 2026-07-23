@@ -3,6 +3,7 @@ import type {
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
+  CatchupDigest, CatchupProgress,
   AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
 } from '../shared/types'
 
@@ -118,6 +119,9 @@ declare global {
       sessionLogOpenFolder: (character: string) => void
       sessionLogReadWindow: (character: string, fromTs: number, toTs: number, maxRows: number)
         => Promise<SessionLogWindowRow[]>
+      sessionLogCatchupDigest: (requestId: string, character: string, fromTs: number, toTs: number, maxBodyChars: number, redactLiterals: string[])
+        => Promise<CatchupDigest>
+      onCatchupProgress: (cb: (p: CatchupProgress) => void) => () => void
       // AI (BYOK, capability-routed — DESIGN §10)
       aiSetKey:    (cap: AICapability, key: string) => Promise<void>
       aiClearKey:  (cap: AICapability) => Promise<void>
