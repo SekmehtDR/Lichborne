@@ -4,7 +4,7 @@ This document explains **how Lichborne uses AI, what data is involved, and how y
 private information is protected.** It covers only the AI-related parts of Lichborne.
 It grows as AI features are added.
 
-_Last updated: v0.17.1._
+_Last updated: v0.17.2._
 
 ---
 
@@ -45,6 +45,12 @@ Nothing is sent unless you actively invoke an AI feature (e.g. you type
   **your** API key, and the summary streams back.
 - The state-readout streams that are pure noise (your inventory list, spell list,
   experience table, etc.) are **excluded** — they carry no events, only tables.
+- If you've set a **Response voice** (Settings → AI — an optional persona like
+  "a 90s TV news anchor"), that short text you typed is included in the request so
+  the summary is written in that voice. It's your own words, not personal data,
+  and it changes only *how* the summary reads — never what is sent about you.
+- Which **model** you picked (Haiku, Sonnet, Opus, or Fable) determines where the
+  request goes within Anthropic's API; the data sent is the same regardless.
 
 Larger windows read more of your log and therefore send more text; the client warns
 you when a window is large so you can use it sparingly. The header on every summary

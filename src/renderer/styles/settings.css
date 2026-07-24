@@ -607,6 +607,9 @@
   font-size: 0.8rem;
 }
 .sp-ai-key-input:focus { outline: none; border-color: var(--accent-dim); }
+/* The persona field is a real (unmasked) free-text input — give it more room to
+   read than the masked key field's 340px cap. */
+.sp-ai-persona-input { max-width: 480px; }
 /* Fixed-hue status text over the theme's text color — legible on light and dark
    alike (pitfall #55/#63: color-mix a fixed hue toward --text-primary). */
 .sp-ai-status {

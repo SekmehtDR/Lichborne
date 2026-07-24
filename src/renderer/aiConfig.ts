@@ -16,22 +16,33 @@ export interface AIConfig {
   // Per-feature one-time consent (feature id → accepted). Empty until a feature
   // (Phase 1: Catch Me Up) asks for it. A missing entry === not yet consented.
   consent: Record<string, boolean>
+  // Free-text VOICE/PERSONA for AI output (e.g. "a 90s TV news anchor", "a salty
+  // pirate"). Blank = the default warm-companion voice. It flavours only HOW the
+  // AI speaks, never the facts (the prompt keeps every statement grounded in the
+  // log). App-wide like the rest of this config. Capped in the UI so it can't
+  // bloat the prompt.
+  persona: string
 }
 
 // Text model tiers offered in Settings. Haiku is the default workhorse (cheap,
 // fast, bounded-input jobs); Sonnet is the quality tier for config-gen /
-// coaching; Opus is the top tier for anyone who wants it. (DESIGN §10.1.)
+// coaching; Opus is the top tier for anyone who wants it; Fable 5 is offered as
+// a premium tier above Opus. (DESIGN §10.1.) Adding a model is a one-liner here:
+// the Settings dropdown, modelLabel(), and the /ai + Catch Me Up header all read
+// this list, and main passes the id straight to the API (no allowlist).
 export const AI_TEXT_MODELS: { id: string; label: string }[] = [
   { id: 'claude-haiku-4-5', label: 'Haiku 4.5 — fast & cheap (default)' },
   { id: 'claude-sonnet-5',  label: 'Sonnet 5 — higher quality' },
   { id: 'claude-opus-4-8',  label: 'Opus 4.8 — top tier' },
+  { id: 'claude-fable-5',   label: 'Fable 5 — premium' },
 ]
 
 export const DEFAULT_AI_MODEL = 'claude-haiku-4-5'
 
 // Friendly tier name for a model id (e.g. 'claude-haiku-4-5' → 'Haiku 4.5'), for
-// /ai status. The AI_TEXT_MODELS labels carry a trailing "— …" blurb; keep the
-// name only. Falls back to the raw id if it's not a known tier.
+// /ai status AND the Catch Me Up recap header. The AI_TEXT_MODELS labels carry a
+// trailing "— …" blurb; keep the name only. Falls back to the raw id if it's not
+// a known tier.
 export function modelLabel(id: string): string {
   const full = AI_TEXT_MODELS.find(m => m.id === id)?.label
   return full ? full.split(' — ')[0] : id
@@ -61,6 +72,7 @@ export const DEFAULT_AI_CONFIG: AIConfig = {
   enabled: false,        // opt-in by design (guardrail #2 — nothing leaves the machine unless enabled)
   textModel: DEFAULT_AI_MODEL,
   consent: {},
+  persona: '',           // blank = default voice
 }
 
 const KEY = 'lichborne.ai'
@@ -73,6 +85,8 @@ export function loadAIConfig(): AIConfig {
       ...parsed,
       // consent must always be an object even if a hand-edited file nulls it
       consent: parsed && typeof parsed.consent === 'object' && parsed.consent ? parsed.consent : {},
+      // persona must always be a string (a hand-edited file could null/retype it)
+      persona: typeof parsed?.persona === 'string' ? parsed.persona : '',
     }
   } catch {
     return { ...DEFAULT_AI_CONFIG }

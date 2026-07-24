@@ -69,11 +69,11 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.17.1**
+**v0.17.2**
 
-- **Catch Me Up now reads your logs.** Ask for any window — `/ai catchup 30m`, `2.5h`, `7d`, even `1y` — and it summarizes what you missed from **your session log** for that character, not just what's still on screen. It pays attention to ranks gained, what was attacking you, deaths, who spoke to you, work orders, and money earned. Your **private info (PIN, passwords, account name) is scrubbed before anything is sent** — see [AINOTICE.md](AINOTICE.md).
-- **Injuries panel fixed** — healed **scars** were showing as wounds that never cleared. They're now shown as muted scars, and "No active wounds." is accurate again.
-- **The story window stays put** — a long-standing glitch where the view would spontaneously un-pin (scroll lock + "New Lines" badge) is fixed; if it ever slips while you're away, returning to the window heals it.
+- **Give Catch Me Up a voice.** Set a **Response voice** in Settings → AI (*a 90s TV news anchor*, *a salty pirate*, …) and your recaps get delivered in that personality — without ever changing the facts. Blank keeps the usual warm style.
+- **New model: Fable 5** joins Haiku, Sonnet, and Opus in Settings → AI as a premium option.
+- **Steadier summaries.** Every recap now shows which **model** (and **voice**) it used, and Catch Me Up **retries once automatically** if the model returns a blank response — no more mysterious empty result. It also no longer summarizes its own past recaps.
 
 ---
 
@@ -289,7 +289,7 @@ Lichborne can use **Claude** to help you out — entirely on your terms.
 **The ground rules (they never change):**
 
 - **Off by default, completely optional.** Nothing happens until you turn it on.
-- **Bring your own key.** You plug in *your own* Anthropic API key in **Settings → AI**, stored **encrypted on your machine** (never in your profile files, never sent to any Lichborne server — there isn't one). Pick your model tier there too; the default is cheap.
+- **Bring your own key.** You plug in *your own* Anthropic API key in **Settings → AI**, stored **encrypted on your machine** (never in your profile files, never sent to any Lichborne server — there isn't one). Pick your model there too — **Haiku 4.5** (fast & cheap, the default), **Sonnet 5**, **Opus 4.8**, or **Fable 5** (premium); higher tiers cost more per request, billed to your key.
 - **Opt-in per feature.** Each AI feature has a one-time disclosure you accept before it can send anything.
 - **AI advises and summarizes — it never plays the game.** It **cannot** send commands to DragonRealms, ever. That's a hard line, which keeps every AI feature inside Simutronics' rules.
 - **Your private info is protected.** Your account **PIN / identification numbers, passwords, and account username** are scrubbed from the text before anything is sent — while your log on disk stays untouched. Full details in **[AINOTICE.md](AINOTICE.md)** (also linked in Help → About).
@@ -300,6 +300,8 @@ Lichborne can use **Claude** to help you out — entirely on your terms.
 - **It reads your session log** for that character across the exact window you asked for — so a 2.5-hour catchup really covers 2.5 hours, not just what's still on screen — and pays attention to what you care about coming back: **ranks and skills gained, what was attacking you and any wounds, deaths, who spoke to you and how it went, work orders finished, and money earned or banked.**
 - **It tunes itself to the window** — a quick "what did I miss" for 30 minutes, a proper retrospective for a year — and shows a **"Working on it…"** progress note while it reads long spans, then streams the recap in. It always says honestly what it covered.
 - **Logging off? It still works** — it falls back to summarizing what's on your screen, and tells you it did.
+- **Give it a personality (optional & fun).** Set a **Response voice** in Settings → AI — *a 90s TV news anchor*, *a salty pirate*, *an over-caffeinated bard* — and your recaps get delivered in that voice. It changes only *how* the summary reads, never the facts. Leave it blank for the usual warm, natural style.
+- **It tells you how it was made.** Every recap header is concise — the **start–end time** it covered (e.g. *14:05–16:05 (2h)*), tidy counts, the **model** it used (*via Sonnet 5*), and the **voice** if you set one — never a black box. If the model ever returns a blank response (an occasional hiccup), Catch Me Up quietly retries once on its own.
 - **Give it a home** — send AI output to its own **`lbAI`** stream (add it to any panel or window) so summaries stay out of your game scroll. It's **per-character**, and costs a fraction of a cent per summary on the default model.
 
 **Slash commands:** `/ai` (status) · `/ai on` / `/ai off` · `/ai key` (opens Settings) · `/ai catchup [window]` · `/ai stop` (cancel a running summary).

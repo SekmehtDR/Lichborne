@@ -1065,7 +1065,7 @@ The Display section includes a **live font preview** — a bordered box showing 
 | **Command Bar** | RT display, cast time display, command history size |
 | **Highlights** | Highlight rules, groups, import/export |
 | **Connection** | Default credentials, Lich paths, SGE fallback settings |
-| **AI** | Master enable, per-capability BYO key (text=Claude) + Test, model tier (Haiku/Sonnet), per-feature consent, cost meter (§10) |
+| **AI** | Master enable, per-capability BYO key (text=Claude) + Test, model tier (Haiku/Sonnet/Opus/Fable), **Response voice** (persona), per-feature consent, cost meter (§10) |
 
 ---
 
@@ -1232,6 +1232,26 @@ for scale, §10.4):
   pristine** (Sekmeht: *"the log needs to be pristine … it's just during the AI processing part"*). The user-
   facing [AINOTICE.md](AINOTICE.md) documents exactly what is/isn't sent; the About dialog links it
   (`AI_NOTICE_URL`). **Any future AI feature that sends game text must route it through `redactForAI` first.**
+- **Response voice / persona (v0.17.2).** `AIConfig.persona` (free text, blank = default; Settings → AI →
+  "Response voice") flavours the VOICE of AI output — "a 90s TV news anchor", etc. `catchupSystem` takes a
+  `persona` param that OVERRIDES the default warm-companion voice line when set, subordinated to the facts
+  ("changes only HOW you speak, never WHAT is true — keep every statement grounded in the log"); the plain-
+  prose rule still binds. Rides `SharedProfile.ai` (machine-local, non-breaking). The persona IS sent to the
+  provider (user-authored, not PII) — documented in AINOTICE.md. No `/ai` command (Settings-only, like the key).
+- **Model choice + Fable 5 (v0.17.2).** `AI_TEXT_MODELS` is the single source (Settings dropdown, `modelLabel`,
+  `/ai` status, and the recap header); adding a model is a one-liner (main has no allowlist — the id passes
+  straight to the API). Four tiers now: Haiku 4.5 (default) · Sonnet 5 · Opus 4.8 · **Fable 5 (premium)**.
+- **Header transparency + empty-response retry (v0.17.2).** The recap header is concise: it leads with the
+  window (`fmtWindow`): **start–end clock times** under a day (`14:05–16:05 (2h)`), **dates** for multi-day
+  spans (`Jul 16–Jul 23 (7d)`; `fmtDuration` is day-aware so a year is `365d`, not `8760h`) + compact counts
+  (`58.4k lines, 51k collapsed` via `fmtCount`), then only the short caveats that apply (`log from HH:MM` / `recent portion` / `use sparingly`),
+  then `· via {model}` (+ `· voice: {persona}` when set) on both paths, read fresh per run — so it's never a
+  black box which window/model/voice produced a summary. The streaming call retries ONCE on a clean-but-EMPTY completion (a transient dropped
+  response, distinct from an `onError`), then reports token counts if still empty instead of a bare "(no summary
+  returned)". Diagnosed from "24h failed but 1d worked" — identical 1440-min requests, so transient.
+- **Catch Me Up never re-summarizes its OWN output (v0.17.2).** `collectHistory` skips any `ai`-preset line
+  (covers a recap that rendered in the main window when no lbAI panel is open), on top of the existing
+  `internal-system` + `lbAI`-stream skips; the log path is safe because AI output is never written to the log.
 - **Per-character; fallback to screen if logging off / read fails, stated in the header** (AI-enhances-never-
   gates). **Not yet done:** live-game test; game-native banking patterns (currently keys on the `DRBanking:`
   script line); injury-message extractor; a full port of `drinfomon` patterns into a verified capturer

@@ -14,7 +14,7 @@ import { loadMutes, saveMutes, compileMutes, applyMutesToSegments, newMute, type
 import { loadSubstitutes, saveSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
 import { runSlash, slashLineText, type SlashContext, type SlashEditorTab } from '../slashCommands'
 import { loadCustomColors, saveCustomColors, contrastBackingFor } from '../colors'
-import { loadAIConfig, saveAIConfig, AI_STREAM, streamLabel } from '../aiConfig'
+import { loadAIConfig, saveAIConfig, AI_STREAM, streamLabel, modelLabel } from '../aiConfig'
 import { aiChatStream } from '../ai/aiClient'
 import AIConsentModal from './AIConsentModal'
 import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
@@ -143,19 +143,64 @@ function fmtDuration(ms: number): string {
   const mins = Math.max(1, Math.round(ms / 60_000))
   if (mins < 60) return `${mins} min`
   const h = Math.floor(mins / 60)
+  // Beyond ~2 days, hours become unreadable (a 1-year catchup was "8760h"); switch
+  // to whole days so `/ai catchup 7d`/`1y` read as "7d"/"365d", not raw hours.
+  if (h >= 48) return `${Math.round(h / 24)}d`
   const m = mins % 60
   return m ? `${h}h ${m}m` : `${h}h`
 }
 
+// Compact HH:MM (24h, locale-independent) for the Catch Me Up header window.
+function fmtClock(ts: number): string {
+  const d = new Date(ts)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// The Catch Me Up header's window span. For sub-day windows, clock times are the
+// clearest ("14:05–16:05 (2h)"). For multi-day windows clock times MISLEAD (they
+// look minutes apart while being days apart), so show compact dates instead
+// ("Jul 16–Jul 23 (7d)"), adding a 2-digit year only when the span crosses years.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function fmtWindow(from: number, now: number): string {
+  const dur = fmtDuration(now - from)
+  if (now - from < 24 * 60 * 60_000) return `${fmtClock(from)}–${fmtClock(now)} (${dur})`
+  const showYear = new Date(from).getFullYear() !== new Date(now).getFullYear()
+  const date = (ts: number) => {
+    const d = new Date(ts)
+    return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}` + (showYear ? ` '${String(d.getFullYear()).slice(-2)}` : '')
+  }
+  return `${date(from)}–${date(now)} (${dur})`
+}
+
+// Compact count for the header (keep the metrics scannable, not a wall of digits):
+// 58405 → "58.4k", 51034 → "51k", 580405 → "580k", 900 → "900".
+function fmtCount(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) {
+    const k = n / 1000
+    return (k >= 100 ? String(Math.round(k)) : k.toFixed(1).replace(/\.0$/, '')) + 'k'
+  }
+  return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
+}
+
 // Naming the character is the highest-value line in this prompt: without it the
 // model has to GUESS which name in raw game text is the player.
-function catchupSystem(character: string, tier: CatchupTier, windowLabel: string): string {
+function catchupSystem(character: string, tier: CatchupTier, windowLabel: string, persona: string): string {
+  const p = persona.trim()
+  // Refer-to-as-"you" mechanic stays regardless of voice; only the TONE swaps.
+  const refer = `Refer to their character as "you" (the player IS ${character}); a script may have kept their character acting while they were away, so "you" covers that too.`
+  const voiceLine = p
+    // A user-chosen persona OVERRIDES the default warmth. It changes only HOW the
+    // recap is spoken — never the facts (the grounding rules below still bind).
+    ? `Deliver the entire recap in the voice, personality, and speaking style of ${p}. Fully commit to that persona — its word choice, cadence, and attitude — and let it colour every sentence. This affects only HOW you speak, never WHAT is true: keep every statement grounded in the log. ${refer}`
+    : `Write straight to them, in a warm and natural voice, like a helpful companion — not a status report. ${refer}`
   return [
     // VOICE (Sekmeht): sound like the player's in-client companion catching them
     // up — warm, natural, flowing — NOT a report generator emitting disjointed
-    // "The character was primarily stationary" lines.
+    // "The character was primarily stationary" lines. A user persona (Settings →
+    // AI → Response voice) swaps that tone while keeping the facts intact.
     `You are ${character}'s personal assistant inside their DragonRealms game client. ${character} stepped away and just came back, and you're filling them in on what they missed over ${windowLabel}.`,
-    `Write straight to them, in a warm and natural voice, like a helpful companion — not a status report. Refer to their character as "you" (the player IS ${character}); a script may have kept their character acting while they were away, so "you" covers that too.`,
+    voiceLine,
     'The text below is their game log. Lines tagged like [thoughts] are side channels; untagged lines are the main game window. "You"/"your" inside the log refer to them.',
     '',
     tier.guidance,
@@ -3427,6 +3472,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     const out: { ts: number; stream: string; text: string }[] = []
     const collect = (ln: TextLine, stream: string) => {
       if (ln.segments[0]?.preset === 'internal-system') return
+      // Never feed AI output back into a future summary. Catch Me Up's recap is
+      // ONE line — an 'internal-system' header (skipped above) + an 'ai'-preset
+      // body. When no lbAI panel is open it renders in the MAIN window, so it
+      // lands in `lines` and would otherwise be gathered as ordinary main text —
+      // the model would then summarize its own prior summaries. The lbAI STREAM
+      // is already skipped in the loop below (id === AI_STREAM); this catches the
+      // main-routed copy directly, independent of the header format, and covers
+      // any future 'ai'-preset output the same way.
+      if (ln.segments.some(s => s.preset === 'ai')) return
       const text = ln.segments.map(s => s.text).join('').trim()
       if (text) out.push({ ts: ln.timestamp, stream, text })
     }
@@ -3489,6 +3543,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     // A day+ window reads a lot of log and costs more on the user's key — mark it
     // so the header nudges "use sparingly" (default is 30m, so this is opt-in).
     const heavy = mins >= 24 * 60
+    // Which model this run is attempting with — surfaced in the header so a tester
+    // can report it (models behave/limit differently, and the tier picker is easy
+    // to forget). Read fresh so a mid-session model change is reflected. The same
+    // fresh read carries the user's optional response VOICE/persona into the prompt.
+    const aiCfg = loadAIConfig()
+    const modelName = modelLabel(aiCfg.textModel)
+    const persona = aiCfg.persona ?? ''
+    // Surface the chosen VOICE in the header too (only when set), same as the
+    // model — so it's visible what personality shaped the recap.
+    const voiceTag = persona.trim() ? ` · voice: ${persona.trim()}` : ''
 
     // Route output to the lbAI stream panel if it's open, else the main window.
     const toStream = watchedStreamsRef.current.has(AI_STREAM)
@@ -3528,9 +3592,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         start--
         used += rendered[start].length + 1
       }
-      const clipped = start > 0 ? `, most recent ${rendered.length - start}` : ''
+      const clipped = start > 0 ? `, recent ${fmtCount(rendered.length - start)}` : ''
+      const windowSpan = fmtWindow(from, now)
       startSummary(rendered.slice(start).join('\n'),
-        `— Catch Me Up · ${label} · ${rows.length} line${rows.length === 1 ? '' : 's'}${clipped} · ${why}`)
+        `— Catch Me Up · ${windowSpan} · ${fmtCount(rows.length)} lines${clipped} · ${why} · via ${modelName}${voiceTag}`)
     }
 
     // ── LOG path: read the actual window from this CHARACTER's session log. The
@@ -3568,14 +3633,19 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           offProgress()
           if (d.keptLines === 0) return nothing()
           status('Working on it — summarizing…')
-          // Be honest about REAL coverage: if the logs don't reach back as far as
-          // asked, say so rather than implying the full window was reviewed.
-          const short = d.coveredFrom && d.coveredFrom > from + 60_000
-            ? ` · log reaches back ${fmtDuration(now - d.coveredFrom)}` : ''
-          const dedup = d.duplicates > 0 ? ` · ${d.duplicates} repeat${d.duplicates === 1 ? '' : 's'} collapsed` : ''
-          const cut = d.truncated ? ` · analysed the most recent portion (totals cover the full period)` : ''
-          const big = heavy ? ` · large window — use sparingly` : ''
-          const header = `— Catch Me Up · ${label} · ${d.totalLines} line${d.totalLines === 1 ? '' : 's'}${dedup}${short}${cut}${big}`
+          // Concise, scannable header: start–end clock times + compact counts,
+          // then only the caveats that actually apply (kept short). Coverage
+          // honesty is preserved — if the log doesn't reach back as far as asked
+          // we show the real start it DID reach; if the body was trimmed to fit
+          // the model we flag it (the fact-sheet still covers the whole period).
+          const windowSpan = fmtWindow(from, now)
+          const metrics = `${fmtCount(d.totalLines)} lines` + (d.duplicates > 0 ? `, ${fmtCount(d.duplicates)} collapsed` : '')
+          const caveats: string[] = []
+          if (d.coveredFrom && d.coveredFrom > from + 60_000) caveats.push(`log from ${fmtClock(d.coveredFrom)}`)
+          if (d.truncated) caveats.push('recent portion')
+          if (heavy) caveats.push('use sparingly')
+          const cav = caveats.length ? ` · ${caveats.join(' · ')}` : ''
+          const header = `— Catch Me Up · ${windowSpan} · ${metrics}${cav} · via ${modelName}${voiceTag}`
 
           // Payload = an EMPHASIS fact-sheet (exact whole-window tallies the model
           // should anchor on) + the FULL deduped log body (the content it analyses,
@@ -3641,36 +3711,57 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
     let acc = ''
     let handle: { abort: () => void }
-    try {
-      handle = aiChatStream(
-        { system: catchupSystem(session.character, tier, label), messages: [{ role: 'user', content: buffer }], maxTokens: tier.maxTokens },
-        {
-          onDelta: d => { acc += d; live(acc, 'ai') },
-          onDone: () => {
-            const final = acc.trim() || '(no summary returned)'
-            settle(final, 'ai')
-            logToSession([header, ...final.split('\n')].map(t => ({ ts: Date.now(), stream: 'sys', text: t })))
+    // One attempt at the streaming call. `tries === 0` is the first pass; on an
+    // EMPTY completion (stream ended cleanly with no text — a transient dropped/
+    // empty response) we re-issue ONCE. This is exactly the tester's "24h failed
+    // but 1d worked" — those are the SAME 1440-minute window, so the difference
+    // was transient, and a manual re-run fixed it. The retry does that for them.
+    const attempt = (tries: number) => {
+      acc = ''
+      try {
+        handle = aiChatStream(
+          { system: catchupSystem(session.character, tier, label, persona), messages: [{ role: 'user', content: buffer }], maxTokens: tier.maxTokens },
+          {
+            onDelta: d => { acc += d; live(acc, 'ai') },
+            onDone: usage => {
+              if (!acc.trim()) {
+                // Empty response. Auto-retry once (onDone can't fire after /ai
+                // stop — abort tears the listeners down — so this never fights a
+                // cancel). If it's STILL empty, report input-token usage so a
+                // recurring empty is diagnosable (near-context-limit vs a genuine
+                // blank), and tell the user it's worth retrying.
+                if (tries === 0) { live('— empty response, retrying…', 'internal-system'); attempt(1); return }
+                const tok = usage ? ` (${usage.inputTokens.toLocaleString()} tokens in, ${usage.outputTokens} out)` : ''
+                settle(`— the model returned an empty response${tok}. This is usually temporary — please try again in a moment.`, 'internal-system')
+                logToSession([{ ts: Date.now(), stream: 'sys', text: `Catch Me Up: empty response${tok} (via ${modelName})` }])
+                return
+              }
+              const final = acc.trim()
+              settle(final, 'ai')
+              logToSession([header, ...final.split('\n')].map(t => ({ ts: Date.now(), stream: 'sys', text: t })))
+            },
+            onError: msg => {
+              // A failure is a NOTICE, not content — keep it on the dim system preset.
+              settle(`✕ Catch Me Up failed: ${msg}`, 'internal-system')
+              logToSession([{ ts: Date.now(), stream: 'sys', text: `Catch Me Up failed: ${msg}` }])
+            },
           },
-          onError: msg => {
-            // A failure is a NOTICE, not content — keep it on the dim system preset.
-            settle(`✕ Catch Me Up failed: ${msg}`, 'internal-system')
-            logToSession([{ ts: Date.now(), stream: 'sys', text: `Catch Me Up failed: ${msg}` }])
-          },
-        },
-      )
-    } catch (e) {
-      // A throw here would otherwise strand aiCatchupInFlight at `true` FOREVER,
-      // silently disabling Catch Me Up for the rest of the session with no error
-      // anywhere. The in-flight guard must never be able to leak.
-      settle(`✕ Catch Me Up failed: ${e instanceof Error ? e.message : String(e)}`, 'internal-system')
-      return
+        )
+      } catch (e) {
+        // A throw here would otherwise strand aiCatchupInFlight at `true` FOREVER,
+        // silently disabling Catch Me Up for the rest of the session with no error
+        // anywhere. The in-flight guard must never be able to leak.
+        settle(`✕ Catch Me Up failed: ${e instanceof Error ? e.message : String(e)}`, 'internal-system')
+        return
+      }
+      // /ai stop — abort() tears down the stream listeners, so onDone never fires;
+      // this closure owns the cleanup + the final render itself.
+      aiCancelRef.current = () => {
+        handle.abort()
+        settle(acc.trim() ? `${acc.trim()}\n(stopped)` : '(stopped)', 'ai')
+      }
     }
-    // /ai stop — abort() tears down the stream listeners, so onDone never fires;
-    // this closure owns the cleanup + the final render itself.
-    aiCancelRef.current = () => {
-      handle.abort()
-      settle(acc.trim() ? `${acc.trim()}\n(stopped)` : '(stopped)', 'ai')
-    }
+    attempt(0)
     }
   }
 

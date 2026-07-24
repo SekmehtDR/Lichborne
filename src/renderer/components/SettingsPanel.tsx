@@ -318,9 +318,10 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
 
   const vAiEnable      = vis('AI', 'Enable AI features', 'artificial intelligence', 'byok')
   const vAiKey         = vis('AI', 'Anthropic API key', 'claude', 'byok')
-  const vAiModel       = vis('AI', 'Text model', 'haiku', 'sonnet', 'opus')
+  const vAiModel       = vis('AI', 'Text model', 'haiku', 'sonnet', 'opus', 'fable')
+  const vAiPersona     = vis('AI', 'Response voice', 'persona', 'style', 'personality', 'tone')
   const vAiUsage       = vis('AI', 'Usage this session', 'tokens', 'cost')
-  const secAI          = vAiEnable || vAiKey || vAiModel || vAiUsage
+  const secAI          = vAiEnable || vAiKey || vAiModel || vAiPersona || vAiUsage
 
   const vLogEnabled    = vis('Session Log', 'Enable session logging')
   const vLogOptions    = vis('Session Log', 'Logging options')
@@ -849,6 +850,26 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               onChange={v => setAi('textModel', v)}
             />
             <div className="sp-ai-hint">Used by Catch Me Up and future AI features. Higher tiers cost more per request (billed to your own API key).</div>
+          </>}
+
+          {vAiPersona && <>
+            <div className="sp-field-row">
+              <span className="sp-field-label">
+                Response voice
+                <span className="sp-field-hint"> · optional — give the AI a personality; leave blank for the default</span>
+              </span>
+            </div>
+            <div className="sp-ai-key-row">
+              <input
+                className="sp-ai-key-input sp-ai-persona-input"
+                type="text"
+                maxLength={120}
+                placeholder="e.g. a 90s TV news anchor, a salty pirate…"
+                value={aiCfg.persona}
+                onChange={e => setAi('persona', e.target.value)}
+              />
+            </div>
+            <div className="sp-ai-hint">Flavours <em>how</em> summaries are written — never the facts. Have fun with it; blank keeps the current warm, natural voice.</div>
           </>}
 
           {vAiUsage && (() => {
