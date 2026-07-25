@@ -107,7 +107,6 @@
 .cp-sidebar {
   width: 200px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -420,25 +419,38 @@
 .cp-tpl-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
+/* Each template is a CARD (matches the Settings look) — bordered, rounded, a
+   subtle surface, with a clear accent state while it's being edited. Surface
+   shifts are color-mix toward --text-primary so they read on light + dark
+   (pitfall #55). */
 .cp-tpl-row {
-  border-bottom: 1px solid var(--border-faint);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-base));
+  overflow: hidden;
+  transition: border-color 0.13s, background 0.13s;
 }
-
-.cp-tpl-row:last-child { border-bottom: none; }
+.cp-tpl-row--expanded {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-base));
+}
 
 .cp-tpl-summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px;
+  padding: 9px 12px;
   cursor: pointer;
   transition: background 0.1s;
 }
 
-.cp-tpl-summary:hover { background: var(--bg-hover); }
+.cp-tpl-summary:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
 
 .cp-tpl-dot {
   width: 10px;
@@ -497,8 +509,11 @@
 /* ── Template inline edit form ───────────────────────────────────────────── */
 
 .cp-tpl-edit {
-  padding: 12px 18px 14px;
-  background: var(--bg-sunken);
+  padding: 12px 14px 14px;
+  /* Transparent so the card's (accent-tinted while expanded) surface shows
+     through, with a hairline separating it from the summary row above. */
+  background: transparent;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   display: flex;
   flex-direction: column;
   gap: 9px;

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import { THEMES, applyTheme, applyCustomTheme, darkBase, type Theme, type ThemeVars } from '../themes'
 import {
@@ -193,7 +194,7 @@ export default function ThemePicker({ currentThemeId, myThemes, onThemeChange, o
 
   return createPortal(
     <>
-      <div className="tp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="tp-backdrop" {...backdropHandlers(() => onClose())}>
         <div className="tp-modal">
 
           <div className="tp-header">

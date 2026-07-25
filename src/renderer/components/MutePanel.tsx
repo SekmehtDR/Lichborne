@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { ResizeDivider } from './ResizeDivider'
 import { loadMutes, saveMutes, newMute, STREAM_OPTIONS, type MuteRule } from '../mutes'
 import { isValidRegex } from '../highlights'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
 import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
 import { analyzeMutes } from '../automationHealth'
 import GroupPicker from './GroupPicker'
@@ -170,6 +172,7 @@ export default function MutePanel({ onSaved, prefill, openRuleId, analyticsOn = 
       </div>
 
       {/* Detail */}
+      <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
       <div className="hp-detail">
         {!draft ? (
           <div className="hp-no-selection">Select a mute or create a new one.<br />Muted text is hidden from the window but still saved to your Session Log.</div>

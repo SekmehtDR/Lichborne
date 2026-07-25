@@ -1,22 +1,35 @@
-## v0.17.2 — Give Catch Me Up a voice 🎭 · Fable 5 · steadier summaries
+## v0.17.3 — A cleaner prompt, inline commands, resizable panels & a fresh coat of paint ✨
 
-### New: give Catch Me Up a personality
+### Prompts read cleanly now
 
-Head to **Settings → AI → Response voice** and type whatever you like — *a 90s TV news anchor*, *a salty pirate*, *an over-caffeinated bard* — and your recaps get delivered in that voice. Leave it blank for the usual warm, natural style.
+The `>` prompt got a rework. No more strings of `>` `>` `>` stacking up, and no more awkward gaps where the prompt seemed to vanish after a room description or a flurry of combat. You'll see **one** `>` per turn, right where you expect it.
 
-It flavours **how** the summary is written, never **what** it says — the facts still come straight from your log. Have fun with it; it's remembered until you change it.
+And when you type a command, it now shows **inline with the prompt** — `s>stand` on one line, the way Wrayth, Genie, and Frostbite do it — instead of splitting onto two lines.
 
-### New model: Fable 5
+### Resize the panels — and it sticks
 
-**Fable 5** joins Haiku, Sonnet, and Opus in **Settings → AI → Text model**, offered as a premium tier. Pick it and Catch Me Up (and future AI features) will use it — billed to your own key, like the rest.
+Drag the divider between the list and the detail pane in the **Lich Dashboard** (Scripts & Profiles) and across every **Automations** editor to size them however you like. Double-click a divider to reset it. Your widths are now **remembered and saved to your character's profile**, so they survive restarts and travel with your setup.
 
-### Catch Me Up: steadier, and it tells you more
+### Lich Dashboard, leveled up
 
-- **A cleaner, clearer header.** Each recap now leads with the actual **start–end time** it covered and tidy counts, then the model (and voice) — e.g. `— Catch Me Up · 14:05–16:05 (2h) · 3.1k lines · via Sonnet 5` — so you always know exactly what produced it, at a glance.
-- **It retries an empty response automatically.** Occasionally the model returns nothing on the first try (a transient hiccup — the *exact same* request usually works on a re-run). Catch Me Up now retries once on its own instead of just going quiet. If it's still empty, it says so plainly — with a token count — so it's easy to report rather than a mysterious blank.
-- **It no longer summarizes its own summaries.** Past Catch Me Up output is now reliably excluded from what it reads when catching you up.
+- **New "DR Infomon" tab** — a browsable catalog of live character data (stats, skills, spells, room info) with a one-click check for each.
+- **Scripts tab** now has an **arguments field** — pass args to a script right from the editor and hit Run.
+- **Profiles tab** is cleaner — filtered to your character by default, with a file picker dropdown.
+- **Settings tab** is curated with plain-language descriptions, and the YAML/Ruby editors are now syntax-highlighted.
 
-*Your private info is still scrubbed before anything is sent (see **[AINOTICE.md](AINOTICE.md)**), and AI stays off until you turn it on with your own key.*
+### Fun new text effects
+
+The old "Glow" checkbox on highlights (and contact templates) is now a **Text Effects** picker: **Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost**, and more. Make important text sparkle, shimmer, or catch fire. Any highlight you'd already set to glow keeps its glow. (Effects respect the epilepsy-safe setting and hold still when it's on.)
+
+### A modern facelift
+
+The look-and-feel you liked in Settings now runs across the whole client — softer surfaces, a subtle focus glow on inputs, tidier cards — **without shrinking your game text one pixel**. Window titles and borders stay exactly the same size. The Panel Manager's layout got tidied up too.
+
+### Quality-of-life
+
+- **Windows no longer close by accident** when you drag a text selection out of them (highlighting in a field and releasing outside used to shut the window).
+- **The Assess stream is back in Available Streams** — run `ASSESS` and you can add it as its own panel (it still falls back to the main window if you don't, and the combat scene keeps working either way).
+- **The Experiences shelf** was decluttered — cleaner descriptions, less badge noise.
 
 ---
 

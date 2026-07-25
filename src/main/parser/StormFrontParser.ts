@@ -172,9 +172,17 @@ export class StormFrontParser {
   private isPoisoned  = false
   private isDiseased  = false
 
-  // Suppress consecutive identical prompts — DR fires <prompt> after every
-  // server transaction (room updates, component clears, etc.)
-  private lastMainText = ''
+  // Prompt dedup — DR fires a <prompt> after every server transaction. We show
+  // the FIRST prompt after any activity and suppress only EXACT repeats that
+  // immediately follow another prompt with nothing in between. Keying on "was the
+  // last EMITTED event an identical prompt" (not on the last MAIN text) is what
+  // fixes the old gap: a move/look whose output goes to SUB-streams (room title,
+  // exits, "also here") counts as activity, so the post-move `>` shows instead of
+  // being wrongly swallowed as a duplicate. Maintained via emit() below, which
+  // every event push routes through. (statusprompt drift like "H>"→"R>" still
+  // shows — the TEXT differs, so it isn't an exact repeat.)
+  private lastPromptText = ''
+  private lastEmitWasPrompt = false
 
   // B121 (v0.8.7): last seen streamWindow main subtitle's cleaned title.
   // Used to gate clear-stream emission so a streamWindow re-emit with the
@@ -200,7 +208,8 @@ export class StormFrontParser {
     this.monoMode          = false
     this.inInjuriesDialog  = false
     this.injuryBuf         = []
-    this.lastMainText      = ''
+    this.lastPromptText    = ''
+    this.lastEmitWasPrompt = false
     this.lastRoomTitle     = ''
     this.rtExpires     = 0
     this.lastPromptTime = 0
@@ -217,6 +226,16 @@ export class StormFrontParser {
     this.isDead        = false
     this.isPoisoned    = false
     this.isDiseased    = false
+  }
+
+  // Single chokepoint for every emitted event. Tracks whether the LAST event was
+  // a prompt so the prompt handler can suppress only exact back-to-back repeats
+  // (any non-prompt event — main OR sub-stream — resets the flag, which is the
+  // "break in the pattern" that lets the next `>` through). Route ALL pushes
+  // through this rather than this.events.push directly.
+  private emit(e: GameEvent) {
+    this.lastEmitWasPrompt = e.type === 'stream-text' && e.prompt === true
+    this.events.push(e)
   }
 
   parse(line: string): GameEvent[] {
@@ -252,7 +271,7 @@ export class StormFrontParser {
       // "Moon"; DR pads the info line with trailing whitespace, which is
       // what lets the greedy guild capture land on the full name.
       const m = line.match(/^Name:\s+\b(.+)\b\s+Race:\s+\b(.+)\b\s+Guild:\s+\b(.+)\b\s+/)
-      if (m) this.events.push({ type: 'character-guild', name: m[1].trim(), guild: m[3].trim() })
+      if (m) this.emit({ type: 'character-guild', name: m[1].trim(), guild: m[3].trim() })
     }
 
     // SceneParser line capturers (DESIGN §35.1) — registry-driven; only
@@ -266,12 +285,12 @@ export class StormFrontParser {
     // events do NOT come from here — SceneParser.derive in main owns those.)
     if (this.sceneCapturersEnabled) {
       const sceneLineEvents = runSceneCapturers(line, { stream: this.activeStream, preset: this.currentPreset })
-      if (sceneLineEvents.length > 0) this.events.push(...sceneLineEvents)
+      for (const e of sceneLineEvents) this.emit(e)
     }
 
     // Preserve intentional blank lines from the server as empty spacers
     if (isBlankLine && this.events.length === 0) {
-      this.events.push({
+      this.emit({
         type: 'stream-text',
         stream: this.activeStream,
         segments: [{ text: '' }],
@@ -361,7 +380,7 @@ export class StormFrontParser {
         this.streamStack.push(this.activeStream)
         this.activeStream = target
         // Always emit stream-push so the renderer can discover new streams
-        if (id) this.events.push({ type: 'stream-push', stream: target })
+        if (id) this.emit({ type: 'stream-push', stream: target })
         break
       }
 
@@ -438,7 +457,7 @@ export class StormFrontParser {
 
         if (id === 'pbarstance') {
           const label = text.split(/\s+/)[0] ?? ''
-          this.events.push({ type: 'stance', text: label, value })
+          this.emit({ type: 'stance', text: label, value })
         } else if (id === 'health' || id === 'mana' || id === 'spirit' ||
                    id === 'stamina' || id === 'concentration' || id === 'conclevel') {
           const normalizedId = id === 'conclevel' ? 'concentration' : id
@@ -448,7 +467,7 @@ export class StormFrontParser {
           const label = rawLabel
             ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
             : undefined
-          this.events.push({
+          this.emit({
             type: 'vital-update',
             id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
             current: value,
@@ -464,10 +483,10 @@ export class StormFrontParser {
         const normalized = raw.replace(/^Icon/i, '').toLowerCase()
         if (normalized) {
           const visible = attrs.visible === 'y'
-          if (normalized === 'standing' && visible) { this.stance = '';  this.events.push({ type: 'stance', text: 'Standing', value: 0 }) }
-          if (normalized === 'sitting'  && visible) { this.stance = 's'; this.events.push({ type: 'stance', text: 'Sitting',  value: 0 }) }
-          if (normalized === 'kneeling' && visible) { this.stance = 'K'; this.events.push({ type: 'stance', text: 'Kneeling', value: 0 }) }
-          if (normalized === 'prone'    && visible) { this.stance = 'P'; this.events.push({ type: 'stance', text: 'Prone',    value: 0 }) }
+          if (normalized === 'standing' && visible) { this.stance = '';  this.emit({ type: 'stance', text: 'Standing', value: 0 }) }
+          if (normalized === 'sitting'  && visible) { this.stance = 's'; this.emit({ type: 'stance', text: 'Sitting',  value: 0 }) }
+          if (normalized === 'kneeling' && visible) { this.stance = 'K'; this.emit({ type: 'stance', text: 'Kneeling', value: 0 }) }
+          if (normalized === 'prone'    && visible) { this.stance = 'P'; this.emit({ type: 'stance', text: 'Prone',    value: 0 }) }
           if (normalized === 'hidden')    this.isHidden    = visible
           if (normalized === 'invisible') this.isInvisible = visible
           if (normalized === 'stunned')   this.isStunned   = visible
@@ -484,7 +503,7 @@ export class StormFrontParser {
           if (normalized === 'poisoned')  this.isPoisoned  = visible
           if (normalized === 'diseased')  this.isDiseased  = visible
           if (!['standing','sitting','kneeling','prone'].includes(normalized)) {
-            this.events.push({ type: 'indicator', id: normalized, visible })
+            this.emit({ type: 'indicator', id: normalized, visible })
           }
         }
         break
@@ -567,14 +586,14 @@ export class StormFrontParser {
               // not every streamWindow repaint.
               if (cleanTitle !== this.lastRoomTitle) {
                 this.lastRoomTitle = cleanTitle
-                this.events.push({ type: 'clear-stream', stream: 'room' })
-                this.events.push({ type: 'clear-stream', stream: 'room-objects' })
-                this.events.push({ type: 'clear-stream', stream: 'room-players' })
-                this.events.push({ type: 'clear-stream', stream: 'room-creatures' })
-                this.events.push({ type: 'clear-stream', stream: 'room-extra' })
-                this.events.push({ type: 'clear-stream', stream: 'room-exits' })
+                this.emit({ type: 'clear-stream', stream: 'room' })
+                this.emit({ type: 'clear-stream', stream: 'room-objects' })
+                this.emit({ type: 'clear-stream', stream: 'room-players' })
+                this.emit({ type: 'clear-stream', stream: 'room-creatures' })
+                this.emit({ type: 'clear-stream', stream: 'room-extra' })
+                this.emit({ type: 'clear-stream', stream: 'room-exits' })
               }
-              this.events.push({
+              this.emit({
                 type: 'room-title',
                 title: cleanTitle,
                 roomId,
@@ -585,7 +604,7 @@ export class StormFrontParser {
           // Any other streamWindow is a stream declaration — translate the ID
           // the same way pushStream does so that declare and push use the same target.
           const target = normalizeStreamId(id)
-          this.events.push({
+          this.emit({
             type: 'stream-declare',
             stream: target,
             title: attrs.title || id,
@@ -597,14 +616,14 @@ export class StormFrontParser {
       case 'exit':
         // Server sends <exit/> after processing QUIT — signals a clean logout.
         // Distinct from an unexpected socket close (network drop, Lich crash).
-        this.events.push({ type: 'game-exit' })
+        this.emit({ type: 'game-exit' })
         break
 
       case 'launchurl': {
         const src = attrs.src ?? ''
         if (src) {
           const url = src.startsWith('http') ? src : `https://www.play.net${src}`
-          this.events.push({ type: 'launch-url', url })
+          this.emit({ type: 'launch-url', url })
         }
         break
       }
@@ -615,15 +634,15 @@ export class StormFrontParser {
 
       case 'app':
         if (attrs.char) {
-          this.events.push({ type: 'player-info', char: attrs.char, game: attrs.game ?? '' })
+          this.emit({ type: 'player-info', char: attrs.char, game: attrs.game ?? '' })
         }
         break
 
       case 'nav':
-        this.events.push({ type: 'clear-stream', stream: 'room' })
-        this.events.push({ type: 'clear-stream', stream: 'room-objects' })
-        this.events.push({ type: 'clear-stream', stream: 'room-players' })
-        this.events.push({ type: 'clear-stream', stream: 'room-exits' })
+        this.emit({ type: 'clear-stream', stream: 'room' })
+        this.emit({ type: 'clear-stream', stream: 'room-objects' })
+        this.emit({ type: 'clear-stream', stream: 'room-players' })
+        this.emit({ type: 'clear-stream', stream: 'room-exits' })
         // v0.8.8 (Rakkor): DR's <nav rm='X'/> carries the new room id on
         // every transition (Lich's $room variable derives from this). For
         // most transitions DR ALSO sends a fresh <streamWindow id='main'
@@ -642,7 +661,7 @@ export class StormFrontParser {
         // silent-transition case, but the map snaps right.
         if (attrs.rm) {
           const rm = parseInt(attrs.rm, 10)
-          if (!isNaN(rm)) this.events.push({ type: 'room-id', roomId: rm })
+          if (!isNaN(rm)) this.emit({ type: 'room-id', roomId: rm })
         }
         break
 
@@ -653,7 +672,7 @@ export class StormFrontParser {
         // normalizeStreamId always returns a string (never undefined) which
         // would short-circuit the COMPONENT_STREAM fallback.
         const stream = STREAM_ID_ALIASES[id] ?? COMPONENT_STREAM[id] ?? (id || null)
-        if (stream) this.events.push({ type: 'clear-stream', stream })
+        if (stream) this.emit({ type: 'clear-stream', stream })
         break
       }
 
@@ -739,18 +758,18 @@ export class StormFrontParser {
         if (this.pendingRtEnd !== null) {
           const expires = anchoredExpiry(this.pendingRtEnd)
           this.rtExpires = expires
-          this.events.push({ type: 'roundtime', expires })
+          this.emit({ type: 'roundtime', expires })
           this.pendingRtEnd = null
         }
         if (this.pendingCtEnd !== null) {
-          this.events.push({ type: 'casttime', expires: anchoredExpiry(this.pendingCtEnd) })
+          this.emit({ type: 'casttime', expires: anchoredExpiry(this.pendingCtEnd) })
           this.pendingCtEnd = null
         }
         if (this.pendingAimEnd !== null) {
           // value 0 = clear (emit expires 0); else anchor the END time to the
           // server clock just like RT/CT.
           const expires = this.pendingAimEnd === 0 ? 0 : anchoredExpiry(this.pendingAimEnd)
-          this.events.push({ type: 'aimtime', expires })
+          this.emit({ type: 'aimtime', expires })
           this.pendingAimEnd = null
         }
         this.captureCtx = { tag: 'prompt' }
@@ -762,7 +781,7 @@ export class StormFrontParser {
       default:
         // Silently drop known protocol tags that carry no display content
         if (!this.captureCtx && !SILENT_TAGS.has(name)) {
-          this.events.push({ type: 'unknown', raw: `TAG:${name} ${JSON.stringify(attrs)}` })
+          this.emit({ type: 'unknown', raw: `TAG:${name} ${JSON.stringify(attrs)}` })
         }
         break
     }
@@ -792,7 +811,7 @@ export class StormFrontParser {
 
     if (name === 'dialogdata') {
       if (this.inInjuriesDialog && this.injuryBuf.length > 0) {
-        this.events.push({
+        this.emit({
           type: 'injury-update',
           parts: Object.fromEntries(this.injuryBuf.map(p => [p.id, p])),
         })
@@ -817,9 +836,9 @@ export class StormFrontParser {
       // detection uses, line ~232) keeps them out while honouring the real
       // game compass. A genuine exitless room now clears immediately.
       if (this.compassDirs.length > 0) {
-        this.events.push({ type: 'exits', directions: this.compassDirs })
+        this.emit({ type: 'exits', directions: this.compassDirs })
       } else if (this.activeStream === 'main' && this.streamStack.length === 0) {
-        this.events.push({ type: 'exits', directions: [] })
+        this.emit({ type: 'exits', directions: [] })
       }
       this.compassDirs = []
       return
@@ -876,7 +895,7 @@ export class StormFrontParser {
       case 'compdef': {
         const id = ctx.id ?? ''
         if (id.startsWith('exp ')) {
-          this.events.push({ type: 'exp-component', skill: id.slice(4), text, ...(ctx.hasBold ? { rankUp: true } : {}) })
+          this.emit({ type: 'exp-component', skill: id.slice(4), text, ...(ctx.hasBold ? { rankUp: true } : {}) })
         } else if (id === 'room exits') {
           // Compass XML stays authoritative for the direction TOKENS (map
           // matching, which words are clickable). But the component carries
@@ -886,18 +905,18 @@ export class StormFrontParser {
           // print exactly this line; composing from tokens mislabeled
           // paths-vs-exits and dropped the "none." case entirely). Emitted
           // even when empty so a stale sentence clears.
-          this.events.push({ type: 'room-exits-text', text })
+          this.emit({ type: 'room-exits-text', text })
         } else {
           const stream = COMPONENT_STREAM[id]
           if (stream) {
-            this.events.push({ type: 'clear-stream', stream })
+            this.emit({ type: 'clear-stream', stream })
             if (text) {
               // B117: prefer the per-segment view if anything was captured
               // (preserves <pushBold/> spans for monsterbold creatures in
               // the Room panel). Falls back to a single segment with the
               // trimmed text when no captureSegments accumulated.
               const segments = capturedSegments.length > 0 ? capturedSegments : [{ text }]
-              this.events.push({
+              this.emit({
                 type: 'stream-text',
                 stream,
                 segments,
@@ -910,15 +929,15 @@ export class StormFrontParser {
       }
 
       case 'spell':
-        this.events.push({ type: 'spell', name: text || 'None' })
+        this.emit({ type: 'spell', name: text || 'None' })
         break
 
       case 'right':
-        this.events.push({ type: 'hand', hand: 'right', item: text || 'Empty' })
+        this.emit({ type: 'hand', hand: 'right', item: text || 'Empty' })
         break
 
       case 'left':
-        this.events.push({ type: 'hand', hand: 'left', item: text || 'Empty' })
+        this.emit({ type: 'hand', hand: 'left', item: text || 'Empty' })
         break
 
       case 'prompt': {
@@ -937,9 +956,15 @@ export class StormFrontParser {
         this.colorStack    = []
         this.linkCmd       = undefined
         this.linkCmdIsText = false
-        if (prompt !== this.lastMainText) {
-          this.lastMainText = prompt
-          this.events.push({
+        // Show this prompt UNLESS it's an exact repeat of the immediately
+        // preceding prompt (i.e. the last emitted event was that same prompt and
+        // nothing happened since). Any non-prompt event — main OR a sub-stream
+        // (room title/exits/also-here on a move) — clears lastEmitWasPrompt via
+        // emit(), so the post-activity `>` shows. A statusprompt state change
+        // ("H>"→"R>") differs in text, so it's never an exact repeat and shows.
+        if (!(this.lastEmitWasPrompt && prompt === this.lastPromptText)) {
+          this.lastPromptText = prompt
+          this.emit({
             type: 'stream-text',
             stream: 'main',
             segments: [{ text: prompt }],
@@ -970,14 +995,14 @@ export class StormFrontParser {
     const text = decodeEntities(rawLine.replace(/<[^>]*>/g, '')).trim()
 
     if (GLANCE_EMPTY_RE.test(text)) {
-      this.events.push({ type: 'hand', hand: 'right', item: 'Empty' })
-      this.events.push({ type: 'hand', hand: 'left',  item: 'Empty' })
+      this.emit({ type: 'hand', hand: 'right', item: 'Empty' })
+      this.emit({ type: 'hand', hand: 'left',  item: 'Empty' })
       return
     }
     let m = text.match(GLANCE_BOTH_RE)
     if (m) {
-      this.events.push({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
-      this.events.push({ type: 'hand', hand: 'left',  item: stripArticle(m[2]) })
+      this.emit({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
+      this.emit({ type: 'hand', hand: 'left',  item: stripArticle(m[2]) })
       return
     }
     // The single-hand captures reject anything containing another " in your "
@@ -986,14 +1011,14 @@ export class StormFrontParser {
     // mis-assign garbage. Rejecting turns "unknown shape" into a safe no-op.
     m = text.match(GLANCE_RIGHT_RE)
     if (m && !m[1].includes(' in your ')) {
-      this.events.push({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
-      this.events.push({ type: 'hand', hand: 'left',  item: 'Empty' })
+      this.emit({ type: 'hand', hand: 'right', item: stripArticle(m[1]) })
+      this.emit({ type: 'hand', hand: 'left',  item: 'Empty' })
       return
     }
     m = text.match(GLANCE_LEFT_RE)
     if (m && !m[1].includes(' in your ')) {
-      this.events.push({ type: 'hand', hand: 'left',  item: stripArticle(m[1]) })
-      this.events.push({ type: 'hand', hand: 'right', item: 'Empty' })
+      this.emit({ type: 'hand', hand: 'left',  item: stripArticle(m[1]) })
+      this.emit({ type: 'hand', hand: 'right', item: 'Empty' })
     }
   }
 
@@ -1022,10 +1047,7 @@ export class StormFrontParser {
       timestamp: Date.now(),
       ...(this.monoMode ? { mono: true } : {}),
     }
-    if (this.activeStream === 'main') {
-      this.lastMainText = this.pendingSegments.map(s => s.text).join('')
-    }
-    this.events.push(evt)
+    this.emit(evt)
     this.pendingSegments = []
   }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
 import { type HighlightRule, loadHighlights } from '../highlights'
 import { loadTriggers } from '../triggers'
@@ -199,7 +200,7 @@ export default function AutomationsPanel({
   ]
 
   const modal = (
-    <div className="at-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="at-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="at-modal">
 
         <div className="at-header">

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import type { SessionLogDay, SessionLogSearchHit, SessionLogExportSpec } from '../../shared/types'
 import { loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
@@ -422,7 +423,7 @@ export default function SessionLogModal({ character, initialSearch, onClose }: P
 
   // ───────────────────────────────────────────────────────────────────────────
   return createPortal(
-    <div className="sl-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="sl-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="sl-modal">
 
         <div className="sl-header">

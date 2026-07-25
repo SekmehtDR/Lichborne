@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { backdropHandlers } from '../utils/backdropClose'
+import { ResizeDivider } from './ResizeDivider'
 import { createPortal } from 'react-dom'
 import {
   type AliasRule, type MacroRule,
@@ -8,6 +10,7 @@ import {
   ALIAS_VARS, MACRO_VARS, MACRO_TOKENS,
 } from '../macros'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
 import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
 import { analyzeMacros, analyzeAliases } from '../automationHealth'
 import GroupPicker from './GroupPicker'
@@ -461,6 +464,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                 </div>
               </div>
 
+              <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
               <div className="ma-detail">
                 {!aliasDraft ? (
                   <div className="ma-no-selection">Select an alias or create a new one.</div>
@@ -673,6 +677,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
                 </div>
               </div>
 
+              <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
               <div className="ma-detail">
                 {!macroDraft ? (
                   <div className="ma-no-selection">Select a key binding or create a new one.</div>
@@ -830,7 +835,7 @@ export default function MacrosPanel({ onClose, onSaved, inline = false, initialT
   if (inline) return content
 
   const modal = (
-    <div className="ma-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="ma-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="ma-modal">
         <div className="ma-header">
           <span className="ma-title">MACROS</span>

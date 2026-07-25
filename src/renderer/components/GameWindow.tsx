@@ -1,4 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
 import { normalizeStreamId } from '../../shared/streamAliases'
@@ -276,6 +277,25 @@ function appendTrimmed(prev: TextLine[], added: TextLine[]): TextLine[] {
   return next.length >= MAX_LINES + TRIM_CHUNK ? next.slice(next.length - MAX_LINES) : next
 }
 
+// Echo a typed command INLINE with the prompt it was typed at — "s>stand", not
+// "s>" then a separate ">stand" (Sekmeht; matches Wrayth/Genie/Frostbite). DR
+// shows a bare prompt ("s>", "R>", ">") when idle, and the command you type
+// belongs on that same line. If the last displayed line is a bare prompt, append
+// the command to it (reusing the prompt's own ">") and drop its prompt flag — it
+// is now a command echo, not a bare prompt the collapse pass could mistake for a
+// duplicate. Reusing the line's id updates it in place (no flicker). If there's
+// no trailing prompt (mid-stream, or rapid commands), fall back to a standalone
+// ">cmd" line. Display only — the Session Log still records the canonical ">cmd".
+function appendEcho(prev: TextLine[], cmd: string): TextLine[] {
+  const last = prev[prev.length - 1]
+  if (last && last.prompt) {
+    const promptText = last.segments.map(s => s.text).join('')
+    const merged: TextLine = { ...last, segments: [{ text: promptText + cmd, preset: 'command-echo' }], prompt: false }
+    return [...prev.slice(0, -1), merged]
+  }
+  return appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }])
+}
+
 const ROOM_STREAMS = new Set([
   'room', 'room-objects', 'room-players', 'room-exits', 'room-creatures', 'room-extra',
 ])
@@ -307,9 +327,16 @@ const NEVER_DISCOVER = new Set([
   'whispers',   // → conversation (v0.8.10: also routes to the combined Conversation feed)
   'conversations', // → conversation (v0.8.10 backward alias; legacy plural)
   'percwindow', // → spells
-  'assess',
   'inventory',  // → inv
 ])
+// NOTE: 'assess' is deliberately NOT here (v0.17.3, B227, Illiahanna — "No assess stream").
+// DR emits `<pushStream id="assess"/>` for the ASSESS combat block, so it's a real,
+// viewable stream — users want it as its own panel. It stays discoverable: the
+// combat-Tableau's accumulation (assessAccumRef, in the stream-text case) is
+// INDEPENDENT of discovery/watching, and STREAM_FALLBACK['assess']='main' still
+// shows the text in main when no Assess panel is open — so making it discoverable
+// is purely additive (add an Assess panel → text routes there; the Tableau arena
+// keeps working either way).
 
 // Streams that fall back to main when no panel is open for them.
 // Prevents important text from being silently buffered and invisible.
@@ -1136,11 +1163,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const [substitutes, setSubstitutes] = useState<SubstituteRule[]>(() => loadSubstitutes(session.character))
   const activeSubsRef = useRef<CompiledSubstitute[]>([])
   // Tracks the last main line actually COMMITTED to the display (text + whether
-  // it was a server prompt). The prompt-collapse pass (pitfall #88) uses it to
-  // drop consecutive identical prompts that a mute orphaned, mirroring the
-  // parser's lastMainText dedup at the display layer (after mutes run) — the
-  // way Genie/Frostbite gag before the prompt is committed so a gagged line
-  // never leaves a stray '>'.
+  // it was a server prompt). The prompt-collapse pass (pitfall #88/#98) uses it
+  // to drop a `>` whose previous displayed main line was an identical prompt —
+  // the display-layer counterpart to the parser's own `lastEmitWasPrompt` dedup,
+  // run AFTER mutes so a mute that orphans a `>` still collapses (the way Genie/
+  // Frostbite gag before the prompt is committed). Nulled by appendEcho after a
+  // typed command (a break — the returning prompt must show).
   const lastMainLineRef = useRef<{ text: string; isPrompt: boolean } | null>(null)
   useEffect(() => {
     // F37 (substitutes joined at Sekmeht's ask): character first, then globals
@@ -2557,20 +2585,25 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         for (const key of Object.keys(newStream)) applyTextMods(newStream[key], key)
       }
 
-      // Prompt collapse (Cherisse, pitfall #88). DR fires a <prompt> after every
-      // server turn; the parser already suppresses a prompt identical to the
-      // last MAIN text (lastMainText). But a MUTE removes its matched line a
-      // layer later (here, in applyTextMods), so a turn like "<regen msg>" + ">"
-      // becomes just ">" — and several muted regens in a row pile up as bare
-      // ">>>" because the parser saw real text between each prompt. Genie and
-      // Frostbite avoid this by gagging at the display layer, BEFORE the prompt
-      // is committed; we do the same — replay the parser's identical-prompt
-      // dedup here, after mutes, so an orphaned/redundant prompt disappears.
-      // Tracked across batches via lastMainLineRef. Only collapses a prompt
-      // whose text matches the previous displayed prompt (statusprompt drift
-      // like "H>"→"R>" is preserved), and gating on .prompt means repeated real
-      // content is never collapsed. Runs whenever there's main content so the
-      // cross-batch ref stays current even when nothing is dropped.
+      // Prompt collapse (Cherisse pitfall #88; refined by Sekmeht — "the 1st `>`
+      // should show, then any right after should be muted"). A run of `>` lines
+      // with no MAIN text between them shows only its FIRST — every consecutive
+      // one is dropped. Two sources produce consecutive `>`: (a) DR fires a
+      // <prompt> after every server turn, so a move/look/combat flurry that
+      // pushes room title/exits/players/state to SUB-streams (never main) leaves
+      // two bare `>` adjacent in the main scroll; (b) a MUTE removes its matched
+      // MAIN line a layer later (in applyTextMods above), so "<regen msg>" + ">"
+      // repeated becomes bare ">>>". BOTH collapse here because sub-stream/room
+      // activity is not a VISIBLE break (it never lands in main) — only real MAIN
+      // content between two prompts, or statusprompt drift ("H>"→"R>", different
+      // text), keeps both. Genie/Frostbite gag before the prompt is committed; we
+      // replay the parser's dedup at the display layer instead (mutes are a
+      // renderer concern, Principle #2). The parser also suppresses truly
+      // back-to-back identical prompts (lastEmitWasPrompt) so most never reach
+      // here; this is the display-layer authority. Tracked across batches via
+      // lastMainLineRef (a typed command nulls it — appendEcho — so the prompt
+      // returning after a no-output command still shows). Runs whenever there's
+      // main content so the cross-batch ref stays current even when nothing drops.
       if (newMain.length > 0) {
         let prev = lastMainLineRef.current
         for (let i = 0; i < newMain.length; ) {
@@ -3377,7 +3410,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   function sendCommandSequence(commands: string[], delayMs: number) {
     const echoCmd = (cmd: string) => {
-      setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
+      setLines(prev => appendEcho(prev, cmd))
+      // A typed command is a break: the next prompt shows even if identical to the
+      // one it was typed at (guards the stale lastMainLineRef the appendEcho merge
+      // leaves — the merged line is no longer a bare prompt).
+      lastMainLineRef.current = null
       window.api.sendCommand(sessionIdRef.current,cmd)
       logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${cmd}` }])
     }
@@ -3949,7 +3986,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
           }
         }
       } else {
-        setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${part}`, preset: 'command-echo' }], timestamp: Date.now() }]))
+        setLines(prev => appendEcho(prev, part))
+        lastMainLineRef.current = null
         window.api.sendCommand(sessionIdRef.current, part)
         logToSession([{ ts: Date.now(), stream: 'cmd', text: `>${part}` }])
       }
@@ -4036,7 +4074,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   // user always sees what was sent — important for map walks where a
   // sequence of moves fires without any other UI feedback.
   const sendCommand = useCallback((cmd: string) => {
-    setLines(prev => appendTrimmed(prev, [{ id: lineId++, segments: [{ text: `>${cmd}`, preset: 'command-echo' }], timestamp: Date.now() }]))
+    setLines(prev => appendEcho(prev, cmd))
+    lastMainLineRef.current = null   // typed-command break (see sendCommandSequence)
     // Send to sessionIdRef.current, NOT a captured session.sessionId: this
     // callback has []-deps (created once) so a captured id would go stale after
     // a reconnect-in-place (pitfall #69 — new sessionId, no remount), dropping
@@ -4925,7 +4964,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       {showDebug && layoutMode === 'panels' && <DebugPanel events={debugEvents} onClear={clearDebugEvents} rawXmlLines={rawXmlLines} onClearRawXml={clearRawXmlLines} fireLog={fireLog} onClearFireLog={clearFireLog} onGotoFireRule={gotoFireRule} onClose={() => setShowDebug(false)} resizable character={session.character} />}
 
       {showMapOverlay && (
-        <div className="map-overlay-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowMapOverlay(false) }}>
+        <div className="map-overlay-backdrop" {...backdropHandlers(() => setShowMapOverlay(false))}>
           <div className="map-overlay-window">
             <div className="map-overlay-titlebar">
               <span className="map-overlay-title">Maps</span>

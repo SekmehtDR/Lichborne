@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import type { CharacterProfile } from '../profile-types'
 import { loadLastSessionCharacters } from '../profile'
 import ContextMenu from './ContextMenu'
@@ -759,7 +760,7 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
       )}
 
       {pendingDelete && (
-        <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget) setPendingDelete(null) }}>
+        <div className="launcher-connecting" {...backdropHandlers(() => setPendingDelete(null))}>
           <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 420, gap: 12 }}>
             <div className="launcher-connecting-text">
               Delete <span className="launcher-connecting-name">{pendingDelete.name}</span>?

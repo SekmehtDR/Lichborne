@@ -1,8 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
+import { useResizableColumn } from '../hooks/useResizableColumn'
+import { scopedKey } from '../characterScope'
 import hljs from 'highlight.js/lib/core'
 import yamlLang from 'highlight.js/lib/languages/yaml'
+import rubyLang from 'highlight.js/lib/languages/ruby'
 import * as jsYaml from 'js-yaml'
 hljs.registerLanguage('yaml', yamlLang)
+hljs.registerLanguage('ruby', rubyLang)   // .lic scripts (Scripts editor)
 import { createPortal } from 'react-dom'
 import type { SessionInfo } from './LoginScreen'
 import '../styles/lich-panels.css'
@@ -36,7 +41,7 @@ function isLiveSession(s: { state: string; last_heartbeat_at: number | null }): 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type DashTab = 'scripts' | 'variables' | 'settings' | 'profiles'
+export type DashTab = 'scripts' | 'variables' | 'drinfomon' | 'settings' | 'profiles'
 
 interface Props {
   session: SessionInfo
@@ -81,16 +86,41 @@ function SessionPill({ lichPath, session }: { lichPath: string; session: Session
 
 interface ScriptEntry { name: string; source: 'core' | 'custom'; lastModified: number }
 
-function ScriptsTab({ lichPath, onSendCommand }: { lichPath: string; onSendCommand: (cmd: string) => void }) {
+function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; session: SessionInfo; onSendCommand: (cmd: string) => void }) {
   const [scripts, setScripts] = useState<ScriptEntry[]>([])
   const [search,  setSearch]  = useState('')
-  const [filter,  setFilter]  = useState<'all' | 'core' | 'custom'>('all')
+  // Default to CUSTOM: those are the user-owned, safe-to-edit scripts. Core
+  // scripts are Lich's own (a Lich update can overwrite edits), so they're
+  // opt-in via the filter and carry a warning when opened.
+  const [filter,  setFilter]  = useState<'all' | 'core' | 'custom'>('custom')
   const [loading, setLoading] = useState(true)
+  const [selected,        setSelected]        = useState<ScriptEntry | null>(null)
+  const [originalContent, setOriginalContent] = useState<string | null>(null)
+  const [editContent,     setEditContent]     = useState<string | null>(null)
+  const [loadingContent,  setLoadingContent]  = useState(false)
+  const [showDiff,        setShowDiff]        = useState(false)
+  const [showAllDiff,     setShowAllDiff]     = useState(false)
+  const [saving,          setSaving]          = useState(false)
+  const [saveError,       setSaveError]       = useState<string | null>(null)
+  const [yamlSearch,      setYamlSearch]      = useState('')
+  const [lastFoundLine,   setLastFoundLine]   = useState<number | null>(null)
+  // Arguments to pass when running the selected script (e.g. `bank` for `;go2 bank`).
+  // Everything after the script name on the command line. Reset per selection.
+  const [runArgs,         setRunArgs]         = useState('')
+  const viewRef = useRef<YamlViewHandle | null>(null)
 
   useEffect(() => {
     if (!lichPath) { setLoading(false); return }
     window.api.listLichScripts(lichPath).then(list => { setScripts(list); setLoading(false) })
   }, [lichPath])
+
+  const runSelected = () => {
+    if (!selected) return
+    const args = runArgs.trim()
+    onSendCommand(`;${selected.name}${args ? ' ' + args : ''}`)
+  }
+
+  const { width: listWidth, dragging, dividerProps, reset: resetWidth } = useResizableColumn(scopedKey(session.character, 'ldScriptsSplit'))
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -100,34 +130,166 @@ function ScriptsTab({ lichPath, onSendCommand }: { lichPath: string; onSendComma
     })
   }, [scripts, search, filter])
 
+  const lichDir = lichPath ? lichPath.replace(/[/\\][^/\\]+$/, '') : ''
+  const scriptPath = (s: ScriptEntry) => `${lichDir}\\scripts${s.source === 'custom' ? '\\custom' : ''}\\${s.name}.lic`
+  const isEditing = editContent !== null
+
+  async function selectScript(s: ScriptEntry) {
+    setSelected(s)
+    setOriginalContent(null); setEditContent(null); setShowDiff(false); setSaveError(null)
+    setLoadingContent(true); setLastFoundLine(null); setRunArgs('')
+    viewRef.current?.resetSearch()
+    const text = await window.api.readFile(scriptPath(s))
+    setOriginalContent((text ?? '(could not read file)').replace(/\r\n/g, '\n'))
+    setLoadingContent(false)
+  }
+
+  const diff = useMemo<DiffEntry[] | null | undefined>(() => {
+    if (!showDiff || originalContent === null || editContent === null) return undefined
+    return computeDiff(originalContent, editContent)
+  }, [showDiff, originalContent, editContent])
+
+  useEffect(() => {
+    if (lastFoundLine == null) return
+    viewRef.current?.scrollToLine(lastFoundLine)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing])
+
+  const origLines = originalContent?.split('\n').length ?? 0
+  const editLines = editContent?.split('\n').length ?? 0
+
+  async function confirmSave() {
+    if (!selected || editContent === null) return
+    setSaving(true); setSaveError(null)
+    try {
+      await window.api.writeLichScript(lichPath, selected.name, selected.source, editContent)
+      setOriginalContent(editContent)
+      setEditContent(null)
+      setShowDiff(false)
+      // Refresh the mtime in the list.
+      window.api.listLichScripts(lichPath).then(setScripts)
+    } catch (e) {
+      setSaveError(String(e))
+    } finally { setSaving(false) }
+  }
+
   if (!lichPath) return <div className="ld-empty">Lich path not configured — check Settings.</div>
   if (loading)   return <div className="ld-empty">Loading…</div>
 
   return (
-    <>
-      <div className="ld-toolbar">
-        <input className="lp-search" placeholder="Filter scripts…" value={search} onChange={e => setSearch(e.target.value)} />
-        <div className="lp-filter-tabs">
-          {(['all', 'custom', 'core'] as const).map(f => (
+    <div className="ld-profiles-split">
+      {/* Left: script list */}
+      <div className="ld-profiles-list" style={{ width: listWidth }}>
+        <div className="ld-toolbar ld-toolbar--compact ld-profiles-toolbar">
+          <input className="lp-search" placeholder="Filter scripts…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="lp-filter-tabs lp-filter-tabs--rail">
+          {(['custom', 'core', 'all'] as const).map(f => (
             <button key={f} className={`lp-filter-tab${filter === f ? ' lp-filter-tab--active' : ''}`}
               onClick={() => setFilter(f)}>{f}</button>
           ))}
         </div>
+        <div className="lp-body">
+          {filtered.length === 0
+            ? <div className="ld-empty">No scripts match.</div>
+            : filtered.map(s => (
+              <div key={`${s.source}/${s.name}`}
+                className={`lp-row${selected?.name === s.name && selected?.source === s.source ? ' lp-row--selected' : ''}${isEditing && !(selected?.name === s.name && selected?.source === s.source) ? ' lp-row--locked' : ''}`}
+                onClick={() => { if (!isEditing) selectScript(s) }}
+              >
+                <span className={`lp-source-badge lp-source-badge--${s.source}`}>{s.source}</span>
+                <span className="lp-script-name">{s.name}</span>
+                <span className="lp-modified">{fmtDate(s.lastModified)}</span>
+              </div>
+            ))
+          }
+        </div>
+        <div className="lp-footer">{filtered.length} of {scripts.length} scripts</div>
       </div>
-      <div className="lp-body">
-        {filtered.length === 0
-          ? <div className="ld-empty">No scripts match.</div>
-          : filtered.map(s => (
-            <div key={s.name} className="lp-row" onClick={() => onSendCommand(`;${s.name}`)}>
-              <span className={`lp-source-badge lp-source-badge--${s.source}`}>{s.source}</span>
-              <span className="lp-script-name">{s.name}</span>
-              <span className="lp-modified">{fmtDate(s.lastModified)}</span>
+
+      <div className={`ld-split-divider${dragging ? ' ld-split-divider--dragging' : ''}`}
+        {...dividerProps} onDoubleClick={resetWidth} title="Drag to resize · double-click to reset" />
+
+      {/* Right: preview / editor */}
+      <div className="ld-profiles-preview ld-profiles-preview--editor">
+        {showDiff && (
+          <div className="ld-diff-overlay">
+            <div className="ld-diff-header">
+              <span className="ld-diff-title">Overwrite script:</span>
+              <code className="ld-confirm-path">{selected ? scriptPath(selected) : ''}</code>
             </div>
-          ))
-        }
+            <div className="ld-diff-body">
+              {diff === undefined
+                ? <div className="ld-diff-message">Computing…</div>
+                : <DiffView diff={diff} aLen={origLines} bLen={editLines} showAll={showAllDiff} />}
+            </div>
+            {saveError && <div className="ld-error ld-diff-error">{saveError}</div>}
+            <div className="ld-diff-footer">
+              <button className="ld-btn ld-btn--secondary" onClick={() => setShowAllDiff(v => !v)}>
+                {showAllDiff ? 'Changes only' : 'Show all lines'}
+              </button>
+              <span className="ld-edit-gap" />
+              <button className="ld-btn ld-btn--secondary" onClick={() => setShowDiff(false)} disabled={saving}>Go Back</button>
+              <button className="ld-btn ld-btn--danger" onClick={confirmSave} disabled={saving}>
+                {saving ? 'Saving…' : 'Overwrite File'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Edit bar */}
+        {!loadingContent && originalContent !== null && selected && (
+          <div className={`ld-profile-edit-bar${isEditing ? ' ld-profile-edit-bar--editing' : ''}`}>
+            {isEditing ? (
+              <>
+                <YamlSearchField value={yamlSearch}
+                  onChange={v => { setYamlSearch(v); viewRef.current?.resetSearch() }}
+                  onFind={() => { const line = viewRef.current?.find(yamlSearch) ?? -1; if (line >= 0) setLastFoundLine(line) }} />
+                <span className="ld-edit-gap" />
+                <span className="ld-edit-mode-note">ruby</span>
+                <button className="ld-btn ld-btn--secondary" onClick={() => { setEditContent(null); setSaveError(null) }}>Cancel</button>
+                <button className="ld-btn ld-btn--primary" onClick={() => { setShowAllDiff(false); setShowDiff(true) }}>Review &amp; Save…</button>
+              </>
+            ) : (
+              <>
+                <span className="ld-profile-name">{selected.name}<span className={`lp-source-badge lp-source-badge--${selected.source}`}>{selected.source}</span></span>
+                <YamlSearchField value={yamlSearch}
+                  onChange={v => { setYamlSearch(v); viewRef.current?.resetSearch() }}
+                  onFind={() => { const line = viewRef.current?.find(yamlSearch) ?? -1; if (line >= 0) setLastFoundLine(line) }} />
+                <span className="ld-edit-gap" />
+                <input
+                  className="ld-run-args"
+                  placeholder="arguments…"
+                  title={`Runs ;${selected.name}${runArgs.trim() ? ' ' + runArgs.trim() : ' <args>'}`}
+                  value={runArgs}
+                  onChange={e => setRunArgs(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') runSelected() }}
+                />
+                <button className="ld-btn ld-btn--secondary" onClick={runSelected}>▶ Run</button>
+                <button className="ld-btn ld-btn--secondary" onClick={() => setEditContent(originalContent!)}>Edit</button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Core-script warning */}
+        {selected?.source === 'core' && originalContent !== null && (
+          <div className="ld-script-warning">
+            ⚠ <strong>Core Lich script.</strong> A Lich update can overwrite your changes, and edits here can affect Lich itself. Prefer copying it into <code>scripts/custom/</code> and editing that.
+          </div>
+        )}
+
+        {/* Content */}
+        {loadingContent && <div className="ld-empty">Loading…</div>}
+        {!loadingContent && originalContent === null && <div className="ld-empty">Select a script to view or edit.</div>}
+        {!loadingContent && originalContent !== null && !isEditing && (
+          <YamlHighlight ref={viewRef} content={originalContent} language="ruby" />
+        )}
+        {!loadingContent && isEditing && (
+          <EditorWithGutter ref={viewRef} value={editContent!} onChange={setEditContent} language="ruby" />
+        )}
       </div>
-      <div className="lp-footer">{filtered.length} of {scripts.length} scripts · click to run</div>
-    </>
+    </div>
   )
 }
 
@@ -420,45 +582,84 @@ function VarsTab({ lichPath, session, onRunCommand }: { lichPath: string; sessio
 
 // ── Settings tab ──────────────────────────────────────────────────────────────
 
+// Friendly labels + plain-language descriptions for the feature flags that
+// actually matter to a player. Keyed by the flag name WITHOUT the
+// `feature_flag:` prefix. The DISPLAY flags are the useful ones — they control
+// what Lich injects into your game text (Knowledge.md §6).
+const LICH_FLAG_INFO: Record<string, { label: string; desc: string }> = {
+  display_lichid:      { label: 'Show Lich room IDs',      desc: 'Injects Lich’s internal room number into room titles (e.g. "[Town Square - 500]"). Lichborne reads it for the Lich Map.' },
+  display_uid:         { label: 'Show room UIDs',           desc: 'Injects the game’s room UID (e.g. "(u12345)") into room titles. Also used by the Lich Map for reliable tracking.' },
+  display_exits:       { label: 'Show obvious exits',       desc: 'Appends the obvious-exits line after room descriptions.' },
+  display_inline_exp:  { label: 'Inline experience',        desc: 'Shows experience gains inline as you earn them (DragonRealms).' },
+  log_enabled:         { label: 'Script logging',           desc: 'Lich writes per-script log files.' },
+  debug_messaging:     { label: 'Debug messaging',          desc: 'Extra Lich debug output.' },
+  session_summary_store_and_reporting: { label: 'Session reporting', desc: 'Lich records running sessions to lich.db3 (drives Lichborne’s multi-session awareness). Off by default.' },
+}
+
+// Internal bookkeeping keys — not useful to surface (maintenance timestamps,
+// one-time init flags). Hidden unless "Show internal" is on.
+const LICH_SETTING_NOISE = new Set(['db_maint_last_at', 'db_maint_last_note', 'did_trusted_defaults', 'win32_launch_method'])
+
 function SettingsTab({ lichPath }: { lichPath: string }) {
   const [rows,    setRows]    = useState<{ name: string; value: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [search,  setSearch]  = useState('')
+  const [showInternal, setShowInternal] = useState(false)
 
   useEffect(() => {
     if (!lichPath) { setLoading(false); return }
     window.api.lichGetSettings(lichPath).then(r => { setRows(r); setLoading(false) })
   }, [lichPath])
 
-  const { flags, other } = useMemo(() => {
+  function isTruthy(v: string) { return /^(1|true|on|yes)$/i.test(v) }
+
+  const { flags, other, hiddenCount } = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const filtered = rows.filter(r => !q || r.name.includes(q) || r.value.includes(q))
+    let hidden = 0
+    const visible = rows.filter(r => {
+      const bare = r.name.replace('feature_flag:', '')
+      if (!showInternal && LICH_SETTING_NOISE.has(bare)) { hidden++; return false }
+      return !q || r.name.toLowerCase().includes(q) || r.value.toLowerCase().includes(q)
+        || (LICH_FLAG_INFO[bare]?.label.toLowerCase().includes(q) ?? false)
+    })
     return {
-      flags: filtered.filter(r => r.name.startsWith('feature_flag:')),
-      other: filtered.filter(r => !r.name.startsWith('feature_flag:')),
+      flags: visible.filter(r => r.name.startsWith('feature_flag:')),
+      other: visible.filter(r => !r.name.startsWith('feature_flag:')),
+      hiddenCount: hidden,
     }
-  }, [rows, search])
+  }, [rows, search, showInternal])
 
   if (!lichPath) return <div className="ld-empty">Lich path not configured.</div>
   if (loading)   return <div className="ld-empty">Loading…</div>
 
-  function isTruthy(v: string) { return /^(1|true|on|yes)$/i.test(v) }
-
   return (
     <>
+      <div className="ld-info-intro">
+        Lich&rsquo;s own settings and feature flags, read from <code>lich.db3</code>. The <strong>display</strong> flags control what
+        Lich injects into your game text (room IDs, exits, inline experience). This view is read-only — toggle a flag with Lich&rsquo;s
+        own commands in-game.
+      </div>
       <div className="ld-toolbar">
         <input className="lp-search" placeholder="Filter settings…" value={search} onChange={e => setSearch(e.target.value)} />
+        <label className="ld-inline-check" title="Show maintenance timestamps and internal init flags">
+          <input type="checkbox" checked={showInternal} onChange={e => setShowInternal(e.target.checked)} />
+          Show internal
+        </label>
       </div>
       <div className="lp-body">
         {flags.length > 0 && (
           <>
             <div className="ld-section-label">Feature Flags</div>
             {flags.map(r => {
-              const name = r.name.replace('feature_flag:', '')
+              const bare = r.name.replace('feature_flag:', '')
+              const info = LICH_FLAG_INFO[bare]
               const on   = isTruthy(r.value)
               return (
-                <div key={r.name} className="ld-setting-row">
-                  <span className="ld-setting-name">{name}</span>
+                <div key={r.name} className="ld-setting-row ld-setting-row--flag">
+                  <div className="ld-setting-main">
+                    <span className="ld-setting-name">{info?.label ?? bare}</span>
+                    {info && <span className="ld-setting-desc">{info.desc}</span>}
+                  </div>
                   <span className={`ld-flag-badge${on ? ' ld-flag-badge--on' : ' ld-flag-badge--off'}`}>
                     {on ? 'on' : 'off'}
                   </span>
@@ -479,10 +680,12 @@ function SettingsTab({ lichPath }: { lichPath: string }) {
           </>
         )}
         {flags.length === 0 && other.length === 0 && (
-          <div className="ld-empty">No settings found.</div>
+          <div className="ld-empty">No settings match.</div>
         )}
       </div>
-      <div className="lp-footer">{rows.length} settings · read-only</div>
+      <div className="lp-footer">
+        {rows.length} settings · read-only{!showInternal && hiddenCount > 0 ? ` · ${hiddenCount} internal hidden` : ''}
+      </div>
     </>
   )
 }
@@ -535,7 +738,7 @@ function scrollElementToLine(scrollEl: HTMLElement, lineIndex: number, styleEl: 
   scrollEl.scrollTop = Math.max(0, top - (scrollEl.clientHeight / 2) + (lh / 2))
 }
 
-const YamlHighlight = forwardRef<YamlViewHandle, { content: string }>(function YamlHighlight({ content }, ref) {
+const YamlHighlight = forwardRef<YamlViewHandle, { content: string; language?: string }>(function YamlHighlight({ content, language = 'yaml' }, ref) {
   const { contentRef: setContentRef, gutterRef, onScroll } = useGutterSync()
   // Scroll moved from the pre to the wrapping div so we can absolutely
   // position the line-highlight overlay inside the same scroll container —
@@ -552,7 +755,9 @@ const YamlHighlight = forwardRef<YamlViewHandle, { content: string }>(function Y
   // is what we need.
   const [lineMetrics, setLineMetrics] = useState<{ lineHeight: number; paddingTop: number }>({ lineHeight: 0, paddingTop: 0 })
 
-  const html  = useMemo(() => hljs.highlight(content, { language: 'yaml' }).value, [content])
+  const html  = useMemo(() => {
+    try { return hljs.highlight(content, { language }).value } catch { return content }
+  }, [content, language])
   const lineList = useMemo(() => content.split('\n'), [content])
 
   const setScrollRefs = useCallback((el: HTMLDivElement | null) => {
@@ -627,16 +832,37 @@ const YamlHighlight = forwardRef<YamlViewHandle, { content: string }>(function Y
   )
 })
 
-const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (v: string) => void }>(function EditorWithGutter({ value, onChange }, ref) {
-  const { contentRef: setContentRef, gutterRef, onScroll } = useGutterSync()
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>]/g, c => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'))
+}
+
+// A SYNTAX-HIGHLIGHTED editor: a transparent <textarea> (caret + input) layered
+// exactly over a highlighted <pre> (the colors), scroll-synced (the react-simple-
+// code-editor pattern). Caret alignment depends on the two layers sharing
+// byte-identical font metrics — see .ld-editor-hl / .ld-editor-input in
+// lich-panels.css; change them together. `language` picks the hljs grammar
+// ('yaml' for profiles, 'ruby' for .lic scripts).
+const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (v: string) => void; language?: string }>(function EditorWithGutter({ value, onChange, language = 'yaml' }, ref) {
+  const { contentRef: setContentRef, gutterRef, onScroll: syncGutter } = useGutterSync()
   const taRef = useRef<HTMLTextAreaElement | null>(null)
+  const preRef = useRef<HTMLPreElement | null>(null)
   const lastMatchRef = useRef(-1)  // character offset of the last match, NOT line index
   const lineList = useMemo(() => value.split('\n'), [value])
+  const html = useMemo(() => {
+    try { return hljs.highlight(value, { language }).value } catch { return escapeHtml(value) }
+  }, [value, language])
 
   const setRefs = useCallback((el: HTMLTextAreaElement | null) => {
     setContentRef(el)
     taRef.current = el
   }, [setContentRef])
+
+  // The highlighted layer + the gutter scroll in lockstep with the textarea.
+  const onScroll = useCallback(() => {
+    syncGutter()
+    const ta = taRef.current, pre = preRef.current
+    if (ta && pre) { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft }
+  }, [syncGutter])
 
   useImperativeHandle(ref, () => ({
     find(term: string) {
@@ -671,13 +897,21 @@ const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (
   return (
     <div className="ld-code-wrap">
       <Gutter lines={lineList.length} gutterRef={gutterRef} />
-      <textarea ref={setRefs}
-        className="ld-yaml-editor"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onScroll={onScroll}
-        spellCheck={false}
-      />
+      <div className="ld-editor-stack">
+        {/* Highlighted layer (behind). Trailing newline so the last line's height
+            matches the textarea when the caret sits on a fresh empty line. */}
+        <pre ref={preRef} className="ld-editor-hl" aria-hidden dangerouslySetInnerHTML={{ __html: html + '\n' }} />
+        {/* Input layer (on top): transparent text, visible caret. wrap=off keeps
+            it in lockstep with the pre's white-space:pre (no soft-wrap). */}
+        <textarea ref={setRefs}
+          className="ld-editor-input"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onScroll={onScroll}
+          spellCheck={false}
+          wrap="off"
+        />
+      </div>
     </div>
   )
 })
@@ -789,10 +1023,14 @@ function DiffView({ diff, aLen, bLen, showAll }: { diff: DiffEntry[] | null; aLe
   return <>{nodes}</>
 }
 
-function ProfilesTab({ lichPath }: { lichPath: string }) {
+function ProfilesTab({ lichPath, session }: { lichPath: string; session: SessionInfo }) {
   const [profiles,        setProfiles]        = useState<string[]>([])
   const [selected,        setSelected]        = useState<string | null>(null)
-  const [search,          setSearch]          = useState('')
+  // Default the filter to the CONNECTED character so you land on your own files
+  // (Sekmeht). A one-time focus clears it (below) so changing character/browsing
+  // everything is one click; the dropdown re-applies any character's name.
+  const [search,          setSearch]          = useState(session.character || '')
+  const clearedOnFocus = useRef(false)
   const [loading,         setLoading]         = useState(true)
   const [originalContent, setOriginalContent] = useState<string | null>(null)
   const [editContent,     setEditContent]     = useState<string | null>(null)
@@ -818,6 +1056,15 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
     const q = search.trim().toLowerCase()
     return profiles.filter(p => !q || p.toLowerCase().includes(q))
   }, [profiles, search])
+
+  // Unique character names — the part before the first '-' in
+  // "<Character>-<something>.yaml" (e.g. "Sekmeht-setup.yaml" → "Sekmeht").
+  // Drives the quick-jump dropdown that re-points the filter.
+  const charNames = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of profiles) { const m = /^([^-]+)-/.exec(p); if (m) set.add(m[1]) }
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [profiles])
 
   async function selectProfile(name: string) {
     setSelected(name)
@@ -875,6 +1122,8 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
   const origLines = originalContent?.split('\n').length ?? 0
   const editLines = editContent?.split('\n').length ?? 0
 
+  const { width: listWidth, dragging, dividerProps, reset: resetWidth } = useResizableColumn(scopedKey(session.character, 'ldProfilesSplit'))
+
   async function confirmSave() {
     if (!selected || editContent === null) return
     setSaving(true); setSaveError(null)
@@ -896,9 +1145,31 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
   return (
     <div className="ld-profiles-split">
       {/* Left: file list */}
-      <div className="ld-profiles-list">
-        <div className="ld-toolbar ld-toolbar--compact">
-          <input className="lp-search" placeholder="Filter profiles…" value={search} onChange={e => setSearch(e.target.value)} />
+      <div className="ld-profiles-list" style={{ width: listWidth }}>
+        <div className="ld-toolbar ld-toolbar--compact ld-profiles-toolbar">
+          <input
+            className="lp-search"
+            placeholder="Filter profiles…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onFocus={() => {
+              // First focus on the auto-applied character default clears it so
+              // browsing the full list is one click (Sekmeht's ask).
+              if (!clearedOnFocus.current && search === (session.character || '')) setSearch('')
+              clearedOnFocus.current = true
+            }}
+          />
+          {charNames.length > 1 && (
+            <select
+              className="ld-char-select"
+              title="Jump to a character's profiles"
+              value={charNames.includes(search) ? search : ''}
+              onChange={e => { setSearch(e.target.value); clearedOnFocus.current = true }}
+            >
+              <option value="">All characters</option>
+              {charNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          )}
         </div>
         <div className="lp-body">
           {filtered.map(p => (
@@ -913,6 +1184,9 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
         </div>
         <div className="lp-footer">{profiles.length} profiles</div>
       </div>
+
+      <div className={`ld-split-divider${dragging ? ' ld-split-divider--dragging' : ''}`}
+        {...dividerProps} onDoubleClick={resetWidth} title="Drag to resize · double-click to reset" />
 
       {/* Right: preview / editor */}
       <div className="ld-profiles-preview ld-profiles-preview--editor">
@@ -962,7 +1236,7 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
                   }}
                 />
                 <span className="ld-edit-gap" />
-                <span className="ld-edit-mode-note">plain text</span>
+                <span className="ld-edit-mode-note">yaml</span>
                 <button className="ld-btn ld-btn--secondary" onClick={validateYaml}>Validate</button>
                 <button className="ld-btn ld-btn--secondary" onClick={() => { setEditContent(null); setSaveError(null); setValidation(null) }}>Cancel</button>
                 <button className="ld-btn ld-btn--primary"   onClick={() => { setShowAllDiff(false); setShowDiff(true) }}>Review & Save…</button>
@@ -1010,13 +1284,163 @@ function ProfilesTab({ lichPath }: { lichPath: string }) {
   )
 }
 
+// ── DR Infomon tab ────────────────────────────────────────────────────────────
+//
+// A CATALOG of the game-state values Lich's `drinfomon` scripts parse and keep in
+// memory — DRStats / DRSkill / DRSpells / DRRoom (lib/dragonrealms/drinfomon/*.rb).
+// These are NOT in lich.db3 (unlike Vars) — they're in-memory Ruby `@@` class vars
+// (Knowledge.md §16), so this tab shows WHAT is collected + HOW to use it in a
+// script, and lets you check any value LIVE by pre-filling `;e echo <expr>` in the
+// command bar for you to send (the same review-and-send pattern the Scripts tab
+// uses — no silent injection). Accessors mined from the drinfomon source; kept as
+// a hand-curated reference so descriptions can explain each in plain language.
+
+interface InfoItem { expr: string; check?: string; desc: string }
+interface InfoGroup { module: string; blurb: string; items: InfoItem[] }
+
+// `check` overrides the pre-filled command when the accessor needs an argument
+// (e.g. a skill name) or reads better fully-qualified. Otherwise `;e echo <expr>`.
+const DRINFOMON_CATALOG: InfoGroup[] = [
+  {
+    module: 'DRStats', blurb: 'Your character sheet — identity, stats, vitals, and combat state, parsed from the game as it updates.',
+    items: [
+      { expr: 'DRStats.name', desc: 'Character name.' },
+      { expr: 'DRStats.race', desc: 'Race (e.g. "Human").' },
+      { expr: 'DRStats.guild', desc: 'Guild name (e.g. "Barbarian", "Moon Mage").' },
+      { expr: 'DRStats.gender', desc: 'Character gender.' },
+      { expr: 'DRStats.age', desc: 'Age in years (integer).' },
+      { expr: 'DRStats.circle', desc: 'Current circle / level (integer).' },
+      { expr: 'DRStats.strength', desc: 'Strength stat.' },
+      { expr: 'DRStats.reflex', desc: 'Reflex stat.' },
+      { expr: 'DRStats.agility', desc: 'Agility stat.' },
+      { expr: 'DRStats.charisma', desc: 'Charisma stat.' },
+      { expr: 'DRStats.discipline', desc: 'Discipline stat.' },
+      { expr: 'DRStats.wisdom', desc: 'Wisdom stat.' },
+      { expr: 'DRStats.intelligence', desc: 'Intelligence stat.' },
+      { expr: 'DRStats.stamina', desc: 'Stamina stat.' },
+      { expr: 'DRStats.health', desc: 'Health % (0–100).' },
+      { expr: 'DRStats.mana', desc: 'Mana / attunement % (0–100).' },
+      { expr: 'DRStats.spirit', desc: 'Spirit % (0–100).' },
+      { expr: 'DRStats.concentration', desc: 'Concentration % (0–100).' },
+      { expr: 'DRStats.fatigue', desc: 'Fatigue % (0–100).' },
+      { expr: 'DRStats.encumbrance', desc: 'Encumbrance descriptor (e.g. "None", "Light").' },
+      { expr: 'DRStats.balance', desc: 'Balance level (0–10; higher = more balanced).' },
+      { expr: 'DRStats.position', desc: 'Body position (standing / sitting / kneeling / prone).' },
+      { expr: 'DRStats.luck', desc: 'Luck value.' },
+      { expr: 'DRStats.favors', desc: 'Accumulated favors (integer).' },
+      { expr: 'DRStats.tdps', desc: 'TDPs — training points available (integer).' },
+      { expr: 'DRStats.native_mana', desc: 'Native mana type for your guild.' },
+      { expr: 'DRStats.moon_mage?', desc: 'Guild check — true if you are a Moon Mage. (One per guild: barbarian?, bard?, cleric?, empath?, necromancer?, paladin?, ranger?, thief?, trader?, warrior_mage?, commoner?)' },
+    ],
+  },
+  {
+    module: 'DRSkill', blurb: 'Skills and experience — ranks, learning %, session gains, and rested experience.',
+    items: [
+      { expr: "DRSkill.getrank('Skill')", check: "DRSkill.getrank('Athletics')", desc: 'Rank in a named skill (e.g. "Athletics", "Small Edged"). Integer.' },
+      { expr: "DRSkill.getxp('Skill')", check: "DRSkill.getxp('Athletics')", desc: 'Current learning-rate / mindstate for a skill (0–34).' },
+      { expr: "DRSkill.getpercent('Skill')", check: "DRSkill.getpercent('Athletics')", desc: 'Percent progress toward the next rank in a skill.' },
+      { expr: 'DRSkill.list', desc: 'All skills Lich is tracking (array).' },
+      { expr: 'DRSkill.gained_exp', desc: 'Experience gained this session, per skill.' },
+      { expr: 'DRSkill.gained_skills', desc: 'Skills that have gained ranks this session.' },
+      { expr: 'DRSkill.rested_exp_usable', desc: 'Rested experience currently usable.' },
+      { expr: 'DRSkill.rested_exp_stored', desc: 'Rested experience banked.' },
+      { expr: 'DRSkill.exp_modifiers', desc: 'Active experience modifiers (buffs/debuffs affecting learning).' },
+    ],
+  },
+  {
+    module: 'DRSpells', blurb: 'Magic — active spells, known abilities, and guild-specific magic state.',
+    items: [
+      { expr: 'DRSpells.active_spells', desc: 'Currently active spells and their remaining durations (hash).' },
+      { expr: 'DRSpells.known_spells', desc: 'Spells your character knows (array).' },
+      { expr: 'DRSpells.known_feats', desc: 'Feats your character knows (array).' },
+      { expr: 'DRSpells.slivers', desc: 'Moon Mage slivers, when applicable.' },
+      { expr: 'DRSpells.stellar_percentage', desc: 'Moon Mage stellar-power percentage.' },
+    ],
+  },
+  {
+    module: 'DRRoom', blurb: 'The room you are in — its title, exits, and everyone/everything Lich sees here.',
+    items: [
+      { expr: 'DRRoom.title', desc: 'Current room title.' },
+      { expr: 'DRRoom.description', desc: 'Current room description text.' },
+      { expr: 'DRRoom.exits', desc: 'Obvious exits (array of directions).' },
+      { expr: 'DRRoom.npcs', desc: 'Living creatures / NPCs in the room (array).' },
+      { expr: 'DRRoom.dead_npcs', desc: 'Dead creatures still in the room (array).' },
+      { expr: 'DRRoom.pcs', desc: 'Other players in the room (array).' },
+      { expr: 'DRRoom.group_members', desc: 'Members of your group present.' },
+      { expr: 'DRRoom.room_objs', desc: 'Notable objects in the room (array).' },
+      { expr: 'DRRoom.pcs_prone', desc: 'Players who are prone.' },
+      { expr: 'DRRoom.pcs_sitting', desc: 'Players who are sitting.' },
+    ],
+  },
+]
+
+function DrInfomonTab({ lichPath, session, onSendCommand }: { lichPath: string; session: SessionInfo; onSendCommand: (cmd: string) => void }) {
+  const [search, setSearch] = useState('')
+
+  const groups = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return DRINFOMON_CATALOG
+    return DRINFOMON_CATALOG
+      .map(g => ({ ...g, items: g.items.filter(it => it.expr.toLowerCase().includes(q) || it.desc.toLowerCase().includes(q)) }))
+      .filter(g => g.items.length > 0 || g.module.toLowerCase().includes(q))
+  }, [search])
+
+  const total = DRINFOMON_CATALOG.reduce((n, g) => n + g.items.length, 0)
+  const shown = groups.reduce((n, g) => n + g.items.length, 0)
+  // "Check live" only makes sense against the CONNECTED character's own Lich (the
+  // ;e runs in that session's memory). Gate like the Vars editor.
+  const canCheck = session.useLich
+
+  return (
+    <>
+      <div className="ld-info-intro">
+        These are the live game values Lich's <strong>drinfomon</strong> scripts parse and keep in memory — use any of them in your
+        own Lich scripts (e.g. <code>if DRStats.health &lt; 50</code>). They live in Lich's memory, not a file, so
+        {canCheck ? <> click <strong>▶ check</strong> to drop <code>;e echo &lt;value&gt;</code> in your command bar and see the current value.</>
+                  : <> connect through Lich to check a value live.</>}
+      </div>
+      <div className="ld-toolbar">
+        <input className="lp-search" placeholder="Filter values…" value={search} onChange={e => setSearch(e.target.value)} />
+      </div>
+      <div className="lp-body">
+        {groups.length === 0 && <div className="ld-empty">No values match.</div>}
+        {groups.map(g => (
+          <div key={g.module} className="ld-info-group">
+            <div className="ld-info-group-head">
+              <span className="ld-info-module">{g.module}</span>
+              <span className="ld-info-blurb">{g.blurb}</span>
+            </div>
+            {g.items.map(it => (
+              <div key={it.expr} className="ld-info-row">
+                <code className="ld-info-expr">{it.expr}</code>
+                <span className="ld-info-desc">{it.desc}</span>
+                {canCheck && (
+                  <button
+                    className="ld-info-check"
+                    title={`Send ;e echo ${it.check ?? it.expr} to see the current value`}
+                    onClick={() => onSendCommand(`;e echo ${it.check ?? it.expr}`)}
+                  >▶ check</button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="lp-footer">
+        {shown === total ? `${total} values` : `${shown} of ${total} values`} · from Lich&rsquo;s drinfomon (in-memory, not a file)
+      </div>
+    </>
+  )
+}
+
 // ── Dashboard shell ───────────────────────────────────────────────────────────
 
 const TABS: { id: DashTab; label: string }[] = [
-  { id: 'scripts',   label: 'Scripts'   },
-  { id: 'variables', label: 'Variables' },
-  { id: 'settings',  label: 'Settings'  },
-  { id: 'profiles',  label: 'Profiles'  },
+  { id: 'scripts',   label: 'Scripts'    },
+  { id: 'variables', label: 'Variables'  },
+  { id: 'drinfomon', label: 'DR Infomon' },
+  { id: 'settings',  label: 'Settings'   },
+  { id: 'profiles',  label: 'Profile (YAMLs)' },
 ]
 
 export default function LichDashboard({ session, initialTab = 'scripts', onClose, onSendCommand, onRunCommand }: Props) {
@@ -1024,7 +1448,7 @@ export default function LichDashboard({ session, initialTab = 'scripts', onClose
   const [tab, setTab] = useState<DashTab>(initialTab)
 
   const modal = (
-    <div className="lp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="lp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="lp-modal lp-modal--dashboard">
 
         {/* Header */}
@@ -1042,10 +1466,11 @@ export default function LichDashboard({ session, initialTab = 'scripts', onClose
 
         {/* Body — each tab manages its own scroll */}
         <div className="ld-body">
-          {tab === 'scripts'   && <ScriptsTab  lichPath={lichPath} onSendCommand={onSendCommand} />}
-          {tab === 'variables' && <VarsTab     lichPath={lichPath} session={session} onRunCommand={onRunCommand} />}
-          {tab === 'settings'  && <SettingsTab lichPath={lichPath} />}
-          {tab === 'profiles'  && <ProfilesTab lichPath={lichPath} />}
+          {tab === 'scripts'   && <ScriptsTab   lichPath={lichPath} session={session} onSendCommand={onSendCommand} />}
+          {tab === 'variables' && <VarsTab      lichPath={lichPath} session={session} onRunCommand={onRunCommand} />}
+          {tab === 'drinfomon' && <DrInfomonTab lichPath={lichPath} session={session} onSendCommand={onSendCommand} />}
+          {tab === 'settings'  && <SettingsTab  lichPath={lichPath} />}
+          {tab === 'profiles'  && <ProfilesTab  lichPath={lichPath} session={session} />}
         </div>
 
       </div>

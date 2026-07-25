@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import type { CharacterProfile } from '../profile-types'
 import { flushPendingProfileSaves, exportSharedProfile } from '../profile'
@@ -392,7 +393,7 @@ export default function ProfileTransferModal({ sessions, reloadSession, onClose 
   }
 
   const modal = (
-    <div className="pt-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="pt-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="pt-modal">
         <div className="pt-header">
           <span className="pt-title">Transfer</span>

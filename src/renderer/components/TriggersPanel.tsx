@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
+import { ResizeDivider } from './ResizeDivider'
 import { createPortal } from 'react-dom'
 import {
   type TriggerRule, type TriggerAction, type StateGate, type ActionType,
@@ -11,6 +13,7 @@ import {
 } from '../triggers'
 import { playWavFile } from '../hooks/useTriggerEngine'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
 import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
 import { analyzeTriggers } from '../automationHealth'
 import GroupPicker from './GroupPicker'
@@ -640,6 +643,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
           </div>
 
           {/* Detail */}
+          <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
           <div className="tp-detail">
             {!draft ? (
               <div className="tp-no-selection">Select a trigger or create a new one.</div>
@@ -974,7 +978,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
   if (inline) return content
 
   const modal = (
-    <div className="tp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="tp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="tp-modal">
         <div className="tp-header">
           <span className="tp-title">Triggers</span>

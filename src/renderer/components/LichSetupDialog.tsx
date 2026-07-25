@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import { type AdvancedSettings, loadAdvanced, saveAdvanced } from '../lichSettings'
 import { exportSharedProfile } from '../profile'
@@ -25,7 +26,7 @@ export default function LichSetupDialog({ onClose }: Props) {
   }, [adv])
 
   return createPortal(
-    <div className="wiz-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="wiz-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="wiz-modal" style={{ width: 520 }}>
         <div className="wiz-header">
           <span className="wiz-title">Lich Setup</span>

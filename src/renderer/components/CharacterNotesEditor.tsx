@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import '../styles/character-notes-editor.css'
 
@@ -74,7 +75,7 @@ export default function CharacterNotesEditor({
   }
 
   return createPortal(
-    <div className="cne-backdrop" onClick={e => { if (e.target === e.currentTarget && !busy) onCancel() }}>
+    <div className="cne-backdrop" {...backdropHandlers(() => onCancel(), !busy)}>
       <div className="cne-modal">
         <div className="cne-header">
           <span className="cne-title">Edit Profile — {characterName}</span>

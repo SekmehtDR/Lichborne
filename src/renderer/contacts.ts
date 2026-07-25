@@ -10,6 +10,11 @@ export interface ContactTemplate {
   groupIds: string[]
   allGroups: boolean
   isDefault?: boolean
+  // Optional text effect on the contact's NAME (same menu as highlights —
+  // glow/shimmer/rainbow/…). Undefined === none. `glowColor` is the accent for
+  // glow/gradient/neon. Both optional so existing templates load unchanged.
+  effect?: import('./highlights').HighlightEffect
+  glowColor?: string
 }
 
 export interface Contact {

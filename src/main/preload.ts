@@ -243,6 +243,8 @@ contextBridge.exposeInMainWorld('api', {
 
   writeLichProfile: (lichPath: string, filename: string, content: string): Promise<void> =>
     ipcRenderer.invoke('write-lich-profile', lichPath, filename, content),
+  writeLichScript: (lichPath: string, name: string, source: 'core' | 'custom', content: string): Promise<void> =>
+    ipcRenderer.invoke('write-lich-script', lichPath, name, source, content),
 
   // ── Password store ───────────────────────────────────────────────────────────
   savePassword:   (account: string, password: string): Promise<void>          => ipcRenderer.invoke('password:save',   account, password),

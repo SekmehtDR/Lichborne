@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import '../styles/lich-panels.css'
 
@@ -80,7 +81,7 @@ export default function LichProfileModal({ onClose }: Props) {
   }, [selected, lichPath])
 
   const modal = (
-    <div className="lp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="lp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="lp-modal lp-modal--profile">
 
         <div className="lp-header">

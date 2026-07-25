@@ -1,9 +1,53 @@
+// Animated / decorative text effects. All are CSS-driven on the matched span and
+// respect the epilepsy-safe setting (they freeze to a still version). The color-
+// carrying ones (rainbow/shimmer/gold/fire/frost/neon/gradient) REPLACE the text
+// colour; bold / background / glow still layer on. wave/bounce are per-letter.
+export type HighlightEffect =
+  | 'none' | 'glow' | 'shimmer' | 'rainbow' | 'pulse' | 'gold' | 'gradient'
+  | 'fire' | 'frost' | 'neon' | 'wave' | 'bounce'
+
+// The single "Text effect" menu (replaces the old glow checkbox — Glow is now
+// just the first effect). Order = None, Glow, then the fun ones.
+export const HIGHLIGHT_EFFECTS: { value: HighlightEffect; label: string }[] = [
+  { value: 'none',     label: 'None' },
+  { value: 'glow',     label: 'Glow' },
+  { value: 'shimmer',  label: 'Shimmer' },
+  { value: 'rainbow',  label: 'Rainbow' },
+  { value: 'pulse',    label: 'Pulse' },
+  { value: 'gold',     label: 'Gold' },
+  { value: 'gradient', label: 'Gradient' },
+  { value: 'fire',     label: 'Fire' },
+  { value: 'frost',    label: 'Frost' },
+  { value: 'neon',     label: 'Neon' },
+  { value: 'wave',     label: 'Wave' },
+  { value: 'bounce',   label: 'Bounce' },
+]
+
+// Effects that PROVIDE the text colour (via background-clip:text / a gradient),
+// so the renderer must NOT set an inline `color` (it would override the effect).
+export const FX_COLOR_REPLACING = new Set<HighlightEffect>(['shimmer', 'rainbow', 'gold', 'gradient', 'fire', 'frost'])
+
+// The effect a rule actually shows — folds the LEGACY `glow: true` boolean into
+// the new effect model so old rules render (and edit) as effect 'glow' with no
+// migration. An explicit non-'none' effect always wins.
+export function effectiveEffect(s: HighlightStyle): HighlightEffect {
+  if (s.effect && s.effect !== 'none') return s.effect
+  return s.glow ? 'glow' : 'none'
+}
+
+// Which effects use the glowColor as their accent (so the editor shows the
+// colour picker for them): glow's shadow, gradient's 2nd stop, neon's colour.
+export const FX_USES_COLOR = new Set<HighlightEffect>(['glow', 'gradient', 'neon'])
+
 export interface HighlightStyle {
   textColor: string   // hex or 'transparent'
   bgColor: string     // hex or 'transparent'
   bold: boolean
   glow: boolean
   glowColor: string   // hex — color of the text-shadow glow
+  // Optional animated/decorative effect. Undefined / 'none' === plain (the
+  // default — existing rules load unchanged, no profile-shape change).
+  effect?: HighlightEffect
 }
 
 export interface HighlightRule {

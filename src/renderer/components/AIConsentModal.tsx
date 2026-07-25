@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom'
+import { backdropHandlers } from "../utils/backdropClose"
 import '../styles/ai-consent.css'
 
 // One-time per-feature disclosure gate (DESIGN §10, guardrail #2). Nothing is
@@ -14,7 +15,7 @@ export default function AIConsentModal({ title, body, provider, onAccept, onDecl
   onDecline: () => void
 }) {
   return createPortal(
-    <div className="aic-backdrop" onClick={e => { if (e.target === e.currentTarget) onDecline() }}>
+    <div className="aic-backdrop" {...backdropHandlers(() => onDecline())}>
       <div className="aic-modal" role="dialog" aria-modal="true">
         <div className="aic-header">{title}</div>
         <div className="aic-body">

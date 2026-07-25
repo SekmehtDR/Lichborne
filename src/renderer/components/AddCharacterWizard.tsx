@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import { GAMES } from '../lichSettings'
 import { useSessions } from '../SessionsContext'
@@ -248,7 +249,7 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
   const newCount = discovered.filter(d => !d.existing).length
 
   return createPortal(
-    <div className="wiz-backdrop" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <div className="wiz-backdrop" {...backdropHandlers(() => onCancel())}>
       <div className="wiz-modal">
 
         <div className="wiz-header">
@@ -401,7 +402,7 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
         </div>
 
         {pendingConflict && (
-          <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget && !conflictBusy) cancelConflict() }}>
+          <div className="launcher-connecting" {...backdropHandlers(() => cancelConflict(), !conflictBusy)}>
             <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 460, gap: 12 }}>
               <div className="launcher-connecting-text">
                 <span className="launcher-connecting-name">{pendingConflict.character}</span>{' '}

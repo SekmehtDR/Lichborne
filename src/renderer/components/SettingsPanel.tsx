@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage } from '../../shared/types'
 import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
@@ -353,7 +354,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     && !secDisplay && !secAccess && !secLayout && !secBehavior && !secSessionLog && !secAI && !secLichSetup
 
   return createPortal(
-    <div className="sp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="sp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="sp-modal">
 
         <div className="sp-header">

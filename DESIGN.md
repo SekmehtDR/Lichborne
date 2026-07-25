@@ -414,7 +414,7 @@ The server declares all streams it intends to use via `<streamWindow id="..." ti
 | `combat` | `combat` | Combat messages | `main` |
 | `atmospherics` | `atmospherics` | Ambient / weather text | `main` |
 | `group` | `group` | Group channel | `main` |
-| `assess` | `assess` | Weapon/armor appraisal results | discoverable |
+| `assess` | `assess` | Combat-situation ASSESS block (creatures, ranges, facing) — also consumed by the Living Tableau's combat arena, independent of whether a panel watches it | discoverable, falls back to `main` |
 | `moonWindow` | `moonWindow` | Moon phase tracker (replace-on-push) | discoverable |
 | `LichScripts` | `LichScripts` | Running Lich scripts — live list from `script-watch.lic` (replace-on-push) | discoverable |
 
@@ -2248,6 +2248,15 @@ The THEN section of a trigger uses a card-per-action layout. Two notable UI deci
 ### 14.z Command Echo
 
 Every command sent through `sendCommandSequence` (macros and alias resolution) is echoed to the main stream as `>command` using the `command-echo` preset, so players can see what fired. For aliases, only the resolved commands are echoed — the original typed alias name is suppressed. This matches how veteran clients (Genie, StormFront) behave and prevents confusion when an alias maps to a different command name.
+
+**Inline echo (v0.17.3).** The echo is merged INLINE into the prompt the command was typed at — `s>stand`, not a standalone `s>` line followed by a `>stand` line (matches Wrayth/Genie/Frostbite). `appendEcho(prev, cmd)` (GameWindow) merges the command into a trailing bare prompt line (reusing the prompt's own `>`, clearing its `prompt` flag so the dedup collapse can't treat it as a duplicate, reusing the line id so it updates in place); it falls back to a standalone `>cmd` line when there's no trailing prompt (mid-stream, or rapid commands). All three echo sites (`sendCommandSequence`, `dispatchUserText` split, canonical `sendCommand`) route through it and then null `lastMainLineRef` (a typed command is a "break" — the prompt returning after a no-output command must still show). The echo is display-only — the Session Log still records the canonical `>cmd`.
+
+### 14.z.1 Prompt `>` deduplication (v0.17.3)
+
+DR fires a `<prompt>` after every server turn, so the raw feed is `>`-spammed; the client shows ONE `>` per turn and mutes the rest until real activity, in two layers:
+
+- **Parser (`StormFrontParser`)** — every event routes through one `emit()` chokepoint that records `lastEmitWasPrompt`. `case 'prompt'` emits the `>` unless `lastEmitWasPrompt && prompt === lastPromptText` (the *immediately-preceding emitted event* was that exact prompt) — so truly back-to-back identical prompts are suppressed at the source, while ANY non-prompt emit (main OR sub-stream) clears the flag so a `>` after real activity is never suppressed. (This replaced the old `lastMainText` keying, which compared the prompt to the last MAIN-stream text and so wrongly suppressed the `>` after sub-stream-only activity — the "no `>` after a room description" gap.)
+- **Display (GameWindow, pitfall #88 collapse)** — a `>` line is dropped only when the previous DISPLAYED MAIN line was an identical prompt. Sub-stream/room activity (a move's title/exits/players, combat state, thoughts) is deliberately NOT a visible break — it never lands in the main scroll — so several `<prompt>`s from one room render / combat flurry still collapse to a single `>`. Statusprompt drift (`H>`→`R>`, different text) keeps both. The B194 MUTE case (muted MAIN content between prompts) still collapses here. A first attempt that made sub-stream activity break the collapse produced double `>`s and was reverted.
 
 ---
 

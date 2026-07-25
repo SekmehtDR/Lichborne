@@ -151,10 +151,6 @@
 
 .sp-nav-item:hover { background: var(--bg-hover); color: var(--accent); }
 
-/* Each section's leading divider is inside its wrapper; the first visible
-   section's divider is redundant (nothing above it), so hide it. */
-.sp-body > .sp-sec:first-child > .sp-divider { display: none; }
-
 .sp-search-empty {
   padding: 24px 16px;
   font-size: 0.8rem;
@@ -168,24 +164,53 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 20px;
+  padding: 12px 0 20px;
 }
 
+/* ── Sections ─────────────────────────────────────────────────────
+   Each settings group reads as its own CARD. The old treatment (a 1px
+   hairline + a dim uppercase label) made the whole panel look like one
+   undifferentiated flow — you had to hunt for where a group started
+   (Sekmeht). Separation now comes from a real gap + an outlined surface +
+   a headed band, which is legible at a glance.
 
+   Every surface shift is `color-mix` toward --text-primary rather than a
+   --bg-raised/--bg-sunken step: that scale is spread out on dark themes but
+   compressed near-white on light ones (pitfall #55), so mixing toward the
+   TEXT color is the one move that reads on both — it lightens on dark
+   themes and darkens on light ones. */
+.sp-sec {
+  margin: 0 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-base));
+  /* Clips the full-width row hover to the rounded corners. Safe: nothing
+     inside a section escapes its box (the toggle knob is the only absolutely
+     positioned child and it lives inside its own track; Lich Setup is a
+     separately portaled dialog). */
+  overflow: hidden;
+}
+
+/* Section header — a tinted band with an accent marker, so the eye lands on
+   group boundaries instead of scanning for a bolded word. The 3px accent sits
+   in the BORDER (not a ::before) so the label text still starts at 16px and
+   lines up with the field rows below it. */
 .sp-section-label {
-  font-size: 0.7rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  color: var(--text-dim);
+  color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
-  padding: 12px 16px 6px;
+  letter-spacing: 1.2px;
+  line-height: 1;
+  padding: 9px 16px 9px 13px;
+  border-left: 3px solid var(--accent);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
 }
 
-.sp-divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: 8px 16px;
-}
+/* The per-section hairline is redundant now that sections are cards. Kept in
+   the JSX (harmless) and hidden here. */
+.sp-divider { display: none; }
 
 /* ── Standard field row ──────────────────────────────────────────── */
 

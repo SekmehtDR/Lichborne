@@ -85,6 +85,7 @@ declare global {
       listLichScripts: (lichPath: string) => Promise<{ name: string; source: 'core' | 'custom'; lastModified: number }[]>
       listLichProfiles:  (lichPath: string) => Promise<string[]>
       writeLichProfile:  (lichPath: string, filename: string, content: string) => Promise<void>
+      writeLichScript:   (lichPath: string, name: string, source: 'core' | 'custom', content: string) => Promise<void>
       // Password store
       savePassword:   (account: string, password: string) => Promise<void>
       loadPassword:   (account: string)                   => Promise<string | null>

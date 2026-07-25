@@ -276,9 +276,10 @@ export interface StreamTextEvent {
   timestamp: number
   mono?: boolean
   // true when this line is a server <prompt> ('>' or a statusprompt like 'H>').
-  // Lets the renderer collapse consecutive identical prompts that a mute
-  // orphaned (the parser's lastMainText dedup ran before the mute removed the
-  // content between them) — see GameWindow's prompt-collapse pass + pitfall #88.
+  // Lets the renderer collapse a `>` whose previous displayed main line was an
+  // identical prompt — including one a mute orphaned (the parser's own dedup,
+  // `lastEmitWasPrompt`, ran before the mute removed the content between them).
+  // See GameWindow's prompt-collapse pass + pitfalls #88/#98.
   prompt?: boolean
 }
 

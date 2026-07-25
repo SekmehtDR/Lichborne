@@ -20,8 +20,12 @@
      row now carries ◀/▶ reorder buttons in addition to the move/remove
      buttons, and the previous width was visibly cramped on the 3-button
      move rows. */
+  /* The content (zone rows, banner, stream lists) is narrow, so the full 88vw
+     standard width left everything stretched edge-to-edge with big empty gaps
+     (Sekmeht). Cap at a comfortable width that still fits the widest 3-button
+     zone rows; falls back to 94vw on small screens. */
   width: var(--modal-w-standard);
-  max-width: 92vw;
+  max-width: min(900px, 94vw);
   height: var(--modal-h-standard);
   max-height: var(--modal-h-standard);
   display: flex;

@@ -79,7 +79,6 @@
      flex body, clamped so it stays sane standalone and on small screens. */
   width: clamp(240px, 25%, 380px);
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -549,4 +548,95 @@ select.hp-input { cursor: pointer; }
 
 .hp-btn--clear {
   color: var(--text-dim);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TEXT EFFECTS (highlights + contact templates)
+   Applied via `hl-fx-<effect>` on the matched span (see highlightEffects.tsx).
+   The colour-carrying ones use background-clip:text so the GRADIENT is the text
+   colour (the renderer skips the inline colour for these). --fx-c1/--fx-c2 carry
+   the user's Text/Effect colours where an effect uses them. ALL animations freeze
+   to a still version under epilepsy-safe / reduced-motion (bottom of this block).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Shared clip-text base for the gradient effects. */
+.hl-fx-shimmer, .hl-fx-rainbow, .hl-fx-gold, .hl-fx-gradient, .hl-fx-fire, .hl-fx-frost {
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  background-size: 200% auto;
+}
+
+/* Shimmer — a light band sweeps across the text's own colour. */
+.hl-fx-shimmer {
+  background-image: linear-gradient(100deg, var(--fx-c1) 42%, #ffffff 50%, var(--fx-c1) 58%);
+  animation: hl-fx-sweep 2.6s linear infinite;
+}
+/* Rainbow — hues flow through. */
+.hl-fx-rainbow {
+  background-image: linear-gradient(90deg,#ff4d4d,#ff9a4d,#ffe24d,#5dff7a,#4de1ff,#6a8bff,#c56dff,#ff5db4,#ff4d4d);
+  animation: hl-fx-sweep 3.2s linear infinite;
+}
+/* Gold — metallic gradient with a moving glint. */
+.hl-fx-gold {
+  background-image: linear-gradient(100deg,#9a6f13 30%,#ffdf70 46%,#fff6cf 50%,#ffdf70 54%,#9a6f13 70%);
+  animation: hl-fx-sweep 3s linear infinite;
+}
+/* Fire — warm gradient, upward flicker. */
+.hl-fx-fire {
+  background-image: linear-gradient(0deg,#ff2d00,#ff8a00,#ffd200);
+  background-size: auto 220%;
+  animation: hl-fx-fire 1.5s ease-in-out infinite alternate;
+}
+/* Frost — cool shimmer. */
+.hl-fx-frost {
+  background-image: linear-gradient(100deg,#79ccff 40%,#ffffff 50%,#79ccff 60%);
+  animation: hl-fx-sweep 3.4s linear infinite;
+}
+/* Gradient — a static two-colour blend (Text → Effect colour), no motion. */
+.hl-fx-gradient {
+  background-image: linear-gradient(90deg, var(--fx-c1), var(--fx-c2));
+  background-size: auto;
+}
+
+/* Pulse — the text breathes (keeps its own colour). */
+.hl-fx-pulse { animation: hl-fx-pulse 1.5s ease-in-out infinite; }
+/* Neon — a flickering coloured glow (colour = --fx-c1 = the text colour). */
+.hl-fx-neon {
+  text-shadow: 0 0 4px var(--fx-c1), 0 0 9px var(--fx-c1), 0 0 18px var(--fx-c1);
+  animation: hl-fx-neon 3.2s steps(1, end) infinite;
+}
+
+/* Wave / Bounce — per-letter (each char is a .hl-fx-ch, staggered by --i). */
+.hl-fx-ch { display: inline-block; white-space: pre; }
+.hl-fx-wave  .hl-fx-ch { animation: hl-fx-wave 1.3s ease-in-out infinite;  animation-delay: calc(var(--i) * 0.06s); }
+.hl-fx-bounce .hl-fx-ch { animation: hl-fx-bounce 1.15s ease infinite;      animation-delay: calc(var(--i) * 0.05s); }
+
+@keyframes hl-fx-sweep  { to { background-position: 200% center; } }
+@keyframes hl-fx-fire   { from { background-position: center 0%; filter: brightness(1); } to { background-position: center 100%; filter: brightness(1.18); } }
+@keyframes hl-fx-pulse  { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes hl-fx-neon   { 0%,18%,22%,55%,58%,100% { opacity: 1; } 20%,56% { opacity: 0.72; } }
+@keyframes hl-fx-wave   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-0.28em); } }
+@keyframes hl-fx-bounce { 0%,100% { transform: translateY(0); } 40% { transform: translateY(-0.32em); } 60% { transform: translateY(-0.1em); } }
+
+/* Freeze every animation to a STILL version under the IN-APP epilepsy-safe
+   setting ONLY (same convention as the Tableau / Moons / map — we deliberately
+   do NOT gate on the OS `prefers-reduced-motion`, which was silently freezing
+   effects for users who have that on system-wide even with epilepsy mode off).
+   The static frame is still attractive — a rainbow stays a rainbow, shimmer/gold
+   hold their gradient, pulse/neon sit at full. */
+:root[data-epilepsy-safe='true'] .hl-fx-shimmer,
+:root[data-epilepsy-safe='true'] .hl-fx-rainbow,
+:root[data-epilepsy-safe='true'] .hl-fx-gold,
+:root[data-epilepsy-safe='true'] .hl-fx-fire,
+:root[data-epilepsy-safe='true'] .hl-fx-frost,
+:root[data-epilepsy-safe='true'] .hl-fx-pulse,
+:root[data-epilepsy-safe='true'] .hl-fx-neon,
+:root[data-epilepsy-safe='true'] .hl-fx-wave .hl-fx-ch,
+:root[data-epilepsy-safe='true'] .hl-fx-bounce .hl-fx-ch {
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+  filter: none !important;
 }

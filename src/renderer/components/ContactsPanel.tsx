@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
+import { ResizeDivider } from './ResizeDivider'
 import { createPortal } from 'react-dom'
 import {
   type Contact, type ContactTemplate,
@@ -9,6 +11,8 @@ import {
   formatLastSeen, formatDuration,
 } from '../contacts'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
+import { type HighlightEffect, HIGHLIGHT_EFFECTS, FX_USES_COLOR } from '../highlights'
 import GroupPicker from './GroupPicker'
 import '../styles/contacts.css'
 import { normalizeColorInput, COLOR_INPUT_TITLE } from '../colors'
@@ -136,7 +140,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
   // ── Render ─────────────────────────────────────────────────────────
 
   const modal = (
-    <div className="cp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="cp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="cp-modal">
 
         <div className="cp-header">
@@ -193,6 +197,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
               </div>
             </div>
 
+            <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
             <div className="cp-detail">
               {!draft ? (
                 <div className="cp-no-selection">Select a contact or create a new one.</div>
@@ -387,6 +392,24 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                             <span>Bold name text</span>
                           </label>
                         </div>
+                        <div className="cp-tpl-edit-row">
+                          <label className="cp-label">Text effect</label>
+                          <select className="cp-input" value={tplDraft!.effect ?? 'none'}
+                            onChange={e => setTplDraft({ ...tplDraft!, effect: e.target.value as HighlightEffect })}>
+                            {HIGHLIGHT_EFFECTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        </div>
+                        {FX_USES_COLOR.has(tplDraft!.effect ?? 'none') && (
+                          <div className="cp-tpl-edit-row">
+                            <label className="cp-label">Effect color</label>
+                            <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.glowColor ?? '#ffd060')}
+                              onChange={e => setTplDraft({ ...tplDraft!, glowColor: e.target.value })} />
+                            <input className="cp-input cp-input--hex" value={tplDraft!.glowColor ?? ''}
+                              title={COLOR_INPUT_TITLE} placeholder="#ffd060"
+                              onChange={e => setTplDraft({ ...tplDraft!, glowColor: e.target.value })}
+                              onBlur={e => setTplDraft({ ...tplDraft!, glowColor: normalizeColorInput(e.target.value) })} />
+                          </div>
+                        )}
                         <div className="cp-tpl-edit-row">
                           <label className="cp-label">Tag text</label>
                           <input className="cp-input" value={tplDraft!.tagText}

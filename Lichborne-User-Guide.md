@@ -69,11 +69,14 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.17.2**
+**v0.17.3**
 
-- **Give Catch Me Up a voice.** Set a **Response voice** in Settings → AI (*a 90s TV news anchor*, *a salty pirate*, …) and your recaps get delivered in that personality — without ever changing the facts. Blank keeps the usual warm style.
-- **New model: Fable 5** joins Haiku, Sonnet, and Opus in Settings → AI as a premium option.
-- **Steadier summaries.** Every recap now shows which **model** (and **voice**) it used, and Catch Me Up **retries once automatically** if the model returns a blank response — no more mysterious empty result. It also no longer summarizes its own past recaps.
+- **Cleaner prompts.** No more stacked `>` `>` prompts and no more gaps where the `>` seemed to vanish after a room description — one `>` per turn, where you expect it.
+- **Inline commands.** What you type now shows on the same line as the prompt — `s>stand`, not `s>` then `>stand`.
+- **Resizable panels that stick.** Drag the divider in the Lich Dashboard and every Automations editor; your widths are saved to your character profile.
+- **Text effects.** The old highlight "Glow" is now a picker: Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost, and more — for highlights *and* contact templates.
+- **Lich Dashboard, upgraded** — a new **DR Infomon** tab (browse live character data), an **arguments field** for scripts, a tidier Profiles tab, and syntax-highlighted editors.
+- **A modern facelift** across the whole client — softer surfaces, subtle input glow, tidier cards — with **no loss of game-text space**. Plus: windows no longer close when you drag a text selection out of them.
 
 ---
 
@@ -161,7 +164,7 @@ Open the **Theme** picker for a gallery of built-in light and dark themes, or cr
 
 The **Automations** window (the **Automations** button on the app bar) is home base for the client's native automation — **all of it works with or without Lich.** It's tabbed by rule type:
 
-- **Highlights** — color words, names, or patterns wherever they appear in game text. Match a plain word, a phrase, or a full regex; choose whether it paints just the match or the whole line; give it a text color, background, bold, or glow. Overlapping highlights are resolved automatically (the most specific one wins per color property), so you never manage a priority list.
+- **Highlights** — color words, names, or patterns wherever they appear in game text. Match a plain word, a phrase, or a full regex; choose whether it paints just the match or the whole line; give it a text color, background, bold, or a **text effect** — Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost, and more (animated effects hold still when epilepsy-safe mode is on). Overlapping highlights are resolved automatically (the most specific one wins per color property), so you never manage a priority list. Contact templates support the same effects.
 - **Triggers** — "when I see X, do Y." The action can send a command, play a sound, echo a note to a stream, and more. Add **gates** (only while a Group/Mode is active) and a **cooldown** so a trigger can't spam. There's a quick form (`"pattern" do "command"`) for the common case and the full editor for multi-step triggers.
 - **Macros** — bind a key (F1–F12, Ctrl/Alt/Shift combos, the numpad) to a command or a whole sequence (with optional delays between steps). Put an **`@`** anywhere in the command to drop your cursor there — perfect for fill-in-the-blank macros like `get @ from my pack`.
 - **Aliases** — typed shortcuts that expand as you send them: `hh` → `health;heal`. Use `$1`, `$2`, `$rest` to pass along whatever you typed after the alias.

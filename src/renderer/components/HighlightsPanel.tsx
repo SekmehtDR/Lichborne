@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
+import { ResizeDivider } from './ResizeDivider'
 import { createPortal } from 'react-dom'
 import {
-  type HighlightRule,
+  type HighlightRule, type HighlightEffect,
   buildHighlightRegex, isValidRegex,
   loadHighlights, saveHighlights, newHighlight,
+  HIGHLIGHT_EFFECTS, effectiveEffect, FX_USES_COLOR,
 } from '../highlights'
+import { resolveEffect, effectContent } from '../utils/highlightEffects'
 import { playWavFile } from '../hooks/useTriggerEngine'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
 import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
 import { analyzeHighlights } from '../automationHealth'
 import GroupPicker from './GroupPicker'
@@ -83,8 +88,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
     const regex = buildHighlightRegex(draft)
     if (!regex || !draft.pattern.trim()) return <span>{previewSource}</span>
 
-    const glowShadow = draft.style.glow
-      ? `0 0 6px ${draft.style.glowColor}, 0 0 14px ${draft.style.glowColor}` : undefined
+    const rfx = resolveEffect(effectiveEffect(draft.style), draft.style.textColor, draft.style.glowColor)
 
     if (draft.scope === 'line') {
       regex.lastIndex = 0
@@ -92,14 +96,16 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
       const lineStyle: React.CSSProperties = matched ? {
         ...(draft.style.bgColor && draft.style.bgColor !== 'transparent'
           ? { backgroundColor: draft.style.bgColor } : {}),
-        ...(draft.style.textColor && draft.style.textColor !== 'transparent'
+        ...(draft.style.textColor && draft.style.textColor !== 'transparent' && !rfx.colorReplacing
           ? { color: draft.style.textColor } : {}),
-        ...(glowShadow ? { textShadow: glowShadow } : {}),
+        ...(rfx.glowShadow ? { textShadow: rfx.glowShadow } : {}),
+        ...(matched ? rfx.vars : {}),
       } : {}
-      const content = draft.style.bold && matched
-        ? <strong>{previewSource}</strong>
-        : previewSource
-      return <span style={lineStyle}>{content}</span>
+      const cls = matched && rfx.className ? rfx.className : undefined
+      const content = matched ? effectContent(previewSource, rfx.perLetter) : previewSource
+      return draft.style.bold && matched
+        ? <strong className={cls} style={lineStyle}>{content}</strong>
+        : <span className={cls} style={lineStyle}>{content}</span>
     }
 
     // match scope — split and highlight
@@ -114,14 +120,16 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
       const hlStyle: React.CSSProperties = {
         ...(draft.style.bgColor && draft.style.bgColor !== 'transparent'
           ? { backgroundColor: draft.style.bgColor } : {}),
-        ...(draft.style.textColor && draft.style.textColor !== 'transparent'
+        ...(draft.style.textColor && draft.style.textColor !== 'transparent' && !rfx.colorReplacing
           ? { color: draft.style.textColor } : {}),
-        ...(glowShadow ? { textShadow: glowShadow } : {}),
+        ...(rfx.glowShadow ? { textShadow: rfx.glowShadow } : {}),
+        ...rfx.vars,
       }
       const word = previewSource.slice(m.index, m.index + m[0].length)
+      const cls = `hl-match${rfx.className ? ` ${rfx.className}` : ''}`
       parts.push(draft.style.bold
-        ? <strong key={n++} className="hl-match" style={hlStyle}>{word}</strong>
-        : <span key={n++} className="hl-match" style={hlStyle}>{word}</span>)
+        ? <strong key={n++} className={cls} style={hlStyle}>{effectContent(word, rfx.perLetter)}</strong>
+        : <span key={n++} className={cls} style={hlStyle}>{effectContent(word, rfx.perLetter)}</span>)
       last = m.index + m[0].length
     }
     if (last < previewSource.length) parts.push(<span key={n++}>{previewSource.slice(last)}</span>)
@@ -278,6 +286,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
           </div>
 
           {/* Detail */}
+          <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
           <div className="hp-detail">
             {!draft ? (
               <div className="hp-no-selection">Select a rule or create a new one.</div>
@@ -450,32 +459,36 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
                     </div>
 
                     <div className="hp-style-col">
-                      <label className="hp-style-sublabel hp-style-sublabel--toggle">
-                        <input
-                          type="checkbox"
-                          className="hp-checkbox"
-                          checked={draft.style.glow}
-                          onChange={e => setDraft({ ...draft, style: { ...draft.style, glow: e.target.checked } })}
-                        />
-                        Glow
-                      </label>
-                      <div className={`hp-style-picker-row${!draft.style.glow ? ' hp-style-picker-row--dim' : ''}`}>
-                        <input
-                          type="color"
-                          className="hp-color-picker"
-                          value={colorPickerValue(draft.style.glowColor)}
-                          disabled={!draft.style.glow}
-                          onChange={e => setDraft({ ...draft, style: { ...draft.style, glowColor: e.target.value } })}
-                        />
-                        <input
-                          className="hp-input hp-input--hex"
-                          value={draft.style.glowColor}
-                          disabled={!draft.style.glow}
-                          title={COLOR_INPUT_TITLE}
-                          onChange={e => setDraft({ ...draft, style: { ...draft.style, glowColor: e.target.value } })}
-                          onBlur={e => setDraft({ ...draft, style: { ...draft.style, glowColor: normalizeColorInput(e.target.value) } })}
-                        />
-                      </div>
+                      <label className="hp-style-sublabel">Text Effect</label>
+                      <select
+                        className="hp-input"
+                        value={effectiveEffect(draft.style)}
+                        onChange={e => {
+                          const effect = e.target.value as HighlightEffect
+                          // Keep the legacy `glow` flag in sync so anything still
+                          // reading it (older exports, analytics) stays correct.
+                          setDraft({ ...draft, style: { ...draft.style, effect, glow: effect === 'glow' } })
+                        }}
+                      >
+                        {HIGHLIGHT_EFFECTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                      {FX_USES_COLOR.has(effectiveEffect(draft.style)) && (
+                        <div className="hp-style-picker-row">
+                          <input
+                            type="color"
+                            className="hp-color-picker"
+                            value={colorPickerValue(draft.style.glowColor)}
+                            onChange={e => setDraft({ ...draft, style: { ...draft.style, glowColor: e.target.value } })}
+                          />
+                          <input
+                            className="hp-input hp-input--hex"
+                            value={draft.style.glowColor}
+                            title={COLOR_INPUT_TITLE}
+                            onChange={e => setDraft({ ...draft, style: { ...draft.style, glowColor: e.target.value } })}
+                            onBlur={e => setDraft({ ...draft, style: { ...draft.style, glowColor: normalizeColorInput(e.target.value) } })}
+                          />
+                        </div>
+                      )}
                     </div>
 
                   </div>
@@ -589,7 +602,7 @@ export default function HighlightsPanel({ onClose, onSaved, prefill, initialTest
   if (inline) return content
 
   const modal = (
-    <div className="hp-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="hp-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="hp-modal">
         <div className="hp-header">
           <span className="hp-title">Highlights</span>

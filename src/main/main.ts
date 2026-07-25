@@ -1035,6 +1035,21 @@ ipcMain.handle('write-lich-profile', (_e, lichPath: string, filename: string, co
   fs.writeFileSync(fullPath, content, 'utf-8')
 })
 
+// Write a .lic script. `source` picks the directory — 'custom' → scripts/custom/
+// (the safe, user-owned override dir), 'core' → scripts/ (Lich's own; editing
+// these is riskier — a Lich update can overwrite them — so the UI warns first).
+// Same path-traversal guard as profiles: the resolved path must stay inside the
+// chosen script dir.
+ipcMain.handle('write-lich-script', (_e, lichPath: string, name: string, source: 'core' | 'custom', content: string): void => {
+  if (!lichPath || !name) throw new Error('Missing lichPath or name')
+  const subdir = source === 'custom' ? path.join('scripts', 'custom') : 'scripts'
+  const scriptDir = path.resolve(path.join(lichDirFrom(lichPath), subdir))
+  const filename = /\.lic$/i.test(name) ? name : `${name}.lic`
+  const fullPath = path.resolve(scriptDir, filename)
+  if (!fullPath.startsWith(scriptDir + path.sep)) throw new Error('Invalid script path')
+  fs.writeFileSync(fullPath, content, 'utf-8')
+})
+
 // ── Password IPC ──────────────────────────────────────────────────────────────
 ipcMain.handle('password:save',   (_e, account: string, password: string) => savePassword(account, password))
 ipcMain.handle('password:load',   (_e, account: string)                   => loadPassword(account))

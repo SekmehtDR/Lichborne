@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
 import { ImportResult, ImportSource } from '../import/types'
 import { parseGenieFiles } from '../import/parsers/genie'
@@ -1396,7 +1397,7 @@ export default function ImportWizard({ onClose, onSaved, onThemeSaved }: Props) 
   // ── Main render ──────────────────────────────────────────────────────────────
 
   const modal = (
-    <div className="iw-backdrop" onClick={e => { if (e.target === e.currentTarget && step !== 'done') onClose() }}>
+    <div className="iw-backdrop" {...backdropHandlers(() => onClose(), step !== 'done')}>
       <div className="iw-modal">
 
         <div className="iw-header">

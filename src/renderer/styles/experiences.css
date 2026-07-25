@@ -178,56 +178,59 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
+  padding: 11px 14px;
+  background: color-mix(in srgb, var(--text-primary) 3%, var(--bg-base));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.13s, background 0.13s;
+}
+/* Accent the card while its Experience is open (matches the toggle state). */
+.exp-shelf-row--open {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-base));
 }
 
 .exp-shelf-row-main { flex: 1; min-width: 0; }
 
 .exp-shelf-row-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   margin-bottom: 3px;
 }
 
-.exp-shelf-kind {
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-.exp-shelf-kind--scene { color: var(--accent); border-color: var(--accent-dim); }
-
 .exp-shelf-label {
   color: var(--text-primary);
   font-weight: 600;
+  font-size: 0.9rem;
 }
 
-/* Maturity badge ("[Beta]") — a quiet status marker, not a kind chip. */
+/* Clean status pill (e.g. Beta) — a subtle accent chip, no brackets. */
 .exp-shelf-badge {
-  font-size: 0.7rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--accent) 75%, var(--text-secondary));
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  padding: 1px 6px;
+  border-radius: 4px;
+  align-self: center;
 }
 
 .exp-shelf-desc {
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  line-height: 1.35;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
-.exp-shelf-text-equiv {
-  margin-top: 4px;
-  color: var(--text-dim);
-  font-size: 0.74rem;
-  line-height: 1.3;
+/* One quiet line for the whole shelf (replaced the verbose per-row line). */
+.exp-shelf-note {
+  padding: 8px 4px 2px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  font-style: italic;
 }
 
 .exp-shelf-toggle {

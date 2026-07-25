@@ -1,4 +1,5 @@
 import type { TabDef, PanelType } from './PanelFrame'
+import { backdropHandlers } from '../utils/backdropClose'
 import { streamLabel } from '../aiConfig'
 import '../styles/panel-manager.css'
 
@@ -114,7 +115,7 @@ export default function PanelManager({
   const addedZones = ALL_ZONES.filter(z => addedByZone[z])
 
   return (
-    <div className="pm-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="pm-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="pm-modal">
         <div className="pm-header">
           <span className="pm-title">Panel Manager</span>

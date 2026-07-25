@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { useSessions, type CharacterId } from '../SessionsContext'
 import { useRoster } from '../RosterContext'
 import '../styles/quick-send.css'
@@ -93,7 +94,7 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
   const connectedCount = roster.filter(s => s.connected).length
 
   return (
-    <div className="quick-send-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="quick-send-backdrop" {...backdropHandlers(() => onClose())}>
       <form className="quick-send-card" onSubmit={handleSend} onKeyDown={handleKey}>
         <div className="quick-send-header">
           <span>Quick Send</span>

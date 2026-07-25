@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import type { LauncherCharacter } from './Launcher'
 import { exportSharedProfile } from '../profile'
@@ -88,7 +89,7 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
   const pickableCount = [...picks.values()].length
 
   return createPortal(
-    <div className="cne-backdrop" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <div className="cne-backdrop" {...backdropHandlers(() => onCancel())}>
       <div className="cne-modal" style={{ width: 'min(560px, 92vw)' }}>
         <div className="cne-header">
           <span className="cne-title">Bulk Connect</span>

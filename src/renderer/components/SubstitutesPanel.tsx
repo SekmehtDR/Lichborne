@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { ResizeDivider } from './ResizeDivider'
 import { loadSubstitutes, saveSubstitutes, newSubstitute, type SubstituteRule } from '../substitutes'
 import { STREAM_OPTIONS } from '../mutes'
 import { isValidRegex } from '../highlights'
 import { useCharacter } from '../CharacterContext'
+import { scopedKey } from '../characterScope'
 import { useRuleAnalytics, AnalyticsReview, RuleBadges } from './AutomationAnalytics'
 import { analyzeSubstitutes } from '../automationHealth'
 import GroupPicker from './GroupPicker'
@@ -169,6 +171,7 @@ export default function SubstitutesPanel({ onSaved, prefill, openRuleId, analyti
       </div>
 
       {/* Detail */}
+      <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
       <div className="hp-detail">
         {!draft ? (
           <div className="hp-no-selection">Select a substitute or create a new one.<br />Substituted text is shown in the window; the Session Log keeps the original.</div>

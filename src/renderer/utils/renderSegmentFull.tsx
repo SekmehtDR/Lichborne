@@ -1,7 +1,9 @@
 import type { TextSegment } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'
 import type { CompiledRule } from '../HighlightsContext'
-import type { HighlightStyle } from '../highlights'
+import type { HighlightStyle, HighlightEffect } from '../highlights'
+import { effectiveEffect } from '../highlights'
+import { resolveEffect, effectContent } from './highlightEffects'
 import { renderSegment } from './renderSegment'
 
 export type MatchRange =
@@ -138,7 +140,7 @@ export function renderSegmentFull(
   // list order at scale (see CLAUDE.md Automations — the cross-client research).
   // Within a property, equal-length ties go to the FIRST-encountered (top-of-
   // list) highlight — deterministic, vs Profanity's arbitrary unstable sort.
-  type HlComposite = { kind: 'highlight'; textColor: string | null; bgColor: string | null; bold: boolean; glow: boolean; glowColor: string | null }
+  type HlComposite = { kind: 'highlight'; textColor: string | null; bgColor: string | null; bold: boolean; glowColor: string | null; effect: HighlightEffect | null }
   type ContactRun  = { kind: 'contact'; contact: Contact; template: ContactTemplate | null }
   type RunStyle = ContactRun | HlComposite | null
   type Run = { start: number; end: number; style: RunStyle; key: string }
@@ -172,16 +174,18 @@ export function renderSegmentFull(
         for (const c of covering) if (test(c.compiled.rule.style)) return c.compiled.rule.style
         return null
       }
-      const gl = pick(s => s.glow)
+      // The effect folds the legacy `glow` bool in (effectiveEffect), so one
+      // pick covers glow AND the new effects; its glowColor rides along.
+      const fx = pick(s => effectiveEffect(s) !== 'none')
       style = {
         kind: 'highlight',
         textColor: pick(s => !!s.textColor && s.textColor !== 'transparent')?.textColor ?? null,
         bgColor:   pick(s => !!s.bgColor && s.bgColor !== 'transparent')?.bgColor ?? null,
         bold:      !!pick(s => s.bold),
-        glow:      !!gl,
-        glowColor: gl?.glowColor ?? null,
+        glowColor: fx?.glowColor ?? null,
+        effect:    fx ? effectiveEffect(fx) : null,
       }
-      key = `h:${style.textColor ?? ''}|${style.bgColor ?? ''}|${style.bold}|${style.glow}|${style.glowColor ?? ''}`
+      key = `h:${style.textColor ?? ''}|${style.bgColor ?? ''}|${style.bold}|${style.glowColor ?? ''}|${style.effect ?? ''}`
     } else {
       style = null
       key = 'n'
@@ -219,14 +223,18 @@ export function renderSegmentFull(
         }
         parts.push(<span key={k()} className="contact-tag" style={tagStyle}>{template.tagText}{' '}</span>)
       }
+      const trfx = resolveEffect(template?.effect, template?.textColor ?? null, template?.glowColor ?? null)
       const nameStyle: React.CSSProperties = {
-        color: template?.textColor ?? 'var(--text-secondary)',
+        ...(trfx.colorReplacing ? {} : { color: template?.textColor ?? 'var(--text-secondary)' }),
         ...(template?.bgColor && template.bgColor !== 'transparent'
           ? { backgroundColor: template.bgColor } : {}),
+        ...(trfx.glowShadow ? { textShadow: trfx.glowShadow } : {}),
+        ...trfx.vars,
       }
-      const nameContent = template?.bold
-        ? <strong style={nameStyle}>{matchText}</strong>
-        : <span style={nameStyle}>{matchText}</span>
+      const NameTag = template?.bold ? 'strong' : 'span'
+      const nameContent = (
+        <NameTag className={trfx.className || undefined} style={nameStyle}>{effectContent(matchText, trfx.perLetter)}</NameTag>
+      )
       parts.push(
         <span
           key={k()}
@@ -237,16 +245,16 @@ export function renderSegmentFull(
         >{nameContent}</span>
       )
     } else {
+      const rfx = resolveEffect(s.effect, s.textColor, s.glowColor)
       const hlStyle: React.CSSProperties = {
-        ...(s.textColor ? { color: s.textColor } : {}),
+        ...(s.textColor && !rfx.colorReplacing ? { color: s.textColor } : {}),
         ...(s.bgColor ? { backgroundColor: s.bgColor } : {}),
-        ...(s.glow && s.glowColor ? { textShadow: `0 0 6px ${s.glowColor}, 0 0 14px ${s.glowColor}` } : {}),
+        ...(rfx.glowShadow ? { textShadow: rfx.glowShadow } : {}),
+        ...rfx.vars,
       }
-      parts.push(
-        s.bold
-          ? <strong key={k()} className="hl-match" style={hlStyle}>{matchText}</strong>
-          : <span key={k()} className="hl-match" style={hlStyle}>{matchText}</span>
-      )
+      const cls = `hl-match${rfx.className ? ` ${rfx.className}` : ''}`
+      const Tag = s.bold ? 'strong' : 'span'
+      parts.push(<Tag key={k()} className={cls} style={hlStyle}>{effectContent(matchText, rfx.perLetter)}</Tag>)
     }
   }
 

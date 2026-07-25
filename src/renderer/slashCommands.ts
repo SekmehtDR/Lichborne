@@ -12,7 +12,7 @@
 // GameWindow builds wraps the same save/set/saveProfile calls a panel save
 // makes, so a slash-created rule is byte-compatible with an editor-created one.
 
-import { newHighlight, type HighlightRule } from './highlights'
+import { newHighlight, type HighlightRule, HIGHLIGHT_EFFECTS } from './highlights'
 import { newMute, type MuteRule } from './mutes'
 import { newSubstitute, type SubstituteRule } from './substitutes'
 import { newContact, newTemplate, formatLastSeen, DR_GUILDS, type Contact, type ContactTemplate } from './contacts'
@@ -282,11 +282,12 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       MODE_OPT,
       { key: 'scope', values: ['match', 'line'], hint: 'color just the match, or the whole line' },
       CASE_OPT,
+      { key: 'effect', values: HIGHLIGHT_EFFECTS.map(e => e.value), hint: 'a text effect: glow, shimmer, rainbow, pulse, gold, gradient, fire, frost, neon, wave, bounce' },
       { key: 'name', hint: 'a label for the rule' },
     ],
     flags: ['bold', 'glow'],
     description: 'Create a highlight for matching text',
-    example: '/highlight add "goblin" red',
+    example: '/highlight add "dragon" gold effect=shimmer',
     run: (ctx, p) => {
       const [pattern, colorTok] = p.args
       const rule = newHighlight(pattern, (p.options.scope as 'match' | 'line') ?? 'match')
@@ -304,6 +305,12 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       if (p.options.mode) rule.mode = p.options.mode as HighlightRule['mode']
       if (p.options.case) rule.caseSensitive = p.options.case === 'on'
       if (p.options.name) rule.name = p.options.name
+      if (p.options.effect) {
+        const fx = p.options.effect.toLowerCase()
+        if (!HIGHLIGHT_EFFECTS.some(e => e.value === fx)) return err(`"${p.options.effect}" isn't an effect — try glow, shimmer, rainbow, pulse, gold, gradient, fire, frost, neon, wave, or bounce.`)
+        rule.style.effect = fx as HighlightRule['style']['effect']
+        rule.style.glow = fx === 'glow'
+      }
       if (p.flags.has('bold')) rule.style.bold = true
       if (p.flags.has('glow')) rule.style.glow = true
       if (rule.mode === 'regex') { try { new RegExp(rule.pattern) } catch { return err(`"${rule.pattern}" isn't a valid regex.`) } }

@@ -564,6 +564,22 @@
 }
 .ld-toolbar--compact { padding: 6px 10px; }
 
+/* Profiles toolbar: the filter input flexes, the character dropdown sits beside it. */
+.ld-profiles-toolbar .lp-search { flex: 1; min-width: 0; }
+.ld-char-select {
+  flex-shrink: 0;
+  max-width: 42%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.76rem;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.ld-char-select:focus { outline: none; border-color: var(--accent-dim); }
+
 /* ── Session pill ────────────────────────────────────────────────────────── */
 
 .ld-session-pill {
@@ -798,6 +814,26 @@
   font-family: monospace;
 }
 
+/* A flag row with a friendly label + description stacks its text and puts the
+   badge on the right. */
+.ld-setting-row--flag { align-items: flex-start; }
+.ld-setting-main { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.ld-setting-row--flag .ld-setting-name { font-family: inherit; font-size: 0.82rem; }
+.ld-setting-desc { color: var(--text-muted); font-size: 0.73rem; line-height: 1.35; }
+
+/* "Show internal" toggle in the settings toolbar. */
+.ld-inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ld-inline-check input { cursor: pointer; }
+
 .ld-setting-value {
   color: var(--text-muted);
   font-family: monospace;
@@ -808,6 +844,91 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── DR Infomon catalog ─────────────────────────────────────────────
+   Surface shifts are color-mix toward --text-primary (reads on both light
+   and dark themes; pitfall #55). */
+.ld-info-intro {
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-faint);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+}
+.ld-info-intro code {
+  font-family: monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.ld-info-group { margin-bottom: 2px; }
+
+.ld-info-group-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 14px 6px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border-faint);
+  border-left: 3px solid var(--accent);
+}
+.ld-info-module {
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--accent);
+  margin-right: 8px;
+}
+.ld-info-blurb {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.ld-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 4%, transparent);
+  font-size: 0.8rem;
+}
+.ld-info-row:hover { background: var(--bg-hover); }
+
+.ld-info-expr {
+  flex-shrink: 0;
+  min-width: 190px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+.ld-info-desc {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+.ld-info-check {
+  flex-shrink: 0;
+  align-self: center;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Quiet by default (UX standard #1) — the check button appears on row hover. */
+.ld-info-row:hover .ld-info-check { opacity: 1; }
+.ld-info-check:hover { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 
 .ld-flag-badge {
   font-size: 0.68rem;
@@ -832,10 +953,33 @@
 .ld-profiles-list {
   width: 220px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* Draggable divider between the list and the editor. A thin border-width bar
+   with a wider invisible grab area (::before) so it's easy to catch; brightens
+   to the accent on hover/drag. */
+.ld-split-divider {
+  flex-shrink: 0;
+  width: 1px;
+  position: relative;
+  background: var(--border);
+  cursor: col-resize;
+}
+.ld-split-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+.ld-split-divider:hover,
+.ld-split-divider--dragging {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .ld-profiles-preview {
@@ -931,16 +1075,68 @@
 
 /* ── YAML syntax highlight (highlight.js — VS Code dark+ palette) ────────────── */
 
-.ld-yaml-preview .hljs-attr     { color: var(--syntax-key); }       /* keys */
-.ld-yaml-preview .hljs-string   { color: var(--syntax-string); }    /* string values */
-.ld-yaml-preview .hljs-number   { color: var(--syntax-number); }    /* numbers */
-.ld-yaml-preview .hljs-literal  { color: var(--syntax-literal); }   /* true / false / null */
-.ld-yaml-preview .hljs-comment  { color: var(--syntax-comment); font-style: italic; }  /* comments */
-.ld-yaml-preview .hljs-meta     { color: var(--syntax-meta); }      /* --- ... */
-.ld-yaml-preview .hljs-bullet   { color: var(--syntax-meta); }      /* list - */
-.ld-yaml-preview .hljs-type     { color: var(--syntax-type); }
-.ld-yaml-preview .hljs-symbol   { color: var(--syntax-symbol); }    /* :anchor */
-.ld-yaml-preview .hljs-template-variable { color: var(--syntax-key); } /* *alias */
+/* Token colors are shared by the read-only view (.ld-yaml-preview) and the
+   syntax-highlighted EDITOR overlay (.ld-editor-hl), for both YAML profiles and
+   Ruby .lic scripts. */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-attr     { color: var(--syntax-key); }       /* keys */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-string   { color: var(--syntax-string); }    /* string values */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-number   { color: var(--syntax-number); }    /* numbers */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-literal  { color: var(--syntax-literal); }   /* true / false / null / nil */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-comment  { color: var(--syntax-comment); font-style: italic; }  /* comments */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-meta     { color: var(--syntax-meta); }      /* --- ... */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-bullet   { color: var(--syntax-meta); }      /* list - */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-type     { color: var(--syntax-type); }
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-symbol   { color: var(--syntax-symbol); }    /* :anchor / :symbol */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-template-variable { color: var(--syntax-key); } /* *alias */
+/* Ruby (.lic) tokens */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-keyword  { color: var(--syntax-type); }      /* def / end / if / do */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-built_in { color: var(--syntax-type); }      /* require / puts */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-title    { color: var(--syntax-key); }       /* method / class names */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-variable { color: var(--syntax-symbol); }    /* @ivar / $global */
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-regexp   { color: var(--syntax-string); }
+:is(.ld-yaml-preview, .ld-editor-hl) .hljs-params   { color: var(--text-primary); }
+
+/* ── Scripts editor ──────────────────────────────────────────────── */
+/* Filter tabs sit under the search in the narrow list column. */
+.lp-filter-tabs--rail {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px 6px;
+  border-bottom: 1px solid var(--border-faint);
+}
+/* Warning banner over a core (Lich-owned) script — a fixed amber hue mixed
+   toward the surface so it stays legible on light and dark themes (pitfall #55). */
+.ld-script-warning {
+  padding: 8px 14px;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, #d0a020 70%, var(--text-primary));
+  background: color-mix(in srgb, #d0a020 14%, var(--bg-base));
+  border-bottom: 1px solid color-mix(in srgb, #d0a020 30%, transparent);
+}
+.ld-script-warning code {
+  font-family: monospace;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+/* Source badge shown next to the name in the editor bar. */
+.ld-profile-name .lp-source-badge { margin-left: 8px; }
+
+/* Script run-arguments field (e.g. "bank" for ;go2 bank). */
+.ld-run-args {
+  width: 130px;
+  min-width: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 0.76rem;
+  padding: 3px 7px;
+}
+.ld-run-args:focus { outline: none; border-color: var(--accent-dim); }
+.ld-run-args::placeholder { color: var(--text-faint); font-family: inherit; }
 
 /* ── Profile editor ──────────────────────────────────────────────────────────── */
 
@@ -1064,6 +1260,56 @@
   caret-color: var(--accent);
   overflow: auto;
 }
+
+/* ── Syntax-highlighted editor (overlay) ─────────────────────────────
+   A transparent <textarea> layered exactly over a highlighted <pre>. The two
+   layers MUST share byte-identical font metrics (family/size/line-height/
+   padding/white-space/tab-size) or the caret drifts off the glyphs — change
+   them together. Same 0.79rem / 1.3rem / 12px 16px as .ld-yaml-preview so the
+   line-number gutter and scrollElementToLine() still line up. */
+.ld-editor-stack {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.ld-editor-hl,
+.ld-editor-input {
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  font-family: monospace;
+  font-size: 0.79rem;
+  line-height: 1.3rem;
+  padding: 12px 16px;
+  white-space: pre;
+  tab-size: 2;
+  letter-spacing: normal;
+}
+.ld-editor-hl {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;             /* scrolled by JS in lockstep with the textarea */
+  pointer-events: none;
+  color: var(--text-primary);
+  background: transparent;
+}
+.ld-editor-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: transparent;                   /* text invisible — the <pre> shows the colors */
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--accent);
+}
+/* Selection stays visible even though the input's own text is transparent. */
+.ld-editor-input::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
 
 /* ── Validation banner ───────────────────────────────────────────────────────── */
 

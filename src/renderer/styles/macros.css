@@ -120,7 +120,6 @@
      list in Automations). Clamped for standalone / small-screen sanity. */
   width: clamp(240px, 25%, 380px);
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;

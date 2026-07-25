@@ -48,6 +48,56 @@ strong, b {
   font-weight: var(--ui-bold-weight);
 }
 
+/* ── Modern-UI shared primitives (facelift — shared-primitives-first) ─────────
+   A modern feel on the interactive building blocks across the WHOLE client,
+   with ZERO change to any dimensions/real-estate — transitions, the keyboard
+   focus ring, and the tactile press are all layout-neutral (they animate
+   colour, draw an outline, or nudge with transform; none reflow). Theme-safe:
+   the only colour is var(--accent) via color-mix, so it self-corrects on every
+   theme, light and dark. Each component keeps its own sizing and colours; this
+   layer just makes interactions feel smooth and consistent everywhere. */
+
+/* Smooth interaction transitions on chrome controls (never the game-text rows —
+   those tags aren't matched here). Elements with their own transition override. */
+button, input, select, textarea, .ld-tab, .lp-filter-tab, .sp-nav-item, [role="tab"] {
+  transition: background-color 0.13s ease, border-color 0.13s ease,
+              color 0.13s ease, box-shadow 0.13s ease, opacity 0.13s ease;
+}
+
+/* One consistent, accessible keyboard-focus ring. Mouse clicks don't trigger
+   :focus-visible (Chromium heuristic), so it shows only for keyboard nav — the
+   modern behaviour. `outline` follows the element's own border-radius and never
+   reflows. Components that set their own :focus outline keep it (a class:focus
+   selector outranks this); this fills the gap for the many buttons that have no
+   focus indicator today. */
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible,
+[role="tab"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* Text fields get a soft accent GLOW instead of the button ring — a modern,
+   consistent focus across every input/select/textarea in the client (mouse AND
+   keyboard). Layout-neutral: only border-color + box-shadow, no reflow. A field
+   that sets its own :focus border-color keeps it (higher specificity wins); this
+   adds the glow ring on top and fills in fields that had no focus cue. Checkbox/
+   radio excluded (the ring looks odd around a tick box). */
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Tactile press — a 1px nudge while a button is held. transform is
+   layout-neutral (no reflow). Skipped for disabled buttons. */
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
 ::-webkit-scrollbar { width: 12px; }
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); cursor: default; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; cursor: default; }
