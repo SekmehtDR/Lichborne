@@ -101,7 +101,15 @@ console.log('Patching release notes...')
 const patchRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/${draft.id}`, {
   method: 'PATCH',
   headers: { ...GH_HEADERS, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ body: releaseNotes, name: version }),
+  // tag_name MUST be re-sent. A PATCH that omits it CLEARS the draft's tag —
+  // GitHub replaces it with an `untagged-<sha>` placeholder (observed on the
+  // v0.18.0 run: prepare created the draft as v0.18.0, this job found it by
+  // tag a second earlier, and the tag was gone immediately after this call).
+  // That matters beyond the release page: BOTH scripts locate the draft with
+  // `tag_name === tag`, so an untagged draft is invisible to a re-run and the
+  // next run mints a SECOND draft — the exact duplicate the pre-create step
+  // exists to prevent — and Publish no longer defaults to the right tag.
+  body: JSON.stringify({ tag_name: tag, body: releaseNotes, name: version }),
 })
 if (!patchRes.ok) { console.error('Failed to patch release notes:', await patchRes.text()); process.exit(1) }
 
