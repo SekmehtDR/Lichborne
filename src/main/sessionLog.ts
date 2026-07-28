@@ -668,11 +668,14 @@ async function buildCatchupDigest(
   }
 }
 
-function searchLogs(
+// ASYNC + yields between days — same reasoning as listStreams. Measured ~2.9s
+// of BLOCKED main on a 30-day preset over real data, during which no session's
+// socket drains and every connected character stalls together.
+async function searchLogs(
   character: string,
   query: string,
   opts: { regex: boolean; fromDate: string; toDate: string },
-): SessionLogSearchHit[] {
+): Promise<SessionLogSearchHit[]> {
   if (!query.trim()) return []
   let matcher: (line: string) => boolean
   if (opts.regex) {
@@ -696,6 +699,7 @@ function searchLogs(
       if (line && matcher(line)) results.push({ date: day.date, lineNo: i + 1, total, line })
       if (results.length >= 1000) return results  // hard cap
     }
+    await yieldToLoop()   // let sockets drain between day-files
   }
   return results
 }
@@ -706,16 +710,38 @@ function searchLogs(
 // stream registry. fromDate === toDate scans a single day.
 const STREAM_TAG_RE = /^\[[^\]]*\]\[([^\]]*)\]/
 
-function listStreams(character: string, fromDate: string, toDate: string): string[] {
+// Per-day stream sets, keyed by path+mtime+size. A CLOSED day-file never
+// changes, so a repeat range scan (the Export builder re-runs this on every
+// date-range tweak) costs nothing after the first pass.
+const streamSetCache = new Map<string, string[]>()
+
+// ASYNC + yields between days (v0.18.0 perf audit). Measured at ~2.9s of
+// BLOCKED main over one tester's 23 day-files (61MB gz) — and main owns every
+// session's socket, so for those seconds EVERY connected character freezes at
+// once, then the backlog arrives in a burst. Yielding per day bounds the block
+// to a single file and lets sockets drain in between. Same shape as
+// buildCatchupDigest, which already does this.
+async function listStreams(character: string, fromDate: string, toDate: string): Promise<string[]> {
   const streams = new Set<string>()
   for (const day of listDays(character)) {
     if (day.date < fromDate || day.date > toDate) continue
+    let key: string | null = null
+    try {
+      const st = fs.statSync(day.path)
+      key = day.path + ':' + st.mtimeMs + ':' + st.size
+      const hit = streamSetCache.get(key)
+      if (hit) { for (const v of hit) streams.add(v); await yieldToLoop(); continue }
+    } catch { /* stat failed — fall through and read */ }
     const raw = readLogFile(day.path)
     if (raw == null) continue
+    const found = new Set<string>()
     for (const line of raw.split('\n')) {
       const m = STREAM_TAG_RE.exec(line)
-      if (m) streams.add(m[1])
+      if (m) found.add(m[1])
     }
+    for (const v of found) streams.add(v)
+    if (key) streamSetCache.set(key, [...found])
+    await yieldToLoop()
   }
   return [...streams].sort()
 }
@@ -907,7 +933,7 @@ export function registerSessionLogHandlers(): void {
     return buildCatchupDigest(character, fromTs, toTs, maxBodyChars, redactLiterals ?? [], send)
   })
 
-  ipcMain.handle('session-log:search', (_e, character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string }) => {
+  ipcMain.handle('session-log:search', async (_e, character: string, query: string, opts: { regex: boolean; fromDate: string; toDate: string }) => {
     const buf = buffers.get(character?.toLowerCase() ?? '')
     if (buf) flushBuffer(buf)
     return searchLogs(character, query, opts)
@@ -915,7 +941,7 @@ export function registerSessionLogHandlers(): void {
 
   // toDate defaults to fromDate (single-day scan) — the Recent/Search views
   // pass one date, the Export builder passes a range.
-  ipcMain.handle('session-log:list-streams', (_e, character: string, fromDate: string, toDate?: string): string[] => {
+  ipcMain.handle('session-log:list-streams', async (_e, character: string, fromDate: string, toDate?: string): Promise<string[]> => {
     const buf = buffers.get(character?.toLowerCase() ?? '')
     if (buf) flushBuffer(buf)
     return listStreams(character, fromDate, toDate ?? fromDate)
@@ -981,8 +1007,12 @@ export function registerSessionLogHandlers(): void {
       filters: [{ name: 'Text', extensions: ['txt'] }],
     })
     if (res.canceled || !res.filePath) return { ok: false, canceled: true }
-    try { fs.writeFileSync(res.filePath, assembleFile(character, spec, rows, spec.streams, counts), 'utf8') }
+    // Windows/macOS append the filter's extension when the user types a bare
+    // name; GTK does NOT, so a Linux user who types "mylog" would get an
+    // extension-less file. Add it ourselves when there isn't one.
+    const outPath = path.extname(res.filePath) ? res.filePath : `${res.filePath}.txt`
+    try { fs.writeFileSync(outPath, assembleFile(character, spec, rows, spec.streams, counts), 'utf8') }
     catch (err) { console.error('[sessionLog] export write failed', err); return { ok: false } }
-    return { ok: true, lineCount: rows.length, location: res.filePath }
+    return { ok: true, lineCount: rows.length, location: outPath }
   })
 }

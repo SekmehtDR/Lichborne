@@ -2,7 +2,7 @@
 
 *Your friendly primer for getting Lichborne up and running, and making it your own.*
 
-Welcome! Lichborne is a modern DragonRealms client for Windows. Whether you're brand new or you've been playing since the StormFront days, this guide walks you from **download** to **fully set up** — and then tours everything the client can do. You don't need to read it front to back; jump to what you need using the contents below.
+Welcome! Lichborne is a modern DragonRealms client for Windows, Linux, and macOS. Whether you're brand new or you've been playing since the StormFront days, this guide walks you from **download** to **fully set up** — and then tours everything the client can do. You don't need to read it front to back; jump to what you need using the contents below.
 
 > **Stuck or something looks wrong?** Come say hi on **Discord** — the invite link lives in **Help → About Lichborne** inside the app (which also shows your version and credits). We're a friendly bunch and love a good bug report.
 
@@ -41,6 +41,7 @@ Welcome! Lichborne is a modern DragonRealms client for Windows. Whether you're b
   - [Coming from another client](#coming-from-another-client)
   - [Transfer a setup between your characters](#transfer-a-setup-between-your-characters)
   - [Command-line niceties](#command-line-niceties)
+  - [Free SimuCoins, claimed for you](#free-simucoins-claimed-for-you)
 - [Feature Matrix: With Lich vs Without Lich](#feature-matrix-with-lich-vs-without-lich)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Getting Help](#getting-help)
@@ -61,7 +62,7 @@ A few ideas shape everything:
 - **Your setup follows you.** Every panel move, color tweak, and contact edit saves automatically to plain files you own. Restart, switch characters, or move to a new PC — it's all exactly where you left it.
 - **Lich is recommended, but not required.** Lichborne shines brightest connected through [Lich5](https://github.com/elanthia-online/lich-5), which unlocks maps, spell timers, variables, and scripts. But you can connect **straight to the game** with no Lich at all, and Lichborne stays genuinely usable — the features that need Lich simply fall back gracefully. See the [Feature Matrix](#feature-matrix-with-lich-vs-without-lich).
 
-**Current state:** Lichborne is in **alpha** — the core experience is solid and improving fast. It's **Windows only (x64)** for now.
+**Current state:** Lichborne is in **alpha** — the core experience is solid and improving fast. It runs on **Windows (x64, stable)**, and as of v0.18.0 on **Linux (AppImage, beta)** and **macOS (Apple Silicon, beta)** too — see [Install](#1-install) for the per-platform notes.
 
 ---
 
@@ -69,14 +70,22 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.17.3**
+**v0.18.0**
 
-- **Cleaner prompts.** No more stacked `>` `>` prompts and no more gaps where the `>` seemed to vanish after a room description — one `>` per turn, where you expect it.
-- **Inline commands.** What you type now shows on the same line as the prompt — `s>stand`, not `s>` then `>stand`.
-- **Resizable panels that stick.** Drag the divider in the Lich Dashboard and every Automations editor; your widths are saved to your character profile.
-- **Text effects.** The old highlight "Glow" is now a picker: Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost, and more — for highlights *and* contact templates.
-- **Lich Dashboard, upgraded** — a new **DR Infomon** tab (browse live character data), an **arguments field** for scripts, a tidier Profiles tab, and syntax-highlighted editors.
-- **A modern facelift** across the whole client — softer surfaces, subtle input glow, tidier cards — with **no loss of game-text space**. Plus: windows no longer close when you drag a text selection out of them.
+- **Lichborne comes to Linux and macOS.** Windows stays the fully-supported stable platform; **Linux (AppImage)** and **macOS (Apple Silicon)** arrive as betas. Linux auto-updates just like Windows. Mac ships **unsigned** for now (Apple's certificate costs $99/yr — a free project defers that until Mac demand shows), which means a one-time **"Open Anyway"** in System Settings and manual update downloads; everything else works identically.
+- **Mac keyboard conventions** — Cmd+F search, Cmd+1–9 character switching, Cmd+Shift+Enter Quick Send — work alongside the Ctrl versions. Cmd+C/V/X are never touched.
+- **Smarter Lich setup on every platform.** Auto Detect knows each OS's standard Lich install (including rbenv Ruby on Linux/Mac), and the setup dialog now **warns if your Ruby is too old** for current Lich (5.18+ needs Ruby 4.0 — looking at you, Fedora system Ruby).
+- **Claim your free SimuCoins from the client.** Simutronics' monthly subscriber SimuCoins have to be claimed or you lose them — click the new **coin** in the top bar to enable checking for an account, and Lichborne tells you when coins are waiting (one click to claim, or turn on Auto-claim). It stays invisible until you enable it, and nothing is sent to the store before you do. See [Free SimuCoins](#free-simucoins-claimed-for-you).
+- **Releases now build on GitHub's own machines** — same installers, more reliable pipeline, and the thing that makes three platforms possible.
+- **Quick Send now targets everyone by default.** `Ctrl+Shift+Enter` opens with **All characters** ticked — untick it to pick specific characters. With one character connected there's no picker at all.
+- **Connecting tells you what it's doing** — each step is named, Bulk Connect shows progress and a clear success/failure summary, and a slow Lich wait now suggests what to check.
+- **Fixed: highlights and triggers that never fired.** A rule whose pattern contained a `.` (anything using `.+`, for example) could be silently skipped — no error, it just never matched. If you have rules you gave up on, try them again.
+- **Smoother in play.** Searching your logs no longer freezes the client, log-writing triggers no longer stutter it, walking around town is smoother if you use Contacts, and the Genie map no longer redraws every room marker on each step — so moving and dragging on the map are much smoother in big zones.
+- **Clearer connecting.** The connect steps are numbered correctly and the final one names the Lich connection, so a slow start reads as progress rather than a freeze.
+- **`/simucoin check` reports back** per account — balance and when the next bonus arrives — instead of only saying it started.
+- **The active character tab now stands out.** It wears the same accent styling as the rest of the client, and tab text scales with your Font Size setting.
+- **A fresher, more consistent look.** The launcher now shows the Lichborne logo, **Favorites collapses** (open by default, and it remembers), and the About Lichborne styling now runs through the **Automations** window and all its tabs, **Contacts**, and **Edit Profile** — with more windows to follow. Text fields in those windows also stopped being invisible on the Classic Light theme.
+- **Fixed:** line numbers in the Lich Dashboard's **Scripts** editor stayed put while the code scrolled — wide Ruby scripts pushed them out of alignment. They track their lines correctly now.
 
 ---
 
@@ -88,7 +97,8 @@ Lichborne is actively developed. A few things we're heading toward — direction
 - **More Lichborne Experiences.** The graphical scenes (Living Tableau, Moons) are the first of a larger set of "graphics for text players" — richer combat instruments, wound/status visuals, and more.
 - **More AI helpers.** Catch Me Up is the first BYOK ("bring your own key") AI feature. Others are designed and on the way — always optional, always with a working non-AI baseline, and always privacy-first.
 - **A proper Discord community** for feedback and bug reports (link in **Help → About Lichborne**).
-- **Code signing**, to remove the first-install SmartScreen warning.
+- **Linux and Mac out of beta.** The v0.18.0 platform betas graduate once they've soaked with testers — if you play on either, your reports are what get them there.
+- **Code signing**, to remove the first-install warnings (Windows SmartScreen now; the macOS certificate — which would also enable Mac auto-update — if Mac demand shows).
 
 ---
 
@@ -98,17 +108,21 @@ Three steps and a one-time in-game command, and you're playing.
 
 ### 1. Install
 
-Download `Lichborne-X.Y.Z-setup.exe` from the **[Releases page](https://github.com/SekmehtDR/Lichborne/releases/latest)** and run it — no admin rights needed.
+All downloads are on the **[Releases page](https://github.com/SekmehtDR/Lichborne/releases/latest)**.
 
-Windows may show a **SmartScreen** warning (we don't have a code-signing certificate yet). Click **More info → Run anyway**. It's safe. Lichborne also **auto-updates** — when a new version is ready it tells you and installs with one click.
+**Windows (stable):** run `Lichborne-X.Y.Z-setup.exe` — no admin rights needed. Windows may show a **SmartScreen** warning (no code-signing certificate yet); click **More info → Run anyway**. It's safe. Auto-updates with one click when a new version lands.
+
+**Linux (beta):** download the `.AppImage`, `chmod +x` it, run it. Auto-update works. If "Remember password" is greyed out, your desktop lacks a keyring service — install GNOME Keyring or KWallet, or just type the password each session.
+
+**macOS (beta, Apple Silicon):** open the `.dmg`, drag Lichborne to Applications. First launch, macOS warns about an unidentified developer — **System Settings → Privacy & Security → "Open Anyway"**, one time. (That's Apple's $99/yr certificate we don't buy as a free project; the app is safe and the source is public.) **Mac updates are manual** — check the Releases page for new versions.
 
 ### 2. Set up Lich (recommended)
 
 **Lich** is a separate, community-maintained proxy that supercharges any DR client. It's what unlocks maps, spell timers, variables, and scripts in Lichborne.
 
-- Install it from the **[Lich5 repository](https://github.com/elanthia-online/lich-5)** (it bundles the Ruby it needs — follow their guide and use their default paths).
-- **Already running Lich** for Genie or another client? You're set — no reinstall.
-- In Lichborne, open **Lich Setup** (the **⚙ Lich Setup** button on the launcher, or **Settings → Lich Setup → Open Lich Setup…**) and hit **↺ Auto Detect**. Green checkmarks mean you're good.
+- Install it per the **[official Lich install guide](https://github.com/elanthia-online/lich-5/wiki/Documentation-for-Installing-and-Upgrading-Lich)** — Windows has a one-click installer; Linux/Mac follow the wiki's steps (Lich in `~/Lich5`, Ruby 4.0+ via rbenv or your distro).
+- **Already running Lich** for Genie, Profanity, or another client? You're set — no reinstall.
+- In Lichborne, open **Lich Setup** (the **⚙ Lich Setup** button on the launcher, or **Settings → Lich Setup → Open Lich Setup…**) and hit **↺ Auto Detect**. Green checkmarks mean you're good. It knows each platform's standard install spots (on a Mac, the first detect asks permission to look at your Desktop folder — that's where the wiki's install lands). If your Ruby is older than 4.0, the dialog warns you — current Lich won't start on it.
 
 *Prefer no Lich? You can skip this entirely — see [Connecting](#connecting--playing-your-whole-team).*
 
@@ -384,6 +398,18 @@ The little things your fingers already know:
 - **Just start typing** — printable keys land in the command bar wherever your focus is, so no keystrokes are lost mid-hunt.
 - **Ctrl+F** searches the live game window itself — land on the latest match, walk older/newer with Enter / Shift+Enter, Esc back to play.
 
+### Free SimuCoins, claimed for you
+
+Simutronics gives subscribers **free SimuCoins every month — but only if you claim them.** Lichborne can watch for them.
+
+- **Turn it on per account**: click the **coin** in the top bar and hit *Enable*. (If you've never enabled it, the coin isn't there at all.)
+- **When coins are waiting** the coin lights up as **polished gold with a shine sweeping across it**, showing the count — click it, then **Claim**. Prefer hands-off? Tick **Auto-claim** for that account and Lichborne claims them the next time it checks. (Epilepsy-safe mode keeps the gold and drops the shimmer.)
+- **When there's nothing to claim** the coin sits **dull and quiet**, and the popover shows the store's own countdown to your next allotment.
+- **By keyboard**: `/simucoin` (status), `/simucoin check`, `/simucoin claim` — or just `/sc`.
+- **Checked once when you start the client**, plus whenever you press *Check now*. There's no background polling.
+
+**What it does with your password:** nothing at all until you enable it for an account — and the popover tells you exactly what will happen before you agree. Once enabled, Lichborne signs in to **store.play.net** (Simutronics' own store) over HTTPS using the account password you already saved in Lichborne, reads your balance, claims if you asked it to, and signs out. Nothing goes anywhere else, and no store data is written to disk. You can turn any account back off from the same menu. *(Thanks to Thires, whose [Genie SimuCoins plugin](https://github.com/Thires/SimuCoins) showed how this works.)*
+
 ---
 
 ## Feature Matrix: With Lich vs Without Lich
@@ -430,13 +456,15 @@ Lich is the **recommended** way to play — it unlocks the map, timers, variable
 | `Ctrl+End` | Jump back to the bottom and resume auto-scroll |
 | `Ctrl+1` … `Ctrl+9` | Switch to character tab by slot |
 | `Ctrl+Tab` | Cycle to the next character tab |
-| `Ctrl+Shift+Enter` | Quick-Send to another character (pre-filled from the active command bar) |
+| `Ctrl+Shift+Enter` | Quick-Send — sends to **all** connected characters by default; untick to pick specific ones (pre-filled from the active command bar) |
 | `Ctrl+F` | Search the live game window |
 | `Ctrl+Enter` / `Alt+Enter` / `NumpadEnter` | Repeat last / second-to-last / send-or-repeat |
 | `Esc` | Clear the command line (or close the slash palette) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Zoom the window in / out / reset |
 
 Plain `Home`/`End` edit the command box (where your cursor usually is); hold `Ctrl` to scroll the story window instead. Macro hotkeys (F1–F12, Ctrl/Alt combos) are set up in the Automations panel.
+
+**On a Mac**, the Cmd key also works for the Lichborne chords — `Cmd+1…9`, `Cmd+Tab` isn't available (macOS owns it) but `Ctrl+Tab` works, `Cmd+Shift+Enter`, `Cmd+F` — and the Ctrl versions all keep working. Cmd+C/V/X/A always stay native, and Cmd combos can't be bound as macros (they belong to the OS).
 
 ---
 
@@ -469,6 +497,9 @@ Type `/` for the live palette; type `/help` in-game for the always-current list,
 
 **AI**
 - `/ai` (status) · `/ai on|off` · `/ai key` (points to Settings) · `/ai catchup [30m|2h|7d|1y]` · `/ai stop`
+
+**Account**
+- `/simucoin` (balance + whether free coins are waiting) · `/simucoin check` · `/simucoin claim` — short form `/sc`
 
 Notes: `edit` on any rule jumps straight to it in the editor; your real mode/group/stream/theme/template names appear as clickable chips as you type; `//text` sends a literal `/text` to the game.
 
@@ -538,8 +569,12 @@ Lichborne keeps a clean, dated **plain-text log** of every session — the game 
 
 ## Appendix D — Troubleshooting & known limits
 
-- **Windows only (x64)** for now.
-- **First-install SmartScreen warning** — expected (no code-signing cert yet); **More info → Run anyway**.
+- **Platforms:** Windows x64 (stable), Linux x64 AppImage (beta), macOS Apple Silicon (beta). Linux/Mac are new in v0.18.0 — report anything odd on Discord.
+- **First-install warnings** — expected on two platforms (no code-signing certs): Windows SmartScreen → **More info → Run anyway**; macOS "unidentified developer" → **System Settings → Privacy & Security → Open Anyway** (one time).
+- **Mac: no auto-update.** Unsigned builds can't self-update (an Apple rule) — grab new versions from the Releases page. Windows and Linux auto-update normally.
+- **Mac: "Lichborne wants to access your Desktop"?** That's the Lich **Auto Detect** looking for the wiki-standard `~/Desktop/Lich5` install — allow it (or browse to Lich manually).
+- **Linux: "Remember password" greyed out?** No keyring service found — install GNOME Keyring or KWallet; until then, type the password each session.
+- **Linux/Mac: Lich won't launch from Lichborne but runs in a terminal?** Point the Ruby path at the **full rbenv path** (`~/.rbenv/shims/ruby`) — apps launched from the desktop don't see your shell's PATH. Auto Detect does this for you.
 - **Map marker stuck?** The Lich Map tracks by room id and is most reliable — turn on DR's room-number display so titles show a number like `[Town Square] (12345)`. The Genie Map matches by room name + description (its data has no ids), so in areas full of identically-named rooms it can briefly lag. A **`LOOK`** resyncs either map.
 - **Hand bar says "Empty" but you're holding something?** The common cause was fixed in v0.13.3. For rare genuine gaps (e.g. spell-summoned items DR doesn't announce), a **`GLANCE`** always resyncs your hands.
 - **Lich won't start after updating Lich?** Recent Lich versions require a newer **Ruby** — check your Ruby version first. And if a very recent Lich shows raw protocol "garbage" instead of the normal game feed, update Lich to its latest patch (a known Lich-side hiccup fixed upstream).

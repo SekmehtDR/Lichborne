@@ -96,8 +96,8 @@ function scoreEntry(e: Entry, words: string[]): number | null {
 // (on/off/catchup, add/remove/list) never list or Tab-complete, unlike
 // verb-only nouns such as /trigger. Keep listing the verbs; the parser's
 // findCommand still RUNS the bare form on Enter, so `/ai`→status is unchanged.
-// (Both such nouns today — ai, colors — have a NO-ARG bare form, so suppressing
-// the bare commit never hides an argument hint.)
+// (All such nouns today — ai, colors, simucoin — have a NO-ARG bare form, so
+// suppressing the bare commit never hides an argument hint.)
 const NOUNS_WITH_VERBS = new Set<string>()
 for (const c of SLASH_COMMANDS) {
   if (c.verb) for (const n of [c.noun, ...c.nounAliases]) NOUNS_WITH_VERBS.add(n.toLowerCase())

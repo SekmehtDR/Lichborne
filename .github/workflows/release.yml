@@ -1,0 +1,120 @@
+# Lichborne release pipeline (CI twin of publish.mjs — which stays untouched
+# as the local Windows-only fallback: `$env:GH_TOKEN = '<token>'; node publish.mjs`).
+#
+# HOW A RELEASE WORKS:
+#   1. Bump package.json version, write release-notes.md, commit, push (same as always).
+#   2. GitHub → Actions tab → "Release" → Run workflow (manual button; nothing
+#      ever builds on plain commits).
+#   3. Wait for green (~10-15 min), review the DRAFT release it produced, click
+#      Publish on GitHub — identical to the publish.mjs flow. The git tag is
+#      only created when Publish is clicked; never tag manually.
+#
+# Shape: prepare (validate notes + pre-create ONE draft) → build (per-OS
+# matrix, each job publishes its artifacts into that draft) → verify (assert
+# the full artifact set + refresh notes). The pre-created draft is what stops
+# parallel OS jobs from minting duplicate drafts on the same tag — the same
+# race publish.mjs step 3 guards against, scaled up from parallel uploads to
+# parallel jobs.
+#
+# ADDING A PLATFORM (e.g. a mac x64 build for an Intel tester): add its matrix
+# entry below, its artifact names to PLATFORM_ARTIFACTS in release-verify.mjs,
+# AND its token to EXPECTED_PLATFORMS in the verify job — all three must move
+# together, or verify passes on a release that silently lacks a platform.
+# (Windows, Linux and macOS are all live as of v0.18.0.) Mac note: unsigned
+# builds (no Apple Developer account) need CSC_IDENTITY_AUTO_DISCOVERY=false so
+# electron-builder doesn't hunt for a signing identity; electron-builder ad-hoc
+# signs automatically, users need the one-time "Open Anyway" step, and
+# auto-update does NOT work unsigned (manual downloads per release).
+name: Release
+
+# Quoted because YAML 1.1 parses a bare `on` as boolean true — GitHub accepts
+# both, but editors' schema validators flag the bare form.
+"on":
+  workflow_dispatch:
+
+# The built-in GITHUB_TOKEN needs release write access; no PAT/secret setup.
+permissions:
+  contents: write
+
+# One release run at a time — two concurrent runs would fight over the draft.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Validate release notes + pre-create draft
+        run: node .github/scripts/release-prepare.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: prepare
+    strategy:
+      # Let the other OS jobs finish even if one fails — verify still catches
+      # the incomplete artifact set, and the partial draft is reusable on re-run.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win nsis
+          # Linux (v0.18.0): AppImage, fully first-class — no signing exists on
+          # Linux, auto-update works out of the box via latest-linux.yml.
+          - os: ubuntu-latest
+            args: --linux
+          # Mac (v0.18.0): UNSIGNED beta — deliberately no Apple Developer
+          # account (free-project decision, revisit if Mac demand shows).
+          # electron-builder ad-hoc signs automatically; users need the
+          # one-time "Open Anyway" in System Settings, and auto-update does
+          # NOT work unsigned (main.ts gates the updater off on darwin).
+          # arm64 only (Apple Silicon); add x64 if an Intel-Mac tester appears.
+          # When a Developer ID cert lands: add the cert + notarytool secrets,
+          # drop CSC_IDENTITY_AUTO_DISCOVERY below, and un-gate the updater.
+          - os: macos-latest
+            args: --mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build main + renderer
+        run: npm run build
+      - name: Package and upload to draft
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code signing on ANY platform today (Windows never signed; Mac
+          # ships unsigned by decision). Stops electron-builder from hunting
+          # for a signing identity in the runner's keychain on mac.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+  verify:
+    # `needs: build` alone would SKIP this job when any matrix build fails —
+    # which is exactly when you most want to be told what the draft is missing.
+    # `!cancelled()` runs it after a partial matrix (fail-fast is off, so the
+    # other OS jobs still finished) and it exits 1 naming the absent artifacts;
+    # gating on prepare's result keeps it from running when there is no draft
+    # to inspect at all. A manual cancel still skips it.
+    needs: [prepare, build]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify draft artifact set + refresh notes
+        run: node .github/scripts/release-verify.mjs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Comma-separated; extend in lockstep with the build matrix above.
+          EXPECTED_PLATFORMS: win,linux,mac

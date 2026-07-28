@@ -135,6 +135,25 @@ function scanSequence(src: string): ScanResult {
       continue
     }
 
+    // `.` matches ANY character, so it can never contribute a guaranteed
+    // literal — it must END the run, exactly like a character class.
+    //
+    // Without this it fell through to the literal-atom branch below and a bare
+    // `.` was appended to the run as a literal dot, while `.+` hit the
+    // "required once" path and appended one. The gate then demanded a real '.'
+    // in the line — so `joins the .+` produced the gate "joins the ." and
+    // silently NEVER FIRED against "Bob joins the adventure". That killed
+    // highlights AND triggers (both go through literalGate), with no error and
+    // the rule still showing as enabled. Six of one tester's highlights were
+    // dead this way, and `joins the .+` is CLAUDE.md's own documented example.
+    // Found in the v0.18.0 perf audit; see the invariant at the top of this
+    // file — a WRONG literal breaks a rule, a MISSING one only costs speed.
+    if (ch === '.') {
+      endRun()
+      i += 1 + (readQuantifier(src, i + 1)?.len ?? 0)
+      continue
+    }
+
     // Literal atom (possibly escaped)
     let lit: string | null = null
     let consumed = 1

@@ -1,7 +1,10 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, clipboard, safeStorage } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as os from 'os'
 import * as crypto from 'crypto'
+import * as cp from 'child_process'
+import { expandHome } from './homePath'
 import { autoUpdater } from 'electron-updater'
 import { ConnectionManager } from './connection/ConnectionManager'
 import { SGEConnection } from './connection/SGEConnection'
@@ -13,6 +16,7 @@ import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
 import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir, ensureExportsDir, getExportsDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import { registerAIHandlers } from './ai'
+import { registerSimuCoinHandlers } from './simucoin'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
@@ -351,6 +355,11 @@ registerSessionLogHandlers()
 // cross back to the renderer; only booleans + streamed text do.
 registerAIHandlers()
 
+// SimuCoin claim (F71, DESIGN §42) — app-level (per ACCOUNT, no sessionId).
+// Same secret-handling stance as AI: the renderer names an account, main reads
+// the password from safeStorage itself, and only a status shape crosses back.
+registerSimuCoinHandlers()
+
 // ── Window ────────────────────────────────────────────────────────────────────
 
 function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
@@ -473,6 +482,7 @@ function runSecondaryWindowClose(win: BrowserWindow) {
 
   Promise.all([flush, drain]).finally(() => {
     flushAllSessionLogs()
+    flushWriteLogs()
     if (!win.isDestroyed()) win.destroy()
   })
 }
@@ -504,7 +514,7 @@ function runAppShutdown() {
             .executeJavaScript('window.__flushProfileSaves ? window.__flushProfileSaves() : Promise.resolve()')
             .catch((err: unknown) => console.error('[shutdown] flush failed', err))
     )
-  ).finally(() => { backupAllProfiles(); flushAllSessionLogs(); stamp('flushAndBackup done') })
+  ).finally(() => { backupAllProfiles(); flushAllSessionLogs(); flushWriteLogs(); stamp('flushAndBackup done') })
 
   // quickClose=true skips the 5s server-ack wait (B99 followup): fire QUIT, give
   // it ~300ms over the local socket, then force-close.
@@ -535,6 +545,22 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
     useLich: creds.useLich,
   }
   broadcastRoster()
+
+  // Connect PROGRESS (v0.18.0). The ConnectionManager already emits a running
+  // commentary ("Launching Lich...", "Waiting for Lich on localhost:11024...",
+  // "Getting login key for X...") and wireSession forwards it as a
+  // connection-status event — but during LOGIN the renderer has no sessionId
+  // yet (this handler is an invoke that resolves at the END), so every one of
+  // those messages was dropped on the floor and the user just watched a
+  // spinner. Mirror them to the CALLING window on a dedicated channel keyed by
+  // character, so the connecting overlay can narrate what's actually happening
+  // and a stall is legible ("Waiting for Lich to start... (12s)") instead of
+  // looking like a hang.
+  const onProgress = (message: string) => {
+    if (event.sender.isDestroyed()) return
+    event.sender.send('connect-progress', { character: creds.character, message })
+  }
+  s.connection.on('status', onProgress)
   try {
     if (creds.useLich) {
       await s.connection.connectViaLich(creds)
@@ -547,6 +573,10 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
   } catch (err) {
     destroySession(s.id)
     return { ok: false, error: String(err) }
+  } finally {
+    // Stop mirroring once login settles — from here the session is real and
+    // its status flows through the normal connection-status channel.
+    s.connection.off('status', onProgress)
   }
 })
 
@@ -797,52 +827,152 @@ ipcMain.handle('browse-file', async (_event, filters: { name: string; extensions
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
-ipcMain.handle('discover-lich-paths', (_event, currentRuby: string, currentLich: string) => {
+// Sort semver-ish version dir names newest-first (shared by the Windows
+// Ruby4Lich5 scan and the Linux/Mac rbenv-versions scan).
+function sortVersionsDesc(names: string[]): string[] {
+  return names.slice().sort((a, b) => {
+    const pa = a.split('.').map(Number)
+    const pb = b.split('.').map(Number)
+    for (let i = 0; i < 3; i++) {
+      if (pa[i] !== pb[i]) return (pb[i] ?? 0) - (pa[i] ?? 0)
+    }
+    return 0
+  })
+}
+
+// Best-effort `ruby -v` probe. Lich 5.18+ hard-requires Ruby 4.0 and refuses
+// to launch on older interpreters (it surfaces as a failed-launch banner) —
+// warning at setup time beats a confusing connect failure. Notably the Fedora
+// wiki path installs the SYSTEM Ruby (3.3/3.4 as of Fedora 43), which is
+// exactly the trap this catches. Returns null when the probe fails (missing
+// file, timeout) — version-unknown is NOT an error condition.
+function probeRubyVersion(rubyPath: string): Promise<string | null> {
+  return new Promise(resolve => {
+    try {
+      // windowsHide explicitly: ruby.exe is a console-subsystem binary spawned
+      // from a GUI process, and this codebase treats console-window context as
+      // load-bearing (see LichConnection's spawn notes). Cheaper to be explicit
+      // than to rely on the Node default.
+      cp.execFile(expandHome(rubyPath), ['-v'], { timeout: 3000, windowsHide: true }, (err, stdout) => {
+        if (err) { resolve(null); return }
+        const m = /ruby (\d+\.\d+\.\d+)/.exec(String(stdout))
+        resolve(m ? m[1] : null)
+      })
+    } catch { resolve(null) }
+  })
+}
+
+// Per-platform Lich/Ruby auto-discovery (v0.18.0 cross-platform). Probe lists
+// come from the official install docs: Windows = the Ruby4Lich5 one-click
+// installer layout; Linux/Mac = the elanthia-online wiki (zip extracted to
+// ~/Lich5 — BOTH casings probed, Linux filesystems are case-sensitive and the
+// wiki itself mixes them; the Mac guide has users drag the folder to
+// ~/Desktop/Lich5; Ruby via rbenv on Debian/Mac, system Ruby on Fedora,
+// Homebrew as a fallback). Explicit absolute paths everywhere — NEVER resolve
+// bare `ruby` from PATH: a GUI app launched from Finder/the dock doesn't
+// inherit the shell PATH that makes rbenv shims work.
+//
+// `probeDesktop` (Mac only): touching ~/Desktop fires the macOS privacy
+// consent prompt, so only the setup dialog's explicit Auto Detect passes true
+// — the silent startup discovery in App.tsx must never trigger that dialog.
+ipcMain.handle('discover-lich-paths', async (_event, currentRuby: string, currentLich: string, opts?: { probeDesktop?: boolean; interactive?: boolean }) => {
+  const platform = process.platform
   const result = {
+    platform,
     rubyPath:         null as string | null,
     lichPath:         null as string | null,
-    rubyAlreadyValid: false,
-    lichAlreadyValid: false,
+    rubyAlreadyValid: fs.existsSync(expandHome(currentRuby ?? '')),
+    lichAlreadyValid: fs.existsSync(expandHome(currentLich ?? '')),
     baseFolderExists: false,
-    isWindows:        process.platform === 'win32',
+    rubyVersion:      null as string | null,
+    // Back-compat field — LichSetupFields keyed its whole status banner on it
+    // pre-v0.18.0. Kept in sync with `platform`.
+    isWindows:        platform === 'win32',
   }
+  const home = os.homedir()
 
-  if (!result.isWindows) return result
-
-  const base = 'C:\\Ruby4Lich5'
-  result.baseFolderExists   = fs.existsSync(base)
-  result.rubyAlreadyValid   = fs.existsSync(currentRuby)
-  result.lichAlreadyValid   = fs.existsSync(currentLich)
-
-  if (!result.baseFolderExists) return result
-
-  if (!result.rubyAlreadyValid) {
-    try {
-      const versionDirs = fs.readdirSync(base, { withFileTypes: true })
-        .filter(e => e.isDirectory() && /^\d+\.\d+\.\d+$/.test(e.name))
-        .map(e => e.name)
-        .sort((a, b) => {
-          const pa = a.split('.').map(Number)
-          const pb = b.split('.').map(Number)
-          for (let i = 0; i < 3; i++) {
-            if (pa[i] !== pb[i]) return pb[i] - pa[i]
+  if (platform === 'win32') {
+    const base = 'C:\\Ruby4Lich5'
+    result.baseFolderExists = fs.existsSync(base)
+    if (result.baseFolderExists) {
+      if (!result.rubyAlreadyValid) {
+        try {
+          const versionDirs = sortVersionsDesc(
+            fs.readdirSync(base, { withFileTypes: true })
+              .filter(e => e.isDirectory() && /^\d+\.\d+\.\d+$/.test(e.name))
+              .map(e => e.name)
+          )
+          for (const v of versionDirs) {
+            const candidate = path.join(base, v, 'bin', 'ruby.exe')
+            if (fs.existsSync(candidate)) { result.rubyPath = candidate; break }
           }
-          return 0
-        })
-      for (const v of versionDirs) {
-        const candidate = path.join(base, v, 'bin', 'ruby.exe')
-        if (fs.existsSync(candidate)) { result.rubyPath = candidate; break }
+        } catch {}
       }
+      if (!result.lichAlreadyValid) {
+        const candidate = path.join(base, 'Lich5', 'lich.rbw')
+        if (fs.existsSync(candidate)) result.lichPath = candidate
+      }
+    }
+  } else {
+    // Linux + macOS. Lich: the wiki's zip lands in ~/Lich5 (docs also write
+    // ~/lich5 — probe both); Mac's guide additionally uses ~/Desktop/Lich5.
+    const lichCandidates = [
+      path.join(home, 'Lich5', 'lich.rbw'),
+      path.join(home, 'lich5', 'lich.rbw'),
+      path.join(home, 'lich-5', 'lich.rbw'),
+      ...(platform === 'darwin' && opts?.probeDesktop
+        ? [path.join(home, 'Desktop', 'Lich5', 'lich.rbw')]
+        : []),
+    ]
+    // Ruby: rbenv shim first (version-agnostic, survives `rbenv global`
+    // changes), then concrete rbenv versions newest-first, then Homebrew
+    // (Apple Silicon + Intel prefixes), then system Ruby.
+    const rubyCandidates: string[] = [path.join(home, '.rbenv', 'shims', 'ruby')]
+    try {
+      const versionsDir = path.join(home, '.rbenv', 'versions')
+      const versions = sortVersionsDesc(
+        fs.readdirSync(versionsDir, { withFileTypes: true })
+          .filter(e => e.isDirectory() && /^\d+\.\d+\.\d+$/.test(e.name))
+          .map(e => e.name)
+      )
+      for (const v of versions) rubyCandidates.push(path.join(versionsDir, v, 'bin', 'ruby'))
     } catch {}
+    rubyCandidates.push('/opt/homebrew/bin/ruby', '/usr/local/bin/ruby', '/usr/bin/ruby')
+
+    result.baseFolderExists = lichCandidates.some(c => fs.existsSync(path.dirname(c)))
+    if (!result.lichAlreadyValid) {
+      for (const c of lichCandidates) {
+        if (fs.existsSync(c)) { result.lichPath = c; break }
+      }
+    }
+    if (!result.rubyAlreadyValid) {
+      for (const c of rubyCandidates) {
+        if (fs.existsSync(c)) { result.rubyPath = c; break }
+      }
+    }
   }
 
-  if (!result.lichAlreadyValid) {
-    const candidate = path.join(base, 'Lich5', 'lich.rbw')
-    if (fs.existsSync(candidate)) result.lichPath = candidate
+  // Version-probe whichever Ruby the user will end up with (freshly found, or
+  // the already-valid configured one) — but ONLY for an explicit Auto Detect.
+  // The silent startup discovery must not spawn a `ruby -v` child process on
+  // every launch: nothing reads rubyVersion on that path, it delays startup by
+  // up to the probe timeout, and an unexplained ruby.exe execution at boot is
+  // exactly what AV/EDR heuristics flag. Gated on the same opt-in as the mac
+  // Desktop probe (this is why the flag is `interactive`, not `probeDesktop`).
+  if (opts?.probeDesktop || opts?.interactive) {
+    const effectiveRuby = result.rubyPath ?? (result.rubyAlreadyValid ? currentRuby : null)
+    if (effectiveRuby) result.rubyVersion = await probeRubyVersion(effectiveRuby)
   }
 
   return result
 })
+
+// Cross-platform (v0.18.0): whether OS-encrypted password storage is usable.
+// Windows (DPAPI) and macOS (Keychain) are always true; Linux needs a secret
+// service (GNOME Keyring / KWallet) — false on bare window-manager setups,
+// where savePassword silently no-ops. The wizard shows a notice so "remember
+// password didn't remember" reads as a missing keyring, not a broken app.
+ipcMain.handle('secure-storage-available', () => safeStorage.isEncryptionAvailable())
 
 ipcMain.handle('browse-folder', async () => {
   const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
@@ -858,8 +988,11 @@ ipcMain.handle('list-map-dir', (_event, dir: string) => {
   } catch { return null }
 })
 
+// expandHome: this is the ONE main-side file reader that receives a
+// RENDERER-BUILT path, and the renderer stores Lich paths in their `~` form
+// (v0.18.0). Without it, every Lich Dashboard read failed on Linux/macOS.
 ipcMain.handle('read-file', (_event, filePath: string) => {
-  try { return fs.readFileSync(filePath, 'utf-8') } catch { return null }
+  try { return fs.readFileSync(expandHome(filePath), 'utf-8') } catch { return null }
 })
 
 // ── Genie maps parse cache ────────────────────────────────────────────────────
@@ -968,7 +1101,8 @@ ipcMain.handle('moons:fetch-sun-data', async (): Promise<{ sunRiseAt: number; su
 // ── Lich file-system helpers ──────────────────────────────────────────────────
 
 function lichDirFrom(lichPath: string): string {
-  return path.dirname(lichPath)
+  // expandHome: Linux/Mac lichPath defaults are `~`-relative (v0.18.0).
+  return path.dirname(expandHome(lichPath))
 }
 
 ipcMain.handle('find-lich-map-file', (_e, lichPath: string): { jsonPath: string; mapsDir: string } | null => {
@@ -1183,21 +1317,68 @@ ipcMain.on('flash-window', (e) => {
   BrowserWindow.fromWebContents(e.sender)?.flashFrame(true)
 })
 
-ipcMain.on('write-log', (_e, filename: string, content: string) => {
+// Trigger `log` action. BUFFERED (v0.18.0 perf audit): this is driven PER
+// MATCHING LINE, per session, and the old shape did an existsSync + a full
+// open/write/close appendFileSync on EVERY call — ~500µs of BLOCKED main each,
+// measured. Main owns every session's socket, so that cost stalls every
+// connected character at once (~33ms/sec of blocked main at a modest 65
+// fires/sec; ~250ms/sec under flood). Now it buffers per file and flushes on
+// the same 1s/100-record cadence sessionLog.ts uses — 2000 lines went from
+// ~1015ms of blocked main to ~0.5ms in the benchmark.
+const LF = String.fromCharCode(10)
+const writeLogBuffers = new Map<string, string[]>()
+let writeLogTimer: NodeJS.Timeout | null = null
+let writeLogDirReady = false
+let writeLogPending = 0
+
+function flushWriteLogs() {
+  if (writeLogTimer) { clearTimeout(writeLogTimer); writeLogTimer = null }
+  writeLogPending = 0
+  if (writeLogBuffers.size === 0) return
   try {
-    const logsDir = app.isPackaged
+    const dir = app.isPackaged
       ? path.join(path.dirname(app.getPath('exe')), 'Logs')
       : path.join(app.getAppPath(), 'Logs')
-    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true })
-    const safeName = path.basename(filename)
-    fs.appendFileSync(path.join(logsDir, safeName), content + '\n', 'utf8')
+    // Once per process, not once per line.
+    if (!writeLogDirReady) { fs.mkdirSync(dir, { recursive: true }); writeLogDirReady = true }
+    for (const [name, chunk] of writeLogBuffers) {
+      if (chunk.length === 0) continue
+      try { fs.appendFileSync(path.join(dir, name), chunk.join(''), 'utf8') } catch { /* skip this file */ }
+    }
+  } catch { /* dir unavailable — drop rather than throw on a background write */ }
+  writeLogBuffers.clear()
+}
+
+ipcMain.on('write-log', (_e, filename: string, content: string) => {
+  try {
+    const name = path.basename(filename)
+    const buf = writeLogBuffers.get(name)
+    if (buf) buf.push(content + LF)
+    else writeLogBuffers.set(name, [content + LF])
+    writeLogPending++
+    if (writeLogPending >= 100) flushWriteLogs()
+    else if (!writeLogTimer) writeLogTimer = setTimeout(flushWriteLogs, 1000)
   } catch {}
 })
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
-ipcMain.on('check-for-updates',  () => autoUpdater.checkForUpdates())
+ipcMain.on('check-for-updates',  () => {
+  // macOS: auto-update requires a code-signed app (Squirrel.Mac validates the
+  // signature chain) and 0.18.0 Mac builds ship unsigned — deliberately, no
+  // Apple Developer account (see release.yml). A real check would error
+  // confusingly, so answer the menu click with the honest instruction instead.
+  if (process.platform === 'darwin') {
+    primaryWindow()?.webContents.send('updater-log',
+      'Auto-update is unavailable on macOS (unsigned beta build) — download new versions from GitHub Releases.')
+    return
+  }
+  autoUpdater.checkForUpdates()
+})
 
 function setupAutoUpdater() {
+  // macOS unsigned builds: skip the startup check entirely (same reason as
+  // above — electron-updater would just emit errors against an unsigned app).
+  if (process.platform === 'darwin') return
   autoUpdater.autoDownload = false
   // Auto-update UI lives in the primary (launcher) window.
   autoUpdater.on('update-available', (info) => {
@@ -1261,6 +1442,11 @@ function refreshMenuState() {
 
 function setupMenu() {
   const menu = Menu.buildFromTemplate([
+    // macOS convention: the first menu is the application menu (About / Hide /
+    // Quit under the app's name). Electron's appMenu role supplies the
+    // standard items; without it the File menu gets mangled into that slot.
+    // Windows/Linux get no extra menu (spread of an empty array).
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     {
       label: 'File',
       submenu: [

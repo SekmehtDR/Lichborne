@@ -7519,3 +7519,304 @@ Short records for the rest of the v0.15.2 review batch (full behavior in Tracker
   `planReconnect` in [reconnectPlan.ts](src/renderer/reconnectPlan.ts) — F62's eligibility rules
   extracted pure precisely for this) plus the F59 split cases in `tmp-cmd-harness`. The version's
   test plan tags harness-locked items `[auto]`; the React wiring stays the manual pass.
+
+---
+
+## 41. Cross-Platform Support — Windows · Linux · macOS (v0.18.0)
+
+### 41.1 Stance
+
+v0.18.0 makes Lichborne cross-platform. **Windows x64 is the stable platform; Linux x64 (AppImage) and macOS arm64 (dmg+zip) ship as labeled BETAS.** The macOS build is deliberately **UNSIGNED** — a free-project decision (no Apple Developer account; the $99/yr Developer ID cert is revisited only if Mac demand proves out). Consequences of unsigned Mac builds, all handled explicitly:
+
+- First launch requires System Settings → Privacy & Security → **"Open Anyway"** (Gatekeeper; macOS 15+ removed the right-click bypass). Documented in README/User Guide/release notes — never left for the user to discover cold.
+- **Auto-update is OFF on darwin** (Squirrel.Mac refuses unsigned apps): `setupAutoUpdater` returns early, and the menu's Check for Updates answers with a download-from-GitHub notice instead of erroring (main.ts). Windows (NSIS + latest.yml) and Linux (AppImage + latest-linux.yml) auto-update normally.
+- When a cert ever lands: add cert + notarytool secrets to the mac CI job, drop `CSC_IDENTITY_AUTO_DISCOVERY=false`, un-gate the darwin updater. Nothing else changes — the zip artifact Squirrel.Mac needs is already published.
+
+### 41.2 Platform detection & defaults
+
+- Main: `process.platform`. Renderer: `window.api.platform` (preload exposes it synchronously) → `IS_MAC`/`IS_WINDOWS` in lichSettings.ts.
+- Per-platform `DEFAULT_RUBY`/`DEFAULT_LICH` (lichSettings.ts, single-sourced into profile.ts's shared-profile defaults): Windows keeps `C:\Ruby4Lich5\...`; Linux `/usr/bin/ruby` + `~/Lich5/lich.rbw`; Mac `~/.rbenv/shims/ruby` + `~/Lich5/lich.rbw`.
+- **`~`-relative paths are expanded in MAIN ONLY** via `expandHome` (src/main/homePath.ts) at every lichPath/rubyPath consumption point: LichConnection.launch, sqliteReader's lich.db3 derivation, lichDirFrom (maps/scripts/profiles), discovery validation. The renderer can't know the home dir synchronously, so it stores/displays `~` literally. **Rule: a new main-side consumer of these paths MUST expandHome.**
+- **Never resolve bare `ruby` from PATH**: GUI apps launched from Finder/the dock (and some Linux launchers) don't inherit the shell PATH that makes rbenv shims resolve — always explicit absolute paths.
+
+### 41.3 Lich discovery (per-platform probe tables)
+
+Probe lists mirror the official install docs (elanthia-online wiki; verified 2026-07-26):
+
+| Platform | Lich probes | Ruby probes (in order) |
+|---|---|---|
+| win32 | `C:\Ruby4Lich5\Lich5\lich.rbw` | `C:\Ruby4Lich5\<ver>\bin\ruby.exe` newest-first |
+| linux | `~/Lich5`, `~/lich5`, `~/lich-5` (`lich.rbw`) | rbenv shim → rbenv versions newest-first → `/opt/homebrew` → `/usr/local` → `/usr/bin` |
+| darwin | ditto + `~/Desktop/Lich5` (behind `probeDesktop`) | ditto |
+
+- Both `~/Lich5` casings are probed — Linux filesystems are case-sensitive and the wiki itself mixes the two.
+- **`probeDesktop` opt-in**: touching `~/Desktop` fires the macOS privacy consent prompt. Only LichSetupFields' explicit **Auto Detect** passes it; App.tsx's silent startup discovery never does. Keep it that way — a privacy prompt at app launch reads as spyware.
+- **Ruby version probe**: discovery runs `ruby -v` (best-effort, 3s timeout) and LichSetupFields warns below 4.0 — Lich 5.18+ hard-requires Ruby 4.0 and the Fedora wiki path installs the 3.x system Ruby (the predictable tester trap). Version-unknown is silent, never an error.
+
+### 41.4 Input & UI conventions
+
+- **Cmd chords are ADDITIVE on Mac, never replacements**: `primaryMod = ctrlKey || (IS_MAC && metaKey)` for QuickSend / Ctrl+Tab / Ctrl+1–9 (App.tsx); Cmd+F for scrollback search (exactly-one-of ctrl/meta, GameWindow). Ctrl variants stay live everywhere — documented Windows muscle memory never breaks.
+- **Meta chords are never macro-bindable**: `formatKeyCombo` bails on `metaKey` (macros.ts). Pre-fix, Cmd+C formatted as bare `C`, so a macro bound to `C` would swallow the OS copy chord. No stored combo can contain Meta (the same function records combos), so nothing legitimate is lost.
+- Menu: darwin gets `{ role: 'appMenu' }` first (About/Hide/Quit under the app name); other platforms unchanged.
+- Fonts: Menlo (mac) / DejaVu + Liberation (linux) appended to the FONT_FAMILIES stacks AFTER the Windows names — Windows rendering byte-identical.
+- Linux keyring: `secure-storage-available` IPC (safeStorage.isEncryptionAvailable) → AddCharacterWizard disables "Remember password" with an explanation when no secret service exists (GNOME Keyring/KWallet). Windows/mac are always true.
+
+### 41.5 Packaging & release pipeline
+
+- package.json: `build.mac` (dmg+zip, **arm64 only** — add x64 if an Intel-Mac tester appears) and `build.linux` (AppImage x64), each with an explicit `artifactName` template pinned to `PLATFORM_ARTIFACTS` in `.github/scripts/release-verify.mjs`. `build/icon.png` (512, upscaled from the ico's 256 frame) feeds mac/linux icons — a crisp ≥512 source is an open polish item.
+- `.github/workflows/release.yml`: manual-only (workflow_dispatch); prepare (validate notes + pre-create ONE draft) → 3-OS build matrix (`CSC_IDENTITY_AUTO_DISCOVERY=false` — no signing anywhere today) → verify (all seven artifacts in one draft + notes refresh). Same draft/Publish/tag semantics as publish.mjs, which remains the untouched local Windows-only fallback. `ci.yml` = Check zero on every push/PR.
+- **Lockstep rules**: a matrix entry ↔ its `EXPECTED_PLATFORMS` token; artifact names ↔ `PLATFORM_ARTIFACTS` + publish.mjs's `expected` list. (Also recorded in CLAUDE.md's release section.)
+
+### 41.6 What stays platform-agnostic (verified in the v0.18.0 sweep)
+
+The whole game pipeline (sockets/parser/renderer), profiles (userData paths), safeStorage key handling, session logs, `shell.openPath`/`openExternal`, the single child-process spawn (Lich launch — POSIX-clean; `resolveRubyw` only rewrites `ruby.exe` suffixes so Linux/Mac interpreters pass through verbatim), and the darwin lifecycle handlers (`window-all-closed`/`activate`, which predated this work). GTK Lich scripts are native on Linux, Homebrew-supported on Mac — better off than Windows historically was.
+
+---
+
+## 42. SimuCoin Claim (F71, v0.18.0)
+
+### 42.1 What and why
+
+Simutronics gives subscribers a **monthly free-SimuCoin allotment that must be manually claimed** on store.play.net — easy to forget, so players lose coins they're owed. The community reference is [Thires' SimuCoins](https://github.com/Thires/SimuCoins), a Genie plugin doing the same job; Lichborne implements the mechanism natively.
+
+**Principles check:** it does NOT duplicate Lich (Lich is a game proxy — it has no web-store surface, and this needs none of its machinery); it's account-adjacent convenience in the launcher/profile family; and it works identically with or without Lich (Principle #2 — it never touches the game socket).
+
+### 42.2 Flow (verified 2026-07-26 against the reference plugin)
+
+An authenticated **HTML scrape** of store.play.net, all in MAIN:
+
+1. `GET /Account/SignIn?returnURL=%2FAccount%2FSignIn` → scrape the `__RequestVerificationToken` hidden field
+2. `POST` the same URL with `__RequestVerificationToken` / `UserName` / `Password` / `RememberMe=true`
+3. `GET /store/purchase/dr` → the **SIGN OUT link is the authoritative signed-in check** (more robust than matching a redirect URL); scrape the balance, a `Subscription Reward: (\d+) Free SimuCoins` offer, or the countdown text
+4. When claiming: `POST /Store/ClaimReward` with `game=DR` → parse `Claimed (\d+)` + the refreshed balance
+5. Always `GET /Account/SignOut`, then wipe the cookie jar
+
+**Cadence: once per app launch, then on demand.** Deliberately NO background polling — repeated automated logins are the posture most likely to look like abuse. **Claiming is per-account opt-in** (`autoClaim`), default **ask**: coins found → the coin icon lights up → the user clicks. A plain check never acts on the account.
+
+### 42.3 Architecture
+
+- **All network work in main** ([src/main/simucoin/](src/main/simucoin/)) — the AI-adapter rule: the password never crosses IPC (the renderer names an ACCOUNT; main pulls the credential from `passwords.ts`/safeStorage itself), the renderer never sees store HTML, and a renderer `fetch` would be CSP-blocked anyway. Only `SimuCoinStatus` crosses back.
+- **Cookies AND cache:** an **in-memory** Electron partition (`session.fromPartition('simucoin', { cache: false })`, no `persist:` prefix → never written to disk), reset via `resetJar()` (cookies **+ `clearCache()`**) before every attempt and after every run, with `Cache-Control: no-cache` on every request. Requests go through Electron's `net` (Chromium stack: real cookie handling, proxy support, HTTPS validation) with a whole-request timeout. **`cache: false` is load-bearing, not hygiene (B229):** ASP.NET pairs the sign-in form's `__RequestVerificationToken` FIELD with a matching COOKIE, and a partition's HTTP cache is storage that `clearStorageData({storages:['cookies']})` does NOT touch — so a cached sign-in page served a **stale token against a fresh cookie** and the second account of a session was rejected. Never let the token GET be cacheable.
+- **One automatic retry on `auth-failed`** against a fully reset jar (B229) — the user's own successful "click try again", automated. Bounded to one extra attempt (a wrong password must never become a retry storm against Simutronics' login) and **cannot double-claim**, because `auth-failed` returns before any claim POST. A second rejection is reported as a real credential problem, not a transient one.
+- **In-flight guard** (`inFlight` map, per account): two windows — or a click racing the startup pass — must never run two sign-ins, let alone two claim POSTs, for one account.
+- **Multi-account runs are SEQUENTIAL** (startup pass and `/simucoin` alike): parallel store logins are rude and racy.
+- **[constants.ts](src/main/simucoin/constants.ts) is the ONLY file that knows store HTML.** A store redesign is a one-file fix. `parseNextAt` is deliberately conservative (only clear day/hour counts) — **never invent a schedule**, because a wrong "next claim" hides the icon while coins ARE waiting, the worst failure this feature has.
+
+### 42.4 Failure posture — go quiet, never guess
+
+Every failure resolves to a status, never an exception: an unrecognized sign-in page, a rejected login, a store outage, or a claim POST that doesn't confirm. A claim that can't be confirmed reports **still-claimable** rather than a false success. The startup pass suppresses failure TOASTS (`quiet`) — a store outage must not greet the user with an error they didn't ask for; the reason still shows in the coin popover.
+
+### 42.5 UI & consent
+
+- **Coin button in the AppBar** ([SimuCoinButton.tsx](src/renderer/components/SimuCoinButton.tsx)) — app-level, because an allotment belongs to an ACCOUNT, not a character (pitfall #57's converse: a per-session component must not own account state). **Quiet by default (UX standard #1): it renders NOTHING when no account is opted in or offerable** — no dead icon for players who don't use this.
+- **The coin is a drawn SVG object, and there is ONE artwork with two states.** A minted gold face (rim → radial face → bevel ring → struck "S" → static glint → a sweeping specular band). Colors are **baked, not theme vars** — it depicts an OBJECT, the same Principle #4 exception as the map tiles and the moons' lore colors. **Nothing to claim ⇒ the SAME artwork under `grayscale + brightness + opacity`**, never a second palette, so the gold and dull states can't drift; a claim then *brightens* the coin (400ms transition) instead of swapping an icon. Claimable adds full colour, a breathing glow, and the sweeping sheen; busy spins it. **Every animation is dropped under `:root[data-epilepsy-safe='true']` while the GOLD is kept** — the colour is the signal, the motion is decoration. Sized in `em` so it tracks the game font (never `rem`, pitfall #45), and its def ids are `useId`-namespaced (pitfall #95).
+- **Consent is per account, shown on the surface that enables it** (the AI-consent precedent): the disclosure names exactly what is sent (the saved account password, over HTTPS, to store.play.net), that nothing goes anywhere else, and that no store data is written to disk. **Nothing touches the network before that opt-in.** An account with no saved password is never offered (there's no other credential source).
+- **Config** ([simucoinConfig.ts](src/renderer/simucoinConfig.ts)): `{ consented, autoClaim }` per account, both default false → `SharedProfile.simucoin` → `_shared.yaml` (Principle #1). Optional field, non-breaking, **no migration**. Deliberately NOT a Transfer category (machine-local + credential-gated — the `ai`/`automationStats` precedent). Both the loader and `importSharedProfile` coerce each entry, so a hand-edited YAML can't yield a half-shaped record that reads as consented.
+- **Slash surface** (Principle #11): `/simucoin` (bare = status) · `check` · `claim`, aliases `/sc`, `/simucoins`, plus a `NOUN_HELP` line. A **bare+verbs noun** — covered automatically by the registry-derived `NOUNS_WITH_VERBS`; its bare form takes no args, so the palette rule holds. Executors are synchronous while a run is a store round-trip, so they report only whether it **started**; results arrive as a toast + the popover.
+
+### 42.6 Reporting an async result from a synchronous executor (B234)
+
+Slash executors are synchronous; a SimuCoin run is a network round-trip. The first cut let the executor return only "started" and pushed the outcome to a toast + the coin popover — so `/simucoin check` printed "Checking the SimuCoin store…" and never answered the question it exists to answer.
+
+The shape now, and the one to copy for any future async slash command:
+
+- The App-owned runner **resolves with the result** (`runSimucoin` → `SimuCoinStatus | null`). The caller must NOT read the value back out of React state — the `setState` that stores it has not committed when the promise resolves, so a read-back formats the *previous* run.
+- GameWindow appends the result through **`emitClientLines`**, a small helper that writes `internal-system` lines and logs them to `[sys]` — the same treatment a synchronous slash result gets, so async output is indistinguishable from sync output.
+- **One formatter** (`simucoinRowText`) serves both the async report and the bare `/simucoin` status readout. Two copies is how the same state ends up described two ways.
+- Results append **per account as each settles**, not batched — the runs are sequential by design (pitfall #101), so batching would show nothing for several seconds.
+- The interim line says results FOLLOW ("results appear here when each account finishes…") rather than implying it is the answer.
+
+### 42.7 Not done / open
+
+- **Only DR is claimed** (`game=DR`) — correct for a DragonRealms client; a GS player with a shared account would need a game selector.
+- **No persisted next-claim date** — main's cache is per-process, so a restart re-checks. Honest and simple ("checked once per launch"); persisting `nextAt` would let us skip launches, at the cost of hiding the icon if the estimate is ever wrong.
+- **Never run against the live store from this codebase** — the flow is verified pattern-level against the reference plugin, not end-to-end. First real-account run is a tester step (test plan).
+
+---
+
+## 43. Modal Chrome Unification (v0.18.0)
+
+### 43.1 Decision
+
+**There is ONE modal look across the client — the About Lichborne chrome — and every dialog wears it** (Sekmeht, 2026-07-27, after the launcher restyle: *"I loved the work you did with the logon screen… can you do the same for Automations / Contacts"*). Dialogs that each look slightly different make a well-built client read as assembled rather than designed. [about.css](src/renderer/styles/about.css) is the reference implementation.
+
+This is the **second half of a unification deferred since v0.11.2**. That release shipped the SAFE slice — the `--modal-w-standard` / `--modal-h-standard` SIZE tokens — and explicitly held back the chrome (background / header / backdrop / close-button) because changing a shared surface risks the light-theme regressions of pitfall #55. v0.18.0 proceeds with that risk managed by a per-dialog audit (43.4).
+
+### 43.2 The tokens
+
+The recipe lives in `:root` in [global.css](src/renderer/styles/global.css) so retuning the house look is one edit:
+
+| Token | Role |
+|---|---|
+| `--modal-bg` / `--modal-border` / `--modal-radius` / `--modal-shadow` | the dialog surface |
+| `--modal-scrim` | the backdrop wash |
+| `--modal-head-bg` / `--modal-head-border` / `--modal-head-color` | the accent-tinted header band + its title |
+| `--modal-ctl-hover` | neutral hover for header controls (deliberately NOT more accent — accent-on-accent inside a tinted band muddies it) |
+| `--modal-input-bg` | field fill on a modal surface (see 43.4) |
+
+**A dialog opts in by USING THE TOKENS, never by copying about.css's literals** — a copied literal is a dialog that silently stops matching the next time the house style moves.
+
+### 43.3 The visual grammar
+
+- Title in `--modal-head-color` on the accent band; a rounded ~1.7rem close button that lights on hover.
+- Tab bars are accent **chips**: pill radius, accent tint + accent hairline when active, transparent with a neutral hover when not (`.at-tab`, `.cp-tab`).
+- **Only the TOP-LEVEL header is an accent band.** Section labels inside the body stay small/uppercase/muted — make them accent too and the hierarchy flattens. Both the launcher's account panels and the Automations sub-panels follow this.
+- The chrome also applies to **inline panels that read as cards** (the launcher's account/Favorites blocks), not only floating dialogs. In `.launcher--compact` the panel chrome is suppressed, because the containing modal already draws the identical surface and hairline — two identical frames 16px apart read as an accidental double border.
+
+### 43.4 Converting a dialog — the three obligations
+
+1. **Re-read its inner elements.** Their contrast was tuned against the OLD surface. On light themes `--bg-app`/`--bg-base`/`--bg-input` collapse (Classic Light makes all three `#ffffff`), so fields, dividers and "raised" children can vanish. `--modal-input-bg` exists precisely because a bare `--bg-input` field on a `--modal-bg` surface is a framed void on Classic Light. **This has bitten twice** — the v0.9.2 wizard tiles, and v0.18.0's Edit Profile fields, the latter *in the same changeset that wrote the warning*.
+2. **Eyeball it on a light theme.** Classic Light is the harshest case.
+3. **Check the class prefix is unique first.** Two components sharing a prefix are compatible only by luck until someone restyles one. Triggers and the Theme Picker both used `.tp-` and both declared `.tp-modal`/`.tp-header`/`.tp-title` with the same properties — restyling Triggers would have silently restyled the Theme Picker, with bundle load order deciding. Triggers was renamed to **`.trg-`** in v0.18.0 (the fix pitfall #55 had recommended for years); `.tp-` is now exclusively the Theme Picker's.
+
+### 43.5 Status
+
+**Converted:** About (reference), Edit Profile (`.cne-`), the launcher's account/Favorites panels, the whole Automations family (`.at-` shell + `.hp-` highlights/mutes/substitutes, `.trg-` triggers, `.ma-` macros/aliases, `.gm-` groups), Contacts (`.cp-`).
+
+**Still on their own chrome:** Panel Manager, Settings, Lich Dashboard, Session Log, Theme Picker/Editor, Import Wizard, Profile Transfer, Quick Send, AI Consent. Convert opportunistically when working in one; keep the list in global.css current. Deliberately NOT a big-bang sweep — each conversion needs its own inner-element audit, and doing twenty blind is how four light-theme regressions ship at once.
+
+---
+
+### 43.6 Character tabs adopt the chip treatment (v0.18.0)
+
+The app-bar character tabs were the last high-traffic surface still on pre-house styling, and they read as flat: `:hover` and `--active` both set `background: var(--bg-base)`, so the active tab and a hovered one were **pixel-identical** and the only real cue was `font-weight: 600`.
+
+They now wear the house accent chip — `accent 13%` fill, `accent 30%` hairline — the same recipe as `.at-tab--active` and the About modal tab bar. Three decisions worth keeping:
+
+- **Treatment, not silhouette.** The chip normally comes as a pill; the tabs keep their pre-v0.18.0 rounded-top shape (Sekmeht). A surface can adopt the house treatment while keeping a shape that suits its role — the accent vocabulary is what makes the client feel coherent, not the corner radius.
+- **Hover excludes the active state** via `:not(.character-tab--active):hover`, because `:hover` (0,2,0) outranks `--active` (0,1,0) and would otherwise replace the chip on contact — pitfall #107.
+- **The name stays `--text-primary`.** `.character-tab-health.health-warn` is already `var(--accent)`; an accent label would blur into the health readout. The accent lives in the fill and hairline where nothing competes.
+
+The tab and its six children also moved `rem` → `em`, each converted to render byte-identically at the default 12px game font (`em = rem × 16/12`). `.app-bar` anchors `font-size: var(--game-font-size)` and B178's collapse thresholds are em against it, so the tabs were the one part of the bar ignoring the font setting while the bar reflowed around them (pitfall #45).
+
+**Verified rather than eyeballed:** the chip was computed against all 21 built-in themes (composited over `--bg-raised`, the harder end of the bar gradient) — label contrast ≥ 6.17:1 everywhere, accent hairline perceptible everywhere, Barbarian the faintest (fill 1.05, hairline 1.14) because its accent sits close to the bar in luminance. That is inherent to the recipe, so the Automations tabs are equally subtle there; it is consistency, not a regression. Geometry was swept at font sizes 8→24: labels scale 9.06→27.19px, nothing clips the strip (`overflow-y: hidden`), and the active/inactive tabs keep identical heights and a shared baseline.
+
+**Rejected: the folder attachment.** An attach-to-the-edge look was built and measured landing exactly (active tab bottom = bar bottom, unclipped, shared baseline) — then reverted. The strip is `overflow-x: auto` with a 5px scrollbar; as soon as enough characters are open to overflow, that scrollbar claims the strip's bottom edge and lifts every tab off the border. The attachment would break precisely when a player has the most tabs open, which is the worst failure timing. Don't re-attempt without solving the overflow case first.
+
+## 44. Connect Feedback & QuickSend Targeting (v0.18.0)
+
+### 44.1 Connect progress — why a separate channel
+
+`ConnectionManager` has always emitted a running commentary (`this.emit('status', …)`), and `wireSession` forwards it to the renderer as a `connection-status` event **keyed by sessionId**. During LOGIN that keying is useless: `ipcMain.handle(CH.LOGIN)` is an invoke that resolves at the END, so the renderer has no sessionId while the connect is happening and every message was dropped. The user saw only a spinner — including through a 30-second Lich wait, which is indistinguishable from a hang.
+
+**`connect-progress`** (v0.18.0) mirrors those same messages to the CALLING window keyed by **character**, for the duration of the login only (attached before the try, removed in a `finally`). The renderer keeps the latest message per character and renders it under the headline in both the single-connect and bulk overlays.
+
+**Message design:** plain-language numbered stages so the user can see where they are.
+
+| # | Lich (`LICH_STEPS` = 5) | Direct (`DIRECT_STEPS` = 4) |
+|---|---|---|
+| 1 | Contacting Simutronics login (eaccess.play.net) | same |
+| 2 | Signing in to your account | same |
+| 3 | Getting the login key for *character* | same |
+| 4 | Starting Lich | Connecting to DragonRealms (host:port) |
+| 5 | **Connecting to Lich on port N** | — |
+
+Past ~10 seconds step 5 becomes **diagnostic** ("check your Ruby/Lich paths or antivirus") rather than counting silently to the 30s cap, because that's the actual failure mode.
+
+**Two things this table encodes, both of which were wrong on the first cut (B233).** The prose above USED to read "Lich is 4 steps" while listing five — the code matched the prose, emitting five phases numbered 1, 2, 2, 3, 4 with step 2 reused for two different operations. The totals now live in `LICH_STEPS`/`DIRECT_STEPS` with a `step(n, total, text)` helper, so no site can drift from the count; the strings were hardcoded at ten sites before, which is how it went unnoticed. And step 5 is **named as the connect it is**: `connectWithRetry` does not poll-then-connect, it retries the REAL connection until the port accepts and that first success IS the session socket — so labelling the whole phase "waiting" meant the client never told the user it was connecting to Lich at all. The direct path went 3 → 4 steps so both paths share the same first three phases rather than describing identical work differently.
+
+**Removed and don't re-add naively:** a "waiting for another character's Lich" queue notice. It cannot fire from bulk connect (the renderer `await`s each login, so nothing ever queues in `serializeLichLaunch`), and in the rare overlapping case the concurrently-running SGE auth emits its own step a moment later and overwrites it — leaving the UI on a stale step for the whole silent wait, i.e. the problem it was added to solve. Making it work requires emitting from INSIDE the queue wait, after auth settles.
+
+### 44.2 Connect dialogs
+
+Every connect-family surface now wears the canonical modal chrome (§43) with a real head/body/foot structure (`.launcher-dialog*`), replacing per-dialog inline styles: connecting overlay, bulk progress (per-character step + progress rail + "N of M"), Bulk Connect result, account-conflict prompt, reconnect chooser, the wizard's conflict prompt, and the launcher's delete confirm. Button variants (`--primary`, `--danger`) replaced four separate inline colour overrides.
+
+**The progress card is FIXED width and reserves two lines for the step.** A live message whose length changes every few seconds ("Starting Lich…" → "Still waiting for Lich… (14s) — check your Ruby/Lich paths or antivirus") visibly grew and shrank a content-sized card. Pinning BOTH axes is the point — pinning only width trades a horizontal jump for a vertical one. `.launcher-dialog` is declared after `.launcher-connecting-card` at equal specificity and overrides the width; **don't reorder those blocks** or the dialogs snap to the narrower progress width.
+
+**Result dialogs state the OUTCOME, not the event** — "Connected 2, 1 failed", not "Bulk Connect finished" — with ✓/✕ rows whose hues are blended toward `--text-primary` so they survive light themes.
+
+### 44.3 QuickSend targeting model
+
+Was single-select, defaulting to "the next connected character after the active one" — which made the common case (tell the whole team something) a two-step and buried broadcast at the bottom of a dropdown.
+
+**Now: a checkbox list, defaulting to ALL connected characters** (Sekmeht, 2026-07-27).
+
+- **"All" is NOT a stored sentinel — an EMPTY `selected` set IS all-mode.** One source of truth; All and the individual picks are mutually exclusive by construction rather than by bookkeeping, and there is no reachable "nothing selected, nothing sent" state.
+- **Exactly one character connected ⇒ no picker.** It's shown as the target statically. "All characters" would be that same character under a second name, and a checkbox that can't meaningfully be unticked is noise (UX standard #1).
+- **A picked character that DISCONNECTS is called out, not pruned.** Pruning to empty would silently promote the user to a broadcast; instead the hint says the picks are gone and Send stays disabled. Selection is keyed by `characterId` and sending by `sessionId`, so a disconnect+reconnect (which mints a new sessionId) still resolves.
+- The hotkey gates on **connected characters**, not open tabs — `sessions` includes disconnected ones, so a single dead tab used to open a modal that could only say "No connected characters".
+
+**Known behaviour change, deliberate:** the prefill is lifted from the ACTIVE character's command bar and all-mode includes that character, so a broadcast now also goes to the source (the old default excluded it by construction). That follows from "default to all"; revisit only if testers find it surprising.
+
+---
+
+## 45. Performance Audit — findings & structure (v0.18.0)
+
+A full sweep of the three layers where this client actually degrades: the renderer per-line hot path, the main process, and continuously-running CSS. The four load-bearing structures documented in CLAUDE.md pitfall #82 were re-verified; three of them held, one had eroded.
+
+### 45.1 The headline was not a slowdown
+
+The most serious finding was a **correctness** bug in the perf machinery itself: `extractRegexLiteral` treated `.` as a literal, so any highlight or trigger whose pattern contained an unescaped dot was gated out and **silently never fired** (B230, pitfall #104). Shipped v0.13.4 → v0.18.0. The lesson is structural: a pre-filter that is too LOOSE only costs speed, but one that is too TIGHT breaks the feature, invisibly. The agreement check that catches this class (`tmp-perf/check-literals.mjs`) is machine-local and must be re-run whenever the walker changes.
+
+### 45.2 Main-process blocking — the highest-severity perf class
+
+Main is single-threaded and owns **every** session socket, so any synchronous work there stalls all connected characters at once and then delivers a burst. Two real cases, both measured:
+
+- **Session-log read handlers** (`search`, `list-streams`, export) gunzipped and split whole day-files synchronously — **2.9–3.4s of blocked main** over one tester's 23 day-files. Now `async` with a `yieldToLoop()` between day-files (the shape `buildCatchupDigest` already used), plus a per-day stream-set cache keyed on path+mtime+size, since a closed day-file is immutable and the Export builder re-scans on every date-range tweak.
+- **The trigger `log` action** did an `existsSync` + full open/write/close **per matching line**, ~500µs of blocked main each. Now buffered on the same 1s/100-record cadence the session log uses (2000 lines: ~1015ms → ~0.5ms).
+
+**The rule this establishes: nothing on a per-line or multi-file path in main may be synchronous.** Buffer writes; yield between files on reads.
+
+### 45.3 Renderer
+
+- **Mutes and substitutes were the only ungated rule engines.** Substitutes ran the full rule list per SEGMENT *and* again over the joined line — `rules × (segments + 1)` scans per line, unconditionally, per open stream panel (~27µs/line for a 90-rule import). Both now carry `fastLower` with one lowercase per line. Pitfall #82a's claim that *every* site gates is finally true.
+- **Contacts mixed tracking data with render data** — see pitfall #105. A presence write per room change invalidated every mounted text row (~30-40ms hitch per room transition for importers). Split via a render-only identity key.
+- **Connect progress lived in `AppShell` state** and updated ~1/second during a Lich wait; since `GameWindow` is not memoized, that re-rendered every connected character once a second. Moved into an isolated leaf.
+
+### 45.4 CSS — animate compositor properties only
+
+Animating `filter`, `box-shadow`, or `background-*` forces a repaint every frame; `transform` and `opacity` are free. The SimuCoin coin animated `filter: drop-shadow` **infinitely** while coins were claimable — a permanent background repaint for a barely-visible pulse. Removed in favour of a static glow plus a `transform` sheen.
+
+**Known and accepted:** the highlight text effects (`hl-fx-sweep` — Shimmer/Rainbow/Gold/Gradient/Fire/Frost) animate `background-position` + `filter`, and unlike the coin they attach to GAME TEXT, so the cost scales with how many matching spans are on screen. This is a deliberate shipped feature and is already gated by epilepsy-safe mode; revisit only if a tester reports the client feeling heavy with many effects configured.
+
+### 45.5 Verified intact (do not "optimize" these)
+
+Single-pass line scanning (`computeLineMatchRanges`), panel memoization (all six memo'd components audited — no violations), main's 16ms flood coalescing, `appendTrimmed` hysteresis, zero `setInterval` in main, scene work genuinely zero-cost when no Experience is open, session-log *writes* properly buffered, and better-sqlite3 on-demand only. Highlight scanning measures a healthy **95.8µs/line at 1,554 real rules**.
+
+**Disproven — do not "fix":** `LichConnection.flush()` uses the per-line re-slice shape its sibling documents as O(K·N), but V8 represents `buffer.slice(i)` as a SlicedString (O(1), no copy), so the quadratic never materializes — benchmarked at 1.1×, not quadratic.
+
+### 45.6 Genie Map — follow-up pass (B231)
+
+Reported as "sluggish when dragging, and during heavy movement", with the locator sonar ping as the suspected cause. Measured first, changed second.
+
+**The ping was exonerated.** A harness at real zone density (1057 nodes — the largest zone in the dev genie-cache) panned the `will-change: transform` layer for 300 frames with the ping and healer heartbeats on and off. All four variants held a flat 60fps with zero dropped frames: the two animations exempted from the `genie-pan-dragging` freeze cost nothing measurable while the layer is being transformed. The exemptions stay.
+
+**The real costs were React, and both were invisible in the output** (correct rendering, just recomputed):
+
+| | before | after |
+|---|---|---|
+| React commit per room change | 8.92ms | **0.09ms** |
+| React commit while panning | 0.45ms | 0.45ms |
+| arc `join()` per render | 0.18ms + 78KB garbage | **0** |
+
+- **The node layer rebuilt on every step.** `nodeRects` memoizes ~1057 marker groups, but its dep `onNodeContextMenu` closed over `currentLocation` — a fresh identity per room change, so the memo never held while the player moved. Fixed with a latest-closure ref; the memo now rebuilds only on a genuine zone/level change. Generalized as pitfall #106: **a callback in an expensive memo's deps must have a stable identity.**
+- **The arc paths re-joined per render.** `arcSegs` was memoized; the `.join()` producing the path `d` strings was not, and ran twice per render. Generalized in the same pitfall: **memoize the value handed to React, not the intermediate.**
+
+**Method note worth keeping:** the first harness (rAF frame intervals) could not answer the question — rAF is vsync-locked, so it reports a flat 16.67ms until the budget is actually blown, which made every variant look identical. The React **Profiler API** (`onRender`'s `actualDuration`) is what separated an 8.92ms commit from a 0.34ms one. **For "is this render expensive?", measure commit time, not frame interval.**
+
+### 45.7 Experiences — profiled, clean (v0.18.0)
+
+Asked whether the Living Tableau or Moons had anything worth tuning. **Measured: no.** Recorded so the investigation is not repeated — a negative result is only useful if it is written down.
+
+Method: bundle the REAL components (Iron rule) and time `flushSync` render+commit against **production** React. `<Profiler>` is a NO-OP in a production build and a development build inflates commit time, so a Profiler number is always a dev number — see the method note in §45.6.
+
+| scenario | commit |
+|---|---|
+| Moons re-render caused by a prop it never reads | 0.38ms |
+| Tableau, empty room, same | 0.05ms |
+| Tableau, 14 players / 9 creatures / 8 bubbles, same | 0.15ms |
+| Tableau crowded, REAL update (new speech line) | 0.15ms |
+| Moons sky, winter + heavy snow, every layer on | 60fps flat, 0 dropped frames |
+| Scene capturers (per line, whenever any Experience is open) | 0.37µs — ~0.3ms per MINUTE of busy play |
+
+The Moons sky was also measured with `.moons-pill`'s `backdrop-filter` removed and with animations off entirely: **no difference**. The structures responsible are the §35.6 scene gate, the module-hoisted `MoonsLandscape`/`MoonsClouds`/`MoonsPrecip` sub-components, the deterministic module-level particle arrays, the capturers' cheap substring gates, and `memo()` on both components. The keyframes are almost entirely `transform`/`opacity` (§45.4's compositor-friendly pair).
+
+**Three things examined and deliberately NOT changed** — each is a real observation whose fix costs more than it buys:
+
+- **Moons reads 6 of the 15 props it is handed** (it ignores `roomState`/`sceneCast`/`speech`/`moves`/`indicators`/`combat`/`contacts`), so ordinary game activity re-renders it for nothing. A custom `memo` comparator would remove it — and introduce a genuine footgun: the day someone makes Moons read a prop the comparator ignores, it renders **silently stale forever**. Not worth 0.38ms. If a comparator is ever added, it must be derived from a declared prop list on the `ExperienceDef`, never hand-maintained.
+- **`expAnyOpen` is ANY open Experience**, so opening Moons switches on scene parsing that Moons never consumes. Correct instinct, wrong magnitude (0.3ms/min). Revisit only if we add more Experiences that need no scene data — the fix would be a `needsScene` flag on the registry entry, which fails LOUDLY (an Experience visibly gets no feed) rather than silently.
+- **`moons-twinkle` animates `fill-opacity` and `moons-ring-rise`/`-set` animate the `r` geometry attribute** — paint/geometry properties rather than compositor ones, on ~70 stars. Costs nothing measurable here.
+
+**Two limits on this result, stated rather than glossed:** everything was measured on the dev machine, which has headroom to spare — the **Linux and macOS betas will land on weaker hardware**, and the three items above plus the pill's blur are what would bite there first; that is a watch-list, not a finding, and it is unproven from here. And the crowded Tableau run exercised figures, bubbles, wisps and captions but left `combat` undefined, so **the readiness rings, BAL/POS/RNG gauges and the assess arena are unmeasured**.
+
+Harness: `tmp-map-perf/` (gitignored) — `exp-bench.jsx` (commit time), `anim-bench.jsx` (continuous sky under rAF), `scene-cost.mjs` (per-line capturers).

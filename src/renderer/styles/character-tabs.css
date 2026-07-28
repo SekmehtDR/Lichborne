@@ -26,30 +26,62 @@
   padding: 4px 10px;
   background: transparent;
   border: 1px solid transparent;
-  border-bottom: none;
+  /* Original TAB silhouette — rounded top, square bottom (Sekmeht kept this
+     over the pill the accent chip normally wears). It is the shape only: the
+     v0.18.0 accent-chip TREATMENT (accent tint + accent hairline, UX standard
+     #10) is unchanged, and the tab is still a free-floating chip — it does NOT
+     attach to anything below.
+     The bottom BORDER is deliberately kept (the pre-v0.18.0 rule had
+     `border-bottom: none`) for two reasons: the accent hairline should close
+     the shape now that it is a visible outline rather than a merge seam, and
+     dropping one border edge would make the active tab 1px shorter than every
+     inactive tab, breaking their shared baseline.
+     A true attach-to-the-edge folder look was built and REVERTED (Sekmeht,
+     2026-07-27): the strip is `overflow-x: auto` with a 5px scrollbar, so as
+     soon as enough characters are open to overflow, that scrollbar claims the
+     strip's bottom edge and lifts every tab off the border — the attachment
+     silently breaks exactly when a player has the most tabs open. Don't
+     re-attempt it without solving the overflow case first. */
   border-radius: 4px 4px 0 0;
   cursor: pointer;
   /* Connected-but-inactive tabs read at near-full strength — a live character
-     is not "de-emphasized". The active tab is distinguished by its background,
-     border, and bold weight (see --active); only DISCONNECTED tabs dim, via
-     opacity + italic below. Using --text-dim here made an inactive connected
-     tab drift toward looking stale. */
+     is not "de-emphasized". The active tab is distinguished by its accent
+     chip (see --active); only DISCONNECTED tabs dim, via opacity + italic
+     below. Using --text-dim here made an inactive connected tab drift toward
+     looking stale. */
   color: var(--text-secondary, #c8c8c8);
-  font-size: 0.85rem;
+  /* em, NOT rem (pitfall #45): `.app-bar` anchors `font-size:
+     var(--game-font-size)`, and B178's collapse thresholds are em against
+     that anchor — so a rem here froze the tab labels at ~13.6px while the
+     bar reflowed around them. 1.133em == 0.85rem at the default 12px game
+     font (em = rem x 16/12), so the default look is unchanged and the tabs
+     now track Settings -> Font Size like the rest of the bar. */
+  font-size: 1.133em;
   user-select: none;
   white-space: nowrap;
-  transition: background-color 80ms;
+  transition: background-color 80ms, border-color 80ms, color 80ms;
 }
 
-.character-tab:hover {
-  background: var(--bg-base, #1a1a1a);
-  color: var(--text, #ccc);
+/* Hover is NEUTRAL and applies only to INACTIVE tabs. Both halves matter:
+   pre-v0.18.0 hover and --active shared `background: var(--bg-base)`, so the
+   two states were pixel-identical and "which character am I on" rested on
+   font-weight alone. And because `:hover` (0,2,0) outranks `--active`
+   (0,1,0), an unqualified hover rule would REPLACE the accent chip whenever
+   the cursor crossed the active tab. The :not() fixes both. */
+.character-tab:not(.character-tab--active):hover {
+  background: var(--modal-ctl-hover);
+  color: var(--text-primary, #ccc);
 }
 
 .character-tab--active {
-  background: var(--bg-base, #1a1a1a);
-  border-color: var(--border-faint, #252525);
-  color: var(--text, #ddd);
+  /* The house accent chip — same recipe as `.at-tab--active` and the About
+     modal's tab bar. The NAME deliberately stays `--text-primary` rather than
+     taking `--accent`: `.character-tab-health.health-warn` is already
+     `var(--accent)`, so an accent label would blur into the health readout.
+     The accent lives in the fill + hairline, where nothing competes with it. */
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-primary, #ddd);
   font-weight: 600;
 }
 
@@ -68,7 +100,9 @@
 }
 
 .character-tab-game {
-  font-size: 0.7rem;
+  /* rem -> em (pitfall #45): 0.7rem == 0.824em of the tab's 13.6px default,
+     so this is byte-for-byte the same size today but now scales with the tab. */
+  font-size: 0.824em;
   color: var(--text-faint, #585);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -79,7 +113,7 @@
    the character name and the game code, tight against both — name and
    pill have no gap by design (the pill colors are the visual separator). */
 .character-tab-mode {
-  font-size: 0.56rem;
+  font-size: 0.659em;   /* was 0.56rem — same size at default, now scales */
   font-weight: 700;
   padding: 0 3px;
   margin: 0 2px;
@@ -105,7 +139,7 @@
 /* Fixed-width right-aligned column so "9%", "85%", "100%" all reserve the
    same horizontal slot — tab width never shifts as health changes. */
 .character-tab-health {
-  font-size: 0.8rem;
+  font-size: 0.941em;   /* was 0.8rem — same size at default, now scales */
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   margin-left: 4px;
@@ -123,7 +157,7 @@
    💀 / 💫 / 🩸 / ⏳ never resizes the tab, and the slot reserves its space
    when no icon is active so toggling on/off doesn't shift either. */
 .character-tab-glyph {
-  font-size: 0.85rem;
+  font-size: 1em;       /* was 0.85rem — identical to the tab's own size */
   line-height: 1;
   width: 1.5em;
   text-align: center;
@@ -177,7 +211,7 @@
   background: transparent;
   border: 0;
   color: var(--text-faint, #777);
-  font-size: 1.1rem;
+  font-size: 1.294em;   /* was 1.1rem — same size at default, now scales */
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
@@ -195,8 +229,11 @@
   background: transparent;
   border: 1px dashed var(--border-faint, #2a2a2a);
   color: var(--text-dim, #888);
+  /* Rounded rect, matching the tab silhouette it sits beside. (Briefly a pill
+     while the tabs were pills — kept in lockstep with `.character-tab`'s
+     border-radius; if that shape changes again, change this with it.) */
   border-radius: 4px;
-  font-size: 1.1rem;
+  font-size: 1.467em;   /* was 1.1rem — same size at default, now scales */
   line-height: 1;
   padding: 0 10px;
   cursor: pointer;

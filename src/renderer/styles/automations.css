@@ -3,7 +3,7 @@
 .at-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11,9 +11,10 @@
 }
 
 .at-modal {
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  /* Canonical modal chrome (global.css tokens) — the About-modal look. */
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
   width: var(--modal-w-standard);
   max-width: 97vw;
   height: var(--modal-h-standard);
@@ -21,7 +22,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  box-shadow: var(--modal-shadow);
 }
 
 /* ── Header ──────────────────────────────────────────────────────────────── */
@@ -30,17 +31,17 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  background: var(--bg-hover);
-  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1.1rem;
+  background: var(--modal-head-bg);
+  border-bottom: 1px solid var(--modal-head-border);
   flex-shrink: 0;
 }
 
 .at-title {
   font-weight: 700;
-  color: var(--accent);
-  font-size: 0.9rem;
-  letter-spacing: 1px;
+  color: var(--modal-head-color);
+  font-size: 1rem;
+  letter-spacing: 0.02em;
   flex: 1;
   /* Let the title shrink (and clip) before the tabs / Import / ✕ get pushed
      off-screen on narrow windows — adding the Mutes + Substitutes tabs (v0.12.0)
@@ -61,9 +62,9 @@
 
 .at-tab {
   background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 4px;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
   padding: 3px 12px;
   font-family: inherit;
   font-size: 0.78rem;
@@ -72,13 +73,14 @@
 }
 
 .at-tab:hover {
-  border-color: var(--accent-dim);
-  color: var(--text-secondary);
+  background: var(--modal-ctl-hover);
+  color: var(--text-primary);
 }
 
 .at-tab--active {
-  border-color: var(--accent-bg);
-  background: var(--bg-sunken);
+  /* Active tab = the About chip (accent tint + accent hairline). */
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
   color: var(--accent);
 }
 
@@ -107,17 +109,22 @@
 }
 
 .at-close {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
-  color: var(--text-dim);
-  font-size: 1.4rem;
-  cursor: pointer;
-  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
   line-height: 1;
-  transition: color 0.15s;
+  padding: 0;
+  cursor: pointer;
 }
 
-.at-close:hover { color: var(--text-secondary); }
+.at-close:hover { background: var(--modal-ctl-hover); color: var(--text-primary); }
 
 /* ── Body ────────────────────────────────────────────────────────────────── */
 
@@ -130,7 +137,7 @@
 
 /* Inline panels fill the at-body entirely */
 .at-body .hp-body,
-.at-body .tp-body,
+.at-body .trg-body,
 .at-body .ma-body {
   flex: 1;
   overflow: hidden;
@@ -189,7 +196,7 @@
 .at-scope--disabled { opacity: 0.45; }
 .at-scope-btn:disabled { cursor: default; }
 
-/* F63 per-rule "Applies to" control (rendered inside the hp-/tp-/ma- editors —
+/* F63 per-rule "Applies to" control (rendered inside the hp-/trg-/ma- editors —
    shared classes here since automations.css is always loaded with them). Same
    segmented recipe as .at-scope; the ACTIVE side is disabled (it's a state
    marker), the inactive side is the MOVE action. */
@@ -221,7 +228,7 @@
    that puts the banner over the panel body. */
 .aa-host { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
 .aa-host > .hp-body,
-.aa-host > .tp-body,
+.aa-host > .trg-body,
 .aa-host > .ma-body { flex: 1; min-height: 0; }
 
 .aa-review {

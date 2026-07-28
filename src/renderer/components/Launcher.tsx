@@ -61,6 +61,14 @@ const GAME_SECTIONS: { key: 'DR' | 'DRX' | 'DRF'; label: string; matches: (game:
   { key: 'DRF', label: 'DragonRealms Fallen',   matches: g => g === 'DRF' },
 ]
 
+// Launcher hero logo. Lives in src/renderer/public/ (the about-theme.mid
+// precedent) so Vite copies it into the build with no config and it ships in
+// the installer; referenced by RUNTIME path rather than imported, so a missing
+// file degrades to a broken-image slot instead of failing the build.
+// The PNG is a transparent 1024² canvas whose artwork occupies 778×638 — the
+// dead padding is cropped in CSS (.launcher-logo-art), not by editing the art.
+const LOGO_SRC = 'lichborne_logo_green.png'
+
 function LauncherTopBar({
   onOpenLichSetup,
   onAddNew,
@@ -362,12 +370,29 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
   const [favTipDismissed, setFavTipDismissed] = useState<boolean>(() => {
     try { return localStorage.getItem('lichborne.launcher.favTipDismissed') === '1' } catch { return false }
   })
+  // Collapsible Favorites (v0.18.0, Sekmeht — supersedes the old "Favorites is
+  // always-open" invariant). Mirrors the account sections' toggle, but the
+  // DEFAULT IS EXPANDED: favorites are the shortcut you came for, so they open
+  // unless the user has explicitly closed them. Hence the key stores the
+  // COLLAPSED flag — an absent key (every existing install) reads as expanded,
+  // so nobody's launcher silently folds shut on upgrade.
+  const [favCollapsed, setFavCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('lichborne.launcher.favCollapsed') === '1' } catch { return false }
+  })
+
+  function toggleFavCollapsed() {
+    setFavCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('lichborne.launcher.favCollapsed', next ? '1' : '0') } catch { /* quota — in-memory only */ }
+      return next
+    })
+  }
+
   // Collapsible account sections (v0.8.0). Persisted as a JSON array of
   // expanded account names in localStorage so a tester who expanded
   // FortissABrok yesterday still sees it expanded today. Default: empty set
   // = all collapsed (the user explicitly asked for this default — accounts
   // tend to have many characters and a collapsed view reduces noise).
-  // Favorites section is rendered separately and is NEVER collapsible.
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('lichborne.launcher.expandedAccounts')
@@ -528,9 +553,16 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
         )}
         {!compact && (
           <div className="launcher-logo">
-            <h1>Lichborne</h1>
-            <p>DragonRealms Client</p>
-            <p className="launcher-version">v{__APP_VERSION__}</p>
+            {/* The logo art CARRIES the wordmark, so it replaces the old
+                <h1>Lichborne</h1> rather than sitting above it — hence the
+                real alt text here (it IS the heading now, not decoration). */}
+            <div className="launcher-logo-art">
+              <img src={LOGO_SRC} alt="Lichborne" draggable={false} />
+            </div>
+            <div className="launcher-logo-text">
+              <p className="launcher-tagline">DragonRealms Client</p>
+              <p className="launcher-version">v{__APP_VERSION__}</p>
+            </div>
           </div>
         )}
         <div className="launcher-welcome">
@@ -577,15 +609,33 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
       )}
       {!compact && (
         <div className="launcher-logo">
-          <h1>Lichborne</h1>
-          <p>DragonRealms Client</p>
-          <p className="launcher-version">v{__APP_VERSION__}</p>
+          {/* The logo art CARRIES the wordmark, so it replaces the old
+              <h1>Lichborne</h1> rather than sitting above it — hence the
+              real alt text here (it IS the heading now, not decoration). */}
+          <div className="launcher-logo-art">
+            <img src={LOGO_SRC} alt="Lichborne" draggable={false} />
+          </div>
+          <div className="launcher-logo-text">
+            <p className="launcher-tagline">DragonRealms Client</p>
+            <p className="launcher-version">v{__APP_VERSION__}</p>
+            {/* The instruction is the THIRD LINE OF THE LOCKUP (Sekmeht's
+                mockup), not a separate row beneath it — so the hero reads as
+                one block: wordmark art | hairline | what this is, what version,
+                what to do. Compact mode has no lockup at all, so it renders its
+                own copy below; without that branch compact users would lose the
+                instruction entirely. */}
+            <p className="launcher-heading launcher-heading--inline">
+              Pick a character to connect
+            </p>
+          </div>
         </div>
       )}
 
-      <div className="launcher-heading">
-        Pick a character to connect
-      </div>
+      {compact && (
+        <div className="launcher-heading">
+          Pick a character to connect
+        </div>
+      )}
 
       {connectError && (
         <div className="launcher-error">
@@ -598,11 +648,23 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
 
       <div className="launcher-groups">
         {favoriteCharacters.length > 0 && (
-          <div className="launcher-section launcher-section--favorites">
-            <div className="launcher-section-header">
+          <div className={`launcher-section launcher-section--favorites${favCollapsed ? ' launcher-section--collapsed' : ''}`}>
+            {/* A real <button> (not a clickable div) so Enter/Space work
+                natively — the same lesson the account header learned in
+                v0.8.0. Expanded by default; see favCollapsed. */}
+            <button
+              type="button"
+              className="launcher-section-header"
+              onClick={toggleFavCollapsed}
+              aria-expanded={!favCollapsed}
+              title={favCollapsed ? 'Expand' : 'Collapse'}
+            >
+              <span className="launcher-account-chevron" aria-hidden="true">{favCollapsed ? '▶' : '▼'}</span>
               <span className="launcher-section-header-heart" aria-hidden="true">♥</span>
               Favorites
-            </div>
+              <span className="launcher-account-count">{favoriteCharacters.length}</span>
+            </button>
+            {!favCollapsed && (
             <div className="launcher-grid">
               {favoriteCharacters.map(c => (
                 <CharacterCard
@@ -620,6 +682,7 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
                 />
               ))}
             </div>
+            )}
           </div>
         )}
 
@@ -761,19 +824,21 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
 
       {pendingDelete && (
         <div className="launcher-connecting" {...backdropHandlers(() => setPendingDelete(null))}>
-          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 420, gap: 12 }}>
-            <div className="launcher-connecting-text">
-              Delete <span className="launcher-connecting-name">{pendingDelete.name}</span>?
+          <div className="launcher-connecting-card launcher-dialog">
+            <div className="launcher-dialog-head">Delete character?</div>
+            <div className="launcher-dialog-body">
+              <div>
+                Delete <span className="launcher-connecting-name">{pendingDelete.name}</span>?
+              </div>
+              <div className="launcher-dialog-note">
+                Removes the character's saved profile (themes, layout, automations, contacts).
+                The saved password for account <strong>{pendingDelete.account}</strong> is kept since other characters may share it.
+              </div>
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Removes the character's saved profile (themes, layout, automations, contacts).
-              The saved password for account <strong>{pendingDelete.account}</strong> is kept since other characters may share it.
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+            <div className="launcher-dialog-foot">
               <button className="launcher-connecting-cancel" onClick={() => setPendingDelete(null)}>Cancel</button>
               <button
-                className="launcher-connecting-cancel"
-                style={{ background: 'var(--color-danger-bg)', borderColor: 'var(--color-danger-border)', color: 'var(--color-danger)' }}
+                className="launcher-connecting-cancel launcher-connecting-cancel--danger"
                 onClick={confirmDelete}
               >
                 Delete

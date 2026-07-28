@@ -80,11 +80,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   panelFontSizes: {},
 }
 
+// v0.18.0 cross-platform: Menlo (macOS) and DejaVu/Liberation (Linux) appended
+// to the monospace stacks — Cascadia/Consolas/Lucida are Windows fonts, and
+// without named fallbacks the other platforms fell to the browser's generic
+// monospace pick. Appended AFTER the Windows names so Windows rendering is
+// byte-identical.
 export const FONT_FAMILIES: Record<string, string> = {
-  cascadia:  "'Cascadia Code', 'Fira Code', 'Consolas', monospace",
-  terminal:  "'Lucida Console', 'Courier New', monospace",
+  cascadia:  "'Cascadia Code', 'Fira Code', 'Consolas', 'Menlo', 'DejaVu Sans Mono', monospace",
+  terminal:  "'Lucida Console', 'Courier New', 'Menlo', 'Liberation Mono', monospace",
   sansserif: "system-ui, -apple-system, 'Segoe UI', sans-serif",
-  serif:     "Georgia, 'Times New Roman', serif",
+  serif:     "Georgia, 'Times New Roman', 'Liberation Serif', serif",
 }
 
 export const FONT_FAMILY_LABELS: Record<string, string> = {

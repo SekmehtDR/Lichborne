@@ -2,10 +2,16 @@
    Opened from a launcher tile's ⋯ menu → "Edit Profile…". Persists to the
    character's YAML profile. v0.8.0 (F20). */
 
+/* v0.18.0: converted to the canonical About-modal chrome (about.css) — the
+   old look was --bg-raised / 6px / plain border with a neutral header. The
+   recipe: --bg-base surface, --border-subtle hairline, 10px radius, a soft
+   dark shadow (a sanctioned colour literal, Principle #4), and an
+   accent-tinted header band with an accent title. See pitfall #55 — this is
+   the ONE modal chrome recipe; don't invent per-dialog variants. */
 .cne-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13,43 +19,56 @@
 }
 
 .cne-modal {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
   width: min(520px, 90vw);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
   font-family: inherit;
   color: var(--text-primary);
+  overflow: hidden;   /* lets the header band meet the rounded corners */
 }
 
 .cne-header {
   display: flex;
   align-items: center;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0.85rem 1.1rem;
   gap: 8px;
+  background: var(--modal-head-bg);
+  border-bottom: 1px solid var(--modal-head-border);
 }
 
 .cne-title {
   flex: 1;
-  font-size: 0.92rem;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--modal-head-color);
 }
 
 .cne-close {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: none;
+  border-radius: 6px;
   color: var(--text-muted);
-  font-size: 1.3rem;
+  font-size: 0.95rem;
   line-height: 1;
-  padding: 2px 8px;
+  padding: 0;
   cursor: pointer;
 }
 
-.cne-close:hover { color: var(--text-primary); }
+.cne-close:hover {
+  background: var(--modal-ctl-hover);
+  color: var(--text-primary);
+}
 
 .cne-body {
   padding: 14px;
@@ -82,7 +101,12 @@
 }
 
 .cne-input {
-  background: var(--bg-input);
+  /* NOT a bare var(--bg-input): classicLight sets --bg-input AND --bg-base to
+     #ffffff, so once this modal moved to --modal-bg (= --bg-base) the fields
+     had zero fill contrast — a framed void. Nudging toward --text-primary
+     darkens on light themes and lightens on dark, so the field always sits
+     visibly IN the surface (the pitfall-#55 audit this conversion owed). */
+  background: var(--modal-input-bg);
   border: 1px solid var(--border);
   color: var(--text-primary);
   border-radius: 3px;
@@ -103,11 +127,13 @@
 }
 
 .cne-footer {
+  /* --border-subtle is 1.27:1 on classicLight's white surface — use the
+     stronger --border so the footer actually separates. */
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--border);
 }
 
 .cne-btn {

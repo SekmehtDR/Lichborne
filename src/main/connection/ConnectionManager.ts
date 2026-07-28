@@ -6,6 +6,18 @@ import type { LoginCredentials } from '../../shared/types'
 
 const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
 
+// ── Connect progress steps (user-facing) ─────────────────────────────────────
+// The totals live HERE, once per path, and every emit site uses `step()`. That
+// is not tidiness: the first cut hardcoded "Step N of 4" at each site, and the
+// Lich path emitted FIVE distinct phases while numbering them 1,2,2,3,4 — step
+// 2 was reused for "signing in" and "getting the login key", so a watching user
+// saw step 2 sit there for two different operations and the count never
+// reached what the work actually did (Sekmeht, 2026-07-27). If you add or
+// remove a phase, bump the total here and renumber that path's sites together.
+const LICH_STEPS = 5
+const DIRECT_STEPS = 4
+const step = (n: number, total: number, text: string) => `Step ${n} of ${total} · ${text}`
+
 // ── Lich launch serialization ────────────────────────────────────────────────
 // A Lich process serves exactly ONE front-end, then closes its listening
 // socket (verified in Lich's main.rb — `listener.accept` then `listener.close`).
@@ -15,6 +27,16 @@ const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
 // Lich instances never contend for the port — which on Windows can otherwise
 // cross-wire connections under SO_REUSEADDR.
 let lichLaunchChain: Promise<unknown> = Promise.resolve()
+// NOTE (v0.18.0 bug check): a "waiting for another character's Lich" status was
+// added here and REMOVED. It could not work as intended: the renderer's bulk
+// connect awaits each login before starting the next, so bulk runs never queue
+// here at all; and in the rare case it did fire (two windows connecting at
+// once), the SGE auth running concurrently emits its own step
+// messages a moment later and the renderer keeps only the latest — so the
+// notice was overwritten and the UI sat on a stale step for the whole silent
+// wait, the exact problem it was meant to solve. Making it work needs the
+// emit to live INSIDE the queue wait, after auth settles. Don't re-add the
+// naive version.
 function serializeLichLaunch<T>(task: () => Promise<T>): Promise<T> {
   // `.then(task, task)` runs the next task whether the previous one resolved
   // or rejected — one character's failure must not block the queue.
@@ -56,18 +78,32 @@ export class ConnectionManager extends EventEmitter {
         // never leaves an orphaned Lich process squatting the port.
         const loginKey = await loginKeyPromise
 
-        this.emit('status', 'Launching Lich...')
+        this.emit('status', step(4, LICH_STEPS, 'Starting Lich…'))
         // creds.character names the per-session launch log file (Logs/lich-launch/).
         await this.lich.launch(creds.rubyPath, creds.lichPath, creds.lichMode, creds.lichArguments, creds.character)
 
-        this.emit('status', `Waiting for Lich on localhost:${creds.lichPort}...`)
+        // NAMED as the connect it actually is. `connectWithRetry` does not
+        // poll-then-connect — it retries the REAL connection until the port
+        // accepts, and that first success IS the session socket. The old label
+        // ("Waiting for Lich on port N") therefore described the whole final
+        // phase as waiting and never told the user we were connecting to the
+        // Lich service at all; it simply jumped from "waiting" to connected
+        // (Sekmeht, 2026-07-27). The elapsed-seconds variants below keep the
+        // "it may still be booting" nuance without hiding what step 5 is.
+        this.emit('status', step(5, LICH_STEPS, `Connecting to Lich on port ${creds.lichPort}…`))
         await this.lich.connectWithRetry(loginKey, creds.lichPort, {
           // 30s cap — covers a slow Ruby init + Lich listener bind on every
           // machine we've tested. A user-facing knob existed before v0.8.0
           // (`lichDelay`) but the connect-with-retry loop made it pointless;
           // bumping this constant is the escape hatch if anyone ever needs it.
           maxWaitMs: 30_000,
-          onProgress: (s) => this.emit('status', `Waiting for Lich to start... (${s}s)`),
+          onProgress: (s) => this.emit('status', step(5, LICH_STEPS,
+            // Past ~10s something is usually wrong (antivirus, a bad Ruby
+            // path, a Lich already holding the port) — say so rather than
+            // counting silently to 30.
+            s >= 10
+              ? `Still connecting to Lich… (${s}s) — check your Ruby/Lich paths or antivirus`
+              : `Connecting to Lich — waiting for it to finish starting… (${s}s)`)),
         })
       })
     } catch (err) {
@@ -77,7 +113,7 @@ export class ConnectionManager extends EventEmitter {
       throw err
     }
 
-    this.emit('status', 'Connected via Lich')
+    this.emit('status', 'Connected via Lich.')
   }
 
   // eaccess.play.net authentication — yields the per-character login key Lich
@@ -89,10 +125,10 @@ export class ConnectionManager extends EventEmitter {
   // account/password — SGEConnection defaulted gameCode to 'DR', so even DRT/
   // DRX/DRF characters got a DR login key and were silently routed there.
   private async authenticateSge(creds: LoginCredentials): Promise<string> {
-    this.emit('status', 'Connecting to eaccess.play.net:7910...')
+    this.emit('status', step(1, LICH_STEPS, 'Contacting Simutronics login (eaccess.play.net)…'))
     await this.sge.connect()
     try {
-      this.emit('status', 'SGE connected — authenticating...')
+      this.emit('status', step(2, LICH_STEPS, 'Signing in to your account…'))
       const characters = await this.sge.authenticate(creds.account, creds.password, creds.game)
 
       const char = characters.find(
@@ -103,7 +139,7 @@ export class ConnectionManager extends EventEmitter {
         throw new Error(`Character "${creds.character}" not found. Available: ${names}`)
       }
 
-      this.emit('status', `Getting login key for ${char.name}...`)
+      this.emit('status', step(3, LICH_STEPS, `Getting the login key for ${char.name}…`))
       const loginResult = await this.sge.getLoginKey(char.key)
       return loginResult.loginKey
     } finally {
@@ -113,9 +149,10 @@ export class ConnectionManager extends EventEmitter {
 
   async connectDirect(creds: LoginCredentials): Promise<void> {
     this.mode = 'direct'
-    this.emit('status', 'Authenticating with Simutronics...')
+    this.emit('status', step(1, DIRECT_STEPS, 'Contacting Simutronics login (eaccess.play.net)…'))
 
     await this.sge.connect()
+    this.emit('status', step(2, DIRECT_STEPS, 'Signing in to your account…'))
     // creds.game threaded through (v0.8.0) — see authenticateSge above for why.
     const characters = await this.sge.authenticate(creds.account, creds.password, creds.game)
 
@@ -127,16 +164,17 @@ export class ConnectionManager extends EventEmitter {
       throw new Error(`Character "${creds.character}" not found. Available: ${names}`)
     }
 
+    this.emit('status', step(3, DIRECT_STEPS, `Getting the login key for ${char.name}…`))
     const loginResult = await this.sge.getLoginKey(char.key)
     this.sge.disconnect()
 
-    this.emit('status', `Connecting to ${loginResult.gameHost}:${loginResult.gamePort}...`)
+    this.emit('status', step(4, DIRECT_STEPS, `Connecting to DragonRealms (${loginResult.gameHost}:${loginResult.gamePort})…`))
     await this.connectToGameServer(
       loginResult.gameHost,
       loginResult.gamePort,
       loginResult.loginKey
     )
-    this.emit('status', 'Connected directly to DragonRealms')
+    this.emit('status', 'Connected directly to DragonRealms.')
   }
 
   private async connectToGameServer(host: string, port: number, key: string): Promise<void> {

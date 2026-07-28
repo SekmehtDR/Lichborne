@@ -1,6 +1,6 @@
 {
   "name": "lichborne",
-  "version": "0.17.3",
+  "version": "0.18.0",
   "description": "DragonRealms game client with a primary Lich integration focus.",
   "main": "dist/main/main.js",
   "scripts": {
@@ -40,6 +40,21 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "include": "build/installer.nsh"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64"] },
+        { "target": "zip", "arch": ["arm64"] }
+      ],
+      "category": "public.app-category.games",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "category": "Game",
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "extraResources": [
       {

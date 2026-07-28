@@ -1,0 +1,31 @@
+# "Check zero" in CI (see CLAUDE.md Pre-merge checks): both builds + tsc on
+# every push/PR to main. Free on the public repo; a red X here means the commit
+# doesn't compile — the same three commands run locally before any merge.
+# Deliberately NO packaging, NO release interaction — the Release workflow
+# (release.yml) is manual-only and separate.
+name: CI
+
+# Quoted because YAML 1.1 parses a bare `on` as boolean true — GitHub accepts
+# both, but editors' schema validators flag the bare form.
+"on":
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    # windows-latest to match the product's primary platform (esbuild/vite are
+    # OS-agnostic, but better-sqlite3's install step is worth exercising on the
+    # OS users actually run).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:main
+      - run: npm run build:renderer
+      - run: npx tsc --noEmit

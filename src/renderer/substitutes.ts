@@ -10,6 +10,7 @@
 // (`$health`, …) are NOT interpolated here (capture groups only — that's what
 // the source clients use); a future phase could add them.
 
+import { literalGate } from './regexLiteral'
 import { scopedKey, safeSetItem } from './characterScope'
 import type { TextSegment } from '../shared/types'
 
@@ -91,6 +92,11 @@ export function newSubstitute(pattern = '', replacement = ''): SubstituteRule {
 export interface CompiledSubstitute {
   rule: SubstituteRule
   regex: RegExp
+  /** See CompiledMute.fastLower — pitfall #82a. Substitutes were the worst
+      offender: the rule list ran per SEGMENT and again over the joined line,
+      so cost was rules × (segments + 1) regex scans per line, unconditionally,
+      for every open stream panel. */
+  fastLower: string | null
 }
 
 export function compileSubstitutes(
@@ -102,7 +108,7 @@ export function compileSubstitutes(
     if (!rule.enabled) continue
     if (!isActive(rule.groupIds ?? [], rule.allGroups ?? true)) continue
     const regex = buildSubstituteRegex(rule)
-    if (regex) out.push({ rule, regex })
+    if (regex) out.push({ rule, regex, fastLower: literalGate(rule.mode, rule.pattern) })
   }
   return out
 }
@@ -146,6 +152,15 @@ export function applySubstitutesToSegments(
   const fired = onFired ? new Set<string>() : null
   const flush = () => { if (fired && onFired) fired.forEach(onFired) }
 
+  // ONE lowercase of the whole line, shared by every gate in both passes
+  // (pitfall #82a). A rule whose literal appears nowhere in the line cannot
+  // match any segment of it, so gating here skips it for EVERY segment —
+  // which is where the per-segment × per-rule cost came from.
+  const fullText = segments.map(s => s.text).join('')
+  const lower = fullText.toLowerCase()
+  const live = subs.filter(s => !s.fastLower || lower.includes(s.fastLower))
+  if (live.length === 0) return segments
+
   // (1) Per-segment pass — preserves styling for matches contained in one
   // segment; drops a segment whose text a substitute emptied.
   let perChanged = false
@@ -153,7 +168,7 @@ export function applySubstitutesToSegments(
   for (const seg of segments) {
     let t = seg.text
     if (t) {
-      for (const s of subs) {
+      for (const s of live) {
         s.regex.lastIndex = 0
         const next = t.replace(s.regex, s.rule.replacement)
         if (next !== t) { t = next; perChanged = true; fired?.add(s.rule.id) }
@@ -167,9 +182,9 @@ export function applySubstitutesToSegments(
   if (segments.length <= 1) { if (perChanged) flush(); return perChanged ? perSeg : segments }
 
   // (2) Joined-line pass — catches a match the per-segment pass split apart.
-  const full = segments.map(s => s.text).join('')
+  const full = fullText
   let joined = full
-  for (const s of subs) {
+  for (const s of live) {
     s.regex.lastIndex = 0
     const next = joined.replace(s.regex, s.rule.replacement)
     if (next !== joined) { joined = next; fired?.add(s.rule.id) }

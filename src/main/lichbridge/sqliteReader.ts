@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import { ipcMain } from 'electron'
 import { parseMarshal } from './marshalParser'
 import type { MarshalValue } from './marshalParser'
+import { expandHome } from '../homePath'
 
 // better-sqlite3 is a native module — loaded lazily so startup doesn't fail
 // if the module has not been rebuilt for the current Electron ABI yet.
@@ -18,9 +19,10 @@ function getDatabase(): typeof import('better-sqlite3') {
 }
 
 // Derive lich.db3 path from the lichPath setting (path to lich.rbw).
-// DATA_DIR = <lich_dir>/data — see lib/constants.rb.
+// DATA_DIR = <lich_dir>/data — see lib/constants.rb. expandHome because
+// Linux/Mac lichPath defaults are `~`-relative (v0.18.0).
 function lichDbPath(lichPath: string): string {
-  return path.join(path.dirname(lichPath), 'data', 'lich.db3')
+  return path.join(path.dirname(expandHome(lichPath)), 'data', 'lich.db3')
 }
 
 function openReadOnly(dbPath: string): BetterSqlite3DB {

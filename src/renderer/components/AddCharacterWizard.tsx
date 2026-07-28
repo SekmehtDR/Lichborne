@@ -61,6 +61,18 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
   const [busy,  setBusy]  = useState(false)
   const [error, setError] = useState('')
 
+  // v0.18.0 cross-platform: password saving rides Electron safeStorage, which
+  // on Linux needs a secret service (GNOME Keyring / KWallet). When absent,
+  // savePassword silently no-ops — surface that instead of letting "Remember
+  // password" look broken. true until proven otherwise (Windows/mac always
+  // have it; no notice flash while the async check resolves).
+  const [secureStore, setSecureStore] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    window.api.secureStorageAvailable?.().then(ok => { if (!cancelled) setSecureStore(ok) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   // Auto-load saved password when the account field matches a saved one.
   // Same pattern as the pre-rewrite wizard.
   useEffect(() => {
@@ -292,12 +304,19 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
               <label className="wiz-checkbox">
                 <input
                   type="checkbox"
-                  checked={remember}
+                  checked={remember && secureStore}
                   onChange={e => setRemember(e.target.checked)}
-                  disabled={busy}
+                  disabled={busy || !secureStore}
                 />
                 Remember password
               </label>
+              {!secureStore && (
+                <p className="wiz-hint">
+                  Password saving is unavailable — no OS keyring was found. Install
+                  GNOME Keyring or KWallet (Linux) to enable it; you can still
+                  connect by typing the password each time.
+                </p>
+              )}
 
               <div className="wiz-section-label">Game</div>
               <div className="wiz-game-list">
@@ -403,23 +422,25 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
 
         {pendingConflict && (
           <div className="launcher-connecting" {...backdropHandlers(() => cancelConflict(), !conflictBusy)}>
-            <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 460, gap: 12 }}>
-              <div className="launcher-connecting-text">
-                <span className="launcher-connecting-name">{pendingConflict.character}</span>{' '}
-                is currently connected on account <strong>{account}</strong> ({pendingConflict.game}).
+            <div className="launcher-connecting-card launcher-dialog">
+              <div className="launcher-dialog-head">Account already in use</div>
+              <div className="launcher-dialog-body">
+                <div>
+                  <span className="launcher-connecting-name">{pendingConflict.character}</span>{' '}
+                  is currently connected on account <strong>{account}</strong> ({pendingConflict.game}).
+                </div>
+                <div className="launcher-dialog-note">
+                  DragonRealms only allows one character per account at a time, and discovery has to authenticate as this account.
+                  Continue and {pendingConflict.character} will be disconnected automatically before discovery runs.
+                  The disconnected tab stays open in case you want to log back into it later.
+                </div>
               </div>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                DragonRealms only allows one character per account at a time, and discovery has to authenticate as this account.
-                Continue and {pendingConflict.character} will be disconnected automatically before discovery runs.
-                The disconnected tab stays open in case you want to log back into it later.
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+              <div className="launcher-dialog-foot">
                 <button className="launcher-connecting-cancel" onClick={cancelConflict} disabled={conflictBusy}>
                   Cancel
                 </button>
                 <button
-                  className="launcher-connecting-cancel"
-                  style={{ background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' }}
+                  className="launcher-connecting-cancel launcher-connecting-cancel--primary"
                   onClick={continueWithDisconnect}
                   disabled={conflictBusy}
                 >

@@ -741,3 +741,29 @@ export interface AIChatChunk { requestId: string; delta: string }
 export interface AIUsage     { inputTokens: number; outputTokens: number }
 export interface AIChatDone  { requestId: string; usage?: AIUsage }
 export interface AIChatError { requestId: string; message: string }
+
+// ── SimuCoin claim (F71, v0.18.0) ────────────────────────────────────────────
+// Simutronics gives subscribers a monthly free-SimuCoin allotment that must be
+// manually claimed on store.play.net. Lichborne checks/claims it for accounts
+// the user has explicitly opted in (DESIGN §42). This is the ONLY shape that
+// crosses IPC — credentials and raw store HTML never leave main.
+export type SimuCoinState =
+  | 'claimable'    // free coins are waiting (amount set)
+  | 'claimed'      // we just claimed them this run (amount set)
+  | 'none'         // signed in fine, nothing to claim (message = time remaining)
+  | 'auth-failed'  // sign-in rejected (bad/changed password)
+  | 'error'        // network/parse failure — feature goes quiet, never guesses
+
+export interface SimuCoinStatus {
+  account: string
+  state: SimuCoinState
+  /** Store balance after the run; null when unknown (never guessed). */
+  balance: number | null
+  /** Coins claimable, or claimed this run. */
+  amount: number | null
+  /** Store's own "time remaining" text, or a short failure reason. */
+  message: string | null
+  /** Epoch ms. Set only from the store's own countdown; null = unknown. */
+  nextAt: number | null
+  checkedAt: number
+}

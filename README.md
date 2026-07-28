@@ -43,6 +43,7 @@ It connects through [Lich5](https://github.com/elanthia-online/lich-5) (recommen
 - **AI, if you want it — bring your own key** — Lichborne can use **Claude** to help you out. It's **off by default and completely optional**: you plug in your own Anthropic API key (Settings → **AI**, encrypted on your machine), and nothing is ever sent anywhere unless you turn a feature on and accept its disclosure. **AI advises and summarizes — it never plays the game for you.** It can't send commands, and it never will. The first feature is **Catch Me Up**: type **`/ai catchup`** and it fills you in on what you missed, like a companion sitting in your client — `/ai catchup 27m`, `/ai catchup 1.5h`, `/ai catchup 2.5h`, `/ai catchup 7d`, even `/ai catchup 1y` (units: `m`/`h`/`d`/`mo`/`y`). It reads **your session log** for that character across the window you asked for — so a 2.5-hour catchup really covers 2.5 hours, not just what's still on screen — and it pays particular attention to the things you actually care about coming back: **ranks and skills you gained, what was attacking you and any wounds, deaths, who spoke to you and how it went, work orders finished, and money earned or banked.** It shows a **"Working on it…"** progress note while it reads and sifts your logs (a full year takes a moment), then the recap streams in, and it always says honestly what window it covered. **If you keep logging off, it falls back to summarizing what's on your screen** — and tells you it did. Give it its own home if you like — the **`lbAI`** stream can be added to any panel or window so summaries stay out of your game scroll. Your **private information is scrubbed before anything is sent** — your account PIN/identification numbers, passwords, and account username are removed from the text on its way to the AI, while your log on disk stays untouched (see **[AINOTICE.md](AINOTICE.md)**, also linked in Help → About). **Give it a personality if you like** — set a **Response voice** in Settings → AI (a *90s TV news anchor*, a *salty pirate*, whatever you fancy) and your recaps get delivered in that voice, without ever changing the facts; leave it blank for the usual warm style. Pick your model too — **Haiku, Sonnet, Opus, or Fable 5** — and each recap tells you which model (and voice) it used. Costs a fraction of a cent per summary on the default model
 - **Find any setting by typing** — the Settings window has a search box (type "font" or "log" and watch it filter) plus a section rail for one-click jumps. It's also a sensible width now, so your toggles sit next to their labels instead of across the room
 - **Experience scene options, everywhere they're hosted** — the ⚙ "Show in this scene" choices (hide the Moons horizon, mute the Tableau's thoughts, and so on) now live on Experience **tabs** too, next to the tab's A−/A+ — not just on floating Experience windows. One set of preferences: change a layer in the tab and the floating copy follows, and vice versa
+- **Never miss your free SimuCoins** — Simutronics hands subscribers free SimuCoins every month, but they only land if you remember to claim them. Click the **coin** in the top bar to enable it for an account and Lichborne checks the store when you start the client: coins waiting light the coin up as **polished gold with a shine sweeping across it** and show the count, one click claims them, and **Auto-claim** does it for you if you'd rather not think about it. Nothing to claim? The coin sits dull and quiet — and if you never enable it, it never appears at all. (Epilepsy-safe mode keeps the gold and drops the shimmer.) Also `/simucoin`, `/simucoin claim`, or just `/sc`. **Nothing is sent until you enable it for an account**, and the popover spells out exactly what happens first: Lichborne signs in to Simutronics' own store over HTTPS with the account password you already saved, reads your balance, and signs out — no store data kept on disk, checked once per launch, never polled in the background. *(Thanks to Thires, whose [Genie SimuCoins plugin](https://github.com/Thires/SimuCoins) showed how this works.)*
 - **Auto-updates** — when a new version is ready, Lichborne tells you and installs it with one click. No re-downloading from scratch
 
 ---
@@ -59,7 +60,11 @@ If you're already running Lich for scripts, Lichborne slots right in alongside i
 
 ### Step 1 — Install
 
-Download `Lichborne-X.Y.Z-setup.exe` from the [Releases page](https://github.com/SekmehtDR/Lichborne/releases/latest) and run it. No admin rights needed. Windows may show a SmartScreen warning since we don't have a code signing certificate yet — click **More info → Run anyway**. It's safe.
+**Windows (recommended / stable):** Download `Lichborne-X.Y.Z-setup.exe` from the [Releases page](https://github.com/SekmehtDR/Lichborne/releases/latest) and run it. No admin rights needed. Windows may show a SmartScreen warning since we don't have a code signing certificate yet — click **More info → Run anyway**. It's safe.
+
+**Linux (beta, v0.18.0+):** Download the `.AppImage`, make it executable (`chmod +x Lichborne-X.Y.Z.AppImage`), and run it. Auto-update works. If "Remember password" is greyed out, your desktop has no keyring service (install GNOME Keyring or KWallet).
+
+**macOS (beta, v0.18.0+, Apple Silicon):** Download the `.dmg` and drag Lichborne to Applications. **First launch:** macOS will warn that the app is from an unidentified developer — go to **System Settings → Privacy & Security → "Open Anyway"** (one time only). This is because Lichborne doesn't purchase Apple's $99/yr developer certificate; the app is safe and the source is public. **Mac updates are manual for now** (auto-update requires that certificate) — grab new versions from the Releases page. Mac keyboard conventions (Cmd+F, Cmd+1–9, Cmd+Shift+Enter) work alongside the Ctrl versions.
 
 ### Step 2 — Set up Lich (recommended)
 
@@ -107,14 +112,18 @@ EXPBRIEF works either way — on or off, the experience panel handles both corre
 
 Plain `Home`/`End` edit the command box (where your cursor almost always is during play). Hold `Ctrl` to scroll the story window instead.
 
-Macro hotkeys (F1–F12, Ctrl/Alt combos) are set up in the Automations panel.
+**macOS:** the Cmd key works for the Lichborne chords too — `Cmd+1…9`, `Cmd+Shift+Enter`, and `Cmd+F` (scrollback search) — and the Ctrl versions keep working. Cmd+C/V/X/A always stay native.
+
+Macro hotkeys (F1–F12, Ctrl/Alt combos) are set up in the Automations panel. (Cmd/Win-key combos can't be bound as macros — those belong to the OS.)
 
 ---
 
 ## Known Limitations
 
-- Windows only (x64) for now
-- No code signing yet — the SmartScreen warning on first install is expected and safe to dismiss
+- **Linux and macOS builds are beta** (new in v0.18.0) — everything works, they're just young; please report oddities in Discord
+- No code signing yet on any platform — the Windows SmartScreen warning and the macOS "unidentified developer" prompt are expected and safe to dismiss (macOS: System Settings → Privacy & Security → "Open Anyway", one time)
+- **macOS has no auto-update** while builds are unsigned (Apple requires a paid developer certificate for that) — Mac updates are manual downloads from the Releases page. Windows and Linux auto-update normally
+- macOS builds are Apple Silicon (arm64) only for now — ask in Discord if you need an Intel build
 - **Map position tracking depends on what the game sends.** The **Lich Map** tracks by room id and is the most reliable — especially if you turn on DragonRealms' room-number display (so your room titles show a number in parentheses, e.g. `[Town Square] (12345)`); Lichborne reads that id and your marker stays locked on. The **Genie Map** matches by room name + description (its map data has no room ids), so in areas with many identically-named rooms it can briefly lag or lose your position until the game sends a room description (a `LOOK`, or many actions, will refresh it). If your marker ever sticks, a `LOOK` will resync it.
 - **Hand-bar tracking depends on what the game sends, too.** The common cause of "holding something but the bar says Empty" was fixed in v0.13.3 (a default Lich filter could swallow the hand update on container gets — Lichborne now disarms it the same way Wrayth does). For the rare genuine gaps (e.g. spell-summoned items, which DR doesn't always announce in XML), a `GLANCE` always resyncs the hand slots — Lichborne reads the glance text itself, the same trick the Profanity front-end uses.
 - Lich scripts that draw their own desktop windows via Ruby GTK (e.g. `kill-counter.lic`, `;vars setup`) were unreliable in earlier versions — the window might not appear, appear only intermittently, or crash Lich when you interacted with it. **v0.9.1 reworked how Lichborne launches Lich** (it now runs Lich as a normal Windows GUI process, the way Frostbite and Genie do), and this is now **confirmed working** — GTK script windows paint and behave correctly. If a GTK script misbehaves on v0.9.1 or later, please report it — it's a real bug worth fixing, not an expected limitation. Script authors who want maximum portability can still use the `<streamWindow>` / `<pushStream>` XML approach (see `newkill-counter.lic` for a minimal version), which renders as a regular Lichborne panel and works in every front-end. For `;vars setup` specifically, the **Lich Dashboard → Variables** editor adds/edits/deletes variables right in-app without needing the script window at all
@@ -184,24 +193,24 @@ profiles/             # YAML profiles (gitignored — created at runtime)
 
 ### Publishing a Release
 
-Releases are distributed as a Windows x64 NSIS installer via GitHub Releases. The auto-updater picks up new releases automatically.
+Releases ship for **Windows (NSIS installer), Linux (AppImage), and macOS (dmg + zip, unsigned)** via GitHub Releases, built by the GitHub Actions **Release** workflow.
 
-**Prerequisites:** a GitHub fine-grained personal access token with **Contents: Read and write** on this repository (Settings → Developer settings → Personal access tokens → Fine-grained tokens).
-
-**Steps:**
+**Steps (v0.18.0+, the normal path):**
 
 1. Bump `"version"` in `package.json`
-2. Update `release-notes.md`
-3. Commit your changes
-4. Set your token and publish:
+2. Rewrite `release-notes.md` with the new version's section
+3. Commit and push to `main`
+4. GitHub → **Actions** tab → **Release** → **Run workflow** (keep branch `main`)
+5. Wait for green (~10–15 min): `prepare` validates the notes and pre-creates one draft, the three OS jobs build and upload into it, `verify` confirms all seven artifacts landed
+6. Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases), review the draft, and click **Publish release**
+
+No token setup needed — the workflow uses GitHub's built-in token.
+
+**Local fallback (Windows-only, the pre-0.18.0 path — still works):** set a fine-grained PAT with **Contents: Read and write** and run:
 
 ```powershell
 $env:GH_TOKEN = "your_token_here"
 node publish.mjs
 ```
 
-`publish.mjs` cleans the release folder, runs `npm run build`, packages the installer, uploads it as a GitHub Release draft, and patches the release body from `release-notes.md`.
-
-5. Go to [Releases](https://github.com/SekmehtDR/Lichborne/releases), find the draft, and click **Publish release**
-
-> **Note:** Do not create GitHub tags manually — electron-builder creates the `vX.Y.Z` tag automatically during publish.
+> **Note:** Do not create GitHub tags manually — the `vX.Y.Z` tag is created automatically when the draft is published. A separate **CI** workflow runs builds + typecheck on every push to `main`; it never publishes anything.

@@ -34,9 +34,17 @@ export interface TriggerCallbacks {
 
 export function playWavFile(filePath: string) {
   try {
+    // Windows paths ("C:\snd\a.wav") need the third slash AND backslash
+    // conversion; POSIX paths are already absolute, so prefixing 'file:///'
+    // would yield "file:////home/…" (empty host + a doubled root). Both forms
+    // then get encodeURI so a '#' or '?' in a filename can't truncate the URL
+    // — a silent no-play on every platform, since play() failures are
+    // swallowed below.
     const url = filePath.startsWith('file://')
       ? filePath
-      : 'file:///' + filePath.replace(/\\/g, '/')
+      : encodeURI(filePath.startsWith('/')
+          ? 'file://' + filePath
+          : 'file:///' + filePath.replace(/\\/g, '/'))
     const audio = new Audio(url)
     audio.play().catch(() => {})
   } catch {}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
 import Launcher, { loadCharacterCards, type LauncherCharacter } from './components/Launcher'
 import AddCharacterWizard from './components/AddCharacterWizard'
@@ -16,10 +16,12 @@ import { RosterProvider, useRoster } from './RosterContext'
 import { CharacterProvider } from './CharacterContext'
 import { flushPendingProfileSaves, exportCharacterProfile, importCharacterProfile, clearCharacterLocalStorage, importSharedProfile, exportSharedProfile, saveLastSessionCharacters, scheduleSharedProfileSave } from './profile'
 import { planReconnect } from './reconnectPlan'
-import { loadAdvanced, saveAdvanced, gameOptionByCode } from './lichSettings'
+import { loadAdvanced, saveAdvanced, gameOptionByCode, IS_MAC } from './lichSettings'
 import { initTheme } from './themes'
-import type { LoginCredentials, SessionId, RosterEntry } from '../shared/types'
+import type { LoginCredentials, SessionId, RosterEntry, SimuCoinStatus } from '../shared/types'
 import { isSessionAction } from '../shared/menuActions'
+import { simucoinToast } from './components/SimuCoinButton'
+import { loadSimuCoinConfig, accountConfig } from './simucoinConfig'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -39,6 +41,23 @@ export default function App() {
         <AppShell />
       </SessionsProvider>
     </RosterProvider>
+  )
+}
+
+// Live connect commentary, isolated in its own leaf so the ~1/second progress
+// updates during a Lich wait re-render ONLY this line — not AppShell and every
+// GameWindow under it. Keying on `character` also makes the stale-step problem
+// impossible by construction: a step for a different character never renders,
+// so a failed attempt's last message can't flash over the next one.
+function ConnectStep({ character }: { character: string }) {
+  const [step, setStep] = useState<{ character: string; message: string } | null>(null)
+  useEffect(() => window.api.onConnectProgress(p => setStep(p)), [])
+  // Reset when the overlay moves to a different character (bulk connect).
+  useEffect(() => { setStep(null) }, [character])
+  return (
+    <div className="launcher-connecting-step">
+      {step?.character === character ? step.message : 'Starting…'}
+    </div>
   )
 }
 
@@ -190,6 +209,13 @@ function AppShell() {
   //  - bulkSummary: all attempts done; shows summary modal with per-char status
   const [bulkPickerSource, setBulkPickerSource] = useState<LauncherCharacter[] | null>(null)
   const [bulkProgress, setBulkProgress] = useState<{ currentIndex: number; total: number; currentName: string } | null>(null)
+  // NOTE: the live connect commentary deliberately does NOT live in AppShell
+  // state. It updates ~once per SECOND during a Lich wait, and GameWindow is
+  // not memoized (its onDisconnect is an inline arrow), so holding it here
+  // re-rendered EVERY connected character's game window once a second for up
+  // to 30s — a real hitch while other characters are playing. It lives in the
+  // <ConnectStep> leaf below instead, which subscribes itself; nothing else
+  // in the tree re-renders when a step arrives (v0.18.0 perf audit).
   const [bulkSummary, setBulkSummary] = useState<{ ok: string[]; failed: { name: string; error: string }[] } | null>(null)
   const [showLichSetup, setShowLichSetup] = useState(false)
   const [showQuickSend, setShowQuickSend] = useState<{ initialCommand: string } | null>(null)
@@ -322,12 +348,22 @@ function AppShell() {
       })
     }
     function onKeyDown(e: KeyboardEvent) {
-      // Ctrl+Shift+Enter: Quick-Send — works even from a text field so a player
-      // can hit it from the main command bar. Prefill with whatever's currently
-      // typed into the active command bar so the player can immediately retarget
-      // a command they were composing without retyping it.
-      if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
-        if (sessions.length === 0) return
+      // Cross-platform (v0.18.0): on macOS the primary chord modifier is Cmd
+      // (metaKey); Ctrl variants STAY live there too (additive — the Windows
+      // chords are documented muscle memory and never break). On Windows/Linux
+      // metaKey is the OS key, which the OS mostly intercepts before we see it
+      // — accepting it here is inert.
+      const primaryMod = e.ctrlKey || (IS_MAC && e.metaKey)
+      // Ctrl+Shift+Enter (Cmd+Shift+Enter on Mac): Quick-Send — works even from
+      // a text field so a player can hit it from the main command bar. Prefill
+      // with whatever's currently typed into the active command bar so the
+      // player can immediately retarget a command they were composing.
+      if (primaryMod && e.shiftKey && e.key === 'Enter') {
+        // Gate on CONNECTED characters, not open tabs — `sessions` includes
+        // disconnected ones, so with a single dead tab this opened a modal
+        // whose only content was "No connected characters" and a permanently
+        // greyed Send (v0.18.0 bug check).
+        if (!roster.some(r => r.connected)) return
         e.preventDefault()
         const srcInput = document.querySelector(
           '.session-shell:not(.session-shell--hidden) .command-input'
@@ -338,8 +374,9 @@ function AppShell() {
       // Ctrl+1..9 and Ctrl+Tab fire regardless of text-field focus — the whole
       // point of tab-switch hotkeys is "jump from wherever your hands are."
       // Neither chord has a text-editing meaning, so allowing them inside the
-      // command bar is the right call.
-      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+      // command bar is the right call. (Mac: Cmd+1..9 is the platform's own
+      // jump-to-tab convention; Ctrl+Tab works on Mac keyboards too.)
+      if (primaryMod && !e.shiftKey && !e.altKey) {
         if (e.key === 'Tab') {
           if (sessions.length < 2) return
           e.preventDefault()
@@ -483,13 +520,35 @@ function AppShell() {
   //      C:\Ruby4Lich5 and write any newly-discovered paths back. This means a
   //      fresh install where Lich is in its default location ends up with the
   //      wizard's Lich radio enabled by default — no manual setup required.
+  // ── SimuCoin state (F71, v0.18.0 — DESIGN §42) ──────────────────────────────
+  // Declared before the effects that use them. App-level, per ACCOUNT: App owns
+  // this because it has the launcher's account list and the check lifecycle;
+  // AppBar hosts the coin button and GameWindow only reads it for /simucoin.
+  const [sharedReady, setSharedReady] = useState(false)
+  const [scStatuses, setScStatuses] = useState<Record<string, SimuCoinStatus>>({})
+  const [scBusy, setScBusy] = useState<Set<string>>(() => new Set())
+  const [scAccounts, setScAccounts] = useState<string[]>([])
+  const [scWithPassword, setScWithPassword] = useState<Set<string>>(() => new Set())
+  // Latches once the launch-time store pass has run, so re-enumerations
+  // (launcherRefreshKey) refresh the account LIST without re-checking.
+  const scCheckedRef = useRef(false)
+
   useEffect(() => {
     let cancelled = false
     importSharedProfile().then(async () => {
       if (cancelled) return
       const adv = loadAdvanced()
+      // probeDesktop deliberately NOT passed — the silent startup discovery must
+      // never trigger the macOS Desktop privacy prompt (only the setup dialog's
+      // explicit Auto Detect does, DESIGN §41.3).
       const discovered = await window.api.discoverLichPaths(adv.rubyPath, adv.lichPath).catch(() => null)
-      if (cancelled || !discovered) return
+      // sharedReady gates the SimuCoin startup pass. It MUST be set even when
+      // discovery yields nothing — the inner .catch() above turns a rejection
+      // into null, so the outer .catch() below can never fire for that case,
+      // and an early return here would leave the flag false forever (coin
+      // button empty, /simucoin dead, no error anywhere).
+      if (cancelled) return
+      if (!discovered) { setSharedReady(true); return }
       const changes: Partial<typeof adv> = {}
       if (discovered.rubyPath) changes.rubyPath = discovered.rubyPath
       if (discovered.lichPath) changes.lichPath = discovered.lichPath
@@ -498,9 +557,111 @@ function AppShell() {
         saveAdvanced(next)
         exportSharedProfile().catch(console.error)
       }
-    }).catch(console.error)
+      if (!cancelled) setSharedReady(true)
+    }).catch(err => { console.error(err); if (!cancelled) setSharedReady(true) })
     return () => { cancelled = true }
   }, [])
+
+  // One run for one account. `quiet` suppresses the failure toasts on the
+  // automatic startup pass — a store outage must not greet the user with an
+  // error banner they didn't ask for; the coin popover still shows the reason.
+  const runSimucoin = useCallback(async (account: string, claim: boolean, quiet = false) => {
+    // CONSENT IS RE-CHECKED HERE, at the single choke point every caller goes
+    // through (coin popover, /simucoin, startup pass). The popover reads its
+    // config once at mount, so in a second window it can be STALE — without
+    // this, "Turn off" in window A leaves window B's button live and one click
+    // would sign in to the store for an account whose consent was revoked.
+    // Read fresh from localStorage, never from React state.
+    if (!accountConfig(loadSimuCoinConfig(), account).consented) return null
+    setScBusy(prev => new Set(prev).add(account))
+    try {
+      const st = await window.api.simucoinCheck(account, claim)
+      setScStatuses(prev => ({ ...prev, [account]: st }))
+      if (!quiet || st.state === 'claimed' || st.state === 'claimable') simucoinToast(st)
+      // RETURN the status so a caller can report it the moment it lands.
+      // `/simucoin check` needs this: reading it back from `scStatuses` would
+      // race React's state flush (the setState above has not committed when
+      // this promise resolves), so the caller would format a stale row.
+      return st
+    } catch (err) {
+      console.error('[simucoin]', err)
+      return null
+    } finally {
+      setScBusy(prev => { const n = new Set(prev); n.delete(account); return n })
+    }
+  }, [])
+
+  // Startup pass: enumerate accounts, learn which have a saved password, then
+  // check the accounts the user explicitly opted in (claiming when that
+  // account's auto-claim is on). Runs after the shared profile is imported so
+  // the consent config is the YAML truth, not a stale localStorage copy.
+  // Deliberately once per launch — no background polling (DESIGN §42.2).
+  //
+  // ONLY THE PRIMARY WINDOW CHECKS (the F62 pattern above). Every window runs
+  // this shell, so without the gate a window opened LATER — decouple a
+  // character an hour in — would fire a whole fresh store pass, re-signing in
+  // for every consented account and re-claiming for auto-claim ones. Secondary
+  // windows instead SEED from main's cached statuses so their coin button
+  // still renders the truth without touching the network.
+  //
+  // The account ENUMERATION runs in every window (the popover needs it) and
+  // re-runs on launcherRefreshKey, so an account added by the wizard mid-session
+  // becomes visible to the feature without a restart.
+  useEffect(() => {
+    if (!sharedReady) return
+    let cancelled = false
+    void (async () => {
+      const cards = await loadCharacterCards().catch(() => [] as LauncherCharacter[])
+      if (cancelled) return
+      const accounts = Array.from(new Set(cards.map(c => c.account).filter(Boolean))).sort()
+      setScAccounts(accounts)
+
+      const flags = await Promise.all(accounts.map(a =>
+        window.api.simucoinHasPassword(a).catch(() => false)))
+      if (cancelled) return
+      const withPw = new Set(accounts.filter((_, i) => flags[i]))
+      setScWithPassword(withPw)
+
+      // Seed from whatever main already learned this session (cheap, no
+      // network) — covers secondary windows AND a re-enumeration after the
+      // wizard adds an account.
+      const cached = await window.api.simucoinCached().catch(() => [])
+      if (cancelled) return
+      if (cached.length > 0) {
+        setScStatuses(prev => {
+          const next = { ...prev }
+          for (const st of cached) next[st.account] = st
+          return next
+        })
+      }
+      // The network pass is ONCE PER LAUNCH, not once per enumeration — the
+      // effect also re-runs on launcherRefreshKey (a wizard-added account),
+      // and that must refresh the LIST without triggering a second round of
+      // store sign-ins/claims.
+      if (!isPrimary || scCheckedRef.current) return
+      scCheckedRef.current = true
+
+      const cfg = loadSimuCoinConfig()
+      for (const account of accounts) {
+        if (cancelled) return
+        const ac = accountConfig(cfg, account)
+        if (!ac.consented || !withPw.has(account)) continue
+        // Sequential: two accounts signing in to the store at once is both
+        // rude and racy. Main serializes globally too (one cookie jar), so
+        // this is belt-and-braces, not the only guard.
+        await runSimucoin(account, ac.autoClaim, true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [sharedReady, runSimucoin, isPrimary, launcherRefreshKey])
+
+  const simucoin = useMemo(() => ({
+    accounts: scAccounts,
+    withPassword: scWithPassword,
+    statuses: scStatuses,
+    busy: scBusy,
+    run: (account: string, claim: boolean) => runSimucoin(account, claim),
+  }), [scAccounts, scWithPassword, scStatuses, scBusy, runSimucoin])
 
   useEffect(() => {
     const unsubAvailable = window.api.onUpdateAvailable((version) => {
@@ -894,6 +1055,7 @@ function AppShell() {
           onLoginActive={handleLoginActive}
           onReconnect={handleReconnectTab}
           reconnectingIds={reconnectingIds}
+          simucoin={simucoin}
         />
       )}
 
@@ -957,6 +1119,7 @@ function AppShell() {
                       // re-add this character (or a different one) immediately.
                       setShowAdd(true)
                     }}
+                    simucoin={simucoin}
                   />
                 </GroupsProvider>
               </CharacterProvider>
@@ -1030,8 +1193,13 @@ function AppShell() {
         <div className="launcher-connecting">
           <div className="launcher-connecting-card">
             <div className="launcher-spinner" />
-            <div className="launcher-connecting-text">
-              Connecting to <span className="launcher-connecting-name">{pendingConnect.name}</span>…
+            <div className="launcher-connecting-body">
+              <div className="launcher-connecting-text">
+                Connecting to <span className="launcher-connecting-name">{pendingConnect.name}</span>…
+              </div>
+              {/* The actual step, so a slow connect is legible instead of an
+                  opaque spinner (a 30s Lich wait used to look like a hang). */}
+              <ConnectStep character={pendingConnect.name} />
             </div>
             <button className="launcher-connecting-cancel" onClick={cancelPendingConnect}>
               Cancel
@@ -1042,25 +1210,27 @@ function AppShell() {
 
       {pendingConflict && (
         <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget && !conflictBusy) cancelConflict() }}>
-          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 460, gap: 12 }}>
-            <div className="launcher-connecting-text">
-              <span className="launcher-connecting-name">{pendingConflict.conflict.character}</span>{' '}
-              is currently connected on account <strong>{pendingConflict.incoming.account}</strong>{' '}
-              ({pendingConflict.conflict.game}).
+          <div className="launcher-connecting-card launcher-dialog">
+            <div className="launcher-dialog-head">Account already in use</div>
+            <div className="launcher-dialog-body">
+              <div>
+                <span className="launcher-connecting-name">{pendingConflict.conflict.character}</span>{' '}
+                is currently connected on account <strong>{pendingConflict.incoming.account}</strong>{' '}
+                ({pendingConflict.conflict.game}).
+              </div>
+              <div className="launcher-dialog-note">
+                DragonRealms only allows one character per account at a time. Continue and{' '}
+                {pendingConflict.conflict.character} will be disconnected automatically before{' '}
+                {pendingConflict.incoming.name} ({pendingConflict.incoming.game}) connects.
+                The disconnected tab stays open in case you want to log back into it later.
+              </div>
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              DragonRealms only allows one character per account at a time. Continue and{' '}
-              {pendingConflict.conflict.character} will be disconnected automatically before{' '}
-              {pendingConflict.incoming.name} ({pendingConflict.incoming.game}) connects.
-              The disconnected tab stays open in case you want to log back into it later.
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+            <div className="launcher-dialog-foot">
               <button className="launcher-connecting-cancel" onClick={cancelConflict} disabled={conflictBusy}>
                 Cancel
               </button>
               <button
-                className="launcher-connecting-cancel"
-                style={{ background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' }}
+                className="launcher-connecting-cancel launcher-connecting-cancel--primary"
                 onClick={continueWithDisconnect}
                 disabled={conflictBusy}
               >
@@ -1079,50 +1249,48 @@ function AppShell() {
           nothing connects until Confirm (Sekmeht: choose, don't skip). */}
       {reconnectPrompt && (
         <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget && !reconnectBusy) setReconnectPrompt(null) }}>
-          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 520, gap: 12 }}>
-            <div className="launcher-connecting-text">
-              Some accounts from your last session already have a character connected.
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              DragonRealms allows one character per account at a time — choose which character to
-              use on each account. Switching disconnects the current character first (its tab stays
-              open in case you want to log back into it later).
-            </div>
-            {reconnectPrompt.conflicts.map((c, i) => (
-              <div key={`${c.account}:${c.saved.name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'stretch' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '7rem' }}>{c.account}:</span>
-                <button
-                  className="launcher-connecting-cancel"
-                  style={c.choice === 'keep' ? { background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : undefined}
-                  onClick={() => setReconnectChoice(i, 'keep')}
-                  disabled={reconnectBusy}
-                  title={`Stay connected as ${c.connectedName}; ${c.saved.name} is not reconnected`}
-                >
-                  Keep {c.connectedName}
-                </button>
-                <button
-                  className="launcher-connecting-cancel"
-                  style={c.choice === 'switch' ? { background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' } : undefined}
-                  onClick={() => setReconnectChoice(i, 'switch')}
-                  disabled={reconnectBusy}
-                  title={`Disconnect ${c.connectedName}, then connect ${c.saved.name}`}
-                >
-                  Switch to {c.saved.name}
-                </button>
+          <div className="launcher-connecting-card launcher-dialog">
+            <div className="launcher-dialog-head">Choose who plays each account</div>
+            <div className="launcher-dialog-body">
+              <div>Some accounts from your last session already have a character connected.</div>
+              <div className="launcher-dialog-note">
+                DragonRealms allows one character per account at a time — choose which character to
+                use on each account. Switching disconnects the current character first (its tab stays
+                open in case you want to log back into it later).
               </div>
-            ))}
-            {reconnectPrompt.todo.length > 0 && (
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                {reconnectPrompt.todo.map(t => t.name).join(', ')} will connect on Confirm (no conflicts).
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, alignSelf: 'stretch', justifyContent: 'flex-end', marginTop: 4 }}>
+              {reconnectPrompt.conflicts.map((c, i) => (
+                <div key={`${c.account}:${c.saved.name}`} className="launcher-choice-row">
+                  <span className="launcher-choice-account">{c.account}:</span>
+                  <button
+                    className={`launcher-connecting-cancel${c.choice === 'keep' ? ' launcher-connecting-cancel--primary' : ''}`}
+                    onClick={() => setReconnectChoice(i, 'keep')}
+                    disabled={reconnectBusy}
+                    title={`Stay connected as ${c.connectedName}; ${c.saved.name} is not reconnected`}
+                  >
+                    Keep {c.connectedName}
+                  </button>
+                  <button
+                    className={`launcher-connecting-cancel${c.choice === 'switch' ? ' launcher-connecting-cancel--primary' : ''}`}
+                    onClick={() => setReconnectChoice(i, 'switch')}
+                    disabled={reconnectBusy}
+                    title={`Disconnect ${c.connectedName}, then connect ${c.saved.name}`}
+                  >
+                    Switch to {c.saved.name}
+                  </button>
+                </div>
+              ))}
+              {reconnectPrompt.todo.length > 0 && (
+                <div className="launcher-dialog-note">
+                  {reconnectPrompt.todo.map(t => t.name).join(', ')} will connect on Confirm (no conflicts).
+                </div>
+              )}
+            </div>
+            <div className="launcher-dialog-foot">
               <button className="launcher-connecting-cancel" onClick={() => { if (!reconnectBusy) setReconnectPrompt(null) }} disabled={reconnectBusy}>
                 Cancel
               </button>
               <button
-                className="launcher-connecting-cancel"
-                style={{ background: 'var(--accent-bg)', borderColor: 'var(--accent-dim)', color: 'var(--accent)' }}
+                className="launcher-connecting-cancel launcher-connecting-cancel--primary"
                 onClick={confirmReconnectPrompt}
                 disabled={reconnectBusy}
               >
@@ -1157,9 +1325,20 @@ function AppShell() {
         <div className="launcher-connecting" style={{ zIndex: 9000 }}>
           <div className="launcher-connecting-card">
             <div className="launcher-spinner" />
-            <div className="launcher-connecting-text">
-              Bulk Connect ({bulkProgress.currentIndex} of {bulkProgress.total}) — connecting{' '}
-              <span className="launcher-connecting-name">{bulkProgress.currentName}</span>…
+            <div className="launcher-connecting-body">
+              <div className="launcher-connecting-text">
+                Connecting <span className="launcher-connecting-name">{bulkProgress.currentName}</span>
+                <span className="launcher-connecting-count"> · {bulkProgress.currentIndex} of {bulkProgress.total}</span>
+              </div>
+              <ConnectStep character={bulkProgress.currentName} />
+              {/* Progress rail — a sequential run of 5 characters should show
+                  how far along it is, not just a spinner. */}
+              <div className="launcher-connecting-bar" aria-hidden="true">
+                <div
+                  className="launcher-connecting-bar-fill"
+                  style={{ width: `${Math.round((bulkProgress.currentIndex - 1) / bulkProgress.total * 100)}%` }}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -1170,27 +1349,38 @@ function AppShell() {
           what didn't. */}
       {bulkSummary && (
         <div className="launcher-connecting" onClick={e => { if (e.target === e.currentTarget) setBulkSummary(null) }}>
-          <div className="launcher-connecting-card" style={{ flexDirection: 'column', alignItems: 'flex-start', maxWidth: 480, gap: 10 }}>
-            <div className="launcher-connecting-text" style={{ fontWeight: 600 }}>
-              Bulk Connect finished
+          <div className="launcher-connecting-card launcher-dialog">
+            {/* Title states the OUTCOME, not just that it finished — "all
+                connected" vs "N didn't connect" is the thing the user needs. */}
+            <div className="launcher-dialog-head">
+              {bulkSummary.failed.length === 0
+                ? `Connected ${bulkSummary.ok.length} character${bulkSummary.ok.length === 1 ? '' : 's'}`
+                : `Connected ${bulkSummary.ok.length}, ${bulkSummary.failed.length} failed`}
             </div>
-            {bulkSummary.ok.length > 0 && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-success)' }}>
-                Connected: {bulkSummary.ok.join(', ')}
-              </div>
-            )}
-            {bulkSummary.failed.length > 0 && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-danger)' }}>
-                Failed:
-                <ul style={{ marginLeft: 16, marginTop: 4 }}>
-                  {bulkSummary.failed.map(f => (
-                    <li key={f.name}><strong>{f.name}</strong>: {f.error}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', alignSelf: 'stretch', marginTop: 4 }}>
-              <button className="launcher-connecting-cancel" onClick={() => setBulkSummary(null)}>Done</button>
+            <div className="launcher-dialog-body">
+              {bulkSummary.ok.length > 0 && (
+                <div className="launcher-result launcher-result--ok">
+                  <span className="launcher-result-icon" aria-hidden="true">✓</span>
+                  <span>{bulkSummary.ok.join(', ')}</span>
+                </div>
+              )}
+              {bulkSummary.failed.length > 0 && (
+                <div className="launcher-result launcher-result--fail">
+                  <span className="launcher-result-icon" aria-hidden="true">✕</span>
+                  <div>
+                    Didn&apos;t connect:
+                    <ul className="launcher-result-list">
+                      {bulkSummary.failed.map(f => (
+                        <li key={f.name}><strong>{f.name}</strong> — {f.error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="launcher-dialog-foot">
+              <button className="launcher-connecting-cancel launcher-connecting-cancel--primary"
+                onClick={() => setBulkSummary(null)}>Done</button>
             </div>
           </div>
         </div>

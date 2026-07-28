@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);   /* dark scrim reads fine on light themes too */
+  background: var(--modal-scrim);
   padding: 1.5rem;
 }
 
@@ -19,11 +19,11 @@
   width: min(460px, 100%);
   max-height: 86vh;
   overflow-y: auto;
-  background: var(--bg-base);
+  background: var(--modal-bg);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle, var(--border));
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
   padding: 0 0 1.25rem;
 }
 
@@ -45,7 +45,7 @@
   cursor: pointer;
 }
 .about-close:hover {
-  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  background: var(--modal-ctl-hover);
   color: var(--text-primary);
 }
 
@@ -68,7 +68,7 @@
   cursor: pointer;
 }
 .about-mute:hover {
-  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  background: var(--modal-ctl-hover);
   color: var(--text-primary);
 }
 
@@ -78,14 +78,14 @@
   align-items: baseline;
   gap: 0.6rem;
   padding: 1.15rem 1.4rem 0.9rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-bottom: 1px solid var(--modal-head-border);
+  background: var(--modal-head-bg);
 }
 .about-wordmark {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: var(--accent);
+  color: var(--modal-head-color);
 }
 .about-version {
   font-size: 0.82rem;

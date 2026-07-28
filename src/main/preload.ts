@@ -6,6 +6,7 @@ import type {
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
   CatchupDigest, CatchupProgress,
   AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
+  SimuCoinStatus,
 } from '../shared/types'
 
 const CH = {
@@ -134,14 +135,48 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('shutdown-starting', listener)
   },
 
+  // Connect progress during LOGIN (v0.18.0) — the ConnectionManager's running
+  // commentary, keyed by character. The session has no id in the renderer yet
+  // (login is an invoke that resolves at the end), so this is how the
+  // connecting overlay narrates the attempt.
+  onConnectProgress: (cb: (p: { character: string; message: string }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: { character: string; message: string }) => cb(p)
+    ipcRenderer.on('connect-progress', listener)
+    return () => ipcRenderer.removeListener('connect-progress', listener)
+  },
+
   browseFile: (filters: { name: string; extensions: string[] }[]) =>
     ipcRenderer.invoke('browse-file', filters),
 
-  discoverLichPaths: (currentRuby: string, currentLich: string): Promise<{
+  // opts.probeDesktop (Mac): only the setup dialog's explicit Auto Detect
+  // passes true — probing ~/Desktop fires the macOS privacy prompt, which must
+  // never appear from the silent startup discovery (App.tsx).
+  discoverLichPaths: (currentRuby: string, currentLich: string, opts?: { probeDesktop?: boolean; interactive?: boolean }): Promise<{
+    platform: NodeJS.Platform
     rubyPath: string | null; lichPath: string | null
     rubyAlreadyValid: boolean; lichAlreadyValid: boolean
-    baseFolderExists: boolean; isWindows: boolean
-  }> => ipcRenderer.invoke('discover-lich-paths', currentRuby, currentLich),
+    baseFolderExists: boolean; rubyVersion: string | null; isWindows: boolean
+  }> => ipcRenderer.invoke('discover-lich-paths', currentRuby, currentLich, opts),
+
+  // Cross-platform (v0.18.0): which OS this renderer runs on ('win32' |
+  // 'darwin' | 'linux'). process.platform is available in the sandboxed
+  // preload; exposing it here saves an async IPC round-trip for UI that
+  // branches on platform (defaults, chords, setup copy).
+  platform: process.platform,
+
+  // Whether safeStorage-backed password saving works (false on Linux without
+  // a secret service — GNOME Keyring / KWallet).
+  secureStorageAvailable: (): Promise<boolean> => ipcRenderer.invoke('secure-storage-available'),
+
+  // ── SimuCoin (F71, v0.18.0 — DESIGN §42) ────────────────────────────────────
+  // App-level, per ACCOUNT (no sessionId). The renderer never sends or receives
+  // a password — it names an account and gets a SimuCoinStatus back.
+  // `claim: true` actually claims when coins are waiting; false = check only.
+  simucoinCheck: (account: string, claim = false): Promise<SimuCoinStatus> =>
+    ipcRenderer.invoke('simucoin:check', account, claim),
+  simucoinCached: (): Promise<SimuCoinStatus[]> => ipcRenderer.invoke('simucoin:cached'),
+  simucoinHasPassword: (account: string): Promise<boolean> =>
+    ipcRenderer.invoke('simucoin:has-password', account),
 
   onUpdateAvailable: (cb: (version: string) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, version: string) => cb(version)

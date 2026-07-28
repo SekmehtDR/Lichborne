@@ -96,6 +96,11 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
   const [loading, setLoading] = useState(true)
   const [selected,        setSelected]        = useState<ScriptEntry | null>(null)
   const [originalContent, setOriginalContent] = useState<string | null>(null)
+  // Did the last read actually succeed? The placeholder below is DISPLAY text;
+  // without this flag the user could Edit it and save "(could not read file)"
+  // over their real file — the write handler builds its own valid path, so the
+  // destructive write succeeded even when the read failed (v0.18.0 bug check).
+  const [readOk, setReadOk] = useState(false)
   const [editContent,     setEditContent]     = useState<string | null>(null)
   const [loadingContent,  setLoadingContent]  = useState(false)
   const [showDiff,        setShowDiff]        = useState(false)
@@ -131,7 +136,11 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
   }, [scripts, search, filter])
 
   const lichDir = lichPath ? lichPath.replace(/[/\\][^/\\]+$/, '') : ''
-  const scriptPath = (s: ScriptEntry) => `${lichDir}\\scripts${s.source === 'custom' ? '\\custom' : ''}\\${s.name}.lic`
+  // FORWARD slashes: Windows accepts them everywhere, POSIX requires them.
+  // Hardcoded `\` made these one long nonexistent filename on Linux/macOS, so
+  // the read failed, the editor showed "(could not read file)", and saving
+  // wrote THAT over the user's script (v0.18.0 bug check).
+  const scriptPath = (s: ScriptEntry) => `${lichDir}/scripts${s.source === 'custom' ? '/custom' : ''}/${s.name}.lic`
   const isEditing = editContent !== null
 
   async function selectScript(s: ScriptEntry) {
@@ -266,7 +275,7 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
                   onKeyDown={e => { if (e.key === 'Enter') runSelected() }}
                 />
                 <button className="ld-btn ld-btn--secondary" onClick={runSelected}>▶ Run</button>
-                <button className="ld-btn ld-btn--secondary" onClick={() => setEditContent(originalContent!)}>Edit</button>
+                <button className="ld-btn ld-btn--secondary" disabled={!readOk} title={readOk ? '' : "Can't edit — this file couldn't be read"} onClick={() => setEditContent(originalContent!)}>Edit</button>
               </>
             )}
           </div>
@@ -692,14 +701,50 @@ function SettingsTab({ lichPath }: { lichPath: string }) {
 
 // ── YAML syntax highlighter ───────────────────────────────────────────────────
 
+// Gutter ↔ content scroll sync, shared by the read-only view (YamlHighlight)
+// and the editor (EditorWithGutter), in both the Profiles and Scripts tabs.
+//
+// GUTTER_PAD must equal .ld-line-gutter's vertical padding in lich-panels.css —
+// the reserve below is written as an inline padding-bottom, so it has to start
+// from the same base the stylesheet uses.
+const GUTTER_PAD = 12
+
 function useGutterSync() {
-  const contentRef = useCallback((el: HTMLElement | null) => { refs.content = el }, [])
-  const gutterRef  = useCallback((el: HTMLElement | null) => { refs.gutter  = el }, [])
+  const contentRef = useCallback((el: HTMLElement | null) => { refs.content = el; syncPad() }, [])
+  const gutterRef  = useCallback((el: HTMLElement | null) => { refs.gutter  = el; syncPad() }, [])
   const refs = useMemo(() => ({ content: null as HTMLElement | null, gutter: null as HTMLElement | null }), [])
-  const onScroll = useCallback(() => {
-    if (refs.gutter && refs.content) refs.gutter.scrollTop = refs.content.scrollTop
+
+  // Reserve the content's HORIZONTAL scrollbar height at the bottom of the
+  // gutter. Without it the two have different scroll RANGES: the content's
+  // viewport is shorter by the scrollbar, so its max scrollTop is that much
+  // LARGER than the gutter's — the gutter clamps early and the numbers stop
+  // tracking their lines near the bottom (they read as "not aligned").
+  //
+  // Only content WIDE enough to scroll horizontally triggers it, which is why
+  // this showed up in the Scripts tab (Ruby: long, wide lines) and never in
+  // Profiles (YAML: short, narrow). Same family as pitfall #67 — a gutter/
+  // header and the rows it labels must reserve the same scrollbar space.
+  // Measured (not hardcoded 15px) so it's right on every OS/zoom, and a no-op
+  // when no horizontal scrollbar exists. Borders are subtracted because
+  // offsetHeight−clientHeight includes them (the editor layer is a textarea).
+  const syncPad = useCallback(() => {
+    const { gutter, content } = refs
+    if (!gutter || !content) return
+    const cs = window.getComputedStyle(content)
+    const borders = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    const scrollbar = Math.max(0, content.offsetHeight - content.clientHeight - borders)
+    gutter.style.paddingBottom = scrollbar > 0 ? `${GUTTER_PAD + scrollbar}px` : ''
   }, [refs])
-  return { contentRef, gutterRef, onScroll }
+
+  const onScroll = useCallback(() => {
+    if (!refs.gutter || !refs.content) return
+    // Re-measure before syncing: a scrollbar can appear/disappear as content
+    // changes, and this runs only on scroll (cheap, no layout thrash).
+    syncPad()
+    refs.gutter.scrollTop = refs.content.scrollTop
+  }, [refs, syncPad])
+
+  return { contentRef, gutterRef, onScroll, syncPad }
 }
 
 function Gutter({ lines, gutterRef }: { lines: number; gutterRef: (el: HTMLElement | null) => void }) {
@@ -739,7 +784,7 @@ function scrollElementToLine(scrollEl: HTMLElement, lineIndex: number, styleEl: 
 }
 
 const YamlHighlight = forwardRef<YamlViewHandle, { content: string; language?: string }>(function YamlHighlight({ content, language = 'yaml' }, ref) {
-  const { contentRef: setContentRef, gutterRef, onScroll } = useGutterSync()
+  const { contentRef: setContentRef, gutterRef, onScroll, syncPad } = useGutterSync()
   // Scroll moved from the pre to the wrapping div so we can absolutely
   // position the line-highlight overlay inside the same scroll container —
   // the overlay scrolls with the content (v0.8.1, F25 follow-up).
@@ -773,7 +818,11 @@ const YamlHighlight = forwardRef<YamlViewHandle, { content: string; language?: s
     if (Number.isFinite(lh) && lh > 0) {
       setLineMetrics({ lineHeight: lh, paddingTop: Number.isFinite(pt) ? pt : 0 })
     }
-  }, [content])
+    // Re-reserve the horizontal-scrollbar space whenever the content changes
+    // (a wider script can make the scrollbar appear) — not just on scroll, so
+    // the gutter is correct before the user touches anything.
+    syncPad()
+  }, [content, syncPad])
 
   function scrollViewToLine(lineIndex: number) {
     const el = scrollRef.current
@@ -843,7 +892,7 @@ function escapeHtml(s: string): string {
 // lich-panels.css; change them together. `language` picks the hljs grammar
 // ('yaml' for profiles, 'ruby' for .lic scripts).
 const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (v: string) => void; language?: string }>(function EditorWithGutter({ value, onChange, language = 'yaml' }, ref) {
-  const { contentRef: setContentRef, gutterRef, onScroll: syncGutter } = useGutterSync()
+  const { contentRef: setContentRef, gutterRef, onScroll: syncGutter, syncPad } = useGutterSync()
   const taRef = useRef<HTMLTextAreaElement | null>(null)
   const preRef = useRef<HTMLPreElement | null>(null)
   const lastMatchRef = useRef(-1)  // character offset of the last match, NOT line index
@@ -851,6 +900,11 @@ const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (
   const html = useMemo(() => {
     try { return hljs.highlight(value, { language }).value } catch { return escapeHtml(value) }
   }, [value, language])
+
+  // Keep the gutter's horizontal-scrollbar reserve current as the text is
+  // edited — typing a long line can make the scrollbar appear (and deleting
+  // it can make it vanish) without any scroll event firing.
+  useEffect(() => { syncPad() }, [value, syncPad])
 
   const setRefs = useCallback((el: HTMLTextAreaElement | null) => {
     setContentRef(el)
@@ -1033,6 +1087,11 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
   const clearedOnFocus = useRef(false)
   const [loading,         setLoading]         = useState(true)
   const [originalContent, setOriginalContent] = useState<string | null>(null)
+  // Did the last read actually succeed? The placeholder below is DISPLAY text;
+  // without this flag the user could Edit it and save "(could not read file)"
+  // over their real file — the write handler builds its own valid path, so the
+  // destructive write succeeded even when the read failed (v0.18.0 bug check).
+  const [readOk, setReadOk] = useState(false)
   const [editContent,     setEditContent]     = useState<string | null>(null)
   const [loadingContent,  setLoadingContent]  = useState(false)
   const [showDiff,        setShowDiff]        = useState(false)
@@ -1080,8 +1139,10 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
     setLastFoundLine(null)
     yamlViewRef.current?.resetSearch()
     const lichDir = lichPath.replace(/[/\\][^/\\]+$/, '')
-    const fullPath = `${lichDir}\\scripts\\profiles\\${name}`
+    // Forward slashes — see the note on scriptPath above.
+    const fullPath = `${lichDir}/scripts/profiles/${name}`
     const text = await window.api.readFile(fullPath)
+    setReadOk(text !== null)
     // Normalize CRLF → LF so the textarea value matches and the LCS diff works
     setOriginalContent((text ?? '(could not read file)').replace(/\r\n/g, '\n'))
     setLoadingContent(false)
@@ -1106,7 +1167,7 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
   }
 
   const lichDir = lichPath ? lichPath.replace(/[/\\][^/\\]+$/, '') : ''
-  const fullFilePath = selected ? `${lichDir}\\scripts\\profiles\\${selected}` : ''
+  const fullFilePath = selected ? `${lichDir}/scripts/profiles/${selected}` : ''
   const isEditing = editContent !== null
 
   // v0.8.1 (F25): when the user clicks Edit (or Cancel) we re-scroll the
@@ -1254,7 +1315,7 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
                 />
                 <span className="ld-edit-gap" />
                 <button className="ld-btn ld-btn--secondary" onClick={validateYaml}>Validate</button>
-                <button className="ld-btn ld-btn--secondary" onClick={() => setEditContent(originalContent!)}>Edit</button>
+                <button className="ld-btn ld-btn--secondary" disabled={!readOk} title={readOk ? '' : "Can't edit — this file couldn't be read"} onClick={() => setEditContent(originalContent!)}>Edit</button>
               </>
             )}
           </div>

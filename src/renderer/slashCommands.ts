@@ -80,6 +80,39 @@ export interface SlashContext {
   // minutes = how far back to summarize; null = the default window (see runCatchup).
   aiCatchup: (minutes: number | null) => 'started' | 'consent' | 'disabled' | 'nokey'
   aiCancel: () => boolean   // true if a run was actually in flight and got stopped
+  // ── SimuCoin (F71, DESIGN §42) — app-level, per ACCOUNT. The registry stays
+  // pure: GameWindow supplies these, delegating to the App-owned state so the
+  // slash path and the coin button drive exactly the same lifecycle. Runs are
+  // ASYNC (a store round-trip) while executors are synchronous, so simucoinRun
+  // returns only whether it STARTED. The OUTCOME is reported separately: when
+  // each account's run settles, GameWindow appends its `simucoinRowText` line
+  // to the window that issued the command (plus the toast + coin popover).
+  // Without that, `/simucoin check` said "Checking the SimuCoin store…" and
+  // then nothing — the one command whose whole purpose is to answer "do I have
+  // coins?" never answered it (Sekmeht, 2026-07-27). ──
+  simucoinStatus: () => SimuCoinRow[]
+  simucoinRun: (claim: boolean, account?: string) =>
+    'started' | 'none' | 'unconsented' | 'unknown-account' | 'busy'
+}
+
+// One account's outcome, in the shape the slash layer renders.
+export type SimuCoinRow = {
+  account: string; state: string
+  balance: number | null; amount: number | null; message: string | null
+}
+
+// The ONE formatter for an account's result line. Shared by the bare
+// `/simucoin` status readout AND by the async report `/simucoin check` and
+// `claim` emit when their store round-trip finishes — so "what did it find?"
+// reads identically no matter which command asked. Keep it that way: a second
+// copy is how the two drift into describing the same state differently.
+export function simucoinRowText(r: SimuCoinRow): string {
+  const bal = r.balance != null ? `${r.balance} SimuCoins` : 'balance unknown'
+  if (r.state === 'claimable')   return `${r.account}: ${r.amount} FREE SimuCoins ready to claim (${bal}) — /simucoin claim`
+  if (r.state === 'claimed')     return `${r.account}: claimed ${r.amount} (${bal})`
+  if (r.state === 'auth-failed') return `${r.account}: sign-in failed${r.message ? ` — ${r.message}` : ''}`
+  if (r.state === 'error')       return `${r.account}: store unreachable${r.message ? ` — ${r.message}` : ''}`
+  return `${r.account}: nothing to claim${r.message ? ` — ${r.message}` : ''} (${bal})`
 }
 
 // A result line is usually a plain string (rendered as internal-system text).
@@ -1126,6 +1159,55 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       : err('Nothing is running.'),
   },
 
+  // ── SimuCoin (F71, DESIGN §42) ────────────────────────────────────────────
+  // A bare+verbs noun (the `/colors` shape) — so `simucoin` MUST be in
+  // NOUNS_WITH_VERBS in SlashPalette, or the verbs never list or Tab-complete,
+  // and the bare form owns "status" (no redundant status verb).
+  {
+    noun: 'simucoin', nounAliases: ['sc', 'simucoins'], verb: '',
+    args: [], options: [], flags: [],
+    description: 'Show your SimuCoin balance and whether free coins are waiting',
+    example: '/simucoin',
+    run: (ctx) => {
+      const rows = ctx.simucoinStatus()
+      if (rows.length === 0) {
+        return err('SimuCoin checking is not set up — click the coin in the top bar to enable it for an account.')
+      }
+      return ok(...rows.map(simucoinRowText))
+    },
+  },
+  {
+    noun: 'simucoin', nounAliases: ['sc', 'simucoins'], verb: 'check',
+    args: [{ name: 'account', required: false, kind: 'word', hint: 'which account — omit to check every enabled account' }],
+    options: [], flags: [],
+    description: 'Re-check the store now (does not claim)',
+    example: '/simucoin check',
+    run: (ctx, p) => {
+      const st = ctx.simucoinRun(false, p.args[0]?.trim() || undefined)
+      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — click the coin in the top bar to enable it.')
+      if (st === 'unknown-account') return err(`No such account: "${p.args[0]}".`)
+      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — click the coin in the top bar.')
+      if (st === 'busy')            return err('Already checking — give it a moment.')
+      // Says results FOLLOW — the run is async, so this line is not the answer.
+      return ok('Checking the SimuCoin store — results appear here when each account finishes…')
+    },
+  },
+  {
+    noun: 'simucoin', nounAliases: ['sc', 'simucoins'], verb: 'claim',
+    args: [{ name: 'account', required: false, kind: 'word', hint: 'which account — omit to claim for every enabled account' }],
+    options: [], flags: [],
+    description: 'Claim any free SimuCoins waiting on your account',
+    example: '/simucoin claim',
+    run: (ctx, p) => {
+      const st = ctx.simucoinRun(true, p.args[0]?.trim() || undefined)
+      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — click the coin in the top bar to enable it.')
+      if (st === 'unknown-account') return err(`No such account: "${p.args[0]}".`)
+      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — click the coin in the top bar.')
+      if (st === 'busy')            return err('Already working — give it a moment.')
+      return ok('Claiming — results appear here when each account finishes…')
+    },
+  },
+
 ]
 
 // Noun-level blurbs for the bare /help listing — one PLAIN-LANGUAGE line per
@@ -1149,6 +1231,7 @@ const NOUN_HELP: Record<string, string> = {
   clear:      'Wipe the main window (your Session Log still keeps everything)',
   colors:     'The named colors — see them, add your own (/colors add "ember" #ff6a30)',
   ai:         'AI features (bring your own key) — /ai catchup 30m summarizes what happened',
+  simucoin:   'Your free monthly SimuCoins — see the balance and claim what is waiting',
   help:       'This list — /help <command> explains one in detail',
 }
 

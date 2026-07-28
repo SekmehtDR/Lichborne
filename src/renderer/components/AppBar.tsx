@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSessions, type CharacterId } from '../SessionsContext'
 import CharacterTabBar from './CharacterTabBar'
+import SimuCoinButton from './SimuCoinButton'
+import type { SimuCoinStatus } from '../../shared/types'
 import '../styles/app-bar.css'
 
 // Unified top app-bar (top-chrome redesign, Phase 2c). Replaces the bare
@@ -27,13 +29,25 @@ interface Props {
   onReconnect: (id: CharacterId) => void
   // Characters mid-reconnect — drives the per-tab "connecting" indicator.
   reconnectingIds: Set<CharacterId>
+  // SimuCoin (F71) — app-level, per ACCOUNT. Owned by App (it has the launcher
+  // account list + the check lifecycle); the bar just hosts the coin button,
+  // which renders NOTHING when no account is opted in or offerable.
+  simucoin: {
+    accounts: string[]
+    withPassword: Set<string>
+    statuses: Record<string, SimuCoinStatus>
+    busy: Set<string>
+    // Resolves with the account outcome (see GameWindow) — the coin button
+    // ignores it and reads `statuses`; the slash path needs the value.
+    run: (account: string, claim: boolean) => Promise<unknown>
+  }
 }
 
 function dispatchSessionAction(action: string) {
   document.dispatchEvent(new CustomEvent('lichborne:session-action', { detail: { action } }))
 }
 
-export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, reconnectingIds }: Props) {
+export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, reconnectingIds, simucoin }: Props) {
   const { sessions, activeId } = useSessions()
   const active = sessions.find(s => s.characterId === activeId)
   const st = active?.status
@@ -69,6 +83,16 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
       <CharacterTabBar onAdd={onAdd} onClose={onClose} onReconnect={onReconnect} reconnectingIds={reconnectingIds} />
 
       <div className="app-bar-actions">
+        {/* SimuCoin (F71) — quiet by default: renders nothing unless an account
+            is opted in or offerable. Placed before the panel buttons so it sits
+            next to the tabs and never moves as buttons collapse (B178 tiers). */}
+        <SimuCoinButton
+          accounts={simucoin.accounts}
+          withPassword={simucoin.withPassword}
+          statuses={simucoin.statuses}
+          busy={simucoin.busy}
+          onRun={simucoin.run}
+        />
         {/* B178: `app-bar-collapsible` — these five inline buttons hide under
             the narrow media tier (app-bar.css) and their actions re-surface as
             the `--overflow` items inside the ⋯ More menu below. Both sets are

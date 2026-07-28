@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { app } from 'electron'
 import { EventEmitter } from 'events'
+import { expandHome } from '../homePath'
 
 // Client ID string — Lich with --genie flag expects this format
 const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
@@ -88,6 +89,12 @@ export class LichConnection extends EventEmitter {
     this.buffer = ''
     this.connected = false
 
+    // Cross-platform (v0.18.0): Linux/Mac defaults are `~`-relative; expand
+    // before spawning. resolveRubyw only rewrites paths ending in ruby.exe, so
+    // a Linux/Mac interpreter path passes through it verbatim (plain `ruby` is
+    // the correct spawn there — rubyw is a Windows-only concept).
+    rubyPath = expandHome(rubyPath)
+    lichPath = expandHome(lichPath)
     const rubywPath = this.resolveRubyw(rubyPath)
 
     // Open the per-session launch log (truncate per launch → bounded size,

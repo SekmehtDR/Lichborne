@@ -1154,16 +1154,40 @@ export default function GenieMapView({
   // completion — see `currentLocation` auto-switch comment; the game can
   // block any walk step, so we let the room-title signal drive zone changes
   // and never race ahead of the player.
+  //
+  // PERF — this callback MUST keep a stable identity. It is a dep of the
+  // `nodeRects` memo, so when it closed over `currentLocation` directly it got
+  // a new identity on EVERY ROOM CHANGE, invalidating the memo and rebuilding
+  // the entire node layer — ~1057 <g> groups in the biggest zone — on every
+  // single step the player took. Measured with the real node count
+  // (tmp-map-perf/react-bench): 8.4ms of React commit time per room change
+  // versus 0.34ms when the memo holds. That is half a frame budget spent
+  // re-creating markers whose geometry did not change, and it is exactly what
+  // made the map feel sluggish during heavy movement.
+  //
+  // The fix is the latest-closure ref (pitfall #31): the handler's INPUTS live
+  // in a ref that updates every render, so the handler itself never changes
+  // identity. `nodeRects` now rebuilds only when the zone/level actually
+  // changes (via `visibleNodes`), which is the only time the markers differ.
+  // Do NOT put `currentLocation` (or anything else that ticks per room) back
+  // into this dep array.
+  const walkCtxRef = useRef({ activeZone, currentLocation, currentZoneId, sendWalkPath })
+  useEffect(() => {
+    walkCtxRef.current = { activeZone, currentLocation, currentZoneId, sendWalkPath }
+  }, [activeZone, currentLocation, currentZoneId, sendWalkPath])
+
   const onNodeContextMenu = useCallback((node: GenieNode, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    if (!currentLocation) return
-    if (currentLocation.zone.id !== currentZoneId) return
-    if (currentLocation.node.id === node.id) return
-    const path = bfsZonePath(activeZone!, currentLocation.node.id, node.id)
+    const { activeZone: zone, currentLocation: loc, currentZoneId: zoneId, sendWalkPath: walk } =
+      walkCtxRef.current
+    if (!loc) return
+    if (loc.zone.id !== zoneId) return
+    if (loc.node.id === node.id) return
+    const path = bfsZonePath(zone!, loc.node.id, node.id)
     if (path.length === 0) return
-    sendWalkPath(path)
-  }, [activeZone, currentLocation, currentZoneId, sendWalkPath])
+    walk(path)
+  }, [])
 
   // Hover handlers — pointer position relative to the canvas for the tooltip.
   // Skip work entirely while the user is panning. We can't rely on a
@@ -1329,26 +1353,36 @@ export default function GenieMapView({
     return segs
   }, [visibleNodes, visibleById])
 
-  const buildArcPaths = (opacity: number, keyPrefix: string) => (
-    (Object.keys(arcSegs) as ArcCategory[]).map(cat => {
-      const d = arcSegs[cat].join('')
-      if (!d) return null
-      return (
-        <path
-          key={`${keyPrefix}-${cat}`}
-          d={d}
-          stroke={ARC_COLOR_VAR[cat]}
-          strokeWidth={1}
-          fill="none"
-          opacity={opacity}
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="none"
-        />
-      )
-    })
-  )
-  const arcPathsUnder = buildArcPaths(0.7, 'arcs-under')
-  const arcPathsOver  = buildArcPaths(0.35, 'arcs-over')
+  // PERF: the SEGMENTS are memoized above, but the `.join('')` that turns them
+  // into path `d` strings is the expensive half — a big zone has ~2,400
+  // segments, so each pass allocates ~40KB of string. Running it inline meant
+  // six large joins (3 categories x 2 passes) on EVERY render: every mousemove
+  // of a drag, every room change, every parent re-render. Measured at ~0.15ms
+  // and ~78KB of garbage per render for nothing — the `d` values only change
+  // when `arcSegs` does. Memoizing on `[arcSegs]` makes both passes free
+  // between zone/level changes, and hands React the same element references so
+  // it can skip the subtree entirely.
+  const { under: arcPathsUnder, over: arcPathsOver } = useMemo(() => {
+    const build = (opacity: number, keyPrefix: string) => (
+      (Object.keys(arcSegs) as ArcCategory[]).map(cat => {
+        const d = arcSegs[cat].join('')
+        if (!d) return null
+        return (
+          <path
+            key={`${keyPrefix}-${cat}`}
+            d={d}
+            stroke={ARC_COLOR_VAR[cat]}
+            strokeWidth={1}
+            fill="none"
+            opacity={opacity}
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+        )
+      })
+    )
+    return { under: build(0.7, 'arcs-under'), over: build(0.35, 'arcs-over') }
+  }, [arcSegs])
 
   const currentNodeId = currentLocation?.zone.id === currentZoneId
     ? currentLocation?.node.id

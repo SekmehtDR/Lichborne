@@ -87,32 +87,109 @@
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
+/* ── Launcher hero lockup (v0.18.0) ─────────────────────────────────────────
+   The logo ART and the "DragonRealms Client" / version text sit on ONE ROW,
+   split by a hairline divider. The TYPE follows the About-modal language
+   (about.css .about-head): accent wordmark, tabular version, accent hairline.
+   Deliberately NO tinted panel/border around the row (tried in v0.18.0 and
+   removed at Sekmeht's ask — the badge box competed with the artwork; the
+   divider alone carries the "one component" read).
+   Using `var(--accent)` — not a baked brand green — is what makes it feel like
+   the rest of the client: it re-tints with whatever theme the player picked,
+   exactly as the About header does, while the emerald ARTWORK stays its own
+   fixed-palette object (polish standard #9a). Every colour is a theme var or a
+   color-mix toward one, so it self-corrects on light themes (Principle #4).
+   App chrome ⇒ rem sizing is deliberate (Principle #9's modal exception). */
 .launcher-logo {
-  text-align: center;
-  margin-bottom: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: fit-content;
+  /* EVENLY SPACED between the top buttons and the start of Favorites
+     (Sekmeht's mockup). The gap above the lockup is not this margin alone —
+     `.launcher-topbar` already contributes `padding-bottom: 16px`, and
+     `.launcher-groups` contributes nothing above itself, so the arithmetic is:
+         above = 16px (topbar) + 12px (here) = 28px
+         below = 28px (here)
+     Previously this was `0 auto 28px`, i.e. 16px above versus 28px + the
+     instruction row + its 18px below — visibly top-heavy. If you change the
+     topbar's bottom padding, re-balance the 12px here to match. */
+  margin: 12px auto 28px;
 }
 
-.launcher-logo h1 {
-  font-size: 1.8rem;
-  font-weight: 700;
-  letter-spacing: 2px;
+/* Hero logo art. The source PNG is a TRANSPARENT 1024×1024 canvas whose
+   artwork occupies 778×638 — leaving ~18% empty above and ~20% below.
+   Rendered raw, the logo would float in a band of dead space, so the padding
+   is cropped HERE rather than by re-cutting Sekmeht's asset (the file stays
+   the master copy).
+   HOW: see the img rule below — the image is scaled up and inset by negative
+   margins so all four transparent bands fall outside the wrapper, which then
+   collapses to the artwork's true 778:638 aspect at ANY size. */
+.launcher-logo-art {
+  /* This is the ARTWORK's width — the image inside is scaled up and inset so
+     the transparent canvas margins fall outside it (see below). */
+  width: min(190px, 34vw);
+  flex-shrink: 0;
+  overflow: hidden;   /* belt: clips the (transparent) overflow, never content */
+  line-height: 0;     /* no inline-descender gap under the image */
+}
+
+.launcher-logo-art img {
+  display: block;
+  height: auto;
+  /* Crop ALL FOUR transparent margins. The art occupies x 122..899,
+     y 185..822 of the 1024² canvas (778×638). Scaling the image to
+     1024/778 of the wrapper makes the ARTWORK exactly the wrapper's width;
+     the three negative margins (each measured/778, because percentage margins
+     resolve against the wrapper's width) then pull the dead canvas outside,
+     and the wrapper collapses to the art's true 638/778 = 82% aspect.
+     Re-measure all four if the art is ever re-exported. */
+  width: 131.62%;         /* 1024 / 778 */
+  margin-left: -15.68%;   /*  122 / 778 */
+  margin-top: -23.78%;    /*  185 / 778 */
+  margin-bottom: -25.84%; /*  201 / 778 */
+  /* The artwork is dark-on-transparent: it reads on dark themes by itself but
+     can look flat against a near-white one (Classic Light / Ivory / Parchment).
+     A soft theme-aware halo lifts it off light backgrounds and is invisible on
+     dark ones — the ART is a baked-palette object, but everything AROUND it
+     still answers to the theme (Principle #4 / polish standard #9a). */
+  filter: drop-shadow(0 1px 6px color-mix(in srgb, var(--text-primary) 22%, transparent));
+}
+
+/* Text column, divided from the art by the same hairline the badge border and
+   the About header use — so the lockup reads as one component, not two things
+   side by side. */
+.launcher-logo-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* NOTE: the old `.launcher-logo h1` ("Lichborne" in --accent) was removed in
+   v0.18.0 — the logo ART carries the wordmark now, so the h1 was a duplicate
+   and the rule had no consumer left. */
+.launcher-tagline {
+  margin: 0;
   color: var(--accent);
-}
-
-.launcher-logo p {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  margin-top: 3px;
-  letter-spacing: 3px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;   /* em, so the tracking scales with the type */
   text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;      /* "DragonRealms Client" stays one line beside the art */
 }
 
 .launcher-version {
-  color: var(--text-faint) !important;
-  font-size: 0.68rem !important;
-  letter-spacing: 1px !important;
-  text-transform: none !important;
-  margin-top: 6px !important;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;   /* matches .about-version */
 }
 
 .launcher-heading {
@@ -121,6 +198,17 @@
   text-transform: uppercase;
   letter-spacing: 2px;
   margin-bottom: 18px;
+}
+
+/* The same line rendered as the lockup's third row instead of a standalone
+   row beneath it. It is a <p> here (the tagline/version are too), so EVERY
+   side is set explicitly — the UA's default 1em top/bottom margin on <p>
+   would otherwise reappear, since the base rule above only sets margin-bottom
+   (it was authored for a <div>). The small top margin separates the
+   instruction from the version by slightly more than the column's own 0.3rem
+   gap, so it reads as "what to do" rather than a third piece of metadata. */
+.launcher-heading--inline {
+  margin: 0.35rem 0 0;
 }
 
 /* ── Inline error banner ────────────────────────────────────────────── */
@@ -168,10 +256,58 @@
   gap: 24px;
 }
 
-.launcher-account {
+/* ── Account / Favorites panels — About-modal chrome (v0.18.0) ─────────────
+   Sekmeht: "the About Lichborne look, for the accounts/favorites and add
+   cards." The recipe is lifted from about.css: a `--bg-base` surface with a
+   `--border-subtle` hairline and a 10px radius, headed by a faint
+   accent-tinted band (`--accent` 7% fill / 22% rule) with accent type.
+   `overflow: hidden` is what lets the band sit flush to the rounded corners,
+   and `gap: 0` hands vertical rhythm to the body padding below — otherwise the
+   flex gap would push the header away from the panel edge. */
+/* NOTE the doubled class on the favorites selector: the element carries BOTH
+   `launcher-section` and `launcher-section--favorites`, and the generic
+   `.launcher-section { gap: 8px }` rule is declared LATER in this file. At
+   equal specificity source order wins, so a single-class selector here lost
+   its `gap: 0` and pushed Favorites' first card row 8px further from its
+   header than every account panel beside it. */
+.launcher-account,
+.launcher-section.launcher-section--favorites {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  overflow: hidden;
+  /* Light-theme definition: classicLight sets --bg-app AND --bg-base to #fff,
+     so the panel would otherwise be invisible apart from its hairline. A dark
+     drop-shadow is one of the sanctioned colour literals (Principle #4) —
+     restrained here because these are INLINE panels, not floating modals. */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+}
+
+/* COMPACT (inside the Add Character modal): that container already draws the
+   same --bg-base surface and --border-subtle hairline, so the panels would
+   render an identically-coloured frame 16px inside an identical frame — it
+   reads as an accidental double border. Drop the panel chrome there and let
+   the accent header bands do the structuring. */
+.launcher--compact .launcher-account,
+.launcher--compact .launcher-section.launcher-section--favorites {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Panel bodies. Each section supplies its own top inset (acting as the old
+   flex gap); the last one closes the panel. */
+.launcher-account > .launcher-section,
+.launcher-section--favorites > .launcher-grid {
+  padding: 0.85rem 1rem 0;
+}
+.launcher-account > .launcher-section:last-child,
+.launcher-section--favorites > .launcher-grid:last-child {
+  padding-bottom: 1rem;
 }
 
 /* Account header — wraps a sibling toggle button + a refresh button. v0.8.0
@@ -185,9 +321,9 @@
   align-items: stretch;
   gap: 6px;
   padding: 0;
-  border-bottom: 1px solid var(--border-faint);
-  border-radius: 4px 4px 0 0;
-  background: transparent;
+  /* The About header band (.about-head): accent-tinted fill + accent rule. */
+  border-bottom: 1px solid var(--modal-head-border);
+  background: var(--modal-head-bg);
 }
 
 /* The toggle button takes the full row width (minus the refresh button on
@@ -197,19 +333,20 @@
   display: flex;
   align-items: baseline;
   gap: 10px;
-  padding: 6px 8px;
+  padding: 0.6rem 0.9rem;
   background: transparent;
   border: none;
   text-align: left;
   color: var(--text-primary);
   font-family: inherit;
   cursor: pointer;
-  border-radius: 4px 0 0 0;
   transition: background 0.12s;
 }
 
+/* Matches the About modal's control hover (a neutral wash, not more accent —
+   the band is already accent-tinted, so stacking accent on accent muddies it). */
 .launcher-account-header-toggle:hover {
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .launcher-account-chevron {
@@ -226,11 +363,10 @@
 }
 
 /* Collapsed accounts hide their sections via DOM (sections only render when
-   isExpanded), so this is just for the header's bottom-border (no need
-   when collapsed). */
+   isExpanded), so the band IS the whole panel — drop the rule that would
+   otherwise hang under nothing. */
 .launcher-account--collapsed .launcher-account-header {
   border-bottom-color: transparent;
-  border-radius: 4px;
 }
 
 .launcher-account-label {
@@ -241,10 +377,12 @@
   color: var(--text-faint);
 }
 
+/* The account name is the panel's title — accent, like .about-wordmark. */
 .launcher-account-name {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--text-primary);
+  letter-spacing: 0.02em;
+  color: var(--modal-head-color);
 }
 
 .launcher-section {
@@ -438,12 +576,40 @@
   cursor: default;
 }
 
-/* Favorites section header gets a small heart prefix to echo the toggle
-   icon. Otherwise renders the same as any other section header. */
-.launcher-section--favorites .launcher-section-header {
-  display: inline-flex;
+/* Favorites' header is the panel's accent BAND (the About .about-head shape),
+   unlike the plain section labels that sit INSIDE an account panel's body.
+   v0.18.0: it's also the collapse TOGGLE, so it's a real <button> — hence the
+   button resets (width/border/font/cursor) that a plain div didn't need. */
+.launcher-section--favorites > .launcher-section-header {
+  display: flex;
   align-items: baseline;
   gap: 6px;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  color: var(--modal-head-color);
+  background: var(--modal-head-bg);
+  border: none;
+  border-bottom: 1px solid var(--modal-head-border);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+/* Neutral wash, not more accent — the band is already accent-tinted (same
+   reasoning as the account header's hover). */
+.launcher-section--favorites > .launcher-section-header:hover {
+  background: color-mix(in srgb, var(--text-primary) 8%, var(--modal-head-bg));
+}
+
+/* Collapsed: the band IS the whole panel, so the rule would hang under
+   nothing (mirrors .launcher-account--collapsed). */
+.launcher-section--collapsed > .launcher-section-header {
+  border-bottom-color: transparent;
 }
 
 .launcher-section-header-heart {
@@ -530,9 +696,13 @@
 /* ── Character card ──────────────────────────────────────────────────── */
 
 .launcher-card {
+  /* --bg-raised sits ABOVE the panel's --bg-base on every theme (dark:
+     #1e1e1e on #1a1a1a; classicLight: #efefef on #fff), so the tiles still
+     read as raised now that they live inside a panel — verified per pitfall
+     #55 rather than assumed. Radius 8 keeps them in the 10px panel family. */
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -636,21 +806,24 @@
 
 /* ── Add card ────────────────────────────────────────────────────────── */
 
+/* Add card — the About chip language (accent tint + accent hairline), kept
+   DASHED so it still reads as "empty slot, click to fill" rather than as a
+   populated character tile. */
 .launcher-card--add {
-  background: transparent;
-  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 32%, transparent);
+  border-radius: 10px;
   align-items: center;
   justify-content: center;
   min-height: 110px;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--accent);
   font-family: inherit;
 }
 
 .launcher-card--add:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .launcher-card-add-plus {
@@ -727,7 +900,7 @@
 .launcher-connecting {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -742,19 +915,159 @@
 }
 
 .launcher-connecting-card {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  /* Canonical modal chrome (global.css tokens) — the About-modal look. */
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
   padding: 22px 32px;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  /* FIXED width. The connect overlays show a live step message whose length
+     changes every few seconds ("Starting Lich…" → "Still waiting for Lich…
+     (14s) — check your Ruby/Lich paths or antivirus"), and a content-sized
+     card visibly grew and shrank with it — distracting while you're watching
+     it. Pin the width so only the TEXT changes. (.launcher-dialog, declared
+     below at equal specificity, overrides this for the conversation dialogs.) */
+  width: min(30rem, 92vw);
+}
+
+/* ── Connect-flow DIALOGS (account-conflict prompt, Bulk Connect result,
+   reconnect chooser). These were the spinner card re-shaped by INLINE styles —
+   a slightly different dialog each time. They're now one real modal: accent
+   header band, padded body, footer rail. Anything added to this flow should use
+   these classes, never inline styles (DESIGN §43 / polish standard #10). */
+.launcher-dialog {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;          /* lets the band meet the rounded corners */
+  width: min(520px, 92vw);
+}
+
+.launcher-dialog-head {
+  padding: 0.85rem 1.1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--modal-head-color);
+  background: var(--modal-head-bg);
+  border-bottom: 1px solid var(--modal-head-border);
+}
+
+.launcher-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+/* Secondary explanatory copy inside a dialog body. */
+.launcher-dialog-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.launcher-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0.75rem 1.1rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+/* Result rows — success/failure readable at a glance (UX standard #1: the
+   state IS the message). Fixed hues blended toward --text-primary so they stay
+   legible on light themes, where a raw success-green/danger-red on a near-white
+   surface washes out (pitfall #63). */
+.launcher-result {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.launcher-result-icon { font-weight: 700; line-height: 1; }
+.launcher-result--ok   { color: color-mix(in srgb, var(--color-success) 78%, var(--text-primary)); }
+.launcher-result--fail { color: color-mix(in srgb, var(--color-danger) 78%, var(--text-primary)); }
+/* Per-account choice row in the reconnect chooser. */
+.launcher-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.launcher-choice-account {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  min-width: 7rem;
+}
+
+.launcher-result-list {
+  margin: 0.15rem 0 0 1.1rem;
+  padding: 0;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.launcher-connecting-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;   /* lets the step text wrap/ellipsis instead of forcing width */
 }
 
 .launcher-connecting-text {
   color: var(--text-primary);
   font-size: 0.95rem;
+}
+
+.launcher-connecting-count {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The live step from main ("Waiting for Lich on localhost:11024… (7s)").
+   Quiet by design — it's diagnostic detail under the headline, and it must not
+   compete with the character name. tabular-nums keeps the elapsed-seconds
+   counter from jittering the line as it ticks. */
+.launcher-connecting-step {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  /* Reserve exactly TWO lines and clamp to them, so neither a short step nor
+     the long antivirus hint changes the card's height. Width is pinned above;
+     between them the card never moves while it narrates. */
+  min-height: 2.5em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+/* Bulk progress rail. */
+.launcher-connecting-bar {
+  height: 3px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  overflow: hidden;
+}
+.launcher-connecting-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.25s ease;
 }
 
 .launcher-connecting-name {
@@ -763,17 +1076,38 @@
 }
 
 .launcher-connecting-cancel {
-  background: var(--bg-btn);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-faint);
+  color: var(--text-primary);
+  border-radius: 6px;
   padding: 6px 14px;
   font-family: inherit;
   font-size: 0.85rem;
+  line-height: 1;
   cursor: pointer;
 }
 
-.launcher-connecting-cancel:hover {
-  background: var(--border);
-  color: var(--text-primary);
+.launcher-connecting-cancel:hover:not(:disabled) { background: var(--bg-hover); }
+.launcher-connecting-cancel:disabled { opacity: 0.55; cursor: default; }
+
+/* Destructive action — same chip shape, danger hue. */
+.launcher-connecting-cancel--danger {
+  border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: color-mix(in srgb, var(--color-danger) 80%, var(--text-primary));
+  font-weight: 600;
+}
+.launcher-connecting-cancel--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 20%, transparent);
+}
+
+/* Primary action = the About accent chip. */
+.launcher-connecting-cancel--primary {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.launcher-connecting-cancel--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }

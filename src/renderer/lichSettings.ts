@@ -2,8 +2,35 @@
 // and SettingsPanel (in-session edits). Persisted to localStorage; replicated
 // to _shared.yaml by callers so concurrent Electron processes stay in sync.
 
-export const DEFAULT_RUBY = 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe'
-export const DEFAULT_LICH = 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
+// Cross-platform (v0.18.0): which OS we're on, from the preload bridge.
+// Guarded so non-renderer contexts (the tmp-* harnesses stub window.api
+// without a platform field) fall back to Windows behavior.
+const PLATFORM: string =
+  (typeof window !== 'undefined' && window.api?.platform) || 'win32'
+export const IS_MAC = PLATFORM === 'darwin'
+export const IS_WINDOWS = PLATFORM === 'win32'
+
+// Per-platform Lich/Ruby defaults, matching each OS's canonical install
+// (Windows: the Ruby4Lich5 one-click installer; Linux/Mac: the elanthia-online
+// wiki — Lich zip in ~/Lich5, Ruby via rbenv on Debian/Mac or the system Ruby
+// on Fedora). Non-Windows paths are `~`-relative; MAIN expands them at every
+// consumption point (expandHome — launch, lich.db3, maps/scripts, discovery).
+// Never default to bare `ruby`: a GUI app launched from Finder/the dock lacks
+// the shell PATH that makes rbenv shims resolve.
+// Non-Windows default is deliberately EMPTY, not a plausible path like
+// /usr/bin/ruby. Discovery skips its candidate scan whenever the configured
+// interpreter already exists (`rubyAlreadyValid`), and on Linux/macOS the
+// system Ruby almost always exists — but it's typically 3.x, which current
+// Lich refuses to run. A "valid" default would therefore pin users to an
+// unusable interpreter and stop the rbenv 4.x scan from ever running. Empty
+// fails existsSync, so discovery walks its priority list (rbenv shim → rbenv
+// versions newest-first → Homebrew → /usr/local → /usr/bin) and the system
+// Ruby is still found — as the LAST resort it should be.
+export const DEFAULT_RUBY =
+  IS_WINDOWS ? 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe' : ''
+export const DEFAULT_LICH =
+  IS_WINDOWS ? 'C:\\Ruby4Lich5\\Lich5\\lich.rbw'
+  :            '~/Lich5/lich.rbw'
 export const DEFAULT_LICH_PORT = 11024
 
 export const ADV_KEY = 'lichborne.advancedSettings'

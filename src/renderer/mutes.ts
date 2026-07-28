@@ -5,6 +5,7 @@
 // `isRuleActive`. See DESIGN.md §31. Phase 1 applies to the main story window;
 // the optional `stream` scope is stored now and honored in Phase 2.
 
+import { literalGate } from './regexLiteral'
 import { scopedKey, safeSetItem } from './characterScope'
 
 export interface MuteRule {
@@ -105,6 +106,13 @@ export function newMute(pattern = '', mode: MuteRule['mode'] = 'phrase'): MuteRu
 export interface CompiledMute {
   rule: MuteRule
   regex: RegExp
+  /** Cheap pre-check: a lowercase literal guaranteed present in any match, or
+      null when none could be extracted. Pitfall #82a — every rule-evaluation
+      site gates on this BEFORE running its regex. Mutes and substitutes were
+      the only two engines missing it (v0.18.0 perf audit): substitutes ran the
+      full rule list per SEGMENT and again over the joined line, so a 90-rule
+      import cost ~27µs/line unconditionally, ~9x what the gate costs. */
+  fastLower: string | null
 }
 
 // Compile + gate the enabled mutes for the current active groups. `isActive`
@@ -119,7 +127,7 @@ export function compileMutes(
     if (!rule.enabled) continue
     if (!isActive(rule.groupIds ?? [], rule.allGroups ?? true)) continue
     const regex = buildMuteRegex(rule)
-    if (regex) out.push({ rule, regex })
+    if (regex) out.push({ rule, regex, fastLower: literalGate(rule.mode, rule.pattern) })
   }
   return out
 }
@@ -144,10 +152,13 @@ export function applyMutesToSegments<T extends { text: string }>(
   if (mutes.length === 0) return segments
   const lineText = segments.map(s => s.text).join('')
   if (!lineText.trim()) return segments
+  // ONE lowercase per line, shared by every gate below (pitfall #82a).
+  const lower = lineText.toLowerCase()
 
   // line-scope: any match → drop the whole line.
   for (const m of mutes) {
     if (m.rule.scope === 'line') {
+      if (m.fastLower && !lower.includes(m.fastLower)) continue
       m.regex.lastIndex = 0
       if (m.regex.test(lineText)) { onFired?.(m.rule.id); return null }
     }
@@ -155,7 +166,10 @@ export function applyMutesToSegments<T extends { text: string }>(
 
   // match-scope: strip the matched text out of each segment, then tidy the gap
   // the removal leaves so "the healer Quentin." → "the healer." (not "… .").
-  const matchMutes = mutes.filter(m => m.rule.scope === 'match')
+  // Gate against the WHOLE line: a rule whose literal appears nowhere in the
+  // line cannot match any segment of it, so it's skipped for every segment.
+  const matchMutes = mutes.filter(m =>
+    m.rule.scope === 'match' && (!m.fastLower || lower.includes(m.fastLower)))
   if (matchMutes.length === 0) return segments
 
   let changed = false

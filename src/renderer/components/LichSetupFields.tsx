@@ -3,7 +3,15 @@ import {
   type AdvancedSettings,
   ADV_DEFAULTS,
   GAMES,
+  IS_WINDOWS,
+  IS_MAC,
 } from '../lichSettings'
+
+// Platform-aware copy (v0.18.0): where the canonical Lich install lives and
+// what the interpreter file is called — Windows = the Ruby4Lich5 one-click
+// installer; Linux/Mac = the elanthia-online wiki layout (~/Lich5, rbenv).
+const LICH_HOME_LABEL = IS_WINDOWS ? 'C:\\Ruby4Lich5' : IS_MAC ? '~/Lich5 (or ~/Desktop/Lich5)' : '~/Lich5'
+const RUBY_FILE_LABEL = IS_WINDOWS ? 'ruby.exe' : 'ruby'
 
 type DiscoveryResult = Awaited<ReturnType<typeof window.api.discoverLichPaths>> | null
 
@@ -38,7 +46,10 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
   }, [useLich, alwaysShowFields])
 
   async function runDiscovery() {
-    const found = await window.api.discoverLichPaths(rubyPath, lichPath)
+    // probeDesktop: the Mac wiki install lands in ~/Desktop/Lich5, and probing
+    // the Desktop fires the macOS privacy consent prompt — acceptable here
+    // (the user just clicked Auto Detect), never from silent startup discovery.
+    const found = await window.api.discoverLichPaths(rubyPath, lichPath, { probeDesktop: true, interactive: true })
     setDiscoveryResult(found)
     if (found.rubyPath) setAdv1('rubyPath', found.rubyPath)
     if (found.lichPath) setAdv1('lichPath', found.lichPath)
@@ -48,7 +59,10 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
     return <p className="advanced-direct-note">No advanced settings for connecting directly.</p>
   }
 
-  const dr = discoveryResult?.isWindows ? discoveryResult : null
+  // Pre-v0.18.0 this keyed on isWindows (discovery early-returned empty on
+  // other platforms); the handler now probes every platform, so the banner
+  // renders everywhere.
+  const dr = discoveryResult
   const rubyOk = dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
   const lichOk = dr ? (dr.lichAlreadyValid || dr.lichPath !== null) : null
 
@@ -58,9 +72,9 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
     const lichNew = dr.lichPath !== null
     let type: 'ok' | 'warn' | 'error'
     let msg: string
-    if (!dr.baseFolderExists) {
+    if (!dr.baseFolderExists && !rubyOk && !lichOk) {
       type = 'error'
-      msg = 'No C:\\Ruby4Lich5 folder found — please browse to your Ruby and Lich5 file locations manually.'
+      msg = `No ${LICH_HOME_LABEL} folder found — please browse to your Ruby and Lich5 file locations manually.`
     } else if (rubyOk && lichOk) {
       if (rubyNew || lichNew) {
         const found = [rubyNew && 'Ruby', lichNew && 'Lich5'].filter(Boolean).join(' and ')
@@ -72,13 +86,13 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
       }
     } else if (!rubyOk && !lichOk) {
       type = 'warn'
-      msg = 'Ruby and Lich5 files not found in C:\\Ruby4Lich5 — ensure Lich5 is properly installed, or browse to the correct file locations.'
+      msg = `Ruby and Lich5 files not found in ${LICH_HOME_LABEL} — ensure Lich5 is properly installed, or browse to the correct file locations.`
     } else if (!rubyOk) {
       type = 'warn'
-      msg = 'Ruby (ruby.exe) not found — ensure Ruby for Lich5 is installed, or browse to the correct location.'
+      msg = `Ruby (${RUBY_FILE_LABEL}) not found — ensure Ruby for Lich5 is installed, or browse to the correct location.`
     } else {
       type = 'warn'
-      msg = 'Lich5 (lich.rbw) not found — ensure Lich5 is installed at C:\\Ruby4Lich5\\Lich5\\, or browse to the file manually.'
+      msg = `Lich5 (lich.rbw) not found — ensure Lich5 is installed at ${LICH_HOME_LABEL}, or browse to the file manually.`
     }
     statusEl = (
       <div className={`lich-discovery-status lich-discovery-status--${type}`}>
@@ -88,6 +102,22 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
     )
   }
 
+  // Ruby-version advisory (v0.18.0): Lich 5.18+ hard-requires Ruby 4.0 and
+  // refuses to launch on older interpreters — surface it at setup time instead
+  // of as a cryptic failed-launch banner. The Fedora wiki path installs the
+  // system Ruby (3.3/3.4), which is exactly this trap. Version-unknown
+  // (rubyVersion null) is silent — the probe is best-effort.
+  const rubyMajor = dr?.rubyVersion ? parseInt(dr.rubyVersion.split('.')[0], 10) : null
+  const rubyVersionEl = rubyMajor !== null && rubyMajor < 4 ? (
+    <div className="lich-discovery-status lich-discovery-status--warn">
+      <span className="lich-discovery-icon">⚠</span>
+      {/* Reads the RUBY version, not Lich's — so it's phrased conditionally.
+          A user deliberately pinned to Lich 5.17 on Ruby 3.x is fine, and
+          shouldn't be told a failure is coming that isn't. */}
+      <span>{`Ruby ${dr!.rubyVersion} detected — if you're on Lich 5.18 or newer it requires Ruby 4.0+ and won't start. Upgrade Ruby (rbenv install 4.0.5) or point the path at a newer interpreter.`}</span>
+    </div>
+  ) : null
+
   return (
     <>
       <div className="lich-detect-row">
@@ -96,8 +126,9 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
         </button>
       </div>
       {statusEl}
+      {rubyVersionEl}
       <label>
-        Ruby Path (ruby.exe)
+        {`Ruby Path (${RUBY_FILE_LABEL})`}
         <div className="path-input-row">
           <input
             type="text"
@@ -110,7 +141,13 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
             className="btn-browse"
             disabled={disabled}
             onClick={async () => {
-              const p = await window.api.browseFile([{ name: 'Ruby Executable', extensions: ['exe'] }])
+              // The .exe filter is Windows-only — Linux/Mac ruby binaries have
+              // no extension, so an exe filter would hide them entirely.
+              const p = await window.api.browseFile(
+                IS_WINDOWS
+                  ? [{ name: 'Ruby Executable', extensions: ['exe'] }]
+                  : [{ name: 'All Files', extensions: ['*'] }]
+              )
               if (p) setAdv1('rubyPath', p)
             }}
           >Browse</button>

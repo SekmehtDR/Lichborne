@@ -107,6 +107,13 @@ const NUMPAD_CODE_MAP: Record<string, string> = {
 }
 
 export function formatKeyCombo(e: KeyboardEvent): string {
+  // Meta chords (Cmd on macOS, Win key elsewhere) are NEVER macro-bindable —
+  // bail so they can't match anything. Without this, formatKeyCombo ignored
+  // metaKey entirely, so on a Mac Cmd+C formatted as plain 'C' and a macro
+  // bound to bare C would swallow the OS copy chord (v0.18.0 cross-platform).
+  // No stored combo can contain a Meta modifier (this same function records
+  // combos in the Macros editor), so nothing legitimate is lost.
+  if (e.metaKey) return ''
   const mods: string[] = []
   if (e.ctrlKey)  mods.push('Ctrl')
   if (e.altKey)   mods.push('Alt')

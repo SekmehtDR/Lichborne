@@ -1,7 +1,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord } from '../../shared/types'
+import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord, SimuCoinStatus } from '../../shared/types'
 import { normalizeStreamId } from '../../shared/streamAliases'
 import { redactForAI } from '../../shared/redact'
 import { TextLineRow } from './TextLineRow'
@@ -13,7 +13,7 @@ import { loadContacts, loadContactTemplates, saveContacts, saveContactTemplates,
 import { loadHighlights, saveHighlights, newHighlight, type HighlightRule } from '../highlights'
 import { loadMutes, saveMutes, compileMutes, applyMutesToSegments, newMute, type MuteRule, type CompiledMute } from '../mutes'
 import { loadSubstitutes, saveSubstitutes, compileSubstitutes, applySubstitutesToSegments, newSubstitute, type SubstituteRule, type CompiledSubstitute } from '../substitutes'
-import { runSlash, slashLineText, type SlashContext, type SlashEditorTab } from '../slashCommands'
+import { runSlash, slashLineText, simucoinRowText, type SlashContext, type SlashEditorTab } from '../slashCommands'
 import { loadCustomColors, saveCustomColors, contrastBackingFor } from '../colors'
 import { loadAIConfig, saveAIConfig, AI_STREAM, streamLabel, modelLabel } from '../aiConfig'
 import { aiChatStream } from '../ai/aiClient'
@@ -23,6 +23,8 @@ import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, splitTypedCommands, type AliasRule, type MacroRule } from '../macros'
+import { IS_MAC } from '../lichSettings'
+import { loadSimuCoinConfig, accountConfig } from '../simucoinConfig'
 import ContactPopover from './ContactPopover'
 import MapPanel from './panels/MapPanel'
 import DebugPanel from './DebugPanel'
@@ -74,6 +76,43 @@ interface Props {
   // auto-copy on text selection, settings/theme application to the DOM.
   // Defaults to true for backward compatibility with the single-session entry path.
   isActive?: boolean
+  // SimuCoin (F71, DESIGN §42) — APP-level state (per account), passed down
+  // only so `/simucoin` can read/drive it from the command bar. GameWindow owns
+  // none of it: pitfall #57 says app chrome can't reach into per-session
+  // context, and the converse holds too — a per-session component must not own
+  // account-level state. The coin BUTTON reads the same object in AppBar.
+  simucoin?: {
+    accounts: string[]
+    withPassword: Set<string>
+    statuses: Record<string, import('../../shared/types').SimuCoinStatus>
+    busy: Set<string>
+    // Resolves with the account's OUTCOME so `/simucoin check` can report it
+    // in-flow the moment it lands (null when consent was revoked between the
+    // click and the run, or the store call threw). Reading it back from
+    // `statuses` instead would race React's state flush.
+    run: (account: string, claim: boolean) => Promise<SimuCoinStatus | null>
+  }
+}
+
+// Per-contact word-boundary matchers for the presence tracker. Cached by
+// NAME because both tracking paths (the 60s time-spent tick and the
+// room-change last-seen pass) used to compile a fresh RegExp per contact on
+// every run — 151 compilations per room transition for an importer with a
+// full contact list (v0.18.0 perf audit). Names change rarely; the cache is
+// bounded by the contact count.
+const contactNameReCache = new Map<string, RegExp>()
+function contactNameRe(name: string): RegExp {
+  let re = contactNameReCache.get(name)
+  if (!re) {
+    // `'\\$&'` = "backslash + the matched metacharacter" — the standard escape
+    // idiom, and it must stay a LITERAL. (It was briefly corrupted to the text
+    // `\let lineId = 0` when a scripted edit used JS `String.replace()`, which
+    // expands `$&` in the REPLACEMENT to the matched substring. Any tooling that
+    // rewrites this file must pass a FUNCTION replacement, never a string.)
+    re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+    contactNameReCache.set(name, re)
+  }
+  return re
 }
 
 let lineId = 0
@@ -473,9 +512,13 @@ const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, aimExpir
   </>)
 })
 
-export default function GameWindow({ session, onDisconnect, isActive = true }: Props) {
+export default function GameWindow({ session, onDisconnect, isActive = true, simucoin }: Props) {
   const isActiveRef = useRef(isActive)
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
+  // Latest-closure mirror (the pitfall-#31 pattern) so the SlashContext built
+  // inside runSlashLine always sees the current app-level SimuCoin state.
+  const simucoinRef = useRef(simucoin)
+  useEffect(() => { simucoinRef.current = simucoin })
 
   // Stable identity ref for the *current* session — re-assigned when this tab
   // reconnects (server-drop + click-+-to-re-add fires SessionsContext.addSession
@@ -1088,7 +1131,37 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
   const [contacts,  setContacts]  = useState(() => loadContacts(session.character))
   const [contactTemplates, setContactTemplates] = useState(() => loadContactTemplates(session.character))
-  const nameRegex = useMemo(() => buildNameRegex(contacts), [contacts])
+
+  // ── Contacts: RENDER identity vs TRACKING data (v0.18.0 perf audit) ────────
+  // The presence tracker rewrites the contacts array on every room change
+  // (lastSeen / lastRoom / encounterCount / timeSpentMs). Those fields do not
+  // affect how a single character of text is painted — but a fresh array
+  // identity used to invalidate `nameRegex`, the contacts CONTEXT, and through
+  // it every mounted TextLineRow, each of which then re-ran the whole ruleset.
+  // With ~350 rows mounted (the B152 overscan) and a big imported ruleset that
+  // measured as a ~30-40ms hitch PER ROOM TRANSITION — worst exactly where you
+  // notice it, walking through a busy town with contacts imported.
+  //
+  // `contactsRenderKey` folds ONLY the fields that reach the renderer. While
+  // just tracking data changes the key is unchanged, so `renderContacts` keeps
+  // its identity and every downstream memo holds. Building the key is one pass
+  // over the list (cheap); the win is everything it stops downstream.
+  //
+  // The contact POPOVER deliberately reads the live `contacts` state, not this
+  // — so "last seen"/"time spent" in the card stay current.
+  const contactsRenderKey = useMemo(
+    // JSON.stringify rather than a delimiter-joined string: no separator can
+    // collide with a name/prefix, and no escape characters end up in source.
+    // Only these three reach the renderer: `name` drives nameRegex and the
+    // match lookup, `templateId` selects the style, `id` identifies the click
+    // target. All visual styling lives on the TEMPLATE, not the contact — so
+    // guild/circle/notes and every tracking field are deliberately excluded.
+    () => JSON.stringify(contacts.map(c => [c.id, c.name, c.templateId ?? ''])),
+    [contacts])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed deliberately:
+  // re-mint ONLY when a render-relevant field changed (see above).
+  const renderContacts = useMemo(() => contacts, [contactsRenderKey])
+  const nameRegex = useMemo(() => buildNameRegex(renderContacts), [renderContacts])
   const [highlights, setHighlights] = useState<HighlightRule[]>(() => loadHighlights(session.character))
   const { activeGroupStates, modes, applyMode, activeModeId, groups, toggleGroup, clearMode } = useGroups()
   const activeContactTemplates = useMemo(
@@ -1860,7 +1933,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       let changed = false
       const updated = base.map(c => {
         if (!c.name) return c
-        const re = new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+        const re = contactNameRe(c.name)
         if (re.test(playersText)) {
           changed = true
           return { ...c, timeSpentMs: (c.timeSpentMs ?? 0) + 60_000 }
@@ -1911,7 +1984,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
 
     const updated = base.map(c => {
       if (!c.name) return c
-      const re = new RegExp(`\\b${c.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+      const re = contactNameRe(c.name)
       if (re.test(playersText)) {
         changed = true
         const wasAbsent       = !c.lastSeen        || (now - c.lastSeen)        > ABSENCE_THRESHOLD_MS
@@ -3014,7 +3087,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
       // native find, so the chord is free). Works while the command input is
       // focused (the normal play state); gated off while a modal is open so a
       // modal's own fields keep the chord inert — same guard as macros.
-      if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (e.key === 'f' || e.key === 'F') && !anyModalOpenRef.current) {
+      // v0.18.0: Cmd+F on macOS (THE find chord there) — exactly one of
+      // ctrl/meta, so Ctrl+Cmd+F stays inert.
+      const findMod = IS_MAC ? (e.metaKey && !e.ctrlKey) : (e.ctrlKey && !e.metaKey)
+      if (findMod && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F') && !anyModalOpenRef.current) {
         e.preventDefault()
         setSearchOpen(true)
         return
@@ -3802,6 +3878,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
     }
   }
 
+  // Append plain client lines (the `internal-system` look slash results wear)
+  // and log them to `[sys]`, for output that arrives AFTER its command already
+  // returned. Slash executors are SYNCHRONOUS, so an async outcome — a SimuCoin
+  // store round-trip — has no other route back into the window it was typed in.
+  // Mirrors the lead-in convention of the slash result block below: `— ` on the
+  // first line, two spaces on continuations.
+  function emitClientLines(texts: string[]) {
+    if (texts.length === 0) return
+    setLines(prev => appendTrimmed(prev, texts.map((t, i) => ({
+      id: lineId++,
+      segments: [{ text: (i === 0 ? '— ' : '  ') + t, preset: 'internal-system' }],
+      timestamp: Date.now(),
+    }))))
+    logToSession(texts.map(t => ({ ts: Date.now(), stream: 'sys', text: t })))
+  }
+
   function runSlashLine(text: string) {
     const ctx: SlashContext = {
       character: session.character,
@@ -3897,6 +3989,64 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         if (!aiCancelRef.current) return false
         aiCancelRef.current()
         return true
+      },
+      // SimuCoin (F71) — delegates to the App-owned state so `/simucoin` and
+      // the coin button drive exactly ONE lifecycle. Read through the latest
+      // closure ref (this ctx is rebuilt per slash line, so `simucoin` is
+      // current). Reports only whether a run STARTED — the result lands as a
+      // toast + the coin popover, because executors are synchronous.
+      simucoinStatus: () => {
+        const sc = simucoinRef.current
+        if (!sc) return []
+        return Object.values(sc.statuses).map(s => ({
+          account: s.account, state: s.state, balance: s.balance, amount: s.amount, message: s.message,
+        }))
+      },
+      simucoinRun: (claim, account) => {
+        const sc = simucoinRef.current
+        if (!sc) return 'none'
+        // Report each account's OUTCOME as it lands. The executor is sync and
+        // can only say a run started, so without this `/simucoin check` printed
+        // "Checking the SimuCoin store…" and nothing ever followed it in the
+        // window — the result went only to a toast and the coin popover.
+        // Formatted by the SAME `simucoinRowText` the bare `/simucoin` status
+        // uses, so both read identically. The status is taken from the RESOLVED
+        // VALUE, never re-read from `sc.statuses`: that setState has not
+        // committed when the promise resolves, so a read-back would format the
+        // previous run's row.
+        const report = (st: SimuCoinStatus | null) => {
+          if (!st) return
+          emitClientLines([simucoinRowText(st)])
+        }
+        const cfg = loadSimuCoinConfig()
+        // Enabled = consented AND has a saved password (the store sign-in has
+        // no other credential source) — the same gate the coin button uses.
+        const enabled = sc.accounts.filter(a => accountConfig(cfg, a).consented && sc.withPassword.has(a))
+        if (account) {
+          // Account names are matched CASE-INSENSITIVELY (the store's own login
+          // is, and AddCharacterWizard already compares this way) — otherwise
+          // `/simucoin claim sekmeht` against a stored "Sekmeht" reports "no
+          // such account" for an account that plainly exists. Resolve to the
+          // STORED spelling, since that's the passwords.json / config key.
+          const resolved = sc.accounts.find(a => a.toLowerCase() === account.toLowerCase())
+          if (!resolved)                       return 'unknown-account'
+          if (!enabled.includes(resolved))     return 'unconsented'
+          if (sc.busy.has(resolved))           return 'busy'
+          void sc.run(resolved, claim).then(report)
+          return 'started'
+        }
+        if (enabled.length === 0) return 'none'
+        const free = enabled.filter(a => !sc.busy.has(a))
+        if (free.length === 0) return 'busy'
+        // SEQUENTIAL, same as the startup pass: two accounts signing in to the
+        // store at once is both rude and racy. Chained, not awaited — the
+        // executor is synchronous and reports only that it started.
+        // Each account reports the moment ITS run settles, rather than all of
+        // them at the end — the runs are sequential store round-trips, so a
+        // batch report would leave the user staring at nothing for seconds.
+        void free.reduce<Promise<unknown>>(
+          (chain, a) => chain.then(() => sc.run(a, claim).then(report)), Promise.resolve())
+        return 'started'
       },
     }
     const result = runSlash(text, ctx)
@@ -4391,7 +4541,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
         speech={sceneSpeech}
         moves={sceneMoves}
         indicators={indicators}
-        contacts={contacts}
+        contacts={renderContacts}
         contactTemplates={contactTemplates}
         settings={settings}
         isActive={isActive}
@@ -4656,7 +4806,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
                       line={line}
                       matchRules={matchRules}
                       lineRules={lineRules}
-                      contacts={contacts}
+                      contacts={renderContacts}
                       templates={activeContactTemplates}
                       nameRegex={nameRegex}
                       onContactClick={handleContactClick}
@@ -4747,9 +4897,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true }: P
   const highlightsCtxValue = useMemo(
     () => ({ rules: highlights, matchRules, lineRules }),
     [highlights, matchRules, lineRules])
+  // renderContacts (not `contacts`) — see contactsRenderKey. This is what keeps
+  // a presence-tracking write from invalidating every mounted text row.
   const contactsCtxValue = useMemo(
-    () => ({ contacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }),
-    [contacts, activeContactTemplates, nameRegex, handleContactClick])
+    () => ({ contacts: renderContacts, templates: activeContactTemplates, nameRegex, onContactClick: handleContactClick }),
+    [renderContacts, activeContactTemplates, nameRegex, handleContactClick])
 
   return (
     <HighlightsContext.Provider value={highlightsCtxValue}>

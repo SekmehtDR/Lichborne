@@ -5,6 +5,8 @@ import { sharedMigrations, characterMigrations, runMigrations } from './profile-
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
 import { loadAIConfig, saveAIConfig, DEFAULT_AI_CONFIG } from './aiConfig'
 import { loadCustomColors, saveCustomColors } from './colors'
+import { DEFAULT_RUBY, DEFAULT_LICH } from './lichSettings'
+import { loadSimuCoinConfig, saveSimuCoinConfig, type SimuCoinConfig } from './simucoinConfig'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -78,8 +80,9 @@ export function buildSharedProfile(): SharedProfile {
     profileVersion:   SHARED_PROFILE_VERSION,
     account:          localStorage.getItem('lichborne.account') ?? '',
     advancedSettings: {
-      lichPath:       adv.lichPath       ?? 'C:\\Ruby4Lich5\\Lich5\\lich.rbw',
-      rubyPath:       adv.rubyPath       ?? 'C:\\Ruby4Lich5\\4.0.0\\bin\\ruby.exe',
+      // Per-platform defaults (v0.18.0) — the single source is lichSettings.
+      lichPath:       adv.lichPath       ?? DEFAULT_LICH,
+      rubyPath:       adv.rubyPath       ?? DEFAULT_RUBY,
       lichClientFlag: adv.lichMode       ?? '--stormfront',
       lichPort:       adv.lichPort       ?? 11024,
       portLocked:     adv.portLocked     ?? true,
@@ -94,6 +97,7 @@ export function buildSharedProfile(): SharedProfile {
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
     customColors: loadCustomColors(),
+    simucoin:   loadSimuCoinConfig(),
     lastSessionCharacters: loadLastSessionCharacters(),
     sharedHighlights:  loadGlobalList('highlights'),
     sharedTriggers:    loadGlobalList('triggers'),
@@ -263,6 +267,18 @@ export async function importSharedProfile(): Promise<void> {
 
   if (Array.isArray(data.customColors)) {
     saveCustomColors(data.customColors.filter(c => c && typeof c.name === 'string' && typeof c.hex === 'string'))
+  }
+
+  // SimuCoin per-account settings (F71). saveSimuCoinConfig writes verbatim, so
+  // coerce here the same way loadSimuCoinConfig does — a hand-edited YAML must
+  // never yield a half-shaped record that reads as consented.
+  if (data.simucoin && typeof data.simucoin === 'object' && !Array.isArray(data.simucoin)) {
+    const cfg: SimuCoinConfig = {}
+    for (const [account, v] of Object.entries(data.simucoin)) {
+      const e = (v ?? {}) as Partial<{ consented: boolean; autoClaim: boolean }>
+      cfg[account] = { consented: e.consented === true, autoClaim: e.autoClaim === true }
+    }
+    saveSimuCoinConfig(cfg)
   }
 }
 

@@ -14,6 +14,50 @@
 :root {
   --modal-w-standard: 88vw;
   --modal-h-standard: 86vh;
+
+  /* ── Canonical modal CHROME (v0.18.0) ────────────────────────────────────
+     The deferred half of the modal unification (the size tokens above were
+     the safe first slice). These encode the About-modal recipe — the look
+     Sekmeht picked as the house style — so a dialog opts in by USING THE
+     TOKENS instead of hand-rolling a variant. Converted so far: About (the
+     reference), Edit Profile (.cne-*), the launcher's account/favorites panels,
+     and the whole Automations family (.at- shell + .hp- highlights/mutes/subs,
+     .trg- triggers, .ma- macros/aliases, .gm- groups), and Contacts (.cp-).
+     Remaining dialogs still carry their own chrome — Panel Manager, Settings,
+     Lich Dashboard, Session Log, Theme Picker/Editor, Import Wizard, Profile
+     Transfer, Quick Send, AI Consent. Convert them to these tokens rather than
+     copying literals.
+     Note on resolution: a custom property's `var()` references are substituted
+     at computed-value time ON THE DECLARING ELEMENT (`:root`), and the RESOLVED
+     value is what inherits. That's correct here because applyTheme writes every
+     theme var to document.documentElement — but it means these do NOT track a
+     subtree that re-declares `--bg-base` etc. locally. (The `color-mix()` ones
+     below are different: they stay unresolved token streams until used in a
+     real property, so they do follow a subtree — the pitfall-#63 idiom.)
+     WHEN CONVERTING A DIALOG, RE-READ ITS INNER ELEMENTS: their contrast was
+     tuned against the OLD surface, and --bg-raised/base/hover collapse toward
+     each other on light themes — that exact trap broke the wizard's tiles and
+     close button in v0.9.2 (pitfall #55). */
+  --modal-bg:          var(--bg-base);
+  --modal-border:      var(--border-subtle, var(--border));
+  --modal-radius:      10px;
+  /* Dark drop-shadows are a sanctioned colour literal — they read correctly
+     on light themes too (Principle #4). */
+  --modal-shadow:      0 12px 40px rgba(0, 0, 0, 0.5);
+  --modal-scrim:       rgba(0, 0, 0, 0.5);
+  /* Header band: a faint accent wash under an accent hairline, accent title. */
+  --modal-head-bg:     color-mix(in srgb, var(--accent) 7%, transparent);
+  --modal-head-border: color-mix(in srgb, var(--accent) 22%, transparent);
+  --modal-head-color:  var(--accent);
+  /* Neutral control hover — deliberately NOT more accent, which would stack
+     accent-on-accent inside an already-tinted band and muddy it. */
+  --modal-ctl-hover:   color-mix(in srgb, var(--text-primary) 14%, transparent);
+  /* Field fill for a dialog on --modal-bg. NOT a bare var(--bg-input):
+     classicLight sets --bg-input AND --bg-base to #ffffff, so a field on a
+     modal surface has ZERO fill contrast and reads as a framed void. Nudging
+     toward --text-primary darkens on light themes and lightens on dark, so the
+     field always sits visibly IN the surface on every theme. */
+  --modal-input-bg:    color-mix(in srgb, var(--text-primary) 6%, var(--bg-input));
 }
 
 html, body, #root {
@@ -191,7 +235,7 @@ button:not(:disabled):active {
 
 .hp-list-item:hover .list-item-delete,
 .ma-list-item:hover .list-item-delete,
-.tp-list-item:hover .list-item-delete,
+.trg-list-item:hover .list-item-delete,
 .cp-list-item:hover .list-item-delete { opacity: 1; }
 
 .list-item-delete:hover { color: var(--color-danger); background: color-mix(in srgb, var(--color-danger) 12%, transparent); }

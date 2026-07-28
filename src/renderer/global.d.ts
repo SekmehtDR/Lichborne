@@ -5,6 +5,7 @@ import type {
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
   CatchupDigest, CatchupProgress,
   AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
+  SimuCoinStatus,
 } from '../shared/types'
 
 declare global {
@@ -54,12 +55,19 @@ declare global {
       lichStartScript:     (sessionId: SessionId, name: string, args?: string) => Promise<void>
       onLichScriptsUpdate: (cb: (payload: LichScriptsUpdatePayload) => void) => () => void
 
+      onConnectProgress: (cb: (p: { character: string; message: string }) => void) => () => void
       browseFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>
-      discoverLichPaths: (currentRuby: string, currentLich: string) => Promise<{
+      discoverLichPaths: (currentRuby: string, currentLich: string, opts?: { probeDesktop?: boolean; interactive?: boolean }) => Promise<{
+        platform: string
         rubyPath: string | null; lichPath: string | null
         rubyAlreadyValid: boolean; lichAlreadyValid: boolean
-        baseFolderExists: boolean; isWindows: boolean
+        baseFolderExists: boolean; rubyVersion: string | null; isWindows: boolean
       }>
+      platform: string
+      secureStorageAvailable: () => Promise<boolean>
+      simucoinCheck: (account: string, claim?: boolean) => Promise<SimuCoinStatus>
+      simucoinCached: () => Promise<SimuCoinStatus[]>
+      simucoinHasPassword: (account: string) => Promise<boolean>
       onUpdateAvailable: (cb: (version: string) => void) => () => void
       onUpdateDownloaded: (cb: () => void) => () => void
       downloadUpdate: () => void

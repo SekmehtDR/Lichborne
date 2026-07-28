@@ -26,6 +26,7 @@
 15. [Downstream / Upstream Hooks (Lich rewrites the stream)](#15-downstream--upstream-hooks-lich-rewrites-the-stream)
 16. [DragonRealms Protocol & drinfomon Parse Reference](#16-dragonrealms-protocol--drinfomon-parse-reference)
 17. [Lich Version Log](#17-lich-version-log)
+18. [Lich on Linux & macOS — Install Layouts](#18-lich-on-linux--macos--install-layouts)
 
 ---
 
@@ -729,3 +730,41 @@ A running record of Lich releases we've reviewed: **what changed, whether it aff
 Saga is a **sibling front-end, NOT a new XML dialect**. In Lich's capability registry (`lib/common/front-end.rb`), `saga = stormfront's exact caps + one extra: sentinel`. The `sentinel` cap makes Lich prefix **every** downstream line with `\x1f` (0x1F) — a whole-stream "came through Lich" marker for Saga's detachable/cloud-profile-sync architecture, NOT a per-line Lich-vs-game discriminator. Adopting saga would give Lichborne the SAME content it already gets as stormfront, plus a sentinel byte to strip from every line (and re-audit every `^`-anchored parser rule against). Zero functional gain. Revisit only if a future Lich feature becomes saga/`sentinel`-GATED (nothing is today), or if Saga ever ships local config files worth importing (today it's cloud-only).
 
 ---
+
+---
+
+## 18. Lich on Linux & macOS — Install Layouts
+
+Verified 2026-07-26 against the official install docs (the lich-5 wiki's
+[Documentation for Installing and Upgrading Lich](https://github.com/elanthia-online/lich-5/wiki/Documentation-for-Installing-and-Upgrading-Lich),
+which delegates Linux/Mac to the GS wiki: `Lich:Software/Installation` for Fedora + Debian/Chromebook,
+`Lich:Software/Mac_Installation` for macOS). Lich itself is first-class cross-platform — platform
+branches for `:windows | :macos | :linux` live in `lib/common/front-end.rb` (detect_platform, ~line 338).
+These are the facts Lichborne's per-platform discovery (DESIGN §41.3) is built on.
+
+| | Lich location | Ruby | Launch |
+|---|---|---|---|
+| **Windows** | `C:\Ruby4Lich5\Lich5\` | Ruby4Lich5 one-click installer (`C:\Ruby4Lich5\<ver>\bin\`) | `rubyw.exe lich.rbw` |
+| **Fedora** | `~/Lich5` (zip extract; the wiki's launch line writes `~/lich5` — same page, both casings) | **system Ruby** via dnf (3.3/3.4 on Fedora 41–43) | `ruby ~/lich5/lich.rbw` |
+| **Debian / Chromebook** | `~/Lich5` | **rbenv**, Ruby **4.0.5** pinned (`rbenv install 4.0.5; rbenv global 4.0.5`) | same |
+| **macOS** | **`~/Desktop/Lich5`** (the guide literally drags the folder to the Desktop) | **rbenv via Homebrew**, Ruby 4.0.5; GTK3 via `brew install gtk+3` (+ gobject-introspection, adwaita-icon-theme) | `ruby ~/Desktop/Lich5/lich.rbw` |
+
+Facts that matter for a front-end integrating with these installs:
+
+- **rbenv's `ruby` only resolves through shell PATH** (`~/.rbenv/shims/ruby`). A GUI app launched
+  from Finder/the dock gets the bare system PATH — so a client must store/probe the explicit shim
+  path, never spawn bare `ruby`. (This is why Lichborne's discovery probes
+  `~/.rbenv/shims/ruby` → `~/.rbenv/versions/<ver>/bin/ruby` → Homebrew prefixes → `/usr/bin/ruby`.)
+- **The Fedora wiki page is version-stale**: it blesses system Ruby 3.3/3.4 for "Lich 5.7.0+", but
+  Lich **5.18+ hard-requires Ruby 4.0** (see §17) and refuses to launch otherwise. A "Lich won't
+  start on Fedora" report ⇒ check `ruby -v` first. Lichborne warns at setup time (DESIGN §41.3).
+- **No rubyw on Linux/Mac** — plain `ruby` is the correct GUI-safe spawn; the Windows
+  rubyw/GUI-subsystem concern (CLAUDE.md launch section) does not exist there. GTK scripts are
+  native on Linux and Homebrew-supported on Mac.
+- **The Mac guide frames Avalon as the front end** (Simu's legacy Mac client) — Lich presents to it
+  exactly as to any FE; a client connecting `--stormfront` on loopback :11024 needs nothing
+  Mac-specific. On Linux the wiki's front-end options are Profanity (terminal) or Warlock 3.
+- **`;lich5-update --update`** is the universal in-place upgrade on every platform — install paths
+  stay stable across Lich versions, so stored client paths survive upgrades.
+- **lich.db3 lives at `<lich_dir>/data/lich.db3` on every platform** (DATA_DIR in
+  `lib/constants.rb` is install-dir-relative) — the same derivation-from-lichPath works everywhere.

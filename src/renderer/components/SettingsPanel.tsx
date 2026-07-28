@@ -200,8 +200,20 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     const key = aiKeyInput.trim()
     if (!key) return
     await window.api.aiSetKey('text', key)
+    // RE-QUERY instead of assuming success. setAIKey() silently no-ops when
+    // the OS has no credential store — on Linux with no keyring (GNOME
+    // Keyring / KWallet) that meant a green "✓ Key saved" for a key that was
+    // never written, and every later AI call reporting "no key configured"
+    // with no way to find out why. Trusting the write is the bug; this is
+    // honest on every platform (Windows/macOS always have a store, so their
+    // behaviour is unchanged).
+    const present = await window.api.aiKeyStatus().then(s => s.text).catch(() => false)
+    setAiKeyPresent(present)
+    if (!present) {
+      setAiTestMsg({ ok: false, text: "Couldn't save the key — no OS credential store is available. On Linux, install GNOME Keyring or KWallet, then try again." })
+      return
+    }
     setAiKeyInput('')
-    setAiKeyPresent(true)
     setAiTestMsg(null)
     // Tell any mounted GameWindow to re-fetch key presence — its aiKeyPresentRef
     // is fetched once on mount, so /ai status would otherwise stay stale until
@@ -822,7 +834,9 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
             <div className="sp-field-row">
               <span className="sp-field-label">
                 Anthropic API key
-                <span className="sp-field-hint"> · stored encrypted on this machine (DPAPI), never in your profile</span>
+                {/* Not "DPAPI" — that's the Windows backend only; macOS uses
+                    Keychain and Linux libsecret/KWallet (v0.18.0). */}
+                <span className="sp-field-hint"> · stored encrypted on this machine using your OS credential store, never in your profile</span>
               </span>
             </div>
             <div className="sp-ai-key-row">

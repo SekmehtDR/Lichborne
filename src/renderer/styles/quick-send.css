@@ -1,7 +1,7 @@
 .quick-send-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--modal-scrim);
   z-index: 2000;
   display: flex;
   align-items: flex-start;
@@ -11,10 +11,11 @@
 
 .quick-send-card {
   width: min(520px, 92vw);
-  background: var(--bg-raised, #1f1f1f);
-  border: 1px solid var(--border-subtle, #3a3a3a);
-  border-radius: 8px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  /* Canonical modal chrome (global.css tokens) — the About-modal look. */
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -45,25 +46,87 @@
   padding: 2px 6px;
 }
 
-.quick-send-target {
+/* ── Target picker (v0.18.0) ──────────────────────────────────────────────
+   Was a single-select <select>; now a checkbox list that defaults to ALL
+   connected characters. "All characters" and the individual rows are mutually
+   exclusive by construction (an empty selection IS all-mode), so the UI never
+   has to reconcile two competing states. */
+.quick-send-targets {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.78rem;
-  color: var(--text-dim, #aaa);
 }
 
-.quick-send-target select {
-  background: var(--bg-input, #111);
-  color: var(--text, #ddd);
-  border: 1px solid var(--border-subtle, #3a3a3a);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 0.9rem;
+.quick-send-targets-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 2px;
 }
+
+.quick-send-empty {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 4px 2px;
+}
+
+/* Scrolls once a team gets big; ~4.5 rows visible before it does. */
+.quick-send-target-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 9.5rem;
+  overflow-y: auto;
+}
+
+.quick-send-target-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.quick-send-target-row:hover { background: var(--modal-ctl-hover); }
+.quick-send-target-row input { margin: 0; cursor: pointer; }
+
+/* Selected = the About accent chip, so the active targets read at a glance. */
+.quick-send-target-row--on {
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+}
+.quick-send-target-row--on:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* Solo target: a STATIC row (no checkbox), so it doesn't imply a choice that
+   isn't there. Slightly less inset than a clickable row and no hover. */
+.quick-send-target-row--solo {
+  cursor: default;
+  font-weight: 600;
+}
+.quick-send-target-row--solo:hover {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+/* The All row is the default state — separated from the per-character list. */
+.quick-send-target-row--all {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.quick-send-target-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-send-target-meta { font-size: 0.78rem; color: var(--text-muted); flex-shrink: 0; }
+.quick-send-target-row--on .quick-send-target-meta { color: inherit; opacity: 0.8; }
 
 .quick-send-input {
-  background: var(--bg-input, #111);
+  background: var(--modal-input-bg);
   color: var(--text, #ddd);
   border: 1px solid var(--border-subtle, #3a3a3a);
   border-radius: 4px;
@@ -107,4 +170,10 @@
 .quick-send-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Every picked character disconnected while the modal was open — Send is
+   disabled and this says why (v0.18.0 bug check). */
+.quick-send-hint--warn {
+  color: color-mix(in srgb, var(--color-danger) 78%, var(--text-primary));
 }

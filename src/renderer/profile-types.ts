@@ -72,6 +72,15 @@ export interface SharedProfile {
   // Deliberately NOT a Profile Transfer category (machine-local; automationStats
   // precedent).
   ai?: AIConfig
+  // SimuCoin claim settings, per ACCOUNT (F71, v0.18.0, DESIGN §42) — app-wide
+  // because an allotment belongs to an account, not a character. Both flags
+  // default OFF: `consented` gates ALL network access (the user saw the
+  // disclosure), `autoClaim` chooses claim-on-find vs. click-the-coin. No
+  // credential rides here — the store login reuses passwords.json/safeStorage.
+  // Optional → older files default to {} (feature invisible). Deliberately NOT
+  // a Profile Transfer category (machine-local + credential-gated; the ai /
+  // automationStats precedent).
+  simucoin?: Record<string, { consented: boolean; autoClaim: boolean }>
 }
 
 // ── Character ({Character}.yaml) ──────────────────────────────────────────────

@@ -74,7 +74,7 @@ function VarPicker({ inputRef, value, onChange }: VarPickerProps) {
   }
 
   return (
-    <select className="tp-var-select" defaultValue="" onChange={handleSelect}>
+    <select className="trg-var-select" defaultValue="" onChange={handleSelect}>
       <option value="" disabled>$var</option>
       {INTERPOLATABLE_VARS.map(v => (
         <option key={v.name} value={v.name}>${v.name} — {v.desc}</option>
@@ -95,11 +95,11 @@ interface VarInputProps {
 function VarInputRow({ label, value, onChange, placeholder }: VarInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <div className="tp-action-row">
-      <label className="tp-label">{label}</label>
+    <div className="trg-action-row">
+      <label className="trg-label">{label}</label>
       <input
         ref={inputRef}
-        className="tp-input"
+        className="trg-input"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
@@ -124,10 +124,10 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
   const up = (patch: Partial<TriggerAction>) => onChange({ ...action, ...patch })
 
   return (
-    <div className="tp-action-card">
-      <div className="tp-action-header">
+    <div className="trg-action-card">
+      <div className="trg-action-header">
         <select
-          className="tp-action-type-select"
+          className="trg-action-type-select"
           value={action.type}
           onChange={e => up({ type: e.target.value as ActionType })}
         >
@@ -136,11 +136,11 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
           ))}
         </select>
         {canRemove && (
-          <button type="button" className="tp-action-remove" onClick={onRemove} title="Remove action">×</button>
+          <button type="button" className="trg-action-remove" onClick={onRemove} title="Remove action">×</button>
         )}
       </div>
 
-      <div className="tp-action-fields">
+      <div className="trg-action-fields">
         {action.type === 'command' && (
           <>
             <VarInputRow
@@ -149,17 +149,17 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
               onChange={v => up({ command: v })}
               placeholder="e.g. get herb"
             />
-            <div className="tp-action-row">
-              <label className="tp-label">Delay</label>
+            <div className="trg-action-row">
+              <label className="trg-label">Delay</label>
               <input
-                className="tp-input tp-cooldown-input"
+                className="trg-input trg-cooldown-input"
                 type="number"
                 min={0}
                 max={30000}
                 value={action.delayMs ?? 0}
                 onChange={e => up({ delayMs: Math.max(0, parseInt(e.target.value) || 0) })}
               />
-              <span className="tp-delay-unit">ms</span>
+              <span className="trg-delay-unit">ms</span>
             </div>
           </>
         )}
@@ -172,25 +172,25 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
               onChange={v => up({ echoMessage: v })}
               placeholder="Message to echo…"
             />
-            <div className="tp-action-row">
-              <label className="tp-label">Stream</label>
+            <div className="trg-action-row">
+              <label className="trg-label">Stream</label>
               <input
-                className="tp-input"
+                className="trg-input"
                 value={action.echoStream ?? 'log'}
                 onChange={e => up({ echoStream: e.target.value })}
                 placeholder="log"
               />
             </div>
-            <div className="tp-action-row">
-              <label className="tp-label">Color</label>
+            <div className="trg-action-row">
+              <label className="trg-label">Color</label>
               <input
                 type="color"
-                className="tp-color-swatch"
+                className="trg-color-swatch"
                 value={action.echoColor && action.echoColor.startsWith('#') ? action.echoColor : '#c8c8c8'}
                 onChange={e => up({ echoColor: e.target.value })}
               />
               <input
-                className="tp-input tp-input--hex"
+                className="trg-input trg-input--hex"
                 value={action.echoColor ?? ''}
                 title={COLOR_INPUT_TITLE}
                 onChange={e => up({ echoColor: e.target.value })}
@@ -201,17 +201,17 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
           </>
         )}
         {action.type === 'flash' && (
-          <div className="tp-action-note">Flashes the application in the OS taskbar to draw attention.</div>
+          <div className="trg-action-note">Flashes the application in the OS taskbar to draw attention.</div>
         )}
         {action.type === 'beep' && (
-          <div className="tp-action-note">Plays a short system beep sound.</div>
+          <div className="trg-action-note">Plays a short system beep sound.</div>
         )}
         {action.type === 'log' && (
           <>
-            <div className="tp-action-row">
-              <label className="tp-label">File</label>
+            <div className="trg-action-row">
+              <label className="trg-label">File</label>
               <input
-                className="tp-input"
+                className="trg-input"
                 value={action.logFile ?? ''}
                 onChange={e => up({ logFile: e.target.value })}
                 placeholder="e.g. Ranklog-$characterName.txt"
@@ -245,14 +245,14 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
 
         {action.type === 'sound' && (
           <>
-            <div className="tp-action-row">
-              <label className="tp-label">Preset</label>
-              <div className="tp-sound-pills">
+            <div className="trg-action-row">
+              <label className="trg-label">Preset</label>
+              <div className="trg-sound-pills">
                 {(['chime', 'alert', 'alarm', 'ping'] as const).map(s => (
                   <button
                     key={s}
                     type="button"
-                    className={`tp-sound-pill${!action.soundFile && (action.soundPreset ?? 'chime') === s ? ' tp-sound-pill--active' : ''}${action.soundFile ? ' tp-sound-pill--dim' : ''}`}
+                    className={`trg-sound-pill${!action.soundFile && (action.soundPreset ?? 'chime') === s ? ' trg-sound-pill--active' : ''}${action.soundFile ? ' trg-sound-pill--dim' : ''}`}
                     onClick={() => up({ soundPreset: s, soundFile: undefined })}
                     title={action.soundFile ? 'Clear WAV file to use a preset' : undefined}
                   >
@@ -261,18 +261,18 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
                 ))}
               </div>
             </div>
-            <div className="tp-action-row">
-              <label className="tp-label">WAV file</label>
-              <div className="tp-sound-file-row">
+            <div className="trg-action-row">
+              <label className="trg-label">WAV file</label>
+              <div className="trg-sound-file-row">
                 <input
-                  className="tp-input tp-input--sound"
+                  className="trg-input trg-input--sound"
                   value={action.soundFile ?? ''}
                   onChange={e => up({ soundFile: e.target.value || undefined })}
                   placeholder="Optional — overrides preset"
                 />
                 <button
                   type="button"
-                  className="tp-btn tp-btn--browse"
+                  className="trg-btn trg-btn--browse"
                   onClick={async () => {
                     const file = await window.api.browseFile([{ name: 'Sound Files', extensions: ['wav', 'mp3', 'ogg'] }])
                     if (file) onChange({ ...actionRef.current, soundFile: file })
@@ -282,13 +282,13 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
                   <>
                     <button
                       type="button"
-                      className="tp-btn tp-btn--play"
+                      className="trg-btn trg-btn--play"
                       title="Test sound"
                       onClick={() => playWavFile(action.soundFile!)}
                     >▶</button>
                     <button
                       type="button"
-                      className="tp-btn tp-btn--clear"
+                      className="trg-btn trg-btn--clear"
                       title="Remove WAV file"
                       onClick={() => up({ soundFile: undefined })}
                     >✕</button>
@@ -301,10 +301,10 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
 
         {action.type === 'webhook' && (
           <>
-            <div className="tp-action-row">
-              <label className="tp-label">URL</label>
+            <div className="trg-action-row">
+              <label className="trg-label">URL</label>
               <input
-                className="tp-input"
+                className="trg-input"
                 value={action.webhookUrl ?? ''}
                 onChange={e => up({ webhookUrl: e.target.value })}
                 placeholder="https://discord.com/api/webhooks/…"
@@ -321,10 +321,10 @@ function ActionCard({ action, canRemove, onChange, onRemove }: ActionCardProps) 
 
         {action.type === 'variable' && (
           <>
-            <div className="tp-action-row">
-              <label className="tp-label">Name</label>
+            <div className="trg-action-row">
+              <label className="trg-label">Name</label>
               <input
-                className="tp-input"
+                className="trg-input"
                 value={action.varName ?? ''}
                 onChange={e => up({ varName: e.target.value.replace(/\W/g, '') })}
                 placeholder="myVar"
@@ -356,9 +356,9 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
   const ops = varDef?.numeric ? NUMERIC_OPERATORS : STRING_OPERATORS
 
   return (
-    <div className="tp-gate-row">
+    <div className="trg-gate-row">
       <select
-        className="tp-select"
+        className="trg-select"
         value={gate.variable}
         onChange={e => {
           const newVar = e.target.value as GateVariable
@@ -372,19 +372,19 @@ function GateRow({ gate, onChange, onRemove }: GateRowProps) {
         ))}
       </select>
       <select
-        className="tp-select tp-gate-select--op"
+        className="trg-select trg-gate-select--op"
         value={gate.operator}
         onChange={e => onChange({ ...gate, operator: e.target.value as GateOperator })}
       >
         {ops.map(op => <option key={op} value={op}>{op}</option>)}
       </select>
       <input
-        className="tp-input tp-gate-value"
+        className="trg-input trg-gate-value"
         value={gate.value}
         onChange={e => onChange({ ...gate, value: e.target.value })}
         placeholder={varDef?.numeric ? '50' : 'value'}
       />
-      <button type="button" className="tp-gate-remove" onClick={onRemove} title="Remove condition">×</button>
+      <button type="button" className="trg-gate-remove" onClick={onRemove} title="Remove condition">×</button>
     </div>
   )
 }
@@ -582,11 +582,11 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
   const testResult = draft ? computeTest() : null
 
   const body = (
-        <div className="tp-body">
+        <div className="trg-body">
 
           {/* Sidebar */}
-          <div className="tp-sidebar">
-            <button className="tp-new-btn" onClick={createNew}>+ New Trigger</button>
+          <div className="trg-sidebar">
+            <button className="trg-new-btn" onClick={createNew}>+ New Trigger</button>
             <div className="sidebar-search">
               <input
                 className="sidebar-search-input"
@@ -601,29 +601,29 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                 </span>
               )}
             </div>
-            <div className="tp-list">
+            <div className="trg-list">
               {rules.length === 0 && !isPendingNew && (
-                <div className="tp-empty">No triggers yet.<br />Right-click game text or click New Trigger.</div>
+                <div className="trg-empty">No triggers yet.<br />Right-click game text or click New Trigger.</div>
               )}
               {(search ? rules.filter(r => (r.name + ' ' + r.pattern).toLowerCase().includes(search.toLowerCase())) : rules).map(r => (
                 <div
                   key={r.id}
-                  className={`tp-list-item${selectedId === r.id ? ' tp-list-item--active' : ''}${!r.enabled ? ' tp-list-item--disabled' : ''}`}
+                  className={`trg-list-item${selectedId === r.id ? ' trg-list-item--active' : ''}${!r.enabled ? ' trg-list-item--disabled' : ''}`}
                   onClick={() => selectRule(r)}
                 >
                   <button
-                    className={`tp-toggle${r.enabled ? ' tp-toggle--on' : ''}`}
+                    className={`trg-toggle${r.enabled ? ' trg-toggle--on' : ''}`}
                     title={r.enabled ? 'Disable' : 'Enable'}
                     onClick={e => { e.stopPropagation(); toggleEnabled(r.id) }}
                   />
-                  <span className="tp-list-label">{r.name || r.pattern || <em>Unnamed</em>}</span>
-                  <div className="tp-list-badges" style={{ marginLeft: 'auto' }}>
+                  <span className="trg-list-label">{r.name || r.pattern || <em>Unnamed</em>}</span>
+                  <div className="trg-list-badges" style={{ marginLeft: 'auto' }}>
                     {r.actions.slice(0, 3).map(a => (
-                      <span key={a.id} className="tp-badge" title={ACTION_LABELS[a.type]}>
+                      <span key={a.id} className="trg-badge" title={ACTION_LABELS[a.type]}>
                         {a.type === 'command' ? '⌨' : a.type === 'echo' ? '📢' : a.type === 'notify' ? '🔔' : a.type === 'sound' ? '🔊' : a.type === 'flash' ? '⚡' : a.type === 'beep' ? '🔔' : a.type === 'log' ? '📄' : a.type === 'webhook' ? '🔗' : '📋'}
                       </span>
                     ))}
-                    {r.actions.length > 3 && <span className="tp-badge">+{r.actions.length - 3}</span>}
+                    {r.actions.length > 3 && <span className="trg-badge">+{r.actions.length - 3}</span>}
                   </div>
                   {an.on && <RuleBadges ruleId={r.id} report={an.report} stats={an.stats} />}
                   <button
@@ -634,9 +634,9 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                 </div>
               ))}
               {isPendingNew && draft && (
-                <div className="tp-list-item tp-list-item--active tp-list-item--pending">
-                  <span className="tp-toggle tp-toggle--on" />
-                  <span className="tp-list-label"><em>New trigger…</em></span>
+                <div className="trg-list-item trg-list-item--active trg-list-item--pending">
+                  <span className="trg-toggle trg-toggle--on" />
+                  <span className="trg-list-label"><em>New trigger…</em></span>
                 </div>
               )}
             </div>
@@ -644,25 +644,25 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
 
           {/* Detail */}
           <ResizeDivider storageKey={scopedKey(character, 'automationsSidebarWidth')} />
-          <div className="tp-detail">
+          <div className="trg-detail">
             {!draft ? (
-              <div className="tp-no-selection">Select a trigger or create a new one.</div>
+              <div className="trg-no-selection">Select a trigger or create a new one.</div>
             ) : (
               <>
-                <div className="tp-form">
+                <div className="trg-form">
 
                   {/* ── WHEN ── */}
-                  <div className="tp-section">
-                    <div className="tp-section-header">
-                      <span className="tp-section-title">When</span>
-                      <div className="tp-section-line" />
+                  <div className="trg-section">
+                    <div className="trg-section-header">
+                      <span className="trg-section-title">When</span>
+                      <div className="trg-section-line" />
                     </div>
 
-                    <div className="tp-field">
-                      <label className="tp-label">Label</label>
+                    <div className="trg-field">
+                      <label className="trg-label">Label</label>
                       <input
                         ref={nameInputRef}
-                        className="tp-input"
+                        className="trg-input"
                         value={draft.name}
                         onChange={e => setDraft({ ...draft, name: e.target.value })}
                         placeholder="e.g. Foraging find (optional)"
@@ -670,8 +670,8 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     </div>
 
                     {!hideGroups && (
-                    <div className="tp-field">
-                      <label className="tp-label">Groups</label>
+                    <div className="trg-field">
+                      <label className="trg-label">Groups</label>
                       <div className="grp-row">
                         <button
                           type="button"
@@ -691,8 +691,8 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     {/* F63: per-rule scope — the inactive side MOVES the rule
                         to the other store (incl. any unsaved draft edits). */}
                     {onMoveScope && (
-                    <div className="tp-field">
-                      <label className="tp-label">Applies to</label>
+                    <div className="trg-field">
+                      <label className="trg-label">Applies to</label>
                       <div className="rule-scope-row">
                         <button
                           type="button"
@@ -716,14 +716,14 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     </div>
                     )}
 
-                    <div className="tp-field">
-                      <label className="tp-label">Fires on</label>
-                      <div className="tp-mode-toggle">
+                    <div className="trg-field">
+                      <label className="trg-label">Fires on</label>
+                      <div className="trg-mode-toggle">
                         {(['text', 'variable'] as const).map(tt => (
                           <button
                             key={tt}
                             type="button"
-                            className={`tp-mode-btn${(draft.triggerType ?? 'text') === tt ? ' tp-mode-btn--active' : ''}`}
+                            className={`trg-mode-btn${(draft.triggerType ?? 'text') === tt ? ' trg-mode-btn--active' : ''}`}
                             onClick={() => setDraft({ ...draft, triggerType: tt })}
                             title={tt === 'text' ? 'Fires when game text matches a pattern' : 'Fires when a variable changes value'}
                           >
@@ -734,22 +734,22 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     </div>
 
                     {(draft.triggerType ?? 'text') === 'text' ? (
-                    <div className="tp-field">
-                      <label className="tp-label">Pattern</label>
-                      <div className="tp-pattern-row">
+                    <div className="trg-field">
+                      <label className="trg-label">Pattern</label>
+                      <div className="trg-pattern-row">
                         <input
-                          className={`tp-input${draft.mode === 'regex' && draft.pattern && !isValidTriggerRegex(draft.pattern) ? ' tp-input--error' : ''}`}
+                          className={`trg-input${draft.mode === 'regex' && draft.pattern && !isValidTriggerRegex(draft.pattern) ? ' trg-input--error' : ''}`}
                           style={{ flex: 1 }}
                           value={draft.pattern}
                           onChange={e => setDraft({ ...draft, pattern: e.target.value })}
                           placeholder="Text to match…"
                         />
-                        <div className="tp-mode-toggle">
+                        <div className="trg-mode-toggle">
                           {(['text', 'phrase', 'regex'] as const).map(m => (
                             <button
                               key={m}
                               type="button"
-                              className={`tp-mode-btn${draft.mode === m ? ' tp-mode-btn--active' : ''}`}
+                              className={`trg-mode-btn${draft.mode === m ? ' trg-mode-btn--active' : ''}`}
                               onClick={() => setDraft({ ...draft, mode: m })}
                               title={
                                 m === 'text'   ? 'Whole-word match' :
@@ -762,7 +762,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                         </div>
                         <button
                           type="button"
-                          className={`tp-mode-btn tp-mode-btn--case${draft.caseSensitive ? ' tp-mode-btn--active' : ''}`}
+                          className={`trg-mode-btn trg-mode-btn--case${draft.caseSensitive ? ' trg-mode-btn--active' : ''}`}
                           onClick={() => setDraft({ ...draft, caseSensitive: !draft.caseSensitive })}
                           title={draft.caseSensitive ? 'Case-sensitive' : 'Case-insensitive'}
                         >
@@ -770,27 +770,27 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                         </button>
                       </div>
                       {draft.mode === 'regex' && draft.pattern && !isValidTriggerRegex(draft.pattern) && (
-                        <span className="tp-pattern-error">Invalid regular expression</span>
+                        <span className="trg-pattern-error">Invalid regular expression</span>
                       )}
                     </div>
                     ) : (
-                    <div className="tp-field">
-                      <label className="tp-label">Watch variable</label>
+                    <div className="trg-field">
+                      <label className="trg-label">Watch variable</label>
                       <input
-                        className="tp-input"
+                        className="trg-input"
                         value={draft.watchVariable ?? ''}
                         onChange={e => setDraft({ ...draft, watchVariable: e.target.value })}
                         placeholder="e.g. health, mana, myVar"
                       />
-                      <div className="tp-pattern-hint">Fires whenever this variable's value changes.</div>
+                      <div className="trg-pattern-hint">Fires whenever this variable's value changes.</div>
                     </div>
                     )}
 
-                    <div className="tp-meta-row">
-                      <div className="tp-field">
-                        <label className="tp-label">Watch stream</label>
+                    <div className="trg-meta-row">
+                      <div className="trg-field">
+                        <label className="trg-label">Watch stream</label>
                         <select
-                          className="tp-select"
+                          className="trg-select"
                           value={draft.watchStream}
                           onChange={e => setDraft({ ...draft, watchStream: e.target.value })}
                           disabled={(draft.triggerType ?? 'text') === 'variable'}
@@ -801,22 +801,22 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                         </select>
                       </div>
 
-                      <div className="tp-field">
-                        <label className="tp-label">Cooldown</label>
-                        <div className="tp-cooldown-row">
+                      <div className="trg-field">
+                        <label className="trg-label">Cooldown</label>
+                        <div className="trg-cooldown-row">
                           <input
-                            className="tp-input tp-cooldown-input"
+                            className="trg-input trg-cooldown-input"
                             type="number"
                             min={0}
                             max={3600}
                             value={draft.cooldownSeconds}
                             onChange={e => setDraft({ ...draft, cooldownSeconds: Math.max(0, parseFloat(e.target.value) || 0) })}
                           />
-                          <span className="tp-cooldown-unit">sec</span>
-                          <label className="tp-checkbox-label">
+                          <span className="trg-cooldown-unit">sec</span>
+                          <label className="trg-checkbox-label">
                             <input
                               type="checkbox"
-                              className="tp-checkbox"
+                              className="trg-checkbox"
                               checked={draft.oneShot}
                               onChange={e => setDraft({ ...draft, oneShot: e.target.checked })}
                             />
@@ -827,15 +827,15 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                     </div>
 
                     {/* State gates */}
-                    <div className="tp-field">
-                      <label className="tp-label">Conditions</label>
-                      <div className="tp-gates-list">
+                    <div className="trg-field">
+                      <label className="trg-label">Conditions</label>
+                      <div className="trg-gates-list">
                         {draft.gates.map((g, idx) => (
                           <Fragment key={g.id}>
                             {idx > 0 && (
                               <button
                                 type="button"
-                                className={`tp-gate-connector-btn${(g.connector ?? 'and') === 'or' ? ' tp-gate-connector-btn--or' : ''}`}
+                                className={`trg-gate-connector-btn${(g.connector ?? 'and') === 'or' ? ' trg-gate-connector-btn--or' : ''}`}
                                 onClick={() => updateGate(g.id, { ...g, connector: (g.connector ?? 'and') === 'and' ? 'or' : 'and' })}
                                 title="Click to toggle AND / OR"
                               >
@@ -849,7 +849,7 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                             />
                           </Fragment>
                         ))}
-                        <button type="button" className="tp-add-gate-btn" onClick={addGate}>
+                        <button type="button" className="trg-add-gate-btn" onClick={addGate}>
                           + Add condition
                         </button>
                       </div>
@@ -857,13 +857,13 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                   </div>
 
                   {/* ── THEN ── */}
-                  <div className="tp-section">
-                    <div className="tp-section-header">
-                      <span className="tp-section-title">Then</span>
-                      <div className="tp-section-line" />
+                  <div className="trg-section">
+                    <div className="trg-section-header">
+                      <span className="trg-section-title">Then</span>
+                      <div className="trg-section-line" />
                     </div>
 
-                    <div className="tp-action-list">
+                    <div className="trg-action-list">
                       {draft.actions.map(action => (
                         <ActionCard
                           key={action.id}
@@ -875,28 +875,28 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                       ))}
                     </div>
 
-                    <button type="button" className="tp-add-action-btn" onClick={addAction}>
+                    <button type="button" className="trg-add-action-btn" onClick={addAction}>
                       + Add action
                     </button>
                   </div>
 
                   {/* ── TEST ── */}
-                  <div className="tp-section">
-                    <div className="tp-section-header">
-                      <span className="tp-section-title">Test</span>
-                      <div className="tp-section-line" />
+                  <div className="trg-section">
+                    <div className="trg-section-header">
+                      <span className="trg-section-title">Test</span>
+                      <div className="trg-section-line" />
                     </div>
 
-                    <div className="tp-test-row">
+                    <div className="trg-test-row">
                       <input
-                        className="tp-input"
+                        className="trg-input"
                         style={{ flex: 1 }}
                         value={testInput}
                         onChange={e => setTestInput(e.target.value)}
                         placeholder="Type a sample game line…"
                       />
                       <select
-                        className="tp-select tp-test-stream"
+                        className="trg-select trg-test-stream"
                         value={testStream}
                         onChange={e => setTestStream(e.target.value)}
                       >
@@ -908,14 +908,14 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
 
                     {testInput && testResult && (
                       <div>
-                        <div className={`tp-test-result${testResult.match ? ' tp-test-result--match' : ' tp-test-result--no-match'}`}>
+                        <div className={`trg-test-result${testResult.match ? ' trg-test-result--match' : ' trg-test-result--no-match'}`}>
                           {testResult.match ? `✓ Would fire — matched "${testResult.matchText}"` : '✗ No match'}
                         </div>
                         {testResult.match && testResult.actionSummary && (
-                          <pre className="tp-test-actions">{testResult.actionSummary}</pre>
+                          <pre className="trg-test-actions">{testResult.actionSummary}</pre>
                         )}
                         {!testResult.match && testResult.actionSummary && (
-                          <div className="tp-test-actions">{testResult.actionSummary}</div>
+                          <div className="trg-test-actions">{testResult.actionSummary}</div>
                         )}
                       </div>
                     )}
@@ -924,23 +924,23 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
                 </div>
 
                 {/* Footer */}
-                <div className="tp-actions">
+                <div className="trg-actions">
                   {deleteConfirm ? (
                     <>
-                      <span className="tp-confirm-text">Delete this trigger?</span>
-                      <button className="tp-btn tp-btn--danger" onClick={deleteRule}>Yes, delete</button>
-                      <button className="tp-btn" onClick={() => setDeleteConfirm(false)}>Cancel</button>
+                      <span className="trg-confirm-text">Delete this trigger?</span>
+                      <button className="trg-btn trg-btn--danger" onClick={deleteRule}>Yes, delete</button>
+                      <button className="trg-btn" onClick={() => setDeleteConfirm(false)}>Cancel</button>
                     </>
                   ) : (
                     <>
                       {!isPendingNew && (
-                        <button className="tp-btn tp-btn--delete" onClick={() => setDeleteConfirm(true)}>Delete</button>
+                        <button className="trg-btn trg-btn--delete" onClick={() => setDeleteConfirm(true)}>Delete</button>
                       )}
-                      <button className="tp-btn" onClick={discardOrCancel}>
+                      <button className="trg-btn" onClick={discardOrCancel}>
                         {isPendingNew ? 'Cancel' : 'Revert'}
                       </button>
                       <button
-                        className="tp-btn tp-btn--save"
+                        className="trg-btn trg-btn--save"
                         onClick={saveDraft}
                         disabled={!draft.pattern.trim() && draft.actions.every(a => {
                           if (a.type === 'command') return !a.command?.trim()
@@ -978,11 +978,11 @@ export default function TriggersPanel({ onClose, onSaved, prefillPattern, openRu
   if (inline) return content
 
   const modal = (
-    <div className="tp-backdrop" {...backdropHandlers(() => onClose())}>
-      <div className="tp-modal">
-        <div className="tp-header">
-          <span className="tp-title">Triggers</span>
-          <button className="tp-close" onClick={onClose}>✕</button>
+    <div className="trg-backdrop" {...backdropHandlers(() => onClose())}>
+      <div className="trg-modal">
+        <div className="trg-header">
+          <span className="trg-title">Triggers</span>
+          <button className="trg-close" onClick={onClose}>✕</button>
         </div>
         {content}
       </div>
