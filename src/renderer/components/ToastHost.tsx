@@ -3,7 +3,7 @@
 // own renderer, so each gets its own host — same isolation as the theme hook).
 // Listens for the `lichborne:toast` CustomEvent dispatched by showToast().
 
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TOAST_EVENT, type ToastOptions } from '../toasts'
 import '../styles/toasts.css'
 

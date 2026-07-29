@@ -699,6 +699,36 @@ Parse BOTH (regex `\]\s*\(u?(\d+)\)` for the parens form, `u?` optional). **Abse
 
 Lich core now natively injects the room-number + obvious-exits display (`;display roomlinks`/`roommono`, upstream #1438), **replacing the retired dr-script `roomnumbers.lic`**. DR defaults to **mono + plain text** (not `<d>` command links). A tester seeing room-number/exit lines they didn't before is this, gated on the game room-number flag / `display_uid`/`display_lichid` — not a bug.
 
+### Moon sidereal periods + phase math — the DR CLIENT's own constants
+
+Mined from **moonwatch.lic v4.5.0** (`Moons.phase`, ~line 933), which took them from the **DR client's hard-coded `DR_MOONS`** — the script is explicit that these are the *client's* constants, **not** moonwatch's calibrated calendar, and that they are therefore identical on every instance (Prime / Platinum / Fallen / Test).
+
+| Constant | Value | Source |
+|---|---|---|
+| Sidereal period, Katamba | **14 847** roisaen (60s each) | client `DR_MOONS` |
+| Sidereal period, Xibar | **9 983** roisaen | client `DR_MOONS` |
+| Sidereal period, Yavash | **16 171** roisaen | client `DR_MOONS` |
+| Phase epoch skew | **80 895** roisaen (= `DR_EPOCH_SKEW_SECONDS` 4 853 700 / 60) | client |
+| Days per year | **400** | DR calendar |
+
+Phase, with **integer** division throughout, against the 8 names in cycle order (`new`, `waxing crescent`, `first quarter`, `waxing gibbous`, `full`, `waning gibbous`, `third quarter`, `waning crescent`):
+
+```
+min     = unixSeconds / 60
+orbital = ((min % sidereal) * 360) / sidereal
+doy     = ((min + 80895) / 360) % 400
+angle   = (orbital + (doy * 360) / 400) % 360
+index   = (angle * 8) / 360
+```
+
+**Verified** (ported to JS and sampled a 400-day year, 2026-07-28): all 8 buckets reachable for all three moons, each dwelling ~28h — matching the script's "roughly a real day".
+
+Two caveats the script states itself: phase is **model-only** (DR broadcasts no passive phase event to self-correct against), and only **4 of 8** wordings are confirmed against the `observe <moon>` verb — *growing crescent* → waxing crescent, *nearly turned its full face* → waxing gibbous, *perfect circle* → full, *waned to a narrow crescent* → waning crescent. The other four are logged raw as they're seen.
+
+Separately, moonwatch's **synodic** cycle constants (its own OLS fits, used for rise/set timers — `cycle` / `visible` seconds per moon) are NOT client constants and carry per-character calibration offsets; **v4.2+ requires `;moonwatch reset` once per character after updating** or the timers drift. Lichborne consumes those timers via the `moonWindow` stream, so a tester who skipped the reset will see our moon positions drift too.
+
+Consumed by Lichborne in DESIGN §34.9 **F64a**.
+
 ---
 
 ## 17. Lich Version Log

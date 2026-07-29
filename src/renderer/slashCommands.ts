@@ -136,7 +136,7 @@ export function slashLineText(l: SlashLine): string {
 // The palette lives in colors.ts (curated 16 > user customs > the standard web
 // set — Genie's vocabulary). Re-exported so palette/consumers keep one import.
 
-import { CURATED_COLORS, WEB_COLORS, loadCustomColors, resolveColor, isHexColor, validateCustomColorName, type CustomColor } from './colors'
+import { CURATED_COLORS, WEB_COLORS, resolveColor, isHexColor, validateCustomColorName, type CustomColor } from './colors'
 import { modelLabel } from './aiConfig'
 export { resolveColor }
 
@@ -1171,7 +1171,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     run: (ctx) => {
       const rows = ctx.simucoinStatus()
       if (rows.length === 0) {
-        return err('SimuCoin checking is not set up — click the coin in the top bar to enable it for an account.')
+        return err('SimuCoin checking is not set up — enable an account in Settings → SimuCoins.')
       }
       return ok(...rows.map(simucoinRowText))
     },
@@ -1184,9 +1184,9 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     example: '/simucoin check',
     run: (ctx, p) => {
       const st = ctx.simucoinRun(false, p.args[0]?.trim() || undefined)
-      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — click the coin in the top bar to enable it.')
+      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — turn it on in Settings → SimuCoins.')
       if (st === 'unknown-account') return err(`No such account: "${p.args[0]}".`)
-      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — click the coin in the top bar.')
+      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — turn one on in Settings → SimuCoins.')
       if (st === 'busy')            return err('Already checking — give it a moment.')
       // Says results FOLLOW — the run is async, so this line is not the answer.
       return ok('Checking the SimuCoin store — results appear here when each account finishes…')
@@ -1200,9 +1200,9 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     example: '/simucoin claim',
     run: (ctx, p) => {
       const st = ctx.simucoinRun(true, p.args[0]?.trim() || undefined)
-      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — click the coin in the top bar to enable it.')
+      if (st === 'unconsented')     return err('That account is not enabled for SimuCoin checking — turn it on in Settings → SimuCoins.')
       if (st === 'unknown-account') return err(`No such account: "${p.args[0]}".`)
-      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — click the coin in the top bar.')
+      if (st === 'none')            return err('No accounts are enabled for SimuCoin checking — turn one on in Settings → SimuCoins.')
       if (st === 'busy')            return err('Already working — give it a moment.')
       return ok('Claiming — results appear here when each account finishes…')
     },

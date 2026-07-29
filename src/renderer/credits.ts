@@ -12,6 +12,12 @@ export const DEVELOPERS = ['Sekmeht', 'Binu']
 
 export const CONTRIBUTORS = [
   'Rakkor', 'Illiahanna', 'Elore', 'Morress', 'Legiro', 'Rhorgul', 'Thanator', 'Mahtra',
+  // Zithri ≡ ohbeanz on Discord — first macOS tester, B238 ("Lichborne is
+  // damaged and can't be opened"), the report that got Mac builds ad-hoc
+  // signed. BUGS.md / Tracker.md log it under the Discord handle, so count
+  // "ohbeanz" mentions toward Zithri (same convention as JadedSoul→Illiahanna).
+  // Newest logged report, so last in the volume ordering.
+  'Zithri',
 ]
 
 export const TESTERS = [

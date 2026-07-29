@@ -134,6 +134,14 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
     const startX = e.clientX, startY = e.clientY
     const start = { ...px }
     const min = minSizeFor(win.kind)
+    // Floors are the SMALLER of the per-kind minimum and the window's CURRENT
+    // size. "Fit bars to content" can legitimately put a chrome window UNDER the
+    // interactive minimum — a compact vitals bar is genuinely tiny — and that
+    // minimum exists to stop a DRAG producing an unusable sliver, not to forbid
+    // a size the user already has. Without this, touching a fitted window
+    // snapped it back up to the floor (Sekmeht).
+    const floorW = Math.min(min.w, start.width)
+    const floorH = Math.min(min.h, start.height)
     const el = rootRef.current
     const targets = getSnapTargets(win.id)
     function onMove(ev: MouseEvent) {
@@ -151,9 +159,21 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
         if (dir.includes('s')) { const s = snapAxis([{ v: top + height, toPos: t => t }], targets.y); if (s) { height = s.pos - top; gy = s.guide } }
         if (dir.includes('n')) { const s = snapAxis([{ v: top, toPos: t => t }], targets.y); if (s) { height += top - s.pos; top = s.pos; gy = s.guide } }
       }
-      // Enforce min size by anchoring the opposite edge.
-      if (width < min.w)  { if (dir.includes('w')) left = start.left + start.width - min.w; width = min.w }
-      if (height < min.h) { if (dir.includes('n')) top = start.top + start.height - min.h; height = min.h }
+      // Enforce the floor by anchoring the opposite edge — but ONLY on the axis
+      // actually being dragged. This used to clamp BOTH axes on every resize,
+      // so dragging the EAST edge of a window whose HEIGHT sat below the floor
+      // re-evaluated that untouched height and snapped it up: the reported
+      // "attempt to change the width snaps it to a larger size". Every ResizeDir
+      // includes at least one of e/w or n/s, and corners include both, so corner
+      // drags still clamp on both axes as before.
+      if ((dir.includes('e') || dir.includes('w')) && width < floorW) {
+        if (dir.includes('w')) left = start.left + start.width - floorW
+        width = floorW
+      }
+      if ((dir.includes('n') || dir.includes('s')) && height < floorH) {
+        if (dir.includes('n')) top = start.top + start.height - floorH
+        height = floorH
+      }
       // Clamp within the container.
       if (left < 0) { width += left; left = 0 }
       if (top  < 0) { height += top; top = 0 }
@@ -216,7 +236,18 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       style={{ left: px.left, top: px.top, width: px.width, height: px.height, zIndex: win.z }}
       onMouseDown={() => onFocus(win.id)}
     >
-      {win.showTitle ? (
+      {/* LOCKED = display mode: no window chrome at all, so a tiled layout
+          reads like docked panels (TheTargonian — the chrome cost ~12px at
+          every seam, "6 of those buffers is close to half a window").
+
+          Since v0.18.1 the header is an absolute OVERLAY (free-layout.css), so
+          hiding it here changes NOTHING about layout — the body already fills
+          the window in both states. That is what makes the locked view match
+          what you actually arranged, and it settles pitfall #74 outright: the
+          toggle is now a pure visibility change that never touches the stored
+          rect. (Renaming and double-click-to-show-the-name are edit
+          affordances — they come back with the header when you unlock.) */}
+      {!locked && (win.showTitle ? (
         <div
           className="fl-titlebar"
           onMouseDown={beginDrag}
@@ -258,11 +289,11 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       ) : (
         <div
           className="fl-grip"
-          title={locked ? 'Double-click to show the name bar' : 'Drag to move — double-click to show the name bar'}
+          title="Drag to move — double-click to show the name bar"
           onMouseDown={beginDrag}
           onDoubleClick={() => onChange(win.id, { showTitle: true })}
         />
-      )}
+      ))}
 
       <div className="fl-body">{children}</div>
 

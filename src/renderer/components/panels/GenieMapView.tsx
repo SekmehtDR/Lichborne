@@ -2325,13 +2325,17 @@ export default function GenieMapView({
         {/* Waiting placeholder — shown when there's no active zone yet.
             Common case: Genie maps loaded but the player hasn't connected
             (or hasn't entered a room with a Genie match) and the user
-            hasn't manually picked a zone from the dropdown. */}
+            hasn't manually picked a zone from the dropdown.
+            Uses the shared .map-empty-* classes rather than inline styles, so
+            it is themed and sized by exactly the same rules as its sibling
+            empty states ("No Genie maps folder set", "No zones loaded")
+            instead of carrying its own copy of them. */}
         {!activeZone && (
           <div className="map-overlay" style={{ pointerEvents: 'none' }}>
-            <div style={{ textAlign: 'center', color: 'var(--map-text-muted, #888)', fontSize: 12 }}>
-              <div style={{ fontSize: 32, opacity: 0.3, marginBottom: 6 }}>🗺</div>
-              <div>{zones.size} zones loaded · waiting for game data</div>
-              <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>
+            <div className="map-empty">
+              <div className="map-empty-icon">🗺</div>
+              <div className="map-empty-msg">{zones.size} zones loaded · waiting for game data</div>
+              <div className="map-empty-sub">
                 Connect to a character, or pick a zone from the dropdown above to browse.
               </div>
             </div>

@@ -37,10 +37,72 @@
   font-size: var(--game-font-size);
 }
 
-/* Focus is shown ONLY by the accented title text / grip handle (rules below) —
-   never a window shadow or ring. A focus-only shadow looked odd on light themes,
-   casting onto the windows under the focused one (Sekmeht). So .fl-window--focused
-   deliberately does NOT touch box-shadow. */
+/* Focus is never shown with an OUTER shadow or ring — a focus-only drop shadow
+   looked odd on light themes, casting onto the windows beneath the focused one
+   (Sekmeht). An INSET line has no such problem (it's why the title bar's own
+   focus cue is inset), so the focused window draws a 1px accent line along its
+   top edge. That became necessary in v0.18.1: the grip is now hover-only (see
+   the header-overlay block), so a NAMELESS window would otherwise have no focus
+   cue at all. It costs zero content — 1px inside a border that already exists.
+   The base lift-shadow is repeated here because a second box-shadow REPLACES
+   the first rather than adding to it. Locked windows are excluded: they carry
+   no chrome, and `.fl-window--locked` clears the shadow entirely. */
+.fl-window--focused:not(.fl-window--locked) {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 60%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+/* ── Header overlay (title bar / grip) ─────────────────────────────────── */
+/* The header is an OVERLAY ON the content, never a flow row ABOVE it
+   (v0.18.1, Sekmeht: "maybe the grabbing/mover needs to happen inside of the
+   window vs. being a part of the window").
+   WHY: as a flow row it RESERVED ~10px at the top of every window. Snapping
+   aligns OUTER edges, so windows tiled flush — but the reserved strip meant the
+   CONTENT still sat ~10px apart, and hiding the header on lock (F74) only moved
+   that space rather than removing it: panels closed up, but a fixed-height
+   chrome window just re-centred its bar and the gap persisted. As an overlay it
+   reserves NOTHING, so:
+     • what you arrange while unlocked is exactly what you get when locked —
+       lock/unlock is now a pure visibility change with ZERO layout effect,
+       which is the strictest possible reading of pitfall #74;
+     • a chrome window can be sized to hug its bar exactly, and stay hugged;
+     • content meets content across a snapped seam, like docked panels.
+   The cost is that it covers the top ~9px of content WHILE UNLOCKED, so it's
+   quiet at rest and only comes up solid on hover/focus (UX standard #1) —
+   unlocked is the arranging mode, and the header is the arranging handle. */
+.fl-titlebar,
+.fl-grip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Above .fl-body (which is position:relative, so DOM order alone would let
+     the body paint over an out-of-flow sibling declared before it). The resize
+     handles sit above THIS at z 2, and the header's own buttons above those at
+     z 3 — see the z-order note on .fl-rz. */
+  z-index: 1;
+  opacity: 0.55;
+  transition: opacity 0.12s;
+}
+/* The GRIP carries no information — it is a pure drag affordance — and now that
+   it floats OVER the content, a resting band would cover half of a thin chrome
+   window (a vitals/status bar is only ~20px tall). So it is fully transparent
+   until you hover the window. `opacity: 0` still takes pointer events and the
+   cursor over that band is `move`, so it stays grabbable; the hover rules below
+   out-rank this at (0,2,0). The TITLE bar keeps a resting presence because it
+   carries the window's NAME, which is worth reading at a glance. Show
+   information, hide bare affordances. */
+.fl-grip { opacity: 0; }
+
+/* HOVER reveals either header. FOCUS additionally holds the TITLE bar up,
+   because it carries the window's name — but deliberately NOT the grip: the
+   focused window is always exactly one window, so a focus-visible grip meant a
+   permanent band over the top ~9px of somebody's content, which is the very
+   thing the overlay was meant to stop on thin chrome bars. The focused window's
+   cue is instead the 1px inset accent line on the window itself (top of file). */
+.fl-window:hover > .fl-titlebar,
+.fl-window:hover > .fl-grip,
+.fl-window--focused > .fl-titlebar { opacity: 1; }
 
 /* ── Title bar ─────────────────────────────────────────────────────────── */
 .fl-titlebar {
@@ -135,9 +197,11 @@
      (opacity, not display) so the title width never jumps. */
   opacity: 0;
   transition: color 0.12s, background 0.12s, opacity 0.12s;
-  /* Above the corner resize handles so the buttons stay clickable. */
+  /* Top of the window's z-order (see .fl-rz): the corner resize handles now sit
+     at z 2 so they can be grabbed through the overlay header, and these buttons
+     must stay clickable above them. */
   position: relative;
-  z-index: 1;
+  z-index: 3;
 }
 .fl-window:hover .fl-tb-btn,
 .fl-window--focused .fl-tb-btn { opacity: 0.6; }
@@ -165,7 +229,15 @@
     color-mix(in srgb, var(--bg-hover) 80%, var(--bg-app)) 0%,
     color-mix(in srgb, var(--bg-hover) 52%, var(--bg-app)) 100%);
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 60%, transparent);
-  position: relative;
+  /* NO `position` HERE. This rule used to end with `position: relative`, which —
+     being a later rule of EQUAL specificity — silently overrode the
+     `position: absolute` in the header-overlay block above, so the GRIP stayed
+     in flow and kept reserving ~10px while the title bar correctly did not.
+     Chrome bars are exactly the windows people collapse to a grip, so the
+     overlay fix appeared to do nothing for them: the padding survived and
+     locking still reshifted (Sekmeht's second report). The `::after` dash does
+     not need `relative` — an absolutely-positioned element is itself a
+     containing block for its absolute descendants. Don't reintroduce it. */
 }
 .fl-window--focused .fl-grip {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--accent) 60%, transparent);
@@ -199,9 +271,39 @@
    window so it doesn't double the window's own border. */
 .fl-body .panel-frame { border-left: none; }
 
-/* Chrome windows (command / vitals / icon) are fixed-height (bar + title); the
-   bar is centered in the body so the conversion's small title-height estimate
-   can't clip it or leave a gap. */
+/* Same idea for the CHROME bars (v0.18.1, Sekmeht). Each strip carries a
+   hairline and a vertical gradient because in Static Panels it butts directly
+   against the game area and has to separate ITSELF:
+     .icon-bar     — border-bottom + --bg-app
+     .vitals-strip — border-bottom + a raised→sunken gradient
+     .command-bar  — border-top    + a sunken→base gradient
+   Inside a floating window the window's own 1px border already does that job,
+   so each one becomes a DOUBLE border plus a band of shaded dead space that
+   reads as padding you can't resize away — "this kind of weird gradient colour
+   around it… it looks like there's this empty padding area", and the stray line
+   under the icon row. Flatten both so the window border is the only line and
+   the fill is uniform (transparent resolves to the window's own --bg-app).
+   HEIGHTS ARE DELIBERATELY UNTOUCHED: buildWindowsFromCurrentLayout measures
+   the DOCKED strip to size these windows, so trimming padding here would
+   re-open exactly the slack this release closed. Dropping each bar's own 1px
+   border leaves the window 1px taller than its content — invisible, and it errs
+   toward not clipping. (Specificity 0,2,0 clears `.vitals-strip--compact`.) */
+.fl-window--chrome .icon-bar,
+.fl-window--chrome .vitals-strip,
+.fl-window--chrome .command-bar {
+  border-top: none;
+  border-bottom: none;
+  background: transparent;
+}
+
+/* Chrome windows (command / vitals / icon) are fixed-height. Since v0.18.1 the
+   conversion sizes them to the measured bar + the window's 2px border exactly
+   (the header is an overlay and reserves nothing), so this centring is normally
+   a no-op — it stays as the graceful behaviour when a window IS taller than its
+   bar, i.e. one the user resized, or one saved by a pre-v0.18.1 build whose
+   height still carries the old title allowance. Those load a touch tall and are
+   fixed by dragging them down once; deliberately NOT auto-migrated (pitfall #93
+   — never rewrite a persisted rect from a measurement). */
 .fl-window--chrome .fl-body { justify-content: center; }
 
 .fl-placeholder {
@@ -227,25 +329,37 @@
 .fl-guide-v { top: 0; bottom: 0; width: 1px; }
 .fl-guide-h { left: 0; right: 0; height: 1px; }
 
-/* ── Locked layout (§33.8) ──────────────────────────────────────────────── */
-/* When locked, the title bar / grip stop showing the move cursor (drag/resize
-   are no-ops in JS, and the resize handles aren't rendered). Add-window + the
-   lock toggle live in the Panel Manager, not on the overlay. */
-.fl-window--locked .fl-titlebar,
-.fl-window--locked .fl-grip { cursor: default; }
-/* The dash mark is a drag affordance — hide it when locked (F44, Rakkor). The
-   11px grip STRIP stays so the window's geometry doesn't shift on lock toggle
-   (pitfall #74: keep floating-window geometry deterministic), and double-click
-   to restore the name bar keeps working. `display` beats the focused-accent
-   background rule regardless of rule order. */
-.fl-window--locked .fl-grip::after { display: none; }
+/* ── Locked layout (§33.8) — the "panel style" look ─────────────────────── */
+/* Locking is DISPLAY mode: FloatingWindow renders no title bar / grip at all
+   (see the comment there) and no resize handles, so the only chrome left is the
+   1px border. Two more touches finish the docked-panel read:
+     • NO lift-shadow — between two flush-tiled windows a soft shadow reads as a
+       seam, which is half of what the layout looked "gappy" from;
+     • the border drops to --border-subtle, the same var .panel-frame uses for
+       its own divider, so two abutting windows meet on a panel-weight hairline
+       instead of a heavier floating-window edge.
+   Add-window + the lock toggle live in the Panel Manager, not on the overlay.
+   Unlocking restores the full floating chrome — none of this is persisted, so
+   the toggle is lossless in both directions.
+   (Superseded: the older rules that merely softened the locked header —
+   `cursor: default` on the bar/grip, and hiding the grip's F44 drag dash — are
+   gone because neither element is rendered while locked.) */
+.fl-window--locked {
+  box-shadow: none;
+  border-color: var(--border-subtle);
+}
 
 /* ── Resize handles (invisible hit areas) ──────────────────────────────── */
 /* Insets are 0 (INSIDE the window edges), not negative: a window flush against
    the window-layer's edge (e.g. the main text at the very top) would otherwise
    have its top/side handles fall outside the layer's overflow:hidden and become
    unreachable. */
-.fl-rz { position: absolute; }
+/* Z-ORDER inside a window, bottom → top: .fl-body (auto) · header overlay (1) ·
+   resize handles (2) · title-bar buttons (3). The handles MUST out-rank the
+   header now that the header covers the window's top edge — otherwise the top
+   and top-corner grips would be swallowed by it and the window could only be
+   resized from three sides. */
+.fl-rz { position: absolute; z-index: 2; }
 .fl-rz-n  { top: 0;    left: 10px; right: 10px; height: 4px;  cursor: ns-resize; }
 .fl-rz-s  { bottom: 0; left: 10px; right: 10px; height: 6px;  cursor: ns-resize; }
 .fl-rz-e  { right: 0;  top: 10px;  bottom: 10px; width: 6px;  cursor: ew-resize; }

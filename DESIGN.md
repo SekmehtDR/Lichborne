@@ -6428,9 +6428,41 @@ distinct naming ("Free Layout" vs "Move to New Window") is the disambiguation; k
    so a closed bar can't be permanently lost (§33.8). **Lock windows** (`freeLayoutLocked`, per-character
    scopedKey) — a banner checkbox shown only in free mode — makes drag/resize/arrow-nudge no-ops and hides
    the resize handles (cursor goes default; `fl-window--locked`), so a finished layout can't be nudged by
-   accident; add/lock are hidden while locked. The grip's centered **dash mark is also hidden when locked**
-   (F44, Rakkor v0.13.2) — it's a drag affordance, a lie on a locked window; the 11px grip STRIP itself
-   stays so geometry doesn't shift on lock toggle, and double-click still restores the name bar.
+   accident; add/lock are hidden while locked. **As of v0.18.1 (F74) locking is a full DISPLAY mode: the
+   window header is not rendered at all, the lift-shadow is dropped, and the border falls to
+   `--border-subtle` — the same var `.panel-frame` uses — so a tiled locked layout reads like docked
+   panels.** TheTargonian measured the problem: header (9px) + its hairline + two 1px window borders cost
+   ~12px at EVERY seam against ~1px in panels mode, *"6 of those extra buffers on my setup, which is close
+   to half a window."* This supersedes the F44/v0.13.2 behaviour (hide only the grip's dash mark, keep the
+   11px strip so geometry doesn't shift) — see the overlay rule below for why that compromise is no longer
+   needed. **The header is an absolute OVERLAY on the content, not a flow row above it (v0.18.1).** It was
+   a flow row first, and hiding it on lock only MOVED the reserved space rather than removing it: snapping
+   aligns OUTER edges, so tiled windows met flush while their CONTENT stayed ~10px apart, and a
+   fixed-height chrome window simply re-centred its bar so the gap survived the lock (Sekmeht: *"maybe the
+   grabbing/mover needs to happen inside of the window vs. being a part of the window"*). As an overlay it
+   reserves nothing: what you arrange while unlocked is exactly what you get locked, a chrome window can
+   hug its bar and stay hugged, and lock/unlock is a pure visibility change that never touches a stored
+   rect — which satisfies pitfall #74 outright rather than working around it. Consequences to preserve:
+   z-order inside a window is body → header (1) → resize handles (2) → title buttons (3), so the top and
+   corner grips stay grabbable *through* the header; the header is quiet at 55% opacity until window
+   hover/focus, because it now sits over content; and `buildWindowsFromCurrentLayout` adds only
+   `BORDER_PX = 2` (the window's own border, which `box-sizing: border-box` folds into the stored height)
+   instead of the old `TITLE_PX = 16` title allowance. Windows saved by a pre-v0.18.1 build still carry
+   that allowance and load a touch tall; one drag fixes them and they are deliberately NOT auto-migrated
+   (pitfall #93 — never rewrite a persisted rect from a measurement). Double-click still restores the name
+   bar while unlocked.
+   **"Fit bars to content" (v0.18.1)** sits beside Lock / Rebuild in the same banner (free mode,
+   unlocked only) and resizes every CHROME window to its measured bar height + the 2px border. It
+   exists because layouts saved before v0.18.1 carry the old title allowance and dragging to an exact
+   height is fiddly. Heights only — positions are untouched, so a neighbour may be left a gap or an
+   overlap; auto re-tiling was considered and rejected as it would move windows the user placed. It is
+   a FIT rather than a shrink: a window dragged smaller than its bar is grown back. This is the one
+   measure→persist shape pitfall #93 permits (explicit action, never automatic, never from a render),
+   and it aborts rather than writes on either way a measurement can lie — a hidden tab's 0-height
+   layer (pitfall #24) or a 0-height bar. **No slash command, by design** (Principle #11 requires the
+   question be answered, not skipped): it is one-shot layout maintenance that only makes sense with
+   the layout in front of you, and it sits with Lock and Rebuild-from-panels, neither of which has a
+   command either. Revisit only if the whole free-layout banner gets a `/layout` verb set.
    **Tab drag-reorder follows the lock too (F46, v0.13.5):** PanelFrame tabs are draggable along their
    strip (`reorderTabs` prop — windowed passes `!freeLayoutLocked`, static zones pass `true`); the live
    reorder commits through the normal `onTabsChange` path so persistence is the existing one in both
@@ -6845,8 +6877,10 @@ gates** (procedural fallbacks always).
          via `color-mix`, applied through `style` not the SVG attribute) fading to a shadowed far side
          (terminator), plus a sun-facing specular glow. The moon's own palette (`MoonStyle.tones`)
          drives the hue — Yavash warm-red, Xibar cold-silver, Katamba sooty. Underground moons keep the
-         flat fill. *Lore caveat: renders as lit/phased regardless of whether DR moons actually phase —
-         dial the terminator toward "subtle sheen" if lore purists object.*
+         flat fill. *Lore caveat RESOLVED 2026-07-28 (see F64a): DR moons genuinely DO phase — the game's
+         `observe <moon>` verb reports phase wording and the DR client carries per-moon sidereal periods,
+         so the lit/terminator look is lore-correct rather than artistic licence. F64a replaces the
+         approximation with the real phase shape.*
        - **Twilight glow (Sekmeht).** The sun glow PERSISTS below the horizon through dusk (fading out)
          and pre-dawn (fading in), reaching 0 by `sunElev = -0.16` (formal night) → no deep-night leak,
          anchored at the horizon crossing (y clamped to the horizon when the sun is below).
@@ -6944,7 +6978,71 @@ gates** (procedural fallbacks always).
        SKY/MOONS/WEATHER words), **F72** stale-as-atmosphere (the whole sky desaturates/dims when data is
        stale, blooms back on refresh — a scene-wide extension of the F-current amber ⟳ nudge), **F73**
        compact mode (a minimal horizon-band layout for small tabs). Priority order for the next pass:
-       F64 + F65 (utility), then F72.
+       F64 + F65 (utility), then F72 — plus **F64a** (lunar phase) below, which slots in with F64.
+     - **F64a — LUNAR PHASE. SPEC ONLY — DEFERRED TO A FUTURE VERSION (Sekmeht, 2026-07-28).** Spec'd
+       from moonwatch 4.5.0 and folded into F64 rather than given a new number. **Nothing here is
+       built, and none of it is part of v0.18.1** — it is written down so the research doesn't have to
+       be redone, and Sekmeht will pick it up in a fresh version. The proposed build order was:
+       **(1)** port the pure function + thread a server-time anchor, harness-tested;
+       **(2)** render the phase shape via an SVG mask over F69's existing sun-lit shading;
+       **(3)** add the passive `observe` correction layer.
+       Steps 1+2 are the whole visual win and are self-contained; step 3 is accuracy insurance and can
+       wait for a reported mismatch. Open questions left for that version: whether the phase NAME earns
+       space in the header strip (leaning no — discs plus a tooltip, since three long names would swamp
+       it) and how loudly to mark the value as computed-not-observed (leaning a quiet tooltip marker).
+       **Why it's worth doing properly when it happens:** it is the rare Moons feature that needs
+       neither Lich nor moonwatch, so a direct-SGE player — who today gets an empty scene telling them
+       to run `;moonwatch window` — would get correctly-phased moons regardless (Principle #2).
+       - **What it unlocks.** Today every moon renders as a full disc with F69's sun-lit shading. Phase
+         lets us draw the REAL shape — crescent / quarter / gibbous / full — and it also settles F69's
+         open lore caveat above (*"renders as lit/phased regardless of whether DR moons actually
+         phase"*): they do. DR's own `observe <moon>` verb reports phase wording, and the DR client
+         carries hard-coded sidereal periods per moon.
+       - **It is a PURE FUNCTION of time — no Lich, no moonwatch, no stream, no IPC.** `Moons.phase`
+         (moonwatch.lic ~933) depends only on a Unix timestamp plus constants taken from the DR
+         CLIENT's own `DR_MOONS` — explicitly *not* moonwatch's calibrated calendar, and identical on
+         every instance (Prime/Plat/Fallen/Test). Port to [experiences.ts](src/renderer/experiences.ts),
+         ~15 lines:
+         `SIDEREAL_ROIS = { katamba: 14847, xibar: 9983, yavash: 16171 }` (roisaen, 60s each);
+         `PHASE_EPOCH_SKEW_ROIS = 80895` (the client's `DR_EPOCH_SKEW_SECONDS / 60`);
+         `PHASE_DAYS_PER_YEAR = 400`; then
+         `orbital = ((min % sid) * 360) / sid`,
+         `doy = ((min + SKEW) / 360) % 400`,
+         `angle = (orbital + (doy * 360) / 400) % 360`,
+         `index = (angle * 8) / 360` (all integer division), against the 8 names in cycle order
+         starting at `new`. **Verified numerically before spec'ing** (ported to JS, sampled a 400-day
+         year): all 8 buckets are reachable for all three moons and each dwells ~28h, matching the
+         script's "roughly a real day".
+         **This is the Principle #2 headline — it works identically on a direct-SGE connection with no
+         Lich at all**, which almost nothing else in this Experience does.
+       - **MUST anchor to SERVER time, never `Date.now()`.** moonwatch feeds it `XMLData.server_time`.
+         This is pitfall #87 / B192 exactly: a user whose PC clock is off would silently get the wrong
+         phase, intermittently, surviving updates. The parser already tracks `lastPromptTime` from
+         `<prompt time>` for RT/CT anchoring — reuse that anchor. A phase bucket lasts ~a day so small
+         skew is harmless, but the cost of doing it right is one field.
+       - **Ship it as a MODEL, with the provenance the sun already has.** The script states outright that
+         phase is model-only — *there is no passive phase broadcast to self-correct against* — and only
+         **4 of the 8** wordings are validated against `observe` (waxing crescent, waxing gibbous, full,
+         waning crescent). Present it the way the sun distinguishes observed from computed; do not
+         present a computed bucket as fact.
+       - **`observe <moon>` is the free correction layer.** `MOON_PHASE_LINE_PATTERN` +
+         `OBSERVED_PHASE_MAP` decode the game's own wording (*"The black moon Katamba is a growing
+         crescent of light."*). Capture it PASSIVELY from main text when the player happens to observe,
+         and let observed beat computed — the same ladder the sun anchors use. **NEVER auto-observe:**
+         it carries roundtime and trains a skill, which is why moonwatch itself only does it under
+         `;moonwatch log`.
+       - **Deliberately NOT taken.** The new `t` (0..1 arc progress), sun and calendar data are
+         **UserVars-only**, and UserVars reach disk on Lich's ~5-minute save cycle — fine for slow
+         values, useless for minute-ticking timers, and reading them live would mean `;e` injection
+         (pitfall #76). We already derive equivalent arc progress from the parsed timers, and we have
+         sun anchors + the Firebase feed + the TIME command. Their OLS cycle constants also differ from
+         our `MOON_UP_MINUTES`/`MOON_DOWN_MINUTES` by **under a minute** (katamba up 176.7 vs our 177) —
+         free to adopt, not worth a pass alone.
+       - **Compatibility + tester support.** The `moonWindow` stream is UNCHANGED (still the three
+         `[K]+(12)` shorts), so `parseMoonLine` needs no work and the 4.5 upgrade cannot break us. BUT
+         v4.2 re-anchored the moon epochs and requires **`;moonwatch reset` once per character after
+         updating** — until a tester does that their timers drift, and ours drift with them. Check that
+         FIRST on any "the moons look wrong" report from a 4.2+ user.
 4. **Combat facet of X1 (the G1 fold, 2026-07-16):** G1 is no longer a second Experience — it ships as
    auto-revealing **combat LAYERS on the Living Tableau** (full decision in §32.1's G1 entry). Phase 1
    uses existing typed events only (readiness ring, CT ring, stance figure, condition border, hands,
@@ -7528,7 +7626,7 @@ Short records for the rest of the v0.15.2 review batch (full behavior in Tracker
 
 v0.18.0 makes Lichborne cross-platform. **Windows x64 is the stable platform; Linux x64 (AppImage) and macOS arm64 (dmg+zip) ship as labeled BETAS.** The macOS build is deliberately **UNSIGNED** — a free-project decision (no Apple Developer account; the $99/yr Developer ID cert is revisited only if Mac demand proves out). Consequences of unsigned Mac builds, all handled explicitly:
 
-- First launch requires System Settings → Privacy & Security → **"Open Anyway"** (Gatekeeper; macOS 15+ removed the right-click bypass). Documented in README/User Guide/release notes — never left for the user to discover cold.
+- First launch is blocked by Gatekeeper (macOS 15+ removed the right-click bypass). **CORRECTED v0.18.1 (B238, ohbeanz — the first real Mac tester):** the expectation written here was the friendly *"unidentified developer → Open Anyway"* prompt. What actually happens on Apple Silicon is **"Lichborne is damaged and can't be opened. You should move it to the Trash."** — a dead end with no Open Anyway button, and phrasing that tells the user to delete a perfectly good download. Two causes, both now addressed: **(a)** Apple Silicon requires *every* executable to carry a signature and the kernel refuses an unsigned arm64 binary, but `CSC_IDENTITY_AUTO_DISCOVERY=false` made electron-builder skip signing entirely — so [build/afterPack.cjs](build/afterPack.cjs) now **ad-hoc signs** (`codesign --sign -`) the packaged app before the dmg/zip are built, and FAILS the build if that errors rather than shipping an unrunnable artifact; **(b)** the download carries `com.apple.quarantine` regardless, so the docs now lead with `xattr -cr /Applications/Lichborne.app` instead of an Open Anyway step that may never be offered. **Whether ad-hoc signing alone converts "damaged" into the recoverable Open Anyway prompt is UNVERIFIED** — no Mac here, and CI can build but cannot exercise Gatekeeper — so the docs give the `xattr` route as the primary instruction and a tester has to confirm the rest.
 - **Auto-update is OFF on darwin** (Squirrel.Mac refuses unsigned apps): `setupAutoUpdater` returns early, and the menu's Check for Updates answers with a download-from-GitHub notice instead of erroring (main.ts). Windows (NSIS + latest.yml) and Linux (AppImage + latest-linux.yml) auto-update normally.
 - When a cert ever lands: add cert + notarytool secrets to the mac CI job, drop `CSC_IDENTITY_AUTO_DISCOVERY=false`, un-gate the darwin updater. Nothing else changes — the zip artifact Squirrel.Mac needs is already published.
 
@@ -7631,6 +7729,40 @@ The shape now, and the one to copy for any future async slash command:
 - **Only DR is claimed** (`game=DR`) — correct for a DragonRealms client; a GS player with a shared account would need a game selector.
 - **No persisted next-claim date** — main's cache is per-process, so a restart re-checks. Honest and simple ("checked once per launch"); persisting `nextAt` would let us skip launches, at the cost of hiding the icon if the estimate is ever wrong.
 - **Never run against the live store from this codebase** — the flow is verified pattern-level against the reference plugin, not end-to-end. First real-account run is a tester step (test plan).
+
+### 42.8 Surface split — Settings owns setup, the coin owns the action (F75, v0.18.1)
+
+**The decision.** Setup and action are different jobs on different clocks: opting an account in is a
+one-time, read-carefully act; collecting coins is a recurring one-click act. v0.18.0 put both in the
+app-bar popover, which broke at scale — JadedSoul's 7 accounts produced a popover several screens tall
+(B235), because it rendered one block per account *including a full copy of the consent disclosure each*.
+
+- **Settings → SimuCoins owns the LIST.** Per-account enable, auto-claim, Check now and live status, with
+  the §42.3 disclosure rendered ONCE directly above the toggles that act on it — so consent still appears
+  on the surface that enables it (the AI-section shape). Hidden entirely when no account has a saved
+  password, and it states how many accounts were skipped and why. A modal is the right host for a list.
+- **The coin popover owns the ACTION and is roster-INDEPENDENT.** One summary line plus full-width
+  **Collect available coins** / **Check now** / "Set up in Settings…" — the same size at two accounts or
+  twenty. This second constraint came from Sekmeht after seeing the interim two-account version:
+  *"I'm just concerned that there could still be a ton of listed accounts and it cause the window to be
+  inconsistent."* Bounding a popover is necessary but not sufficient (pitfall #109) — a surface that is
+  two rows for one user and full-height for another still reads as inconsistent, so the fix is to make its
+  size independent of the data, not merely capped.
+- **Discovery is preserved.** The coin still renders for accounts that COULD be enabled — that is how
+  anyone learns the feature exists — but it now POINTS at setup instead of hosting it.
+- **Honesty:** the summary shows the soonest `nextAt` only when the store supplied one; per §42.4 it never
+  invents a date.
+
+**Mechanics worth keeping.** `simucoinStateText` and `SIMUCOIN_DISCLOSURE` are single-sourced in
+[simucoinConfig.ts](src/renderer/simucoinConfig.ts) so no two surfaces can describe a state — or the
+password promise — differently (the B234 lesson). Settings is per-session and the coin is app chrome, so
+"Set up in Settings…" crosses that gap with a `lichborne:open-settings` DOM event carrying a section name,
+answered only by the ACTIVE GameWindow (pitfall #57, the `lichborne:session-action` shape); Settings
+scrolls to it through its existing F61 `sectionRefs`. Settings is now the sole config writer and must do
+all three of `saveSimuCoinConfig` + `scheduleSharedProfileSave()` + dispatch `SIMUCOIN_CHANGED_EVENT` —
+the last because a `storage` event never fires in the window that wrote, so the coin would otherwise keep
+offering to set up an account you had just enabled. Principle #11: the three `/simucoin` error strings
+point at Settings. No profile-shape change — still `SharedProfile.simucoin`.
 
 ---
 

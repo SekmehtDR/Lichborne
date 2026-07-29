@@ -136,11 +136,27 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+  /* Without this the default `stretch` lets any pill grow to the tallest item
+     in its wrapped row while its text stays pinned by padding-top — i.e. the
+     text goes off-centre the moment one chip differs in height. Every chip is
+     the same height today, so this is insurance, not a fix. */
+  align-items: center;
 }
 .about-name {
   font-size: 0.82rem;
   line-height: 1;
-  padding: 0.28rem 0.5rem;
+  /* OPTICALLY centred, not geometrically (Sekmeht: the names "seem to be a
+     little offcentered"). With `line-height: 1` the line box spans the font's
+     full ascent + descent, but a capitalised name like "Rakkor" has no
+     descender — its visible mass sits in the UPPER part of that box, so
+     symmetric padding renders the text looking high with a gap underneath.
+     Shifting ~0.08rem (roughly half the descent at this size) from the bottom
+     padding to the top centres the GLYPHS instead of the line box.
+     The two values still SUM to the original 0.56rem, so pill height and the
+     row rhythm are unchanged — keep that property if you retune them. This is
+     the pitfall #75b note ("flex centring aligns the line box, not the
+     glyphs") applied to a pill rather than a status strip. */
+  padding: 0.36rem 0.5rem 0.20rem;
   border-radius: 999px;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--accent) 13%, transparent);

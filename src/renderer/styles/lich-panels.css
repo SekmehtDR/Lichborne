@@ -1319,6 +1319,11 @@
   gap: 6px;
   padding: 5px 10px;
   font-size: 0.78rem;
+  /* Pin the line box (pitfalls #75b / #77): with no line-height this strip
+     inherited the surrounding one and rendered noticeably taller than its own
+     text — the classic "why is this ribbon so chunky" smell, and it made the
+     bar eat editor rows every time you hit Validate. */
+  line-height: 1.4;
   font-family: monospace;
   flex-shrink: 0;
   border-bottom: 1px solid transparent;

@@ -649,3 +649,21 @@
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* ── SimuCoins (F71) — one block per account ───────────────────────────── */
+/* Accounts are separated by a hairline rather than spacing, so a user with
+   several reads them as a list instead of a drifting stack. */
+.sp-sc-account + .sp-sc-account {
+  border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+/* Auto-claim / Check now are SUB-options of their account toggle — indented
+   behind a rule so the hierarchy is visible without a second header band
+   (UX standard #10: only the top-level header is a band). */
+.sp-sc-sub {
+  margin-left: 26px;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}

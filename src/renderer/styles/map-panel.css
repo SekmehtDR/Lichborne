@@ -417,8 +417,12 @@
 }
 
 .map-btn--stop {
-  color: #e06060;
-  border-color: #5a2020;
+  /* Was #e06060 on a #5a2020 border — a dark-theme pair that left the border
+     nearly invisible on light themes. The DANGER hue is the signal, so it comes
+     from the theme's own danger var and the border blends toward the button
+     border so contrast self-corrects (pitfall #63). */
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--map-btn-border));
   animation: map-stop-pulse 1s ease-in-out infinite;
 }
 
@@ -605,7 +609,10 @@
   width: 10px;
   height: 10px;
   border-radius: 2px;
-  border: 1px solid rgba(0,0,0,0.5);
+  /* Delineates a saturated swatch against the panel. A fixed 50%-black hairline
+     read fine on light themes but vanished into dark ones; mixing toward the
+     theme's text colour gives a visible edge on both. */
+  border: 1px solid color-mix(in srgb, var(--text-primary) 45%, transparent);
   flex-shrink: 0;
 }
 
@@ -798,7 +805,9 @@
 .map-legend-tier--0 {
   width: 14px; height: 14px;
   border-radius: 50%;
-  background: #0c3010;
+  /* Tinted from the you-are-here cue it illustrates, over the map surface —
+     the old #0c3010 was a near-black green blob on light themes. */
+  background: color-mix(in srgb, var(--map-current-color) 30%, var(--map-bg));
   border-color: var(--map-current-color);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--map-current-color) 35%, transparent);
 }
@@ -825,7 +834,11 @@
 }
 .map-legend-line--solid  { border-top-color: var(--map-arc-cardinal); }
 .map-legend-line--dashed { border-top-style: dashed; border-top-color: var(--map-arc-hidden); }
-.map-legend-line--path   { border-top-color: #f0d060; border-top-width: 3px; }
+/* Stays a LITERAL on purpose: it samples the pinned-path stroke actually drawn
+   on the map (`#FFD060`, GenieMapView), which is baked because a saturated gold
+   path reads on every theme — the Principle #4 depicted-thing exception. Kept
+   byte-identical to the stroke so the legend can't drift from the real line. */
+.map-legend-line--path   { border-top-color: #FFD060; border-top-width: 3px; }
 
 /* Glyph samples — the actual symbol the legend describes, at legible size. */
 .map-legend-glyph {
@@ -880,16 +893,19 @@
   letter-spacing: 0.02em;
 }
 
+/* Status chips: keep the success/danger HUE as the signal, but derive the fill,
+   border and text from theme vars so contrast self-corrects instead of staying
+   a dark-theme-only pair (pitfall #63 / #55). */
 .map-room-id-badge--found {
-  background: #0e2a0e;
-  border: 1px solid #3a7a2a;
-  color: #70d050;
+  background: color-mix(in srgb, var(--color-success) 16%, var(--map-bg));
+  border: 1px solid color-mix(in srgb, var(--color-success) 45%, transparent);
+  color: color-mix(in srgb, var(--color-success) 75%, var(--text-primary));
 }
 
 .map-room-id-badge--missing {
-  background: #2a1010;
-  border: 1px solid #6a2a2a;
-  color: #d06050;
+  background: color-mix(in srgb, var(--color-danger) 16%, var(--map-bg));
+  border: 1px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+  color: color-mix(in srgb, var(--color-danger) 75%, var(--text-primary));
 }
 
 /* ── Bottom bar ───────────────────────────────────────────── */
@@ -1009,7 +1025,9 @@
   gap: 4px;
   padding: 4px 8px;
   background: var(--map-chrome-bg);
-  border-bottom: 1px solid #5a2820;
+  /* Was a baked dark-brown hairline; --map-border is force-cascaded from the
+     theme's border (MAP_STRUCTURAL_CASCADE), so it tracks every theme. */
+  border-bottom: 1px solid var(--map-border);
   flex-shrink: 0;
 }
 
@@ -1164,7 +1182,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10,8,4,0.75);
+  /* THEMED veil, not a baked one. This was `rgba(10,8,4,0.75)` — a fixed dark
+     brown that ignored the theme completely, so on any LIGHT theme (Parchment,
+     Ivory, Mist, Classic Light) the map canvas sat dark brown while loading, or
+     while "waiting for game data" with no active zone, and only snapped to the
+     right colour once a zone rendered. That last part is the tell and it's why
+     it read as "GenieMaps doesn't follow the theme before the maps load"
+     (Sekmeht): the SVG UNDERNEATH already uses `var(--map-bg)`, so the moment
+     it painted, the correct colour appeared — the overlay was the only thing
+     that never followed. --map-bg is force-cascaded from --bg-app
+     (MAP_STRUCTURAL_CASCADE, pitfall #75/B161), so this now tracks App
+     Background on every theme; the mix keeps it reading as an overlay rather
+     than an opaque panel. Shared by the Genie loading + waiting states, the
+     Lich map-image loader, and MapPanel — all four were dark-only. */
+  background: color-mix(in srgb, var(--map-bg) 82%, transparent);
   z-index: 10;
 }
 

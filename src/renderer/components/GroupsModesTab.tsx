@@ -8,7 +8,7 @@ import '../styles/groups.css'
 export default function GroupsModesTab() {
   const {
     groups, modes, activeModeId,
-    setGroups, setModes, applyMode, applyModeObject, clearMode,
+    setGroups, setModes, applyModeObject, clearMode,
   } = useGroups()
 
   const [selGroupId, setSelGroupId] = useState<string | null>(null)

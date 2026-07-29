@@ -22,9 +22,12 @@
 # together, or verify passes on a release that silently lacks a platform.
 # (Windows, Linux and macOS are all live as of v0.18.0.) Mac note: unsigned
 # builds (no Apple Developer account) need CSC_IDENTITY_AUTO_DISCOVERY=false so
-# electron-builder doesn't hunt for a signing identity; electron-builder ad-hoc
-# signs automatically, users need the one-time "Open Anyway" step, and
-# auto-update does NOT work unsigned (manual downloads per release).
+# electron-builder doesn't hunt for a signing identity. It does NOT then ad-hoc
+# sign for us (an earlier comment here claimed it did — B238 proved otherwise:
+# the first Mac tester got "Lichborne is damaged and can't be opened"), so
+# build/afterPack.cjs codesigns ad-hoc; arm64 refuses an unsigned binary.
+# Users still clear quarantine once (xattr -cr), and auto-update does NOT work
+# unsigned (manual downloads per release).
 name: Release
 
 # Quoted because YAML 1.1 parses a bare `on` as boolean true — GitHub accepts
@@ -70,9 +73,9 @@ jobs:
             args: --linux
           # Mac (v0.18.0): UNSIGNED beta — deliberately no Apple Developer
           # account (free-project decision, revisit if Mac demand shows).
-          # electron-builder ad-hoc signs automatically; users need the
-          # one-time "Open Anyway" in System Settings, and auto-update does
-          # NOT work unsigned (main.ts gates the updater off on darwin).
+          # build/afterPack.cjs ad-hoc signs the .app (electron-builder does
+          # NOT — B238); users clear quarantine once with `xattr -cr`, and
+          # auto-update does NOT work unsigned (main.ts gates it off on darwin).
           # arm64 only (Apple Silicon); add x64 if an Intel-Mac tester appears.
           # When a Developer ID cert lands: add the cert + notarytool secrets,
           # drop CSC_IDENTITY_AUTO_DISCOVERY below, and un-gate the updater.
@@ -92,6 +95,22 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Proof IN THE LOG that the packaged .app really carries a signature
+      # (B238). We have no Mac to test on, an unsigned arm64 app fails only in a
+      # user's hands with "is damaged and can't be opened", and the verify job
+      # checks artifact FILENAMES so it would never notice. Note the ordering:
+      # this runs AFTER the upload, so it cannot prevent one — the actual gate
+      # is build/afterPack.cjs, which throws and aborts the build BEFORE any
+      # artifact exists. This step exists so a red job tells you not to hit
+      # Publish, and so "did it sign?" is answerable from the log forever after.
+      - name: Verify macOS signature
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP=$(find release -maxdepth 2 -name '*.app' -print -quit)
+          if [ -z "$APP" ]; then echo "::error::No .app found under release/"; exit 1; fi
+          echo "Verifying $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --verbose=2 "$APP"
           # No code signing on ANY platform today (Windows never signed; Mac
           # ships unsigned by decision). Stops electron-builder from hunting
           # for a signing identity in the runner's keychain on mac.

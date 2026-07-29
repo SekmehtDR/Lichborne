@@ -70,22 +70,13 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.18.0**
+**v0.18.1**
 
-- **Lichborne comes to Linux and macOS.** Windows stays the fully-supported stable platform; **Linux (AppImage)** and **macOS (Apple Silicon)** arrive as betas. Linux auto-updates just like Windows. Mac ships **unsigned** for now (Apple's certificate costs $99/yr — a free project defers that until Mac demand shows), which means a one-time **"Open Anyway"** in System Settings and manual update downloads; everything else works identically.
-- **Mac keyboard conventions** — Cmd+F search, Cmd+1–9 character switching, Cmd+Shift+Enter Quick Send — work alongside the Ctrl versions. Cmd+C/V/X are never touched.
-- **Smarter Lich setup on every platform.** Auto Detect knows each OS's standard Lich install (including rbenv Ruby on Linux/Mac), and the setup dialog now **warns if your Ruby is too old** for current Lich (5.18+ needs Ruby 4.0 — looking at you, Fedora system Ruby).
-- **Claim your free SimuCoins from the client.** Simutronics' monthly subscriber SimuCoins have to be claimed or you lose them — click the new **coin** in the top bar to enable checking for an account, and Lichborne tells you when coins are waiting (one click to claim, or turn on Auto-claim). It stays invisible until you enable it, and nothing is sent to the store before you do. See [Free SimuCoins](#free-simucoins-claimed-for-you).
-- **Releases now build on GitHub's own machines** — same installers, more reliable pipeline, and the thing that makes three platforms possible.
-- **Quick Send now targets everyone by default.** `Ctrl+Shift+Enter` opens with **All characters** ticked — untick it to pick specific characters. With one character connected there's no picker at all.
-- **Connecting tells you what it's doing** — each step is named, Bulk Connect shows progress and a clear success/failure summary, and a slow Lich wait now suggests what to check.
-- **Fixed: highlights and triggers that never fired.** A rule whose pattern contained a `.` (anything using `.+`, for example) could be silently skipped — no error, it just never matched. If you have rules you gave up on, try them again.
-- **Smoother in play.** Searching your logs no longer freezes the client, log-writing triggers no longer stutter it, walking around town is smoother if you use Contacts, and the Genie map no longer redraws every room marker on each step — so moving and dragging on the map are much smoother in big zones.
-- **Clearer connecting.** The connect steps are numbered correctly and the final one names the Lich connection, so a slow start reads as progress rather than a freeze.
-- **`/simucoin check` reports back** per account — balance and when the next bonus arrives — instead of only saying it started.
-- **The active character tab now stands out.** It wears the same accent styling as the rest of the client, and tab text scales with your Font Size setting.
-- **A fresher, more consistent look.** The launcher now shows the Lichborne logo, **Favorites collapses** (open by default, and it remembers), and the About Lichborne styling now runs through the **Automations** window and all its tabs, **Contacts**, and **Edit Profile** — with more windows to follow. Text fields in those windows also stopped being invisible on the Classic Light theme.
-- **Fixed:** line numbers in the Lich Dashboard's **Scripts** editor stayed put while the code scrolled — wide Ruby scripts pushed them out of alignment. They track their lines correctly now.
+- **Windowed Panels stop wasting space.** Every floating window used to reserve a strip at the top for its title bar, so even windows snapped edge-to-edge left a visible gap between their contents — close to half a window's worth once you had a few stacked. The drag handle now sits **over** the content instead of taking a slice of it, and **locking your layout hides it entirely**, so locked Windowed Panels finally look like docked panels. What you arrange is what you get. *(Vitals, status and command bars saved before this update load slightly taller than they need to be — drag the bottom edge up once and it sticks.)*
+- **SimuCoin setup moved to Settings → SimuCoins.** Choosing which accounts are watched, Auto-claim, and each account's current status now live in Settings, where there's room for a list. The **coin** in the top bar is just the payoff: it lights up when coins are waiting, and one click **collects them from every watched account at once**.
+- **Fixed: the SimuCoin popover could push the whole client off-screen.** With several accounts it grew taller than the window, couldn't be scrolled, and clicking inside it shoved the entire interface out of view until you clicked something else. Both halves are fixed.
+- **Fixed: the Lich Dashboard lost your place after saving.** Search for a line, edit the file, save — and the view no longer strands you somewhere else; it returns to the line you found.
+- **Fixed:** the **Scripts** editor's find box said "Search YAML…" while you were editing Ruby.
 
 ---
 
@@ -114,7 +105,15 @@ All downloads are on the **[Releases page](https://github.com/SekmehtDR/Lichborn
 
 **Linux (beta):** download the `.AppImage`, `chmod +x` it, run it. Auto-update works. If "Remember password" is greyed out, your desktop lacks a keyring service — install GNOME Keyring or KWallet, or just type the password each session.
 
-**macOS (beta, Apple Silicon):** open the `.dmg`, drag Lichborne to Applications. First launch, macOS warns about an unidentified developer — **System Settings → Privacy & Security → "Open Anyway"**, one time. (That's Apple's $99/yr certificate we don't buy as a free project; the app is safe and the source is public.) **Mac updates are manual** — check the Releases page for new versions.
+**macOS (beta, Apple Silicon):** open the `.dmg`, drag Lichborne to Applications. **The first launch needs one Terminal command** — open Terminal and paste:
+
+```bash
+xattr -cr /Applications/Lichborne.app
+```
+
+Then open Lichborne normally; you'll never need it again. If macOS instead offers **System Settings → Privacy & Security → "Open Anyway"**, that route works too.
+
+**Why?** Apple charges $99/yr for the certificate that makes this warning go away, and Lichborne is a free project. Without it macOS quarantines the download — and on Apple Silicon it phrases that as **"Lichborne is damaged and can't be opened. You should move it to the Trash."** Nothing is damaged and nothing needs trashing: that's simply how macOS says "not notarized by Apple." The app is safe and the source is public. **Mac updates are manual** — check the Releases page for new versions.
 
 ### 2. Set up Lich (recommended)
 
@@ -166,7 +165,7 @@ High-level tours of what each feature does and where to configure it. Most thing
 Lichborne shows the game plus side "panels" (streams like Thoughts, Combat, Room, Experience, Maps…).
 
 - **Static Panels** (default) — panels sit docked in tidy zones.
-- **Windowed Panels** — flip this in the **Panels** manager and your *whole* layout floats: main text, input bar, vitals, status icons, and every panel become independent windows you can drag, resize, and **snap together** (they click flush to each other and the screen edges, with guide lines). Add as many panel windows as you like, hide a window's title bar for a compact look, and **lock** the layout when it's just right.
+- **Windowed Panels** — flip this in the **Panels** manager and your *whole* layout floats: main text, input bar, vitals, status icons, and every panel become independent windows you can drag, resize, and **snap together** (they click flush to each other and the screen edges, with guide lines). Add as many panel windows as you like, hide a window's title bar for a compact look, and **lock** the layout when it's just right — locking hides every window's drag handle and border chrome, so a locked layout reads like the docked one. The drag handle sits *over* your content rather than taking a slice of it, so what you arrange is exactly what you get once locked. If the vitals / status / command bars look taller than their contents, **Fit bars to content** in the Panels manager snaps them down in one click.
 
 Either way, **drag a stream tab along its bar to reorder it**, and add streams with a panel's **+** button. Your layout is per-character and saved across launches. *(Windowed Panels is where Lichborne is heading — see [Roadmap](#on-the-horizon-roadmap).)*
 
@@ -402,13 +401,13 @@ The little things your fingers already know:
 
 Simutronics gives subscribers **free SimuCoins every month — but only if you claim them.** Lichborne can watch for them.
 
-- **Turn it on per account**: click the **coin** in the top bar and hit *Enable*. (If you've never enabled it, the coin isn't there at all.)
-- **When coins are waiting** the coin lights up as **polished gold with a shine sweeping across it**, showing the count — click it, then **Claim**. Prefer hands-off? Tick **Auto-claim** for that account and Lichborne claims them the next time it checks. (Epilepsy-safe mode keeps the gold and drops the shimmer.)
+- **Turn it on per account**: **Settings → SimuCoins**, and flip the switch next to the account. Everything about setup lives there — which accounts are watched, Auto-claim, and each account's current status. (Only accounts whose password you've saved can be watched; there's nothing else to sign in with.)
+- **When coins are waiting** the **coin** in the top bar lights up as **polished gold with a shine sweeping across it**, showing the count — click it, then **Collect available coins** to take them from every watched account at once. Prefer hands-off? Tick **Auto-claim** for that account and Lichborne claims them the next time it checks. (Epilepsy-safe mode keeps the gold and drops the shimmer.)
 - **When there's nothing to claim** the coin sits **dull and quiet**, and the popover shows the store's own countdown to your next allotment.
 - **By keyboard**: `/simucoin` (status), `/simucoin check`, `/simucoin claim` — or just `/sc`.
 - **Checked once when you start the client**, plus whenever you press *Check now*. There's no background polling.
 
-**What it does with your password:** nothing at all until you enable it for an account — and the popover tells you exactly what will happen before you agree. Once enabled, Lichborne signs in to **store.play.net** (Simutronics' own store) over HTTPS using the account password you already saved in Lichborne, reads your balance, claims if you asked it to, and signs out. Nothing goes anywhere else, and no store data is written to disk. You can turn any account back off from the same menu. *(Thanks to Thires, whose [Genie SimuCoins plugin](https://github.com/Thires/SimuCoins) showed how this works.)*
+**What it does with your password:** nothing at all until you enable it for an account — and **Settings → SimuCoins** spells out exactly what will happen, right above the switch that does it. Once enabled, Lichborne signs in to **store.play.net** (Simutronics' own store) over HTTPS using the account password you already saved in Lichborne, reads your balance, claims if you asked it to, and signs out. Nothing goes anywhere else, and no store data is written to disk. You can turn any account back off in the same place. *(Thanks to Thires, whose [Genie SimuCoins plugin](https://github.com/Thires/SimuCoins) showed how this works.)*
 
 ---
 
@@ -570,7 +569,7 @@ Lichborne keeps a clean, dated **plain-text log** of every session — the game 
 ## Appendix D — Troubleshooting & known limits
 
 - **Platforms:** Windows x64 (stable), Linux x64 AppImage (beta), macOS Apple Silicon (beta). Linux/Mac are new in v0.18.0 — report anything odd on Discord.
-- **First-install warnings** — expected on two platforms (no code-signing certs): Windows SmartScreen → **More info → Run anyway**; macOS "unidentified developer" → **System Settings → Privacy & Security → Open Anyway** (one time).
+- **First-install warnings** — expected on two platforms (no code-signing certs): Windows SmartScreen → **More info → Run anyway**. On macOS the download is quarantined, and Apple Silicon words that as **"Lichborne is damaged and can't be opened"** — it isn't damaged, that's Apple's phrasing for "not notarized". Clear it once with `xattr -cr /Applications/Lichborne.app` (or use **System Settings → Privacy & Security → Open Anyway** if macOS offers that instead).
 - **Mac: no auto-update.** Unsigned builds can't self-update (an Apple rule) — grab new versions from the Releases page. Windows and Linux auto-update normally.
 - **Mac: "Lichborne wants to access your Desktop"?** That's the Lich **Auto Detect** looking for the wiki-standard `~/Desktop/Lich5` install — allow it (or browse to Lich manually).
 - **Linux: "Remember password" greyed out?** No keyring service found — install GNOME Keyring or KWallet; until then, type the password each session.

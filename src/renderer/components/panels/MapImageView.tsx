@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { LichRoom } from './mapTypes'
-import { lichTitle, normalizeDesc, bfsPath } from './mapTypes'
+import { lichTitle, bfsPath } from './mapTypes'
 import { scopedKey } from '../../characterScope'
 import { useCharacter } from '../../CharacterContext'
 import { useProfileSaver } from '../../hooks/useProfileSaver'

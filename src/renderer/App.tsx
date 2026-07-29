@@ -660,7 +660,10 @@ function AppShell() {
     withPassword: scWithPassword,
     statuses: scStatuses,
     busy: scBusy,
-    run: (account: string, claim: boolean) => runSimucoin(account, claim),
+    // `quiet` suppresses the per-account toast so a caller acting on SEVERAL
+    // accounts at once (the coin's "Collect available coins") can report the
+    // whole batch in ONE toast instead of stacking N of them.
+    run: (account: string, claim: boolean, quiet?: boolean) => runSimucoin(account, claim, quiet),
   }), [scAccounts, scWithPassword, scStatuses, scBusy, runSimucoin])
 
   useEffect(() => {

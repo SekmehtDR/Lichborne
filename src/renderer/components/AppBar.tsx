@@ -37,9 +37,10 @@ interface Props {
     withPassword: Set<string>
     statuses: Record<string, SimuCoinStatus>
     busy: Set<string>
-    // Resolves with the account outcome (see GameWindow) — the coin button
-    // ignores it and reads `statuses`; the slash path needs the value.
-    run: (account: string, claim: boolean) => Promise<unknown>
+    // Resolves with the account outcome (see GameWindow). `quiet` suppresses
+    // the per-account toast so the coin's multi-account collect can summarise
+    // the batch in one toast rather than stacking one per account.
+    run: (account: string, claim: boolean, quiet?: boolean) => Promise<SimuCoinStatus | null>
   }
 }
 

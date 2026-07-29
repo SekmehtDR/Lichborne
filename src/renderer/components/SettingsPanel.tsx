@@ -1,12 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
-import type { SessionLogDiskUsage } from '../../shared/types'
+import type { SessionLogDiskUsage, SimuCoinStatus } from '../../shared/types'
 import { FONT_FAMILIES, FONT_FAMILY_LABELS, DEFAULT_SETTINGS, type AppSettings } from '../settings'
 import { type SessionLogSettings, loadSessionLogSettings, saveSessionLogSettings } from '../sessionLogSettings'
 import { type AIConfig, loadAIConfig, saveAIConfig, AI_TEXT_MODELS } from '../aiConfig'
 import { aiSessionUsage } from '../ai/aiClient'
-import { exportSharedProfile } from '../profile'
+import { exportSharedProfile, scheduleSharedProfileSave } from '../profile'
+import {
+  loadSimuCoinConfig, saveSimuCoinConfig, accountConfig, setAccountConfig,
+  simucoinStateText, SIMUCOIN_DISCLOSURE, SIMUCOIN_CHANGED_EVENT, SIMUCOIN_KEY,
+  type SimuCoinConfig,
+} from '../simucoinConfig'
 import LichSetupDialog from './LichSetupDialog'
 import '../styles/settings.css'
 import '../styles/login.css'
@@ -56,6 +61,22 @@ interface Props {
   onChange: (s: AppSettings) => void
   layoutMode?: 'panels' | 'free'    // §33 — grey out panel-only toggles in Windowed Panels
   onClose: () => void
+  // SimuCoin (F71, DESIGN §42) — app-level, per ACCOUNT, threaded down from App
+  // via GameWindow. Setup lives HERE as of v0.18.1 (it used to be inline in the
+  // app-bar coin popover, which repeated the whole consent disclosure once per
+  // account and grew past the viewport for a user with 7 of them). Absent →
+  // the section simply doesn't render.
+  simucoin?: {
+    accounts: string[]
+    withPassword: Set<string>
+    statuses: Record<string, SimuCoinStatus>
+    busy: Set<string>
+    run: (account: string, claim: boolean) => Promise<unknown>
+  }
+  /** F61 nav rail target: scroll this section into view on open. Set when the
+   *  coin popover's "Set up in Settings…" opened us, so the user LANDS on
+   *  SimuCoins instead of hunting a long modal for it. */
+  jumpToSection?: string
 }
 
 function Toggle({ label, checked, onChange, description }: {
@@ -107,7 +128,7 @@ function RadioGroup<T extends string>({ label, value, options, onChange, disable
 // ── F61: settings search + section nav ─────────────────────────────────
 // Section names in render order — drives the nav rail. Keep in sync with the
 // `sec*` section wrappers in the JSX below.
-const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'AI', 'Lich Setup'] as const
+const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'AI', 'SimuCoins', 'Lich Setup'] as const
 
 // Row-visibility helper for the global settings filter: empty query shows
 // everything; otherwise a row stays visible when the (lowercased, trimmed)
@@ -120,7 +141,7 @@ function rowVisible(q: string, section: string, ...labels: string[]): boolean {
   return labels.some(l => l.toLowerCase().includes(q))
 }
 
-export default function SettingsPanel({ settings, character, onChange, layoutMode, onClose }: Props) {
+export default function SettingsPanel({ settings, character, onChange, layoutMode, onClose, simucoin, jumpToSection }: Props) {
   const inWindowed = layoutMode === 'free'
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const [monoFonts,   setMonoFonts]   = useState<Set<string>>(new Set())
@@ -145,6 +166,18 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   // SettingsPanel is ever mounted in the same document.
   const [query, setQuery] = useState('')
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
+
+  // Land on a requested section (the coin popover's "Set up in Settings…").
+  // Deferred a frame so the section refs are populated and the modal has laid
+  // out; `block:'start'` matches what the nav rail's own buttons do. Silently
+  // no-ops if that section isn't currently rendered (e.g. filtered out).
+  useEffect(() => {
+    if (!jumpToSection) return
+    const id = requestAnimationFrame(() => {
+      sectionRefs.current[jumpToSection]?.scrollIntoView({ behavior: 'auto', block: 'start' })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [jumpToSection])
 
   function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     onChange({ ...settings, [key]: value })
@@ -181,6 +214,63 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   // debounced exportSharedProfile. The API KEY is separate — it lives in main's
   // safeStorage and only its presence (a boolean) is surfaced here.
   const [aiCfg, setAiCfg] = useState<AIConfig>(loadAIConfig)
+
+  // ── SimuCoin (F71, DESIGN §42) ─────────────────────────────────────────────
+  const [scCfg, setScCfg] = useState<SimuCoinConfig>(loadSimuCoinConfig)
+
+  // Only accounts with a SAVED PASSWORD can be enabled — the store sign-in has
+  // no other credential source (DESIGN §42), so offering the rest would be a
+  // toggle that can't work.
+  const scAccounts = (simucoin?.accounts ?? []).filter(a => simucoin?.withPassword.has(a))
+  const scNoPassword = (simucoin?.accounts ?? []).length - scAccounts.length
+
+  // Write path (Principle #1): localStorage working copy → scheduled
+  // _shared.yaml save → a same-window notification so the app-bar coin updates
+  // NOW (a `storage` event never fires in the writing window — see
+  // simucoinConfig.ts). All three, or one of the surfaces goes stale.
+  //
+  // Persisted from an EFFECT, exactly like aiCfg above — never from inside the
+  // setState updater. StrictMode double-invokes updaters, so a side effect
+  // scheduled there runs twice (the v0.17.0 About-modal lesson); here that
+  // would double-dispatch the change event on every toggle.
+  //
+  // The identity guard makes this fire ONLY on a real edit: initialised to the
+  // loaded config, so the mount pass is a no-op, and StrictMode's second mount
+  // pass is too (same object). Only setScCfg mints a new object.
+  const scSavedRef = useRef(scCfg)
+  useEffect(() => {
+    if (scSavedRef.current === scCfg) return
+    scSavedRef.current = scCfg
+    saveSimuCoinConfig(scCfg)
+    scheduleSharedProfileSave()
+    document.dispatchEvent(new CustomEvent(SIMUCOIN_CHANGED_EVENT))
+  }, [scCfg])
+
+  function setSc(account: string, patch: Partial<{ consented: boolean; autoClaim: boolean }>) {
+    setScCfg(prev => setAccountConfig(prev, account, patch))
+  }
+
+  // Adopt changes made ELSEWHERE, or this panel writes a stale snapshot over
+  // them: with Settings open in two windows, toggling an account here would
+  // persist our whole `scCfg` and silently undo a consent change the other
+  // window just made. Consent is the one setting where a silent revert matters
+  // (App.runSimucoin re-reads localStorage at the choke point, so whatever
+  // lands there IS the truth). `storage` covers the other window; the custom
+  // event covers our own — it never fires in the window that wrote.
+  //
+  // scSavedRef is updated FIRST so the persist effect above treats the adopted
+  // value as already-saved. Without that it would re-save and re-dispatch,
+  // and two open panels would ping-pong the event between them.
+  useEffect(() => {
+    const adopt = () => { const c = loadSimuCoinConfig(); scSavedRef.current = c; setScCfg(c) }
+    const onStorage = (e: StorageEvent) => { if (e.key === SIMUCOIN_KEY) adopt() }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener(SIMUCOIN_CHANGED_EVENT, adopt)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener(SIMUCOIN_CHANGED_EVENT, adopt)
+    }
+  }, [])
   const [aiKeyPresent, setAiKeyPresent] = useState(false)
   const [aiKeyInput, setAiKeyInput] = useState('')
   const [aiTesting, setAiTesting] = useState(false)
@@ -336,6 +426,11 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   const vAiUsage       = vis('AI', 'Usage this session', 'tokens', 'cost')
   const secAI          = vAiEnable || vAiKey || vAiModel || vAiPersona || vAiUsage
 
+  const vScAccounts    = vis('SimuCoins', 'SimuCoins', 'simucoin', 'store', 'claim', 'free coins', 'monthly')
+  // No accounts (or none with a saved password) → nothing to configure, so the
+  // section stays hidden rather than showing an empty header.
+  const secSimuCoin    = vScAccounts && scAccounts.length > 0
+
   const vLogEnabled    = vis('Session Log', 'Enable session logging')
   const vLogOptions    = vis('Session Log', 'Logging options')
   const vLogMain       = vis('Session Log', 'Game text')
@@ -361,6 +456,19 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
 
   const vLichRow       = vis('Lich Setup', 'Lich path, port & mode', 'launch', 'connect')
   const secLichSetup   = vLichRow
+
+  // Which sections actually render — drives the nav rail so it can't offer a
+  // jump to a section that isn't on screen. Keys MUST match SECTION_NAMES.
+  const sectionRendered: Record<string, boolean> = {
+    Display: secDisplay,
+    Accessibility: secAccess,
+    Layout: secLayout,
+    Behavior: secBehavior,
+    'Session Log': secSessionLog,
+    AI: secAI,
+    SimuCoins: secSimuCoin,
+    'Lich Setup': secLichSetup,
+  }
 
   const noMatches = searching
     && !secDisplay && !secAccess && !secLayout && !secBehavior && !secSessionLog && !secAI && !secLichSetup
@@ -395,7 +503,14 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
           {/* F61: section nav rail — hidden while a search query is active */}
           {!searching && (
             <nav className="sp-nav">
-              {SECTION_NAMES.map(name => (
+              {/* Only offer sections that are actually RENDERED. Every section
+                  used to be unconditional when no search was active, so mapping
+                  SECTION_NAMES straight through was safe — SimuCoins is the
+                  first one that can legitimately be absent (it hides when no
+                  account has a saved password), and an ungated rail gave it a
+                  nav button whose scrollIntoView silently hit a null ref. Any
+                  future conditional section must be added to this map too. */}
+              {SECTION_NAMES.filter(name => sectionRendered[name]).map(name => (
                 <button
                   key={name}
                   className="sp-nav-item"
@@ -902,6 +1017,71 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               </div>
             )
           })()}
+          </section>}
+
+          {/* ── SimuCoins ────────────────────────────────────────── */}
+          {secSimuCoin && simucoin && <section className="sp-sec" ref={el => { sectionRefs.current['SimuCoins'] = el }}>
+          <div className="sp-divider" />
+          <div className="sp-section-label">SimuCoins</div>
+
+          <div className="sp-ai-hint">
+            Simutronics gives subscribers a free SimuCoin allotment every month. It has to be
+            claimed manually and it expires if you don't — enable an account here and Lichborne
+            checks it once per launch, then lights the coin in the top bar when coins are waiting.
+          </div>
+          {/* The DESIGN §42.3 disclosure sits directly above the controls that
+              act on it — the same shape the AI section uses, and the reason the
+              coin popover can now simply point here. It comes from the one
+              SIMUCOIN_DISCLOSURE string so no two surfaces can end up
+              promising different things about the user's password. */}
+          <div className="sp-ai-hint"><strong>What gets sent:</strong> {SIMUCOIN_DISCLOSURE}</div>
+
+          {scAccounts.map(account => {
+            const ac = accountConfig(scCfg, account)
+            const isBusy = simucoin.busy.has(account)
+            return (
+              <div className="sp-sc-account" key={account}>
+                <Toggle
+                  label={account}
+                  description={ac.consented
+                    ? simucoinStateText(simucoin.statuses[account], isBusy)
+                    : 'Off — nothing is sent to the store for this account.'}
+                  checked={ac.consented}
+                  onChange={v => {
+                    // Turning OFF also clears auto-claim, so re-enabling later
+                    // can never silently resume claiming unprompted.
+                    setSc(account, v ? { consented: true } : { consented: false, autoClaim: false })
+                    if (v) void simucoin.run(account, false)   // first check right away
+                  }}
+                />
+                {ac.consented && (
+                  <div className="sp-sc-sub">
+                    <Toggle
+                      label="Claim automatically"
+                      description="Claim as soon as coins are found, instead of waiting for you to click the coin."
+                      checked={ac.autoClaim}
+                      onChange={v => setSc(account, { autoClaim: v })}
+                    />
+                    <div className="sp-field-row">
+                      <span className="sp-field-hint">Checked once per launch — no background polling.</span>
+                      <button className="sp-button" disabled={isBusy}
+                        onClick={() => { void simucoin.run(account, false) }}>
+                        {isBusy ? 'Checking…' : 'Check now'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {scNoPassword > 0 && (
+            <div className="sp-ai-hint">
+              {scNoPassword} account{scNoPassword === 1 ? ' is' : 's are'} not listed because
+              {scNoPassword === 1 ? ' it has' : ' they have'} no saved password — signing in to the
+              store has no other credential to use.
+            </div>
+          )}
           </section>}
 
           {secLichSetup && <section className="sp-sec" ref={el => { sectionRefs.current['Lich Setup'] = el }}>

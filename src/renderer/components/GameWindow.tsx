@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { GameEvent, StreamTextEvent, TextLine, RoomState, TextSegment, InjuryState, FireLogEntry, SessionLogRecord, SimuCoinStatus } from '../../shared/types'
@@ -20,7 +20,7 @@ import { aiChatStream } from '../ai/aiClient'
 import AIConsentModal from './AIConsentModal'
 import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
-import { loadTriggers, saveTriggers, newTrigger, type TriggerRule } from '../triggers'
+import { loadTriggers, saveTriggers, type TriggerRule } from '../triggers'
 import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, splitTypedCommands, type AliasRule, type MacroRule } from '../macros'
 import { IS_MAC } from '../lichSettings'
@@ -1068,6 +1068,10 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   const [showPanelManager, setShowPanelManager] = useState(false)
   const [showThemePicker, setShowThemePicker]   = useState(false)
   const [showSettings,    setShowSettings]      = useState(false)
+  // Section for Settings to scroll to when something opened it with a target
+  // (the coin popover's "Set up in Settings…"). Cleared on close so the plain
+  // Settings button always opens at the top.
+  const [settingsJump,    setSettingsJump]     = useState<string | undefined>(undefined)
   const [showContacts,    setShowContacts]      = useState(false)
   const [showSessionLog,  setShowSessionLog]    = useState(false)
   const [sessionLogSearch, setSessionLogSearch] = useState<string | null>(null)
@@ -1702,6 +1706,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     }
     document.addEventListener('lichborne:session-action', onSessionAction)
     return () => document.removeEventListener('lichborne:session-action', onSessionAction)
+  }, [])
+
+  // "Set up in Settings…" from the app-bar coin (SimuCoinButton). App-level
+  // chrome can't reach per-session state (pitfall #57), so it asks via a DOM
+  // event that only the ACTIVE GameWindow answers — the same shape as
+  // 'lichborne:session-action' above, plus a section to land on. This OPENS
+  // rather than toggles: it's a "take me there", never a dismiss.
+  useEffect(() => {
+    function onOpenSettings(e: Event) {
+      if (!isActiveRef.current) return
+      setSettingsJump((e as CustomEvent<{ section?: string }>).detail?.section)
+      setShowSettings(true)
+    }
+    document.addEventListener('lichborne:open-settings', onOpenSettings)
+    return () => document.removeEventListener('lichborne:open-settings', onOpenSettings)
   }, [])
 
   // Unread indicator — tracks which side-panel stream IDs have new content while their tab is not active
@@ -4340,17 +4359,66 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // staggered position and let the user arrange them (snapping makes it quick).
   // Only chrome HEIGHTS are measured (so the fixed-height bars aren't clipped);
   // everything else is defaults. Runs in panels mode so the strips are present.
+  // Snap each CHROME window to the exact height of the bar inside it.
+  //
+  // This is the ONE measure→persist shape pitfall #93 permits: a one-shot
+  // correction behind an explicit user action (Panel Manager → "Fit bars to
+  // content"). It is NEVER automatic, never on a timer, and never runs from a
+  // render — that's precisely the v0.17.0 auto-hug that corrupted saved heights.
+  // It exists because layouts saved before v0.18.1 carry the old title-bar
+  // allowance, so their bars float in a too-tall window, and hitting the right
+  // height by dragging is fiddly.
+  //
+  // POSITIONS ARE UNTOUCHED — only heights change, so a window below one that
+  // resizes will leave a gap (or overlap) for the user to close by dragging.
+  // Re-tiling the column automatically would move windows they placed on
+  // purpose. Note this is "fit", not "shrink": `getBoundingClientRect` reports
+  // the bar's LAYOUT height, so a window the user had dragged SMALLER than its
+  // bar (clipping it under `.fl-body { overflow: hidden }`) is grown back to
+  // show it. That's the desired reading of "fit to content" in both directions.
+  function fitChromeWindows() {
+    const layer = gameLayoutRef.current?.querySelector('.window-layer') as HTMLElement | null
+    if (!layer) return
+    const ch = layer.clientHeight
+    // A hidden character tab measures 0 (pitfall #24) — writing rects from that
+    // would flatten every chrome window to nothing.
+    if (ch <= 0) return
+    let changed = false
+    const next = freeWindows.map(w => {
+      if (w.kind !== 'vitals' && w.kind !== 'icon' && w.kind !== 'command') return w
+      const winEl = layer.querySelector(`.fl-window[data-win-id="${w.id}"]`)
+      const bar = winEl?.querySelector('.icon-bar, .vitals-strip, .command-bar') as HTMLElement | null
+      const barH = bar?.getBoundingClientRect().height ?? 0
+      if (barH <= 0) return w                    // never persist a zero measurement
+      // + 2 for the window's own 1px top/bottom border: `box-sizing: border-box`
+      // means the stored height INCLUDES them (the BORDER_PX rule above).
+      const h = (barH + 2) / ch
+      if (Math.abs(h - w.rect.h) < 0.001) return w
+      changed = true
+      return { ...w, rect: { ...w.rect, h } }
+    })
+    if (changed) handleWindowsChange(next)
+  }
+
   function buildWindowsFromCurrentLayout(): FloatWindow[] {
     const layoutEl = gameLayoutRef.current
     if (!layoutEl) return seedDefaultWindows()
     const C = layoutEl.getBoundingClientRect()
     if (C.width <= 0 || C.height <= 0) return seedDefaultWindows()
 
-    const TITLE_PX = 16   // ~slim title bar (CSS .fl-titlebar) + breathing room
+    // The window header is an OVERLAY as of v0.18.1 (see free-layout.css), so a
+    // converted window reserves NO room for a title bar — the strip it hosts
+    // fills the whole body. The only thing to add back is the window's own 1px
+    // top + bottom border, because `box-sizing: border-box` (global.css) means
+    // the rect height we store INCLUDES them; without it the bar is clipped by
+    // 2px. The old `+ TITLE_PX` title allowance is exactly what left a converted
+    // chrome window permanently taller than its own content, so that the gap
+    // survived locking (Sekmeht) — don't reintroduce it.
+    const BORDER_PX = 2
     const measureH = (sel: string, fallback: number) => {
       const el = layoutEl.querySelector(sel) as HTMLElement | null
       const h = el?.getBoundingClientRect().height ?? 0
-      return (h > 0 ? h : fallback) + TITLE_PX
+      return (h > 0 ? h : fallback) + BORDER_PX
     }
 
     const wins: FloatWindow[] = []
@@ -5146,6 +5214,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
           layoutMode={layoutMode}
           onToggleLayoutMode={toggleLayoutMode}
           onRebuildFromPanels={rebuildFromPanels}
+          onFitChromeWindows={fitChromeWindows}
           freeLayoutLocked={freeLayoutLocked}
           onToggleFreeLock={() => setFreeLayoutLocked(v => !v)}
           freeAddItems={freeAddItems}
@@ -5178,7 +5247,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
           character={session.character}
           onChange={s => { setSettings(s); saveSettings(session.character, s); scheduleProfileSave(session.account, session.character, session.game, session.useLich) }}
           layoutMode={layoutMode}
-          onClose={() => setShowSettings(false)}
+          simucoin={simucoin}
+          jumpToSection={settingsJump}
+          onClose={() => { setShowSettings(false); setSettingsJump(undefined) }}
         />
       )}
 

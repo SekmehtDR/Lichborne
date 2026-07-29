@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useCallback, useId } from 'react'
+import { useState, useEffect, useRef, useId } from 'react'
 import type { SimuCoinStatus } from '../../shared/types'
 import {
-  loadSimuCoinConfig, saveSimuCoinConfig, accountConfig, setAccountConfig,
-  SIMUCOIN_KEY, type SimuCoinConfig,
+  loadSimuCoinConfig, accountConfig,
+  SIMUCOIN_KEY, SIMUCOIN_CHANGED_EVENT, type SimuCoinConfig,
 } from '../simucoinConfig'
-import { scheduleSharedProfileSave } from '../profile'
 import { showToast } from '../toasts'
 import '../styles/simucoin.css'
 
@@ -26,15 +25,26 @@ interface Props {
   /** Accounts with a saved password — the only ones this can work for. */
   withPassword: Set<string>
   statuses: Record<string, SimuCoinStatus>
-  /** Runs a check (and claim when asked); resolves when the status has updated. */
-  // Resolves with the account outcome; this button ignores it (it re-reads
-  // `statuses`), so the return type is left deliberately open.
-  onRun: (account: string, claim: boolean) => Promise<unknown>
+  /** Runs a check (and claim when asked); resolves when the status has updated.
+   *  `quiet` suppresses that account's own toast — used by the multi-account
+   *  collect below, which reports the whole batch once instead. */
+  onRun: (account: string, claim: boolean, quiet?: boolean) => Promise<SimuCoinStatus | null>
   /** Accounts with a check/claim in flight. */
   busy: Set<string>
 }
 
 const coinsOf = (s: SimuCoinStatus | undefined) => (s?.state === 'claimable' ? s.amount ?? 0 : 0)
+
+/** Coarse "time until" for the next-bonus line — days/hours is all the store
+ *  itself reports, so there is nothing finer to be honest about. */
+function fmtUntil(at: number): string {
+  const mins = Math.max(0, Math.round((at - Date.now()) / 60000))
+  const d = Math.floor(mins / 1440)
+  const h = Math.floor((mins % 1440) / 60)
+  if (d > 0) return `${d}d, ${h}h`
+  if (h > 0) return `${h}h`
+  return `${mins}m`
+}
 
 // A minted gold coin: rim → face → inner bevel → an "S" → a sweeping specular
 // highlight. Colors are BAKED (not theme vars) because this is a depicted
@@ -104,33 +114,68 @@ export default function SimuCoinButton({ accounts, withPassword, statuses, onRun
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  // Config writes: localStorage working copy + a scheduled _shared.yaml save,
-  // the convention every other shared-setting writer follows (Principle #1) —
-  // without the schedule, consent/auto-claim survive a graceful close but are
-  // absent from a profile backup taken after a crash.
-  //
-  // The save is done OUTSIDE the setState updater: StrictMode double-invokes
-  // updaters, and side effects belong in the caller (the documented v0.17.0
-  // About-modal lesson). Compute next from current state, then persist.
-  const patch = useCallback((account: string, p: Partial<{ consented: boolean; autoClaim: boolean }>) => {
-    setCfg(prev => {
-      const next = setAccountConfig(prev, account, p)
-      queueMicrotask(() => { saveSimuCoinConfig(next); scheduleSharedProfileSave() })
-      return next
-    })
+  // Consent sync. This component no longer WRITES config — setup (the
+  // disclosure + per-account toggle + auto-claim) moved to Settings → SimuCoins
+  // in v0.18.1 — so it only has to NOTICE changes, from two directions:
+  //   • `storage` — another WINDOW enabled/disabled an account;
+  //   • SIMUCOIN_CHANGED_EVENT — THIS window's Settings did. A storage event
+  //     never fires in the window that wrote it, so without this the coin kept
+  //     offering to set up an account you'd just enabled.
+  // (App.runSimucoin re-reads consent at the choke point regardless — this is
+  // only the UI half.)
+  useEffect(() => {
+    const reload = () => setCfg(loadSimuCoinConfig())
+    function onStorage(e: StorageEvent) { if (e.key === SIMUCOIN_KEY) reload() }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener(SIMUCOIN_CHANGED_EVENT, reload)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener(SIMUCOIN_CHANGED_EVENT, reload)
+    }
   }, [])
 
-  // Cross-window consent sync. A `storage` event fires in OTHER windows when
-  // one writes, so revoking consent (or enabling) in window A updates window
-  // B's popover instead of leaving it showing stale buttons. (App.runSimucoin
-  // re-reads consent at the choke point regardless — this is the UI half.)
-  useEffect(() => {
-    function onStorage(e: StorageEvent) {
-      if (e.key === SIMUCOIN_KEY) setCfg(loadSimuCoinConfig())
+  // "Set up in Settings…" — the coin is app-level chrome and Settings is
+  // per-session (pitfall #57), so this goes through a DOM event the active
+  // GameWindow answers (the `lichborne:open-quick-send` precedent), carrying
+  // the section so the user LANDS on SimuCoins instead of hunting for it.
+  // "Collect available coins" across every account holding some.
+  //
+  // ONE account keeps the normal path verbatim — its own per-account toast is
+  // strictly more informative than a summary of one. TWO OR MORE run `quiet`
+  // and report once, because the old behaviour stacked a separate toast per
+  // account and a collect across several buried the screen.
+  //
+  // Runs are fired together on purpose: main serializes them globally
+  // (pitfall #101 — they share one cookie jar), and App.runSimucoin tracks
+  // `busy` per account with functional setState, so concurrent completions
+  // can't clobber each other. `anyBusy` disables the button meanwhile.
+  async function collectAll(accounts: string[]) {
+    if (accounts.length === 1) { void onRun(accounts[0], true); return }
+    const results = (await Promise.all(accounts.map(a => onRun(a, true, true))))
+      .filter((r): r is SimuCoinStatus => r != null)
+    const claimed = results.filter(r => r.state === 'claimed')
+    const total = claimed.reduce((n, r) => n + (r.amount ?? 0), 0)
+    const failed = results.filter(r => r.state === 'auth-failed' || r.state === 'error')
+    const plural = (n: number) => (n === 1 ? '' : 's')
+    if (claimed.length === 0) {
+      showToast({
+        kind: 'error', title: 'SimuCoins',
+        message: `Couldn't claim on ${failed.length || accounts.length} account${plural(failed.length || accounts.length)} — see Settings → SimuCoins.`,
+      })
+    } else {
+      showToast({
+        kind: failed.length ? 'info' : 'success',
+        title: 'SimuCoins claimed',
+        message: `${total} claimed across ${claimed.length} account${plural(claimed.length)}`
+          + (failed.length ? ` — ${failed.length} couldn't be reached.` : '.'),
+      })
     }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
+  }
+
+  function openSetup() {
+    setOpen(false)
+    document.dispatchEvent(new CustomEvent('lichborne:open-settings', { detail: { section: 'SimuCoins' } }))
+  }
 
   // Eligible = the user opted this account in AND a saved password exists (the
   // store sign-in has no other credential source).
@@ -138,12 +183,37 @@ export default function SimuCoinButton({ accounts, withPassword, statuses, onRun
   // Offerable = could be opted in (has a password) but hasn't been yet.
   const offerable = accounts.filter(a => !accountConfig(cfg, a).consented && withPassword.has(a))
 
+  const readyAccounts = eligible.filter(a => coinsOf(statuses[a]) > 0)
   const claimable = eligible.reduce((n, a) => n + coinsOf(statuses[a]), 0)
   const anyBusy = eligible.some(a => busy.has(a))
-  const anyProblem = eligible.some(a => {
+  const problemAccounts = eligible.filter(a => {
     const st = statuses[a]?.state
     return st === 'auth-failed' || st === 'error'
   })
+  const anyProblem = problemAccounts.length > 0
+
+  // Soonest known next-bonus time across enabled accounts. `nextAt` is only
+  // ever set from the store's OWN countdown and is null when unknown (DESIGN
+  // §42 — the feature never guesses one), so this is safe to show; with none
+  // reported we just say nothing rather than invent a date.
+  const nextAt = eligible
+    .map(a => statuses[a]?.nextAt)
+    .filter((n): n is number => typeof n === 'number' && n > Date.now())
+    .sort((a, b) => a - b)[0]
+
+  // ONE summary line instead of a row per account. The popover has to stay the
+  // same size whether you have one account or ten (Sekmeht) — a list that grows
+  // with the roster is what made this surface unusable in the first place, and
+  // per-account detail now has a proper home in Settings → SimuCoins.
+  const summary = anyBusy
+    ? 'Checking the store…'
+    : claimable > 0
+      ? `${claimable} free SimuCoin${claimable === 1 ? '' : 's'} waiting${readyAccounts.length > 1 ? ` across ${readyAccounts.length} accounts` : ''}.`
+      : anyProblem
+        ? `Couldn't check ${problemAccounts.length} account${problemAccounts.length === 1 ? '' : 's'} — details in Settings → SimuCoins.`
+        : nextAt
+          ? `Nothing to claim right now — next bonus in ${fmtUntil(nextAt)}.`
+          : 'Nothing to claim right now.'
 
   // QUIET BY DEFAULT: with nothing opted in and nothing to offer, render
   // nothing at all — no dead icon in the bar for players who don't use this.
@@ -173,70 +243,58 @@ export default function SimuCoinButton({ accounts, withPassword, statuses, onRun
         <div className="sc-menu">
           <div className="sc-menu-head">SimuCoins</div>
 
-          {eligible.map(account => {
-            const st = statuses[account]
-            const ac = accountConfig(cfg, account)
-            const isBusy = busy.has(account)
-            const coins = coinsOf(st)
-            return (
-              <div className="sc-row" key={account}>
-                <div className="sc-row-top">
-                  <span className="sc-account">{account}</span>
-                  {st?.balance != null && <span className="sc-balance">{st.balance} SC</span>}
-                </div>
-                <div className="sc-row-state">
-                  {isBusy ? 'Checking…'
-                    : coins > 0 ? `${coins} free SimuCoin${coins === 1 ? '' : 's'} ready to claim`
-                    : st?.state === 'claimed' ? `Claimed ${st.amount} — thanks!`
-                    : st?.state === 'auth-failed' ? (st.message ?? 'Sign-in failed')
-                    : st?.state === 'error' ? `Couldn't reach the store${st.message ? ` (${st.message})` : ''}`
-                    : st?.state === 'none' ? (st.message ?? 'Nothing to claim right now')
-                    : 'Not checked yet'}
-                </div>
-                <div className="sc-row-actions">
-                  {coins > 0 && (
-                    <button className="sc-act sc-act--primary" disabled={isBusy}
-                      onClick={() => { void onRun(account, true) }}>Claim</button>
-                  )}
-                  <button className="sc-act" disabled={isBusy}
-                    onClick={() => { void onRun(account, false) }}>Check now</button>
-                  <label className="sc-auto" title="Claim automatically whenever coins are found, instead of waiting for a click.">
-                    <input type="checkbox" checked={ac.autoClaim}
-                      onChange={e => patch(account, { autoClaim: e.target.checked })} />
-                    Auto-claim
-                  </label>
-                  <button className="sc-act sc-act--quiet" disabled={isBusy}
-                    title="Stop checking this account. Nothing is sent to the store afterwards."
-                    onClick={() => patch(account, { consented: false, autoClaim: false })}>Turn off</button>
-                </div>
-              </div>
-            )
-          })}
-
-          {/* Consent gate — the disclosure is shown BEFORE anything is sent, on
-              the same surface that enables it (DESIGN §42.3, the AI-consent
-              precedent). Enabling triggers the first check immediately. */}
-          {offerable.map(account => (
-            <div className="sc-row sc-row--offer" key={account}>
-              <div className="sc-row-top"><span className="sc-account">{account}</span></div>
-              <div className="sc-consent">
-                Lichborne can check this account's free monthly SimuCoins and claim them for you.
-                To do that it signs in to <strong>store.play.net</strong> over HTTPS with your saved
-                account password — the same credential you use for the game — reads your balance,
-                and signs out. Nothing is sent anywhere else, and no store data is written to disk.
-              </div>
-              <div className="sc-row-actions">
-                <button className="sc-act sc-act--primary"
-                  onClick={() => { patch(account, { consented: true }); void onRun(account, false) }}>
-                  Enable for {account}
-                </button>
-              </div>
+          {/* FIXED SIZE, whatever the roster looks like (Sekmeht, v0.18.1).
+              This popover carries ONE summary line and ONE action; it does not
+              render a row per account, because a surface that grows with the
+              account list is exactly what broke here (JadedSoul's 7 accounts
+              produced a popover several screens tall — see the ceiling comment
+              in simucoin.css for why that was worse than merely long). Setup
+              and per-account state live in Settings → SimuCoins. */}
+          {eligible.length === 0 ? (
+            <div className="sc-intro">
+              Simutronics gives subscribers free SimuCoins every month. They have to be
+              claimed, and they expire if you don't — Lichborne can watch for them.
             </div>
-          ))}
+          ) : (
+            <div className="sc-summary">{summary}</div>
+          )}
+
+          {/* The one action the coin exists for. */}
+          {claimable > 0 && (
+            <button
+              className="sc-act sc-act--primary sc-wide"
+              disabled={anyBusy}
+              onClick={() => { void collectAll(readyAccounts) }}
+            >
+              Collect available coins
+            </button>
+          )}
+
+          {eligible.length > 0 && (
+            <button
+              className="sc-act sc-wide"
+              disabled={anyBusy}
+              onClick={() => { for (const a of eligible) void onRun(a, false) }}
+            >
+              {anyBusy ? 'Checking…' : 'Check now'}
+            </button>
+          )}
+
+          {/* Discovery: the coin still appears for accounts that COULD be
+              enabled (that's how anyone finds this feature), but it now points
+              at the setup surface instead of hosting it. */}
+          {offerable.length > 0 && (
+            <button className="sc-act sc-wide sc-setup" onClick={openSetup}>
+              {eligible.length === 0
+                ? 'Set up in Settings…'
+                : `Set up ${offerable.length} more account${offerable.length === 1 ? '' : 's'}…`}
+            </button>
+          )}
 
           <div className="sc-foot">
             Free SimuCoins are a monthly subscriber perk from Simutronics and must be claimed.
-            {' '}Checked once per launch; use <strong>Check now</strong> any time.
+            {' '}Checked once per launch. Accounts, per-account status and auto-claim live in
+            {' '}<strong>Settings → SimuCoins</strong>.
           </div>
         </div>
       )}

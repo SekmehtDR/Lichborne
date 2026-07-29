@@ -149,6 +149,14 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
     setLoadingContent(true); setLastFoundLine(null); setRunArgs('')
     viewRef.current?.resetSearch()
     const text = await window.api.readFile(scriptPath(s))
+    // MUST be set, exactly like the Profiles loader does. The v0.18.0 bug check
+    // added the `readOk` gate to BOTH tabs' Edit buttons but only wired the
+    // Profiles loader to set it, so `readOk` stayed false here forever and the
+    // Scripts tab's Edit button was PERMANENTLY disabled — with the actively
+    // misleading tooltip "Can't edit — this file couldn't be read" on files
+    // that had read perfectly. Found by running tsc with --noUnusedLocals
+    // during the v0.18.1 bug check: `setReadOk` was flagged as never read.
+    setReadOk(text !== null)
     setOriginalContent((text ?? '(could not read file)').replace(/\r\n/g, '\n'))
     setLoadingContent(false)
   }
@@ -251,7 +259,7 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
           <div className={`ld-profile-edit-bar${isEditing ? ' ld-profile-edit-bar--editing' : ''}`}>
             {isEditing ? (
               <>
-                <YamlSearchField value={yamlSearch}
+                <YamlSearchField value={yamlSearch} placeholder="Search script…"
                   onChange={v => { setYamlSearch(v); viewRef.current?.resetSearch() }}
                   onFind={() => { const line = viewRef.current?.find(yamlSearch) ?? -1; if (line >= 0) setLastFoundLine(line) }} />
                 <span className="ld-edit-gap" />
@@ -262,7 +270,7 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
             ) : (
               <>
                 <span className="ld-profile-name">{selected.name}<span className={`lp-source-badge lp-source-badge--${selected.source}`}>{selected.source}</span></span>
-                <YamlSearchField value={yamlSearch}
+                <YamlSearchField value={yamlSearch} placeholder="Search script…"
                   onChange={v => { setYamlSearch(v); viewRef.current?.resetSearch() }}
                   onFind={() => { const line = viewRef.current?.find(yamlSearch) ?? -1; if (line >= 0) setLastFoundLine(line) }} />
                 <span className="ld-edit-gap" />
@@ -810,25 +818,88 @@ const YamlHighlight = forwardRef<YamlViewHandle, { content: string; language?: s
     scrollRef.current = el
   }, [setContentRef])
 
-  useEffect(() => {
-    if (!preRef.current) return
-    const cs = window.getComputedStyle(preRef.current)
+  // Identity-preserving so re-measuring can never cause a render loop: React
+  // bails out when the state object is `Object.is`-equal to the previous one.
+  const measureLines = useCallback(() => {
+    const pre = preRef.current
+    if (!pre) return
+    const cs = window.getComputedStyle(pre)
     const lh = parseFloat(cs.lineHeight)
     const pt = parseFloat(cs.paddingTop)
-    if (Number.isFinite(lh) && lh > 0) {
-      setLineMetrics({ lineHeight: lh, paddingTop: Number.isFinite(pt) ? pt : 0 })
-    }
+    if (!Number.isFinite(lh) || lh <= 0) return
+    const top = Number.isFinite(pt) ? pt : 0
+    setLineMetrics(prev => (prev.lineHeight === lh && prev.paddingTop === top) ? prev : { lineHeight: lh, paddingTop: top })
+  }, [])
+
+  useEffect(() => {
+    measureLines()
     // Re-reserve the horizontal-scrollbar space whenever the content changes
     // (a wider script can make the scrollbar appear) — not just on scroll, so
     // the gutter is correct before the user touches anything.
     syncPad()
-  }, [content, syncPad])
+  }, [content, syncPad, measureLines])
+
+  // Re-measure on any BOX change, not just a content change. The search
+  // overlay's `top` is derived from these metrics, so if the pre's line-height
+  // or padding ever changes after mount — a font/zoom change, or a relayout
+  // when the validation banner appears — the highlight would keep drawing on
+  // stale numbers and sit off the line it is supposed to mark. Observing the
+  // element makes that self-correcting whatever the trigger is, rather than
+  // enumerating the triggers. (Safe w.r.t. pitfall #93: nothing here is
+  // persisted, and the guard above makes it idempotent.)
+  useEffect(() => {
+    const pre = preRef.current
+    if (!pre) return
+    const ro = new ResizeObserver(measureLines)
+    ro.observe(pre)
+    return () => ro.disconnect()
+  }, [measureLines])
 
   function scrollViewToLine(lineIndex: number) {
     const el = scrollRef.current
-    if (!el || lineMetrics.lineHeight <= 0) return
-    const target = lineMetrics.paddingTop + lineIndex * lineMetrics.lineHeight
-    el.scrollTop = Math.max(0, target - (el.clientHeight / 2) + (lineMetrics.lineHeight / 2))
+    const pre = preRef.current
+    if (!el || !pre) return
+    // Measure LIVE instead of reading the `lineMetrics` STATE. On a fresh mount
+    // that state is still {0, 0}, and the parent's restore effect (keyed on
+    // `isEditing`) fires in the SAME commit: React runs child effects before
+    // parent ones, so our measuring effect has only SCHEDULED its update — the
+    // useImperativeHandle object the parent calls still closes over the
+    // pre-measure zero, hit the `lineHeight <= 0` guard, and silently skipped
+    // the scroll. Net effect: leaving Edit (Cancel, or after a save) set the
+    // highlight but never scrolled back to it, so your search hit could be
+    // anywhere off-screen. Computed style is authoritative and always current.
+    const cs = window.getComputedStyle(pre)
+    const lh = parseFloat(cs.lineHeight)
+    const pt = parseFloat(cs.paddingTop)
+    if (!Number.isFinite(lh) || lh <= 0) return
+    const target = (Number.isFinite(pt) ? pt : 0) + lineIndex * lh
+    el.scrollTop = Math.max(0, target - (el.clientHeight / 2) + (lh / 2))
+  }
+
+  // ── TEMPORARY [diag] for B236 — REMOVE once that bug is settled ───────────
+  // Sekmeht: the search highlight "seems to be offcentered between two lines…
+  // always 1/2 of a line off" after validating and saving a YAML. It could not
+  // be reproduced from the code (the overlay's origin, the pre's padding and
+  // the gutter all agree, and the validation banner is a sibling outside the
+  // overlay's positioning context), so rather than guess a fix this measures
+  // the PAINTED offset against the computed one and prints the delta. A
+  // reproduction then yields a number instead of an impression.
+  // Fires only on a deliberate Lich Dashboard search, so it cannot spam play.
+  function diagHighlightOffset(lineIndex: number) {
+    requestAnimationFrame(() => {
+      const pre = preRef.current
+      const hl = scrollRef.current?.querySelector('.ld-yaml-line-highlight') as HTMLElement | null
+      if (!pre || !hl) return
+      const cs = window.getComputedStyle(pre)
+      const lh = parseFloat(cs.lineHeight)
+      const pt = parseFloat(cs.paddingTop) || 0
+      const actual = hl.getBoundingClientRect().top - pre.getBoundingClientRect().top
+      const expected = pt + lineIndex * lh
+      console.debug(
+        `[diag B236] line=${lineIndex} lineHeight=${lh} paddingTop=${pt} ` +
+        `actual=${actual.toFixed(2)} expected=${expected.toFixed(2)} delta=${(actual - expected).toFixed(2)}`,
+      )
+    })
   }
 
   useImperativeHandle(ref, () => ({
@@ -848,12 +919,14 @@ const YamlHighlight = forwardRef<YamlViewHandle, { content: string; language?: s
       lastMatchRef.current = idx
       setMatchedLine(idx)
       scrollViewToLine(idx)
+      diagHighlightOffset(idx)   // [diag B236] — remove with the helper above
       return idx
     },
     scrollToLine(lineIndex: number) {
       scrollViewToLine(lineIndex)
       lastMatchRef.current = lineIndex
       setMatchedLine(lineIndex)
+      diagHighlightOffset(lineIndex)   // [diag B236] — remove with the helper above
     },
     resetSearch() { lastMatchRef.current = -1; setMatchedLine(null) },
   }), [lineList, lineMetrics])
@@ -970,13 +1043,18 @@ const EditorWithGutter = forwardRef<YamlViewHandle, { value: string; onChange: (
   )
 })
 
-// Search input used in the Profiles tab's edit-bar. Self-contained so the
-// edit-bar JSX stays readable. Enter triggers find; the parent advances the
+// Search input used in the Profiles AND Scripts edit-bars. Self-contained so
+// the edit-bar JSX stays readable. Enter triggers find; the parent advances the
 // ref's internal cursor so repeated Enters cycle through matches. v0.8.1 (F25).
-function YamlSearchField({ value, onChange, onFind }: {
+//
+// `placeholder` is a prop because this is shared: the Scripts tab edits RUBY,
+// and a hardcoded "Search YAML…" there told the user the wrong thing about the
+// file in front of them (Sekmeht, v0.18.1).
+function YamlSearchField({ value, onChange, onFind, placeholder = 'Search…' }: {
   value: string
   onChange: (v: string) => void
   onFind: () => void
+  placeholder?: string
 }) {
   return (
     <div className="ld-yaml-search">
@@ -986,7 +1064,7 @@ function YamlSearchField({ value, onChange, onFind }: {
         value={value}
         onChange={e => onChange(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onFind() } }}
-        placeholder="Search YAML…"
+        placeholder={placeholder}
       />
       <button
         type="button"
@@ -1290,6 +1368,7 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
                     on mode switch via the useEffect below. */}
                 <YamlSearchField
                   value={yamlSearch}
+                  placeholder="Search YAML…"
                   onChange={v => { setYamlSearch(v); yamlViewRef.current?.resetSearch() }}
                   onFind={() => {
                     const line = yamlViewRef.current?.find(yamlSearch) ?? -1
@@ -1307,6 +1386,7 @@ function ProfilesTab({ lichPath, session }: { lichPath: string; session: Session
                 <span className="ld-profile-name">{selected}</span>
                 <YamlSearchField
                   value={yamlSearch}
+                  placeholder="Search YAML…"
                   onChange={v => { setYamlSearch(v); yamlViewRef.current?.resetSearch() }}
                   onFind={() => {
                     const line = yamlViewRef.current?.find(yamlSearch) ?? -1

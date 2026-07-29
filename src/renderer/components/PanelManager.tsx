@@ -62,6 +62,8 @@ interface Props {
   layoutMode?: 'panels' | 'free'
   onToggleLayoutMode?: () => void
   onRebuildFromPanels?: () => void
+  /** Snap chrome windows (vitals / status / command) to their bar's height. */
+  onFitChromeWindows?: () => void
   freeLayoutLocked?: boolean
   onToggleFreeLock?: () => void
   freeAddItems?: { label: string; kind: string }[]
@@ -75,7 +77,7 @@ export default function PanelManager({
   allTypes, labels,
   discoveredStreams, streamTitles = {},
   onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout,
-  layoutMode, onToggleLayoutMode, onRebuildFromPanels, freeLayoutLocked, onToggleFreeLock, freeAddItems, onAddFreeWindow,
+  layoutMode, onToggleLayoutMode, onRebuildFromPanels, onFitChromeWindows, freeLayoutLocked, onToggleFreeLock, freeAddItems, onAddFreeWindow,
   onClose,
 }: Props) {
   // v0.8.3: Only count tabs from zones that are actually added to the
@@ -140,6 +142,12 @@ export default function PanelManager({
                     <input type="checkbox" checked={!!freeLayoutLocked} onChange={onToggleFreeLock} />
                     Lock windows
                   </label>
+                )}
+                {layoutMode === 'free' && !freeLayoutLocked && onFitChromeWindows && (
+                  <button className="pm-freelayout-rebuild" onClick={onFitChromeWindows}
+                          title="Resize the vitals / status / command windows to exactly the height of the bar inside them — usually smaller, but it will also grow one you had shrunk so far the bar was cut off. Positions are not changed, so a neighbour below may end up with a gap or an overlap to drag closed.">
+                    Fit bars to content
+                  </button>
                 )}
                 {layoutMode === 'free' && onRebuildFromPanels && (
                   <button className="pm-freelayout-rebuild" onClick={onRebuildFromPanels}
