@@ -248,6 +248,7 @@ export type GameEvent =
   | HandEvent
   | RoomTitleEvent
   | RoomIdEvent
+  | ServerClockEvent
   | ExpComponentEvent
   | StreamPushEvent
   | StreamPopEvent
@@ -359,6 +360,25 @@ export interface RoomTitleEvent {
 export interface RoomIdEvent {
   type: 'room-id'
   roomId: number
+}
+
+// The SERVER's clock, as an offset from ours: `serverUnixMs − Date.now()`.
+//
+// DR stamps every `<prompt time='…'>` with its own Unix seconds, and the parser
+// already anchors RT/CT/aim to it so a skewed client clock can't distort a
+// countdown (B192 / pitfall #87). Anything computing an ABSOLUTE moment — the
+// Moons experience's lunar phase, which is a pure function of the real time —
+// needs the same anchor, so the offset is surfaced here rather than left
+// private to the parser.
+//
+// Emitted RARELY, not per prompt: only the first time a server time is seen and
+// afterwards only when the offset MOVES more than a couple of seconds. A prompt
+// arrives on every game turn, so emitting each one would add a per-turn event
+// for a value that is essentially constant for a session.
+export interface ServerClockEvent {
+  type: 'server-clock'
+  /** serverUnixMs − Date.now(). Add to `Date.now()` to get server time. */
+  offsetMs: number
 }
 
 // Exp — from <component id='exp SkillName' text='Evasion: 3 (2%)'>

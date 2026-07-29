@@ -35,6 +35,32 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
   // offered no diagnostic value the banner doesn't).
   const { useLich, lichPath, rubyPath, lichMode, modeLocked } = adv
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResult>(null)
+  // Do the CURRENTLY CONFIGURED paths exist? Answered on open and whenever a
+  // path is edited, independently of Auto Detect.
+  //
+  // Until v0.18.2 the ✓/✕ next to each field derived from `discoveryResult`,
+  // which is null until Auto Detect is clicked — so opening Lich Setup on a
+  // machine with an EMPTY Ruby path (the deliberate macOS/Linux default) showed
+  // no ✕, no warning, nothing at all. The one screen that could have told our
+  // first Mac tester what was wrong stayed silent unless he happened to press a
+  // button (Sekmeht: "is there an indicator saying the lich path is invalid?").
+  //
+  // Uses ONLY the *AlreadyValid flags — "does this path exist" — never the
+  // discovered candidates, so it cannot imply a path is fine because one was
+  // found elsewhere. probeDesktop is off: this runs unprompted, and the Desktop
+  // probe raises a macOS privacy dialog that must only ever follow a click.
+  const [pathsExist, setPathsExist] = useState<{ ruby: boolean; lich: boolean } | null>(null)
+  useEffect(() => {
+    if (!useLich && !alwaysShowFields) return
+    let cancelled = false
+    // Debounced: this fires per keystroke while a path is being typed.
+    const t = setTimeout(() => {
+      window.api.discoverLichPaths(rubyPath, lichPath)
+        .then(r => { if (!cancelled) setPathsExist({ ruby: r.rubyAlreadyValid, lich: r.lichAlreadyValid }) })
+        .catch(() => { if (!cancelled) setPathsExist(null) })
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [rubyPath, lichPath, useLich, alwaysShowFields])
 
   function setAdv1<K extends keyof AdvancedSettings>(key: K, value: AdvancedSettings[K]) {
     setAdv(prev => ({ ...prev, [key]: value }))
@@ -63,8 +89,15 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
   // other platforms); the handler now probes every platform, so the banner
   // renders everywhere.
   const dr = discoveryResult
-  const rubyOk = dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
-  const lichOk = dr ? (dr.lichAlreadyValid || dr.lichPath !== null) : null
+  // The BANNER still speaks for the last Auto Detect (it reports what discovery
+  // found). The per-field icons prefer the live existence check, so they always
+  // describe the path actually in the box — falling back to the discovery view
+  // only before the first check resolves.
+  const rubyOk = pathsExist ? pathsExist.ruby : dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
+  const lichOk = pathsExist ? pathsExist.lich : dr ? (dr.lichAlreadyValid || dr.lichPath !== null) : null
+  // Banner-only view, so the Auto Detect summary keeps its original meaning.
+  const drRubyOk = dr ? (dr.rubyAlreadyValid || dr.rubyPath !== null) : null
+  const drLichOk = dr ? (dr.lichAlreadyValid || dr.lichPath !== null) : null
 
   let statusEl: React.ReactNode = null
   if (dr) {
@@ -72,10 +105,10 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
     const lichNew = dr.lichPath !== null
     let type: 'ok' | 'warn' | 'error'
     let msg: string
-    if (!dr.baseFolderExists && !rubyOk && !lichOk) {
+    if (!dr.baseFolderExists && !drRubyOk && !drLichOk) {
       type = 'error'
       msg = `No ${LICH_HOME_LABEL} folder found — please browse to your Ruby and Lich5 file locations manually.`
-    } else if (rubyOk && lichOk) {
+    } else if (drRubyOk && drLichOk) {
       if (rubyNew || lichNew) {
         const found = [rubyNew && 'Ruby', lichNew && 'Lich5'].filter(Boolean).join(' and ')
         type = 'ok'
@@ -84,10 +117,10 @@ export default function LichSetupFields({ adv, setAdv, disabled = false, alwaysS
         type = 'ok'
         msg = 'Both paths verified successfully.'
       }
-    } else if (!rubyOk && !lichOk) {
+    } else if (!drRubyOk && !drLichOk) {
       type = 'warn'
       msg = `Ruby and Lich5 files not found in ${LICH_HOME_LABEL} — ensure Lich5 is properly installed, or browse to the correct file locations.`
-    } else if (!rubyOk) {
+    } else if (!drRubyOk) {
       type = 'warn'
       msg = `Ruby (${RUBY_FILE_LABEL}) not found — ensure Ruby for Lich5 is installed, or browse to the correct location.`
     } else {

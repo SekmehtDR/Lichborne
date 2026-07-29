@@ -94,6 +94,29 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
     onWindowsChange(windows.filter(w => w.id !== id))
   }
 
+  // Right-click → Close on a panel window targets the STREAM SHOWING, not the
+  // window (Sekmeht) — a window is a container the user arranged, its tabs are
+  // the disposable part. The window follows only when its last tab goes, since
+  // an empty frame is not something anyone wants left behind.
+  //
+  // Selection moves to the neighbour at the same index (the tab that slid into
+  // the closed one's place), falling back to the new last tab — so repeated
+  // closes walk rightward and never land on a removed id.
+  //
+  // Removing the tab here is the whole job: in free mode every "is this stream
+  // watched / visible" aggregation derives from `freeWindows[].tabs`
+  // (pitfall #79), so stream routing and unread state follow automatically.
+  function closeActiveTab(id: string) {
+    onWindowsChange(windows.flatMap(w => {
+      if (w.id !== id) return [w]
+      const tabs = w.tabs ?? []
+      const idx = Math.max(0, tabs.findIndex(t => t.id === w.activeId))
+      const next = tabs.filter((_, i) => i !== idx)
+      if (next.length === 0) return []
+      return [{ ...w, tabs: next, activeId: (next[idx] ?? next[next.length - 1]).id }]
+    }))
+  }
+
   return (
     <div className="window-layer" ref={layerRef}>
       {/* B174: this gate now means "never measured yet" (first mount only) —
@@ -108,6 +131,7 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
           onFocus={focus}
           onChange={change}
           onClose={close}
+          onCloseActiveTab={closeActiveTab}
           getSnapTargets={getSnapTargets}
           guideRefs={{ v: guideVRef, h: guideHRef }}
           locked={locked}

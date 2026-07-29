@@ -11,7 +11,7 @@
 // masquerades as live truth (§32.4 text-equivalent spirit).
 import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import type { ExperienceProps } from '../../experiences'
-import { MOON_UP_MINUTES, MOON_DOWN_MINUTES, computeSunPhase, detectWeather, type MoonInfo, type SunPhase, type CalendarInfo, type WeatherFx } from '../../experiences'
+import { MOON_UP_MINUTES, MOON_DOWN_MINUTES, computeSunPhase, detectWeather, moonPhase, type MoonInfo, type MoonPhase, type SunPhase, type CalendarInfo, type WeatherFx } from '../../experiences'
 
 // Season → a little emoji for the date readout (Sekmeht). Colored splashes in an
 // otherwise-monochrome strip, one per season.
@@ -41,11 +41,23 @@ const RAIN = Array.from({ length: 34 }, (_, i) => ({
   dur: 0.75 + (i % 4) * 0.15,
   delay: -(i * 0.11),
 }))
+// Enough bodies for a FULL sky. There used to be four, which is fine for "a few
+// scattered clouds" but was all an overcast sky got too — Sekmeht: "it's
+// 'completely overcast' but there's only occasional fluffs floating by". The
+// count is now sliced by the parsed cover, so light skies still draw the first
+// few and only a heavy sky uses the rest. (Overcast ALSO gets a veil — see
+// MoonsClouds; a solid sky is a sheet, not more puffs.)
 const CLOUDS = [
   { y: 30, s: 1.0,  dur: 64,  delay: 0 },
   { y: 55, s: 0.68, dur: 90,  delay: -34 },
   { y: 20, s: 0.52, dur: 108, delay: -70 },
   { y: 44, s: 0.84, dur: 76,  delay: -18 },
+  { y: 12, s: 0.9,  dur: 82,  delay: -52 },
+  { y: 64, s: 1.15, dur: 70,  delay: -8 },
+  { y: 38, s: 0.6,  dur: 96,  delay: -61 },
+  { y: 26, s: 1.05, dur: 58,  delay: -25 },
+  { y: 50, s: 0.74, dur: 88,  delay: -44 },
+  { y: 8,  s: 0.66, dur: 102, delay: -13 },
 ]
 // Fireflies (F68) — summer dusk/night dots that drift near the ground. Fixed,
 // deterministic positions (x-fraction of W, y in viewBox units), each with its
@@ -67,16 +79,31 @@ const LEAVES = Array.from({ length: 11 }, (_, i) => ({
   c: ['#c56a26', '#b23a22', '#d19a2f'][i % 3],
   r: 1.4 + (i % 2) * 0.5,
 }))
-// F67 shooting stars — a few streaks with staggered timing + varied paths so one
-// flashes every few seconds on a CLEAR night (clouds hide them). `sx` is a fraction
-// of W; `sy` + the `dx`/`dy` travel are viewBox px in the upper sky. Deterministic.
+// F67 shooting stars — RARE streaks on a CLEAR night (clouds hide them). `sx` is
+// a fraction of W; `sy` + the `dx`/`dy` travel are viewBox px in the upper sky.
+// Deterministic.
+//
+// RARITY (Sekmeht: "too many falling stars, too rapid"). These used to run
+// 8–13s cycles, and because each fires once per cycle the COMBINED rate was
+// ~one streak every 1.7 SECONDS — a meteor shower, not a rare event. The cycles
+// are now 150–210s, giving roughly one every 30 seconds across all six.
+//
+// The six paths are KEPT rather than trimmed: variety of position and direction
+// is what stops a repeat feeling like the same star looping, and with cycles
+// this long you rarely see the same one twice in a sitting. Rarity comes from
+// the duration, not from having fewer paths.
+//
+// Note the duration governs BOTH how often a streak appears AND how fast it
+// crosses, so the CSS keyframe's visible window had to shrink to match (the
+// travel is ~0.8% of the cycle now, ~1.2–1.7s). Lengthen these without touching
+// that and you get slow-motion meteors.
 const SHOOTS = [
-  { sx: 0.08, sy: 12, dx: 120, dy: 50, dur: 8,    delay: 0 },
-  { sx: 0.62, sy: 8,  dx: 132, dy: 44, dur: 11,   delay: -3 },
-  { sx: 0.34, sy: 42, dx: 108, dy: 60, dur: 9.5,  delay: -6.5 },
-  { sx: 0.82, sy: 28, dx: -98, dy: 56, dur: 12,   delay: -9 },   // streaks down-LEFT
-  { sx: 0.20, sy: 66, dx: 116, dy: 36, dur: 10.5, delay: -1.5 },
-  { sx: 0.50, sy: 52, dx: 96,  dy: 54, dur: 13,   delay: -4.5 },
+  { sx: 0.08, sy: 12, dx: 120, dy: 50, dur: 150, delay: 0 },
+  { sx: 0.62, sy: 8,  dx: 132, dy: 44, dur: 165, delay: -26 },
+  { sx: 0.34, sy: 42, dx: 108, dy: 60, dur: 180, delay: -58 },
+  { sx: 0.82, sy: 28, dx: -98, dy: 56, dur: 190, delay: -91 },   // streaks down-LEFT
+  { sx: 0.20, sy: 66, dx: 116, dy: 36, dur: 200, delay: -124 },
+  { sx: 0.50, sy: 52, dx: 96,  dy: 54, dur: 210, delay: -157 },
 ]
 // Which season is dressing the landscape ('none' = unknown / seasonal touches off).
 type LandSeason = 'none' | 'winter' | 'spring' | 'summer' | 'autumn'
@@ -89,15 +116,38 @@ const RAY_FRACS = [-0.12, 0.06, 0.24, 0.42, 0.6, 0.78, 0.96, 1.14]
 // Soft drifting clouds — behind the bodies. Hoisted to module scope (pitfall #4:
 // a component defined in render remounts every render, killing the CSS animation).
 // Wind blows them across faster.
-function MoonsClouds({ W, heavy, wind }: { W: number; heavy?: boolean; wind?: boolean }) {
-  const clouds = heavy ? CLOUDS : CLOUDS.slice(0, 3)
+function MoonsClouds({ W, heavy, wind, cover, deckFill }: { W: number; heavy?: boolean; wind?: boolean; cover?: number; deckFill: string }) {
+  // COUNT follows the reported cover (Sekmeht), so "a few scattered clouds" and
+  // "completely overcast" no longer draw the same cloudbank. `cover` is 0..1
+  // from the weather prose's degree words; the old heavy/not-heavy split is the
+  // fallback when nothing graded was parsed.
+  //
+  // At least one cloud whenever there are clouds at all — a "cloudy" sky that
+  // renders an empty heaven contradicts the strip's own text right beside it.
+  const n = cover == null
+    ? (heavy ? CLOUDS.length : 3)
+    : Math.max(1, Math.round(CLOUDS.length * cover))
+  const clouds = CLOUDS.slice(0, Math.min(CLOUDS.length, n))
   const speed = wind ? 0.5 : 1
+  // A CLOUDIER SKY IS MORE CLOUD, NOT A WASH (Sekmeht: "for very cloudy... it
+  // should just be more clouds in the sky"). Beyond raising the COUNT above,
+  // cover swells each body so they crowd and overlap, which is how a sky
+  // thickens without any all-over layer being drawn.
+  const bulk = cover == null ? 1 : 1 + 0.25 * Math.max(0, cover - 0.4)
+  // The DECK is reserved for wording that genuinely means a CLOSED sky —
+  // "overcast" (0.92) and "completely covered" (1.0). "Very cloudy" (0.85)
+  // deliberately gets none: a translucent sheet over the whole sky reads as FOG,
+  // a different condition the prose may not have reported at all. Even here it
+  // is a gradient that's solid overhead and gone by the horizon (the inverse of
+  // a haze), with the drifting bodies riding on top for texture.
+  const deck = cover != null && cover >= 0.9 ? (cover - 0.9) / 0.1 : 0
   return (
     <g className="moons-clouds" aria-hidden="true">
+      {deck > 0 && <rect x={0} y={0} width={W} height="100%" fill={deckFill} opacity={deck} />}
       {clouds.map((c, i) => (
         <g key={i} transform={`translate(0 ${c.y})`}>
           <g className="moons-cloud" style={{ ['--cw' as string]: `${W}px`, animationDuration: `${c.dur * speed}s`, animationDelay: `${c.delay}s` } as CSSProperties}>
-            <g transform={`scale(${c.s})`}>
+            <g transform={`scale(${c.s * bulk})`}>
               <ellipse cx={0} cy={0} rx={30} ry={12} />
               <ellipse cx={-20} cy={4} rx={18} ry={10} />
               <ellipse cx={22} cy={4} rx={20} ry={10} />
@@ -110,19 +160,30 @@ function MoonsClouds({ W, heavy, wind }: { W: number; heavy?: boolean; wind?: bo
   )
 }
 
-// Falling precipitation + fog + storm flash — in FRONT of the bodies, fading out
-// at the horizon. Wind blows snow sideways (bigger sway) and slants the rain; a
+// Falling precipitation + storm flash — in FRONT of the bodies, fading out at
+// the horizon. Wind blows snow sideways (bigger sway) and slants the rain; a
 // storm adds an occasional lightning flash over the whole sky.
-function MoonsPrecip({ W, wx, horizonY, fogFill }: { W: number; wx: WeatherFx; horizonY: number; fogFill: string }) {
+//
+// NO FOG LAYER (Sekmeht, v0.18.2: "let's avoid the fog effect in general").
+// A translucent haze over the scene reads as a washed-out render rather than as
+// weather — it dulls the sky gradient, the moons and the landscape all at once,
+// and there is no way to make it strong enough to be legible as fog without it
+// looking like a bug. `WeatherFx.fog` is still PARSED and still carries its
+// meaning (it suppresses shooting stars and floors the cloud cover); it just
+// has no layer of its own. Don't re-add one without a fresh ask.
+function MoonsPrecip({ W, wx, horizonY }: { W: number; wx: WeatherFx; horizonY: number }) {
   const fast = (base: number) => (wx.heavy ? base * 0.68 : base)
   const wind = !!wx.wind
   return (
     <g aria-hidden="true">
       {wx.storm && <rect x={0} y={0} width={W} height={horizonY} className="moons-lightning" />}
-      {wx.fog && <rect x={0} y={horizonY - 70} width={W} height={70} fill={fogFill} />}
       {wx.snow && (
         <g className="moons-snow">
-          {(wx.heavy ? SNOW : SNOW.slice(0, 16)).map((f, i) => (
+          {/* Flake count follows the parsed precipitation density, so a flurry
+              and a blizzard differ. Falls back to the heavy/light split. */}
+          {SNOW.slice(0, wx.precip == null
+            ? (wx.heavy ? SNOW.length : 16)
+            : Math.max(6, Math.round(SNOW.length * wx.precip))).map((f, i) => (
             <circle key={i} className="moons-snowflake" cx={f.x * W} cy={0} r={f.r}
               style={{ animationDuration: `${fast(f.dur)}s`, animationDelay: `${f.delay}s`, ['--sway' as string]: `${(wind ? f.sway * 2.4 : f.sway)}px`, ['--fall' as string]: `${horizonY}px` } as CSSProperties} />
           ))}
@@ -130,7 +191,10 @@ function MoonsPrecip({ W, wx, horizonY, fogFill }: { W: number; wx: WeatherFx; h
       )}
       {wx.rain && (
         <g className="moons-rain">
-          {(wx.heavy ? RAIN : RAIN.slice(0, 18)).map((d, i) => (
+          {/* Same for rain: a drizzle draws far fewer drops than a downpour. */}
+          {RAIN.slice(0, wx.precip == null
+            ? (wx.heavy ? RAIN.length : 18)
+            : Math.max(8, Math.round(RAIN.length * wx.precip))).map((d, i) => (
             <line key={i} className="moons-raindrop" x1={d.x * W} y1={0} x2={d.x * W + (wind ? 6 : 0)} y2={d.len}
               style={{ animationDuration: `${fast(d.dur)}s`, animationDelay: `${d.delay}s`, ['--windx' as string]: `${wind ? 26 : 0}px`, ['--fall' as string]: `${horizonY}px` } as CSSProperties} />
           ))}
@@ -261,12 +325,47 @@ function MoonsLandscape({ W, horizonY, groundBot, night, season, sun, reflect, g
       </g>
     )
   }
-  const streamD = `M ${P(0.5)},${horizonY + 10} C ${P(0.47)},${horizonY + 24} ${P(0.45)},${horizonY + 33} ${P(0.4)},${horizonY + 43}`
   const iced = season === 'winter'
   const lakeFill = iced ? mixHex('#d3e2ea', '#28323e', night) : gref('water')   // frozen → ice
   const streamFill = iced ? mixHex('#c6dae4', '#243040', night) : gref('water')
   const lakeRim = mixHex('#2a3f4e', '#0a1018', night)    // dark rim → defines the pool vs the ground
   const lakeCx = P(0.3), lakeCy = horizonY + 47, lakeRx = W * 0.17, lakeRy = 10
+
+  // ── The river (Binu) ──────────────────────────────────────────────────────
+  // Was a constant-width stroked Bézier starting 10px BELOW the horizon, which
+  // read as a flat pipe floating in the field. Three things were asked for and
+  // all three need the same change of approach:
+  //   • PERSPECTIVE — it must narrow with distance. SVG cannot vary
+  //     stroke-width along a path, so a stroked line can never taper; the river
+  //     is now a filled RIBBON built from sampled left/right banks.
+  //   • TOUCHES THE HORIZON — starts exactly at horizonY, so it reads as
+  //     flowing down out of the mountains rather than beginning in mid-field.
+  //   • CURVIER — a meander, damped toward the horizon so it converges to a
+  //     point on the skyline instead of wobbling along it.
+  // The descent uses pow(t, 1.6) so distance foreshortens (far stretches bunch
+  // up near the horizon and open out toward the viewer) — the same idea as the
+  // landscape's `persp`, applied along the river instead of across the ground.
+  const RIVER_STEPS = 30
+  const riverPts = Array.from({ length: RIVER_STEPS + 1 }, (_, i) => {
+    const t = i / RIVER_STEPS
+    const y = horizonY + (lakeCy - horizonY) * Math.pow(t, 1.6)
+    // Meander damped by `t`: zero swing at the source, widening as it nears.
+    const bend = Math.sin(t * Math.PI * 2.1) * 0.05 * t
+    const x = P(0.52 + (0.30 - 0.52) * t + bend)
+    // Half-width: a hairline at the horizon opening to the lake mouth. Also
+    // pow'd, so most of the widening happens in the near half where the eye
+    // reads it as approach rather than as a wedge.
+    const w = 0.3 + 3.0 * Math.pow(t, 1.5)
+    return { x, y, w }
+  })
+  // Banks down one side and back up the other — offset horizontally rather than
+  // perpendicular to the tangent, which is a fine approximation while the river
+  // runs mostly vertically and keeps this readable.
+  const ribbon = (scale: number) =>
+    'M ' + riverPts.map(p => `${p.x - p.w * scale},${p.y}`).join(' L ')
+    + ' L ' + [...riverPts].reverse().map(p => `${p.x + p.w * scale},${p.y}`).join(' L ') + ' Z'
+  const riverD = ribbon(1)
+  const riverGlintD = ribbon(0.34)   // a narrower inner ribbon, tapering with it
   // Reflection columns: for each body over the water, a shimmering vertical streak
   // (+ two ripple dashes), clipped to the lake's height at that x (so it stays on
   // the pool without a clipPath). Empty when iced/none.
@@ -290,9 +389,12 @@ function MoonsLandscape({ W, horizonY, groundBot, night, season, sun, reflect, g
   return (
     <g aria-hidden="true">
       {FAR.map(([f, t], i) => t === 'p' ? pineTree(`far${i}`, P(f), horizonY + 5, 6) : roundTree(`far${i}`, P(f), horizonY + 5, 6))}
-      {/* stream winding down from the hills into the lake (reflective / iced fill + a glint) */}
-      <path d={streamD} stroke={streamFill} strokeWidth={4.5} fill="none" strokeLinecap="round" opacity={0.92} />
-      <path d={streamD} stroke={glint} strokeWidth={1.1} fill="none" strokeLinecap="round" opacity={0.45} />
+      {/* River winding down out of the hills into the lake — a FILLED ribbon so
+          it can taper with distance (see riverPts), meeting the horizon at a
+          point and opening to the lake mouth. Reflective / iced fill + a
+          narrower inner glint that tapers with it. */}
+      <path d={riverD} fill={streamFill} opacity={0.92} />
+      <path d={riverGlintD} fill={glint} opacity={0.4} />
       {/* lake — a grounding shadow, then reflective water (or winter ice) with a dark
           rim, the sun/moon reflections, and a couple of surface glints. */}
       <ellipse cx={lakeCx} cy={lakeCy + 2} rx={lakeRx * 1.06} ry={lakeRy + 1} fill="#0d1016" opacity={0.28 * (1 - night * 0.5)} />
@@ -368,7 +470,23 @@ interface MoonStyle {
   // The base disc fill is the per-instance gradient `${uid}-moon-<key>` (built at
   // render — see `gref`), not a shared constant, so multiple character tabs don't
   // collide on one `#lb-moon-*` id.
+  // The disc OUTLINE reads as the body's ATMOSPHERE (Sekmeht) — distinct from
+  // `glow`, which is the halo it throws into the sky. So the outline is driven
+  // by what each moon's own lore text says it has, and the three genuinely
+  // differ (see MOON_LORE, which is the spec here):
+  //   Yavash  — "a THICK, rapidly moving atmosphere glows with ruby and
+  //             crimson hues" → the most pronounced rim of the three.
+  //   Katamba — "encircled by a FAINT, miasmatic atmosphere" → a thin violet
+  //             veil, not the neutral grey it used to wear.
+  //   Xibar   — "STRIPPED OF ANY ATMOSPHERE" → atmo 0, NO rim at all. A pale
+  //             edge on an airless body is exactly the halo it cannot have; its
+  //             brightness comes from ice FIELDS, i.e. the surface, so the limb
+  //             should simply be where the disc ends.
   rim: string
+  /** Atmosphere thickness, 0..1 — scales the outline's width and opacity. 0
+   *  removes it outright. `rim` stays a colour regardless, because the rise/set
+   *  transition rings still key off it. */
+  atmo: number
   r: number
   label: string
   glow: string           // soft SKY halo colour (Sekmeht/Elanthipedia lore): Xibar a
@@ -388,9 +506,13 @@ interface MoonStyle {
 // emitting shadow; Yavash a pure ruby/crimson cloud deck (NO orange); Xibar vivid
 // saturated ice-blue in myriad shades, with a silvery-blue atmospheric sky glow.
 const MOON_STYLE: Record<MoonKey, MoonStyle> = {
-  katamba: { rim: '#6e6e76', r: 13, label: 'Katamba', glow: '#2a123f', glowStrength: 1.45, glowR: 2.25, tones: { lit: '#332d3a', mid: '#161219', shadow: '#050409' } },
-  yavash:  { rim: '#e56575', r: 9,  label: 'Yavash',  glow: '#e01430', glowStrength: 1.25, glowR: 2.0, tones: { lit: '#f0384e', mid: '#a01828', shadow: '#3a0810' } },
-  xibar:   { rim: '#88bce6', r: 7,  label: 'Xibar',   glow: '#dbe9f5', tones: { lit: '#5db4f7', mid: '#2472db', shadow: '#123f8f' } },
+  // `atmo` follows each moon's own lore (see the MoonStyle note + MOON_LORE).
+  // Katamba's rim also moved off neutral grey onto a violet-grey: "miasmatic"
+  // is the word its lore uses, and its sky halo is already dark violet — a
+  // colourless ring read as a generic outline rather than that atmosphere.
+  katamba: { rim: '#6b5f7a', atmo: 0.4, r: 13, label: 'Katamba', glow: '#2a123f', glowStrength: 1.45, glowR: 2.25, tones: { lit: '#332d3a', mid: '#161219', shadow: '#050409' } },
+  yavash:  { rim: '#ff8496', atmo: 1,   r: 9,  label: 'Yavash',  glow: '#e01430', glowStrength: 1.25, glowR: 2.0, tones: { lit: '#f0384e', mid: '#a01828', shadow: '#3a0810' } },
+  xibar:   { rim: '#88bce6', atmo: 0,   r: 7,  label: 'Xibar',   glow: '#dbe9f5', tones: { lit: '#5db4f7', mid: '#2472db', shadow: '#123f8f' } },
 }
 
 type MoonKey = 'katamba' | 'yavash' | 'xibar'
@@ -400,6 +522,72 @@ const MOON_KEYS: MoonKey[] = ['katamba', 'yavash', 'xibar']
 // disc passes paint moons back→front in this order so an overlap stacks correctly.
 // Chip/text/def passes keep MOON_KEYS order (order-neutral there).
 const MOON_DEPTH: Record<MoonKey, number> = { yavash: 0, katamba: 1, xibar: 2 }
+
+// F64a — the LIT region of a phased disc, in local coords centred on (0,0) with
+// the lit limb toward +x. Caller rotates the group so +x points at the sun.
+//
+// `c` = cos(phase angle) = 1 − 2·illum: +1 new (nothing lit), 0 quarter (half),
+// −1 full (all lit). The terminator is an ellipse of semi-axis r·|c| sharing the
+// disc's poles, and the SWEEP FLAG is what turns a crescent into a gibbous:
+//   c > 0  → the terminator bulges the same way as the limb → thin crescent
+//   c = 0  → rx 0, a straight line → exactly half
+//   c < 0  → it bulges the other way → gibbous, reaching the full disc at −1
+// Both degenerate ends behave: at c=+1 the two arcs coincide and enclose no
+// area (new), at c=−1 they form the whole circle (full).
+//
+// Used through a MASK rather than painted directly — see the render — so the
+// shadow is the complement and F69's lit gradient keeps painting the disc
+// underneath. Deriving a separate "shadow path" by mirroring the flags does NOT
+// work (it degenerates to zero area at new, exactly when the shadow should be
+// the whole disc); one path plus a mask is correct at every phase.
+// F64a — the at-a-glance pill's dot, drawn as the moon's ACTUAL phase.
+//
+// The pill already spent this space on a plain colour dot, so the phase costs
+// nothing to show and stops being a tooltip-only fact (UX standard #8: the UI
+// should explain itself without a hover). Module-level, not defined inside the
+// render (standard #4).
+//
+// No <mask> here on purpose: at ~7px a mask is invisible precision, and mask
+// ids would need per-instance namespacing (pitfall #95). Painting the lit path
+// OVER a dark disc gives the same read with no ids at all.
+//
+// Orientation is the conventional one — waxing lit on the right, waning on the
+// left — rather than the scene's sun-relative angle. At this size a tilted
+// terminator reads as a rendering artefact, and the convention is what people
+// recognise from a calendar.
+function PhaseDot({ phase, color, size }: { phase: MoonPhase; color: string; size: number }) {
+  const r = size / 2
+  return (
+    <svg width={size} height={size} viewBox={`${-r} ${-r} ${size} ${size}`} aria-hidden
+         style={{ display: 'block', borderRadius: '50%' }}>
+      <circle cx={0} cy={0} r={r} fill="#0b0d14" />
+      <path d={litPath(r, 1 - 2 * phase.illum)} fill={color}
+            transform={phase.waxing ? undefined : 'scale(-1,1)'} />
+      <circle cx={0} cy={0} r={r - 0.3} fill="none" stroke={color} strokeOpacity={0.5} strokeWidth={0.6} />
+    </svg>
+  )
+}
+
+export function litPath(r: number, c: number): string {
+  const rx = Math.abs(r * c)
+  // SWEEP DIRECTION — the whole shape turns on this, and it was INVERTED in the
+  // first cut (Sekmeht spotted it: Xibar rendered as a lens/wedge, never a
+  // crescent). SVG's y axis points DOWN, so sweep=1 is clockwise on screen:
+  // from the BOTTOM, clockwise heads LEFT and counter-clockwise heads RIGHT.
+  //   c > 0 (crescent, under half lit): the terminator must bulge INTO the lit
+  //         side (rightward) to cut the right semicircle down to a sliver → 0
+  //   c < 0 (gibbous, over half lit):   it bulges away (leftward), adding to
+  //         the right semicircle → 1
+  // Check it against the ends, which is how the inversion was caught:
+  //   c = +1 (new)  → rx = r, the return arc retraces the right limb → NO area
+  //   c =  0 (quarter) → rx = 0, a straight terminator → exactly half
+  //   c = −1 (full) → rx = r, bulges left → the whole circle
+  // Getting these backwards renders a new moon as full and a full moon as
+  // nothing, with every phase between it wrong — and it is invisible to the
+  // phase MATH tests, so tmp-moon-harness asserts these three paths directly.
+  const sweep = c > 0 ? 0 : 1
+  return `M 0 ${-r} A ${r} ${r} 0 0 1 0 ${r} A ${rx} ${r} 0 0 ${sweep} 0 ${-r} Z`
+}
 
 // Sky geometry (SVG viewBox units). HEIGHT is fixed; WIDTH is derived per
 // render from the drawing area's REAL aspect ratio (measured below), so the
@@ -477,6 +665,50 @@ const MOON_LORE: Record<MoonKey, string> = {
 }
 const SUN_LORE = 'The Elanthian Sun — its rising and setting mark the days of the provinces; each full circuit of the heavens takes six hours of mortal time.'
 
+// F64 — each moon's share of "moonlight", 0..1 of its own maximum.
+//
+// THIS IS A LORE QUANTITY, NOT A PHOTOMETRIC ONE — the distinction matters and
+// the code has to hold both at once.
+//
+// Katamba counted ZERO here at first, on the reasoning that a black moon emits
+// nothing. That is right about PHOTONS and wrong about DragonRealms (Sekmeht):
+// Moon Mages draw on Katamba as moonlight regardless of it being black, so for
+// the Moon Mage hook this figure exists to serve, it counts — and it counts
+// heavily, being the largest of the three and the one its own lore says
+// "dominates the tides of Elanthia".
+//
+// What did NOT change is anything VISIBLE. Katamba still drives no glow
+// scaling, no disc brightening, and no lake reflection, because those depict
+// light you can see and it genuinely sheds none — its halo is a haze that
+// DARKENS the sky. So: dark to the eye, bright to a Moon Mage. Don't
+// "reconcile" the two by making one follow the other; they answer different
+// questions.
+//
+// Weights are RELATIVE presentation values, not mined game constants (the
+// standing rule against inventing DR math) — they sum to 1 so all three, full
+// and overhead, reads as a maximally bright night.
+const MOONLIGHT_WEIGHT: Record<MoonKey, number> = { katamba: 0.4, yavash: 0.32, xibar: 0.28 }
+
+/** Combined moonlight right now, 0..1. Each up moon contributes its lit
+ *  fraction × how high it rides (a moon at the horizon sheds less than one
+ *  overhead) × its own output. Needs phase, so it only became computable with
+ *  F64a. Returns null when nothing is known yet rather than a confident 0. */
+function moonlightNow(
+  ups: { k: MoonKey; progress: number }[],
+  phases: Partial<Record<MoonKey, MoonPhase>>,
+): number | null {
+  if (!ups.length) return 0
+  let total = 0, known = 0
+  for (const u of ups) {
+    const p = phases[u.k]
+    if (!p) continue
+    known++
+    // progress 0→1 across the visible arc, so sin(π·progress) peaks at the top.
+    total += p.illum * Math.sin(Math.PI * u.progress) * MOONLIGHT_WEIGHT[u.k]
+  }
+  return known ? Math.min(1, total) : null
+}
+
 function fmtClock(msEpoch: number): string {
   return new Date(msEpoch).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
@@ -521,7 +753,7 @@ function TransitionRings({ x, y, r, color, kind }: { x: number; y: number; r: nu
   )
 }
 
-function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky }: ExperienceProps) {
+function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClockOffsetMs = 0, onSyncSky }: ExperienceProps) {
   // UNIQUE gradient-id prefix per instance (React useId, sanitized to id-safe
   // chars). CRITICAL: every character tab mounts its own Moons SVG, and SVG
   // `url(#id)` resolves to the FIRST matching id in the whole document — so shared
@@ -588,6 +820,19 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
   }
 
   const now = Date.now()
+  // F64a — lunar phase. Computed on DR's clock, not ours (pitfall #87 / B192):
+  // this is absolute-time math with no runtime feedback, so a skewed client
+  // clock would silently render the wrong moon forever.
+  //
+  // Deliberately independent of `moons`: phase is a pure function of the time,
+  // so it works for a DIRECT-SGE player who has no moonwatch stream at all and
+  // therefore no rise/set data. Don't gate it on moon state arriving.
+  const serverNow = now + serverClockOffsetMs
+  const phases: Partial<Record<MoonKey, MoonPhase>> = {}
+  for (const k of MOON_KEYS) {
+    const p = moonPhase(k, serverNow)
+    if (p) phases[k] = p
+  }
   // Per-layer ⚙ toggles — each hides EXACTLY its own layer (Sekmeht: the old
   // combined "Sun & sky" conflated hiding the sun with flattening the sky).
   const showSun = !hidden?.sun
@@ -608,6 +853,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
   const showRays = !hidden?.rays            // crepuscular sunrise/sunset ground rays
   const showMoonGlow = !hidden?.moonglow    // soft primary-colour glow around each moon
   const showSunlight = !hidden?.sunlight    // F69 sun-lit moon terminator + specular
+  const showPhase    = !hidden?.phase       // F64a real crescent/gibbous disc shape
   const showPill = !hidden?.pill            // the frosted orrery pill above the footer
   const showSeasonal = !hidden?.seasonal    // fireflies / winter snow
   // Detected weather conditions (snow/rain/clouds/fog/…) from the prose, driving
@@ -821,7 +1067,51 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
     return { cx: clamp01(0.5 + (dx / len) * 0.42), cy: clamp01(0.5 + (dy / len) * 0.42), lx: dx / len, ly: dy / len }
   }
   const sunMix = (base: string) => `color-mix(in srgb, ${sunLight.color} ${Math.round(sunLight.strength * 48)}%, ${base})`
-  const upLit = upBodies.map(b => ({ b, lit: litCenter(b.x, b.y) }))
+  // WHICH SIDE IS LIT — and the single answer everything reads.
+  //
+  // A PHASED moon no longer tilts to face the sun (Sekmeht, v0.18.2). The
+  // terminator stays on the moon's own vertical axis and the phase simply
+  // crosses it: lit on the RIGHT while waxing, on the LEFT while waning — the
+  // orientation a calendar uses, and already what the pill's PhaseDot draws, so
+  // the two surfaces now agree. A sun-tracking tilt is the truer thing for a
+  // sphere, but on a flat stylised sky it reads as the moon being knocked
+  // askew, and it made one phase look like different shapes at dusk and at
+  // midnight.
+  //
+  // The mask's orientation, the lit gradient's centre and the specular rim all
+  // consume THIS, so they cannot disagree with each other — a fixed terminator
+  // with a sun-tracking highlight would put the bright spot on the dark side.
+  //
+  // Unphased (⚙ Phase off, or no phase data) the disc is full, so there is no
+  // terminator to contradict and the sun-relative shading is kept. Null still
+  // means "no sun" and still falls back to the flat fill — unchanged.
+  const litAim = (k: MoonKey, lit: ReturnType<typeof litCenter>) => {
+    if (!lit) return null
+    const p = phases[k]
+    if (!showPhase || !p) return lit
+    const s = p.waxing ? 1 : -1
+    return { cx: clamp01(0.5 + s * 0.42), cy: 0.5, lx: s, ly: 0 }
+  }
+  const upLit = upBodies.map(b => ({ b, lit: litAim(b.k, litCenter(b.x, b.y)), phase: phases[b.k] }))
+  // F64 — combined moonlight, the Moon Mage hook. Only meaningful at night: by
+  // day the sun drowns it, and reporting "strong moonlight" at noon would read
+  // as a bug rather than a nicety.
+  const moonlight = sunElev != null && sunElev < 0 ? moonlightNow(upBodies, phases) : null
+
+  // F65 — CONJUNCTIONS: moons riding close together in the sky.
+  //
+  // Measured in SCREEN distance against the pair's own radii, not in arc
+  // progress. Progress is normalised per-moon across arcs of different lengths
+  // (177m vs 174m), so equal progress is not quite the same sky position — and
+  // what a player means by "they're together" is what they can see. Scaling by
+  // (rA+rB) also keeps the test fair between big Katamba and small Xibar.
+  const conjunctions = upBodies.flatMap((a, i) =>
+    upBodies.slice(i + 1)
+      .map(b => ({ a, b, gap: Math.hypot(a.x - b.x, a.y - b.y) / (a.s.r + b.s.r) }))
+      .filter(p => p.gap < 2.6))
+  // All three mutually close reads as one event, not three pairs — a triple is
+  // the rare thing worth naming.
+  const tripleConjunction = conjunctions.length === 3
   // Landscape sun (drives DIRECTIONAL object shadows — like the crepuscular ground
   // rays, tree shadows fan away from the sun's screen position and lengthen as it
   // sinks). Only by day; null at dusk/night → soft ambient shadows instead.
@@ -883,6 +1173,57 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
   // transition (SETS if currently up, RISES if down). Dot colours are saturated
   // lore hues chosen to read on the themed glass (the raw rims are too pale).
   const fmtDur = (m: number) => (m <= 0 ? 'now' : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`)
+  // ONE phase description, shared by the scene discs and the pill so the two can
+  // never describe the same moon differently (the B234 lesson).
+  //
+  // Marked "(computed)" deliberately: rise/set times come from moonwatch's
+  // observed feed, but phase has NOTHING to self-correct against — the script
+  // says so itself, and only 4 of the 8 wordings are confirmed against the
+  // game's `observe` verb. The sun already distinguishes observed from assumed;
+  // phase gets the same honesty rather than being presented as fact.
+  //
+  // Phase buckets run ~28h, so the countdown is formatted in days+hours past a
+  // day — "1d 4h" reads, "28h 0m" does not.
+  const phaseLines = (k: MoonKey): string => {
+    const p = phases[k]
+    if (!p) return ''
+    const mins = Math.round(p.secondsToNext / 60)
+    const next = mins >= 1440
+      ? `${Math.floor(mins / 1440)}d ${Math.round((mins % 1440) / 60)}h`
+      : fmtDur(mins)
+    // "Now:" / "Next:" LABEL the pair. Both lines were already here, but the
+    // current phase was a bare lowercase name ("new · 2% lit") sitting above a
+    // line that plainly announces itself ("waxing crescent in ~1d 4h"), so it
+    // skimmed as preamble and the tooltip read as if it only told you what was
+    // coming (Sekmeht: "add the current phase — it shows when the next one is").
+    // The data never changed; it just wasn't saying which was which.
+    return `\n\nNow: ${p.name} · ${Math.round(p.illum * 100)}% lit (computed)`
+      + `\nNext: ${p.nextName} in ~${next}`
+      // (A Katamba-specific "the black moon..." line used to hang off the end
+      // here, explaining why a dark moon can read as "full" and still raise the
+      // moonlight figure. Removed at Sekmeht's ask, v0.18.2 — the combined-
+      // moonlight tooltip already makes that point, and repeating it on every
+      // Katamba hover made the shortest tooltip the longest one.)
+  }
+  // The header's "moons" segment names only the NEXT body due to rise or set, so
+  // its tooltip is where the other two get a voice — one line each, current phase
+  // included. This segment carried NO tooltip at all, which made the header the
+  // one moon surface you could hover and learn nothing from, even though the
+  // scene discs and the pill cells both explain themselves.
+  const moonsSegTip = MOON_KEYS.filter(k => moons[k]).map(k => {
+    const m = moons[k]!
+    const p = phases[k]
+    const rem = remainingMinutes(m, moons.reportedAt, now)
+    const when = rem <= 0
+      ? (m.up ? 'setting now' : 'rising now')
+      : `${m.up ? 'sets' : 'rises'} in ${fmtDur(rem)}`
+    return p
+      ? `${MOON_STYLE[k].label} — ${p.name}, ${Math.round(p.illum * 100)}% lit · ${when}`
+      : `${MOON_STYLE[k].label} — ${when}`
+  }).join('\n')
+  // Provenance, same as everywhere else phase is shown: rise/set is observed
+  // through moonwatch, phase is computed here and has nothing to correct against.
+  const moonsSegTitle = `Each moon, the phase it is in now, and its next rise or set.\n\n${moonsSegTip}\n\nRise and set come from moonwatch; phases are computed.`
   // Pill chips mirror the corrected lore colours (see MOON_STYLE): golden sun,
   // soot-dark Katamba (the shadow moon — its faint glow reads "no light"), ruby
   // Yavash, vivid ice-blue Xibar.
@@ -936,17 +1277,39 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
                   {showSky && (sunPhase.day ? '☀ day' : '☾ night')}
                   {showSky && showSun && ' · '}
                   {showSun && <>{sunPhase.day ? 'sun sets in ' : 'sun rises in '}{sunPhase.assumed ? '≈' : ''}{sunPhase.toNextMin}m</>}
+                  {/* F64 — moonlight rides the SKY segment because that is what
+                      it describes, and because appending to an existing segment
+                      cannot re-flow the strip the way a new pill cell did.
+                      Night only (the sun drowns it by day) and silent below a
+                      faint threshold: a dark night should read as clean rather
+                      than as a label reporting nothing (UX standard #1). */}
+                  {moonlight != null && moonlight > 0.02 && (
+                    <span title={`Combined moonlight from the moons currently up — about ${Math.round(moonlight * 100)}% of a bright night.\nCounts all three: Katamba is black and brightens nothing you can see, but Moon Mages draw on it as moonlight all the same.`}>
+                      {' · '}{moonlight > 0.66 ? 'bright' : moonlight > 0.33 ? 'moderate' : 'faint'} moonlight
+                    </span>
+                  )}
                 </span>
               </span>
             )}
             {(showSky || showSun) && sunPhase && nextMoon && <span className="moons-foot-sep">|</span>}
             {nextMoon && (
-              <span className="moons-foot-seg">
+              <span className="moons-foot-seg" title={moonsSegTitle}>
                 <span className="moons-foot-key">moons</span>
                 <span className="moons-foot-v">
                   {MOON_STYLE[nextMoon.k].label} {nextMoon.up
                     ? (nextMoon.rem <= 0 ? 'setting…' : `sets in ${nextMoon.rem}m`)
                     : (nextMoon.rem <= 0 ? 'rising…' : `rises in ${nextMoon.rem}m`)}
+                  {/* F65 — spelled out rather than the "Y+X" initials an earlier
+                      pass used: a two-letter code is exactly the label that
+                      needs explaining, which UX standard #8 says not to ship.
+                      The pairing sits in the tooltip so the strip stays short. */}
+                  {conjunctions.length > 0 && (
+                    <span title={tripleConjunction
+                      ? 'All three moons are riding together in the sky.'
+                      : conjunctions.map(({ a, b }) => `${a.s.label} and ${b.s.label} are close together in the sky.`).join('\n')}>
+                      {' · '}{tripleConjunction ? 'triple conjunction' : 'conjunction'}
+                    </span>
+                  )}
                 </span>
               </span>
             )}
@@ -1023,11 +1386,14 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
             <stop offset="0%"   stopColor={mixHex('#9fbcd6', '#1b2636', landNight)} />
             <stop offset="100%" stopColor={mixHex('#5f86a4', '#0e141e', landNight)} />
           </linearGradient>
-          {/* Fog — fades from clear at the top to a haze at the horizon (soft, not a bar).
-              Per-instance id (B222) — passed into MoonsPrecip as `fogFill`. */}
-          <linearGradient id={`${uid}-fog`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c9ced8" stopOpacity="0" />
-            <stop offset="100%" stopColor="#c9ced8" stopOpacity="0.34" />
+          {/* Overcast DECK — solid overhead, gone by the horizon. Rendering
+              overcast as a flat all-over wash instead made it read as haze
+              (Sekmeht), which is exactly the look we no longer draw at all.
+              Per-instance id (pitfall #95) — passed to MoonsClouds. */}
+          <linearGradient id={`${uid}-deck`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#9aa0ad" stopOpacity="0.55" />
+            <stop offset="55%"  stopColor="#9aa0ad" stopOpacity="0.34" />
+            <stop offset="100%" stopColor="#9aa0ad" stopOpacity="0" />
           </linearGradient>
           {/* F69 — per-up-moon SUN-LIT gradients: highlight offset toward the sun,
               lit stop tinted by the sun's colour/strength, fading to the moon's
@@ -1097,8 +1463,26 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
           const arcD = `M ${CX - ARC_RX} ${HORIZON_Y} A ${ARC_RX} ${ARC_RY} 0 0 1 ${CX + ARC_RX} ${HORIZON_Y}`
           return (
             <>
-              <path d={arcD} className="moons-arc-halo" fill="none" />
-              <path d={arcD} className="moons-arc-guide" fill="none" />
+              {/* Fade the arc into the horizon at BOTH ends. A track that simply
+                  stops dead where it meets the ground is most of what made this
+                  read as a drawn diagram line; letting it arrive and depart
+                  makes it a path the bodies travel. Horizontal gradient because
+                  the arc spans CX±ARC_RX. Per-instance id (pitfall #95). */}
+              <mask id={`${uid}-arcfade`} maskUnits="userSpaceOnUse"
+                    x={CX - ARC_RX} y={0} width={ARC_RX * 2} height={HORIZON_Y + 2}>
+                <linearGradient id={`${uid}-arcfadeg`} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%"   stopColor="#000" />
+                  <stop offset="13%"  stopColor="#fff" />
+                  <stop offset="87%"  stopColor="#fff" />
+                  <stop offset="100%" stopColor="#000" />
+                </linearGradient>
+                <rect x={CX - ARC_RX} y={0} width={ARC_RX * 2} height={HORIZON_Y + 2}
+                      fill={`url(#${uid}-arcfadeg)`} />
+              </mask>
+              <g mask={`url(#${uid}-arcfade)`}>
+                <path d={arcD} className="moons-arc-halo" fill="none" />
+                <path d={arcD} className="moons-arc-guide" fill="none" />
+              </g>
             </>
           )
         })()}
@@ -1137,9 +1521,9 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
         )}
         {/* up moon discs (F69 sun-lit) — behind the ground; painted back→front
             (Yavash → Katamba → Xibar) so overlaps respect MOON_DEPTH. */}
-        {[...upLit].sort((a, b) => MOON_DEPTH[a.b.k] - MOON_DEPTH[b.b.k]).map(({ b, lit }) => (
+        {[...upLit].sort((a, b) => MOON_DEPTH[a.b.k] - MOON_DEPTH[b.b.k]).map(({ b, lit, phase }) => (
           <g key={b.k}>
-            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Setting any moment' : `Sets at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}`}</title>
+            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Setting any moment' : `Sets at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}${phaseLines(b.k)}`}</title>
             {/* Soft primary-colour glow behind the disc (Sekmeht, ⚙ Moon glow).
                 Katamba emits an ominous MIASMATIC (dark-violet) haze — it darkens a
                 bright day sky AND reads as a shadowy purple on a dark one. It HOLDS
@@ -1147,26 +1531,171 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
                 well below the horizon (true night): clamp01((sunElev+0.35)/0.3) is 1
                 at sunset (sunElev≈0) and reaches 0 around sunElev −0.35. The light
                 moons glow at full strength always. */}
-            {showMoonGlow && <circle cx={b.x} cy={b.y} r={b.s.r * (b.s.glowR ?? 1.85)} fill={gref(`glow-${b.k}`)}
-              opacity={b.k === 'katamba' ? (sunElev == null ? 0.8 : clamp01((sunElev + 0.35) / 0.3)) : undefined} />}
-            {/* F69 — disc lit from the sun's direction (⚙ Sun-lit moons); off →
-                the flat evenly-lit fill. */}
-            <circle cx={b.x} cy={b.y} r={b.s.r} fill={lit && showSunlight ? gref(`moon-dyn-${b.k}`) : gref(`moon-${b.k}`)} stroke={b.s.rim} strokeWidth={1} />
-            {/* Sun-facing specular glow — the sun's colour + strength "matter". */}
-            {lit && showSunlight && sunLight.strength > 0.35 && (
-              <circle cx={b.x + lit.lx * b.s.r * 0.4} cy={b.y + lit.ly * b.s.r * 0.4} r={b.s.r * 0.5}
-                fill={sunLight.color} opacity={0.18 * sunLight.strength} />
-            )}
+            {showMoonGlow && (() => {
+              // Glow scales with the LIT FRACTION (Sekmeht): a full moon floods
+              // the sky, a thin crescent barely marks it. Superlinear on purpose
+              // — real moonlight behaves that way (a full moon is many times a
+              // half moon, not twice), so a linear ramp reads flat and washed.
+              //
+              // KATAMBA IS EXEMPT. Its "glow" is not moonlight at all: it is the
+              // miasmatic haze that DARKENS the sky, already curved against sun
+              // elevation by a documented decision (it holds through dusk and
+              // fades into true night). Scaling a shadow by how much sunlight
+              // hits it would be backwards, and it would undo that curve. This
+              // is the same reason it weighs zero in MOON_LUMENS.
+              const isHaze = b.k === 'katamba'
+              if (isHaze) {
+                return <circle cx={b.x} cy={b.y} r={b.s.r * (b.s.glowR ?? 1.85)} fill={gref(`glow-${b.k}`)}
+                  opacity={sunElev == null ? 0.8 : clamp01((sunElev + 0.35) / 0.3)} />
+              }
+              // Phase-off (⚙) keeps the old uniform look — one toggle, one idea.
+              const illum = showPhase && phase ? phase.illum : 1
+              const baseR = b.s.r * (b.s.glowR ?? 1.85)
+              return (
+                <>
+                  {/* Wide outer bloom — only near full, and this is what makes a
+                      full moon feel like it is lighting the sky rather than just
+                      being a brighter dot. Fades in over the last third. */}
+                  {illum > 0.62 && (
+                    <circle cx={b.x} cy={b.y} r={baseR * (1.5 + 0.9 * illum)} fill={gref(`glow-${b.k}`)}
+                      opacity={0.42 * ((illum - 0.62) / 0.38)} />
+                  )}
+                  <circle cx={b.x} cy={b.y} r={baseR * (0.62 + 0.72 * illum)} fill={gref(`glow-${b.k}`)}
+                    opacity={clamp01(0.05 + 1.25 * Math.pow(illum, 1.5))} />
+                </>
+              )
+            })()}
+            {/* ── F64a: the moon is only its LIT PART ────────────────────────
+                Rewritten (Sekmeht): the first version drew a full disc and laid
+                a dark shadow over it, which renders as a painted ball. That is
+                not how a moon looks. From Earth the unlit limb is INVISIBLE —
+                against a bright day sky it vanishes completely, and at night it
+                is black on black. You never see a dark disc; you see a crescent
+                hanging in nothing.
+                So the disc is MASKED to the lit region and the unlit side is
+                simply not drawn. What remains of the sphere comes from two real
+                effects: EARTHSHINE (the ashen "old moon in the new moon's arms",
+                strongest at thin crescent and only visible at night) and the
+                moon's own halo, which is what hints at the full circle when
+                almost nothing is lit. */}
+            {(() => {
+              const phasing = showPhase && !!lit && !!phase
+              const illum = phasing ? phase!.illum : 1
+              const maskId = `${uid}-lit-${b.k}`
+              return (
+                <>
+                  {/* Mask = show ONLY the lit region. NOT rotated: as of
+                      v0.18.2 the terminator stays on the moon's own axis and
+                      the phase crosses it (see litAim). Per-instance id (#95). */}
+                  {phasing && illum < 0.995 && (
+                    <>
+                      {/* SOFT TERMINATOR (Sekmeht: "a sharp cutoff on the blue"
+                          reads wrong). The real day/night line on a sphere is
+                          gradual — sunlight grazes the surface there — so a hard
+                          mask edge looks like a cutout rather than a lit body.
+                          A small blur on the mask does it.
+                          The OUTER limb stays crisp because the masked element
+                          is itself a circle of radius r: the blur can only eat
+                          inward, which shows up as a faint limb darkening — also
+                          a real effect, so it flatters rather than hurts.
+                          Scaled to the moon's radius so Xibar (r 7) and Katamba
+                          (r 13) get the same softness in proportion, with a
+                          floor so the smallest moon still gets some. */}
+                      <filter id={`${uid}-soft-${b.k}`} x="-30%" y="-30%" width="160%" height="160%">
+                        <feGaussianBlur stdDeviation={Math.max(0.55, b.s.r * 0.16)} />
+                      </filter>
+                      <mask id={maskId} maskUnits="userSpaceOnUse"
+                            x={b.x - b.s.r - 3} y={b.y - b.s.r - 3} width={b.s.r * 2 + 6} height={b.s.r * 2 + 6}>
+                        {/* No rotation: the terminator sits on the moon's own
+                            axis and the phase crosses it. `litPath` draws the lit
+                            limb toward +x, so waning simply mirrors — identical to
+                            PhaseDot, which is why the pill and the sky agree. */}
+                        <g transform={`translate(${b.x} ${b.y})${phase!.waxing ? '' : ' scale(-1,1)'}`}>
+                          <path d={litPath(b.s.r, 1 - 2 * illum)} fill="#fff"
+                                filter={`url(#${uid}-soft-${b.k})`} />
+                        </g>
+                      </mask>
+                    </>
+                  )}
+                  {/* EARTHSHINE — the unlit sphere, barely there. Night only:
+                      in daylight the real dark limb is genuinely invisible, and
+                      a grey disc against a blue sky is the exact artefact this
+                      rewrite removes. Strongest near new, fading as the lit part
+                      takes over. Katamba gets none: it sheds no light, and its
+                      violet haze already carries its silhouette. */}
+                  {phasing && illum < 0.9 && b.k !== 'katamba' && sunElev != null && sunElev < -0.05 && (
+                    <circle cx={b.x} cy={b.y} r={b.s.r} fill={b.s.tones.shadow}
+                      opacity={0.30 * (1 - illum)} />
+                  )}
+                  {/* The faint full outline — "you can see the sphere because it
+                      glows". Keeps a nearly-new moon locatable instead of
+                      popping out of existence, and is dimmer by day, when the
+                      sky would wash it out anyway.
+                      Scaled by `atmo` as well: airless Xibar gets a dimmer hint
+                      than the two moons with atmospheres, since on a body with
+                      nothing to catch the light this must not read as a glowing
+                      shell — it is a locate-me affordance, nothing more. */}
+                  {phasing && illum < 0.9 && (
+                    <circle cx={b.x} cy={b.y} r={b.s.r} fill="none" stroke={b.s.rim} strokeWidth={0.75}
+                      opacity={(sunElev != null && sunElev > 0 ? 0.16 : 0.3) * (1 - illum) * (0.45 + 0.55 * b.s.atmo)} />
+                  )}
+                  {/* Everything that paints the moon proper, clipped to the lit
+                      region. F69's directional gradient and the specular still
+                      apply — they just no longer bleed onto a side that should
+                      not be visible at all. */}
+                  <g mask={phasing && illum < 0.995 ? `url(#${maskId})` : undefined}>
+                    {/* The outline IS the atmosphere — thick on Yavash, a faint
+                        veil on Katamba, and absent on airless Xibar, whose limb
+                        is simply where the disc ends. */}
+                    <circle cx={b.x} cy={b.y} r={b.s.r} fill={lit && showSunlight ? gref(`moon-dyn-${b.k}`) : gref(`moon-${b.k}`)}
+                      stroke={b.s.atmo > 0 ? b.s.rim : 'none'}
+                      strokeWidth={0.7 + 0.9 * b.s.atmo}
+                      strokeOpacity={0.45 + 0.55 * b.s.atmo} />
+                    {/* Brighter toward full — a full moon should read as a
+                        brighter OBJECT, not merely one wearing a bigger halo. A
+                        wash of the moon's OWN lit tone, so Yavash stays ruby and
+                        Xibar stays ice rather than bleaching toward each other. */}
+                    {showPhase && phase && b.k !== 'katamba' && phase.illum > 0.55 && (
+                      <circle cx={b.x} cy={b.y} r={b.s.r} fill={b.s.tones.lit}
+                        opacity={0.3 * ((phase.illum - 0.55) / 0.45)} />
+                    )}
+                    {lit && showSunlight && sunLight.strength > 0.35 && (
+                      <circle cx={b.x + lit.lx * b.s.r * 0.4} cy={b.y + lit.ly * b.s.r * 0.4} r={b.s.r * 0.5}
+                        fill={sunLight.color} opacity={0.18 * sunLight.strength} />
+                    )}
+                  </g>
+                </>
+              )
+            })()}
             {anim && b.progress <= NEAR && <TransitionRings x={b.x} y={b.y} r={b.s.r + 3} color={b.s.rim} kind="rise" />}
             {anim && b.progress >= 1 - NEAR && <TransitionRings x={b.x} y={b.y} r={b.s.r + 3} color={b.s.rim} kind="set" />}
           </g>
         ))}
+        {/* F65 — conjunction highlight: a soft halo spanning each close pair,
+            drawn UNDER nothing in particular but after the discs so it reads as
+            a shared glow rather than a line between two objects. Deliberately
+            quiet (UX standard #1) — a conjunction is a "look up" nudge, not an
+            alert, and it already announces itself in the pill. Gated on the
+            moon-glow layer since it is the same kind of ornament. */}
+        {showMoonGlow && conjunctions.map(({ a, b }) => {
+          const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
+          const span = Math.hypot(a.x - b.x, a.y - b.y) / 2 + Math.max(a.s.r, b.s.r) + 4
+          return (
+            <ellipse key={`cj-${a.k}-${b.k}`} cx={mx} cy={my}
+              rx={span} ry={Math.max(a.s.r, b.s.r) + 5}
+              transform={`rotate(${(Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI} ${mx} ${my})`}
+              fill="none" stroke="#dbe9f5" strokeWidth={1} opacity={0.22} />
+          )
+        })}
         {/* cresting DOWN moons — solid, full-size, only during the fixed sink/emerge
             window; hidden the rest of the time (the pill carries the rise time). */}
         {[...downBodies].sort((a, b) => MOON_DEPTH[a.k] - MOON_DEPTH[b.k]).map(b => b.crest && (
           <g key={b.k}>
-            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Rising any moment' : `Rises at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}`}</title>
-            <circle cx={b.crest.x} cy={b.crest.y} r={b.s.r} fill={gref(`moon-${b.k}`)} stroke={b.s.rim} strokeWidth={1} />
+            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Rising any moment' : `Rises at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}${phaseLines(b.k)}`}</title>
+            <circle cx={b.crest.x} cy={b.crest.y} r={b.s.r} fill={gref(`moon-${b.k}`)}
+              stroke={b.s.atmo > 0 ? b.s.rim : 'none'}
+              strokeWidth={0.7 + 0.9 * b.s.atmo}
+              strokeOpacity={0.45 + 0.55 * b.s.atmo} />
             {anim && <TransitionRings x={b.crest.x} y={b.crest.y} r={b.s.r + 4} color={b.s.rim} kind={b.crest.kind} />}
           </g>
         ))}
@@ -1201,18 +1730,10 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
               <stop offset="0%"   stopColor="#ffe0a0" stopOpacity="0.5" />
               <stop offset="100%" stopColor="#ffe0a0" stopOpacity="0" />
             </radialGradient>
+            {/* The warm light POOL at the crossing point stays here, under the
+                landscape: it is light lying ON the ground, so trees and water
+                should sit on top of it. Only the ray FAN moved (see below). */}
             <rect x={0} y={HORIZON_Y} width={W} height={H - HORIZON_Y} fill={gref('gpool')} />
-            {RAY_FRACS.map((frac, i) => {
-              const tx = frac * W
-              const bw = 7 + (i % 3) * 4
-              return (
-                <polygon key={i}
-                  className={anim && groundLight.rising ? 'moons-ray moons-ray--anim' : 'moons-ray'}
-                  points={`${groundLight.x},${HORIZON_Y} ${tx - bw},${H} ${tx + bw},${H}`}
-                  fill={gref(groundLight.rising ? 'ray-light' : 'ray-shadow')}
-                  style={anim && groundLight.rising ? { animationDelay: `${-(i * 1.3)}s` } : undefined} />
-              )
-            })}
           </g>
         )}
 
@@ -1249,6 +1770,29 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
         {showLandscape && (
           <MoonsLandscape W={W} horizonY={HORIZON_Y} groundBot={H} night={landNight} season={landSeason}
             sun={landSun} reflect={lakeReflect} gref={gref} />
+        )}
+        {/* Crepuscular ray FAN — drawn AFTER the landscape so the beams sweep
+            ACROSS the lake and river rather than being buried under them (Binu).
+            That is also the truer read: these are beams scattering in the AIR
+            between the viewer and the scene, so they belong in front of the
+            water and the trees, not behind. Only the fan moved — the ground
+            light-pool stays under the landscape, because that is light lying ON
+            the ground. Mountains still stay backlit silhouettes: the ridges are
+            at the horizon, where the fan converges to a point. */}
+        {groundLight && (
+          <g className="moons-ground-fx" opacity={groundLight.low} aria-hidden="true">
+            {RAY_FRACS.map((frac, i) => {
+              const tx = frac * W
+              const bw = 7 + (i % 3) * 4
+              return (
+                <polygon key={i}
+                  className={anim && groundLight.rising ? 'moons-ray moons-ray--anim' : 'moons-ray'}
+                  points={`${groundLight.x},${HORIZON_Y} ${tx - bw},${H} ${tx + bw},${H}`}
+                  fill={gref(groundLight.rising ? 'ray-light' : 'ray-shadow')}
+                  style={anim && groundLight.rising ? { animationDelay: `${-(i * 1.3)}s` } : undefined} />
+              )
+            })}
+          </g>
         )}
         {/* ── DAY/NIGHT FX — FOREGROUND (over the whole scene), but BEHIND the
             weather FX below (Sekmeht). ─────────────────────────────────────── */}
@@ -1296,9 +1840,10 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
 
         {/* ── WEATHER FX — FRONTMOST (over the day/night FX + the whole scene). ── */}
         {/* Clouds drift across the upper sky, over the bodies + shooting stars. */}
-        {weatherFxOn && wx.clouds && <MoonsClouds W={W} heavy={wx.heavy} wind={wx.wind} />}
-        {/* Precipitation + fog, fading at the horizon (⚙ "Weather effects"). */}
-        {weatherFxOn && (wx.snow || wx.rain || wx.fog || wx.storm) && <MoonsPrecip W={W} wx={wx} horizonY={HORIZON_Y} fogFill={gref('fog')} />}
+        {weatherFxOn && wx.clouds && <MoonsClouds W={W} heavy={wx.heavy} wind={wx.wind} cover={wx.cover} deckFill={gref('deck')} />}
+        {/* Precipitation, fading at the horizon (⚙ "Weather effects"). Fog is
+            deliberately absent — see MoonsPrecip. */}
+        {weatherFxOn && (wx.snow || wx.rain || wx.storm) && <MoonsPrecip W={W} wx={wx} horizonY={HORIZON_Y} />}
 
         {/* Time-of-day word on the sky — CENTERED just above the horizon (clear of
             the moons/sun that rise and set at the left/right ends), from the sun's
@@ -1353,16 +1898,53 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, onSyncSky
           footer. Sun + moons with their next rise/set. */}
       {showPill && pillBodies.length > 0 && (
         <div className="moons-pill" role="group" aria-label="Sun and moons — next rise/set times">
-          {pillBodies.map(b => (
-            <div key={b.key} className="moons-pill-cell"
-              title={`${b.label} — ${b.up ? 'sets' : 'rises'} in ${b.assumed ? '≈' : ''}${fmtDur(b.min)}`}>
-              <span className="moons-pill-name">
-                <span className="moons-pill-dot" style={{ background: PILL_DOT[b.key], boxShadow: `0 0 5px ${PILL_DOT[b.key]}` }} />
-                {b.label}
-              </span>
-              <span className="moons-pill-time">{b.up ? 'sets' : 'rises'} {b.assumed ? '≈' : ''}{fmtDur(b.min)}</span>
-            </div>
-          ))}
+          {pillBodies.map(b => {
+            // F64a — the phase belongs in the TOOLTIP, not on the face of the
+            // pill: three names as long as "waning gibbous" would swamp a strip
+            // this size. It is marked "computed" because unlike the rise/set
+            // times (observed, via moonwatch) phase has no feed to correct
+            // against — the same provenance honesty the sun's data-age carries.
+            const ph = b.key === 'sun' ? undefined : phases[b.key as MoonKey]
+            // Same phase text as the scene disc — one formatter, so hovering the
+            // moon and hovering its pill cell can never say different things.
+            const tip = `${b.label} — ${b.up ? 'sets' : 'rises'} in ${b.assumed ? '≈' : ''}${fmtDur(b.min)}`
+              + (ph ? phaseLines(b.key as MoonKey) : '')
+            return (
+              // The visible row is symbolic (↑/↓), so the accessible name spells
+              // it out — a screen reader announcing "down 1h 12m" would be
+              // meaningless on its own.
+              <div key={b.key} className="moons-pill-cell" title={tip}
+                   aria-label={`${b.label} ${b.up ? 'sets' : 'rises'} in ${fmtDur(b.min)}`}>
+                <span className="moons-pill-name">
+                  {/* The dot IS the phase for a moon — same footprint the plain
+                      dot already had. The sun keeps its solid disc: it has no
+                      phase, and a phased sun would be nonsense. */}
+                  {ph
+                    ? <PhaseDot phase={ph} color={PILL_DOT[b.key]} size={9} />
+                    : <span className="moons-pill-dot" style={{ background: PILL_DOT[b.key], boxShadow: `0 0 5px ${PILL_DOT[b.key]}` }} />}
+                  {b.label}
+                </span>
+                {/* ↑ rises / ↓ sets (Sekmeht) — the direction the body is about
+                    to travel, which is the natural read and drops ~5 characters
+                    from every cell. A body that is UP next SETS (↓); one that is
+                    down next RISES (↑).
+                    A bare glyph is not self-explanatory (UX standard #8), so the
+                    words survive in the cell's tooltip AND its aria-label — the
+                    tooltip is on the always-visible affordance, which is where
+                    that rule wants it. */}
+                <span className="moons-pill-time">
+                  <span className="moons-pill-dir" aria-hidden>{b.up ? '↓' : '↑'}</span>
+                  {b.assumed ? '≈' : ''}{fmtDur(b.min)}
+                </span>
+              </div>
+            )
+          })}
+          {/* Moonlight (F64) and conjunctions (F65) deliberately do NOT live
+              here. They are SKY-WIDE facts, not per-body ones, so they belong in
+              the header strip beside "day/night" — and adding conditional cells
+              to a wrap-centred pill made the whole row re-centre and re-wrap the
+              moment one appeared (UX standard #2: nothing should pop in or out
+              as data arrives). The pill stays exactly Sun + the moons it knows. */}
         </div>
       )}
       </div>

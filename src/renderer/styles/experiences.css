@@ -38,12 +38,24 @@
   flex-direction: column;
 }
 
+/* GEOMETRY IS DELIBERATELY IDENTICAL to `.panel-font-controls--exp`
+   (panel-frame.css) — a vertical A−/A+/⚙ stack in the BOTTOM-right, lifted 28px
+   to clear a scene's bottom chrome (the Moons footer strip). The same
+   experience hosted in a floating window and in a stream tab should not put its
+   view controls in two different places (Sekmeht: "just make it match what's in
+   the streams"). Keep the two rules in step if either moves.
+
+   This also permanently resolves the top-right collision: the v0.18.1 header
+   overlay put the window's close/collapse buttons in that corner, and the scene's
+   own header strip runs along it too, so the cluster was overlapping the header
+   text. Nothing competes for the bottom-right corner. */
 .exp-inst-controls {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  bottom: 28px;
+  right: 18px;
   z-index: 6;
   display: flex;
+  flex-direction: column;
   gap: 2px;
   opacity: 0.15;
   transition: opacity 0.15s ease;
@@ -53,10 +65,13 @@
 .fl-window:hover .exp-inst-controls { opacity: 0.6; pointer-events: auto; }
 .exp-inst-controls:hover { opacity: 1; pointer-events: auto; }
 
+/* Opens BESIDE the stack (to its left, same bottom edge) rather than above it —
+   a tall popover anchored upward from a bottom-corner button runs off the top of
+   a short window. Matches `.exp-inst-options--tab`. */
 .exp-inst-options {
   position: absolute;
-  top: 26px;
-  right: 4px;
+  bottom: 28px;
+  right: 44px;
   z-index: 7;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -102,6 +117,13 @@
   right: 44px;
   z-index: 8;
 }
+
+/* NOTE (v0.18.2): there used to be a pair of `.fl-window:not(--locked)` rules
+   here pushing this cluster DOWN past the floating header, because the v0.18.1
+   header overlay put the window's close/collapse buttons in the same top-right
+   corner. Moving the cluster to the bottom-right (above) removes the conflict
+   at the source, so those offsets are gone — don't re-add a top offset without
+   first moving the cluster back to the top. */
 
 /* Experience tabs lift the whole view-controls cluster (A−/A+ + ⚙) above the
    scene's bottom chrome — the Moons footer strip sat exactly under the stack's
@@ -829,20 +851,29 @@
    (everything else in the scene is fixed realistic sky / lore — Principle #4). */
 /* Halo pass UNDER the dashed guide — the opposite-lightness sky ink (like the
    scene-text halo) so the arc reads on a bright day and a dark night. */
+/* POLISH (Sekmeht: "the arc line looks very cartoonish"). Three things were
+   doing it: chunky 3-long dashes, SQUARE caps — so every dash was a little
+   rectangle — and a hard stop at each horizon. Now round caps with a very short
+   dash render each mark as a DOT, which reads as a surveyed track rather than a
+   drawn line, and the render fades both ends into the horizon (see the mask in
+   MoonsExperience) so the arc arrives instead of starting. Kept slightly
+   heavier than delicate so it still holds up on a bright day — the reason it
+   was thickened in the first place. */
 .moons-arc-halo {
   stroke: var(--moons-halo, transparent);
-  stroke-width: 3.4;
-  stroke-dasharray: 3 5;
-  opacity: 0.55;
+  stroke-width: 3;
+  stroke-dasharray: 0.5 5.5;
+  stroke-linecap: round;
+  opacity: 0.5;
 }
 .moons-arc-guide {
   /* Lean toward the contrast ink (currentColor) so it stays legible on any sky;
-     the accent still tints it. Heavier + more opaque than before (Sekmeht: arc
-     contrast). */
+     the accent still tints it. */
   stroke: color-mix(in srgb, var(--moons-guide, currentColor) 50%, currentColor);
-  stroke-width: 1.6;
-  stroke-dasharray: 3 5;
-  opacity: 0.6;
+  stroke-width: 1.5;
+  stroke-dasharray: 0.5 5.5;
+  stroke-linecap: round;
+  opacity: 0.62;
 }
 .moons-horizon {
   stroke: currentColor;
@@ -910,11 +941,16 @@
   animation: moons-shoot var(--dur, 9s) ease-in infinite;
   opacity: 0;
 }
+/* THE VISIBLE WINDOW IS A TINY SLICE OF THE CYCLE, and it has to be: the cycle
+   length is what makes a streak RARE (150–210s, see SHOOTS), while the streak
+   itself must still flash past in a second or two. At 0.8% of the cycle the
+   travel lands at ~1.2–1.7s; the remaining 99.2% is the dark wait. Change these
+   percentages and the durations together, or you get slow-motion meteors. */
 @keyframes moons-shoot {
-  0%   { transform: translate(var(--sx), var(--sy)); opacity: 0; }
-  3%   { opacity: 0.95; }
-  14%  { transform: translate(var(--ex), var(--ey)); opacity: 0; }
-  100% { transform: translate(var(--ex), var(--ey)); opacity: 0; }
+  0%    { transform: translate(var(--sx), var(--sy)); opacity: 0; }
+  0.2%  { opacity: 0.95; }
+  0.8%  { transform: translate(var(--ex), var(--ey)); opacity: 0; }
+  100%  { transform: translate(var(--ex), var(--ey)); opacity: 0; }
 }
 /* F68 — fireflies: a soft glowing drift-and-blink near the ground on summer
    dusk/nights. --drift is the per-firefly horizontal travel. */
@@ -936,6 +972,11 @@
    Snow/rain use `--fall` (= HORIZON_Y) so they vanish at the horizon; clouds use
    `--cw` (= viewBox width) to drift edge to edge. */
 .moons-clouds ellipse { fill: #9aa0ad; opacity: 0.28; }
+/* The overcast DECK — a continuous sheet behind the drifting bodies, faded in
+   by cover past ~0.6. Same grey as the clouds so the deck and the puffs read as
+   one sky rather than two effects; the drifting clouds ride on top and give it
+   texture. Not an `ellipse`, so the rule above doesn't apply to it. */
+.moons-overcast { fill: #9aa0ad; }
 .moons-cloud {
   animation: moons-cloud-drift linear infinite;
 }
@@ -1146,13 +1187,23 @@
     0 5px 18px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 color-mix(in srgb, #ffffff 32%, transparent);
 }
+/* COMPACT (Sekmeht). The ↑/↓ arrows replaced "rises"/"sets" in the markup,
+   freeing the horizontal padding that was carrying those extra characters —
+   10px → 7px a side is ~30px off a five-cell row, on top of what the words
+   themselves saved. */
 .moons-pill-cell {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  padding: 2px 10px;
+  padding: 2px 7px;
   white-space: nowrap;
+}
+/* The arrow is a QUIET marker, not a second number: dimmer than the countdown
+   it labels, and nudged off the digits so the two don't read as one token. */
+.moons-pill-dir {
+  opacity: 0.72;
+  margin-right: 2px;
 }
 .moons-pill-cell + .moons-pill-cell {
   border-left: 1px solid color-mix(in srgb, var(--border) 32%, transparent);

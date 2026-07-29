@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { minSizeFor, type FloatWindow } from '../freeLayout'
+import ContextMenu from './ContextMenu'
 
 // One draggable / resizable floating window (DESIGN.md §33.4). Hosts a
 // PanelFrame (or, from Phase 2, a chrome strip) passed as children. Drag
@@ -54,10 +55,14 @@ interface Props {
   getSnapTargets: (excludeId: string) => { x: number[]; y: number[] }
   guideRefs: { v: React.RefObject<HTMLDivElement>; h: React.RefObject<HTMLDivElement> }
   locked: boolean   // §33.8 — no drag/resize/nudge/handles when true
+  // Close the window's ACTIVE tab (and the window with it, if that was the
+  // last one). Supplied only by hosts whose windows hold tabs — see the
+  // right-click menu below for why "Close" means the stream, not the window.
+  onCloseActiveTab?: (id: string) => void
   children: React.ReactNode
 }
 
-export default function FloatingWindow({ win, container, focused, onFocus, onChange, onClose, getSnapTargets, guideRefs, locked, children }: Props) {
+export default function FloatingWindow({ win, container, focused, onFocus, onChange, onClose, getSnapTargets, guideRefs, locked, onCloseActiveTab, children }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(win.title ?? '')
@@ -228,6 +233,70 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
     setRenaming(false)
   }
 
+  // Right-click anywhere in the window → Close (Sekmeht). The ✕ is a quiet ~1em
+  // glyph that only appears on hover, sits beside the corner resize handle, and
+  // is absent entirely on a collapsed or LOCKED window — so a context menu is
+  // the reliable way to close one; the ✕ stays as the fast path.
+  //
+  // IT DELIBERATELY CIRCUMVENTS THE LOCK (Sekmeht). The first cut gated this on
+  // `!locked` by analogy with the header, reasoning that a frozen layout
+  // shouldn't offer to dismantle itself. That was backwards: locking hides the
+  // header AND the ✕, so right-click is the ONLY remaining way to close
+  // anything, and gating it removed the last affordance exactly where it was
+  // needed ("there's no right-click option" — on a locked character). Locking
+  // freezes ACCIDENTS — drag and resize — not a deliberate menu choice.
+  //
+  // "CLOSE" MEANS THE CONTENT, NOT THE CONTAINER (Sekmeht: "I'm not saying to
+  // close the window/panel, I'm saying to close a stream inside, or if it's an
+  // experience..."). So on a tabbed window it closes the ACTIVE STREAM, and the
+  // window only goes with it if that was the last tab. An Experience has no
+  // tabs and IS the content, so there Close closes it. Right-clicking an
+  // individual TAB keeps PanelFrame's own richer menu (Clear / Close tab),
+  // which already targets that specific stream.
+  //
+  // CHROME BARS AND THE GAME WINDOW ARE EXCLUDED ENTIRELY (Sekmeht) — see
+  // `noCloseMenu` below for which and why. No handler is attached at all rather
+  // than an empty menu, which also leaves the pre-existing bubbling to the game
+  // window's own menu exactly as it was.
+  //
+  // Bound on the ROOT so it covers every part of the window in every state,
+  // including a locked window that renders no chrome at all. Inner surfaces
+  // still win: a handler that already claimed the event (stream text, the maps,
+  // Debug, a tab strip) calls preventDefault, and the `defaultPrevented` check
+  // below yields to it rather than replacing its menu with ours.
+  // Windows the right-click Close menu is NOT offered on. Chrome bars are
+  // equipment rather than content — lose the command bar and you cannot type —
+  // and the GAME WINDOW is the game text itself, which is the most expensive
+  // thing on screen to lose. Both are recoverable only through Layout Manager →
+  // Add Window, a poor trade for a one-item menu you can hit by accident.
+  //
+  // Kept SEPARATE from `isChrome` on purpose: that flag also drives the
+  // .fl-window--chrome styling and the chrome minimum size, and the game window
+  // must keep ordinary panel sizing. Same exclusion, different reason — folding
+  // them together would silently restyle the game window.
+  const noCloseMenu = isChrome || win.kind === 'main'
+  const closesTab = !!onCloseActiveTab && (win.tabs?.length ?? 0) > 0
+  const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null)
+  const openCtx = (e: React.MouseEvent) => {
+    if (e.defaultPrevented) return
+    // NOT ON THE TAB STRIP (Sekmeht). The blank space to the right of the tabs
+    // belongs to the tab bar, and the tab bar already has its own vocabulary:
+    // right-clicking a TAB offers Clear / Close tab, aimed at that specific
+    // stream. Offering a differently-scoped "Close" a few pixels away, over
+    // empty space, is the kind of thing you click once and then distrust. The
+    // strip's own handlers preventDefault and never reach here; this is about
+    // the GAPS between and after them, which have no handler of their own.
+    // Returning WITHOUT preventDefault leaves that space behaving exactly as it
+    // did before any of this existed.
+    if ((e.target as HTMLElement | null)?.closest?.('.panel-frame-tabs')) return
+    e.preventDefault()
+    // Stop the game window's own menu (GameWindow binds one on an ancestor)
+    // from also firing and replacing this one.
+    e.stopPropagation()
+    onFocus(win.id)
+    setCtx({ x: e.clientX, y: e.clientY })
+  }
+
   return (
     <div
       ref={rootRef}
@@ -235,6 +304,7 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       className={`fl-window${focused ? ' fl-window--focused' : ''}${isChrome ? ' fl-window--chrome' : ''}${locked ? ' fl-window--locked' : ''}`}
       style={{ left: px.left, top: px.top, width: px.width, height: px.height, zIndex: win.z }}
       onMouseDown={() => onFocus(win.id)}
+      onContextMenu={noCloseMenu ? undefined : openCtx}
     >
       {/* LOCKED = display mode: no window chrome at all, so a tiled layout
           reads like docked panels (TheTargonian — the chrome cost ~12px at
@@ -289,7 +359,7 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       ) : (
         <div
           className="fl-grip"
-          title="Drag to move — double-click to show the name bar"
+          title="Drag to move — double-click to show the name bar · right-click to close"
           onMouseDown={beginDrag}
           onDoubleClick={() => onChange(win.id, { showTitle: true })}
         />
@@ -300,6 +370,18 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       {!locked && DIRS.map(d => (
         <div key={d} className={`fl-rz fl-rz-${d}`} onMouseDown={e => beginResize(d, e)} />
       ))}
+
+      {ctx && (
+        <ContextMenu
+          x={ctx.x}
+          y={ctx.y}
+          items={[{
+            label: 'Close',
+            onClick: () => (closesTab ? onCloseActiveTab!(win.id) : onClose(win.id)),
+          }]}
+          onClose={() => setCtx(null)}
+        />
+      )}
     </div>
   )
 }

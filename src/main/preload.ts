@@ -298,6 +298,9 @@ contextBridge.exposeInMainWorld('api', {
   writeCharacterProfile:(character: string, data: unknown):       Promise<void>           => ipcRenderer.invoke('profile:write-character', character, data),
   listCharacterProfiles:():                                        Promise<string[]>       => ipcRenderer.invoke('profile:list'),
   deleteCharacterProfile:(character: string):                      Promise<void>           => ipcRenderer.invoke('profile:delete-character', character),
+  archiveCharacterProfile:(character: string):                     Promise<boolean>        => ipcRenderer.invoke('profile:archive-character', character),
+  restoreCharacterProfile:(character: string):                     Promise<boolean>        => ipcRenderer.invoke('profile:restore-character', character),
+  listArchivedProfiles:():                                         Promise<string[]>       => ipcRenderer.invoke('profile:list-archived'),
 
   // ── Profile Transfer (platform-wide .lb.yaml export/import → Exports/ folder) ──
   profileTransferExport:           (filename: string, yamlText: string):  Promise<string>                                 => ipcRenderer.invoke('profile-transfer:export', filename, yamlText),

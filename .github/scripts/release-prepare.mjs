@@ -45,15 +45,35 @@ const GH_HEADERS = {
   'User-Agent': 'lichborne-release-ci',
 }
 
-async function listDrafts() {
+// Every release for this tag, draft or not. `listDrafts` deliberately filters
+// to drafts — which means a PUBLISHED release for the same tag is invisible to
+// it, and the forgot-to-bump case (re-running Release without touching
+// package.json) would sail past and mint a brand-new draft on a tag that is
+// already out in the world. Two releases, one tag, and the one-draft discipline
+// the pre-create step exists to enforce is quietly broken.
+async function listAllForTag() {
   const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=100`, { headers: GH_HEADERS })
   if (!res.ok) { console.error('Failed to list releases:', await res.text()); process.exit(1) }
   const releases = await res.json()
-  return releases.filter(r => r.tag_name === tag && r.draft)
+  return releases.filter(r => r.tag_name === tag)
+}
+
+// ONE fetch, both questions. The published check and the draft check used to
+// hit the same endpoint separately.
+const forTag = await listAllForTag()
+
+// Bump-the-version guard. Cheap, and it catches the single most likely release
+// mistake: hitting Run workflow again after publishing, without bumping.
+const published = forTag.filter(r => !r.draft)
+if (published.length > 0) {
+  console.error(`${tag} is ALREADY PUBLISHED — ${published[0].html_url}`)
+  console.error('Bump the version in package.json, replace release-notes.md with the new version\'s')
+  console.error('section, commit and push, then run this workflow again.')
+  process.exit(1)
 }
 
 console.log(`Ensuring draft release ${tag} exists...`)
-const drafts = await listDrafts()
+const drafts = forTag.filter(r => r.draft)
 if (drafts.length === 0) {
   const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
     method: 'POST',

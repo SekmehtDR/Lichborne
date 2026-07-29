@@ -1,68 +1,63 @@
-## v0.18.1 — Tighter windows, calmer coins 🪟🪙
+## v0.18.2 — The moons, properly 🌒 · Layout Manager · macOS catches up 🍎
 
-A fast follow-up to v0.18.0, built entirely out of your first week of reports. Thank you — every item below came from someone hitting it and telling us.
+The Moons experience got the full treatment this release, Windowed Panels picked up the interactions it was missing, and — thanks to our first Mac tester actually putting the beta through its paces — macOS got a serious pass.
 
-### Windowed Panels stop wasting space
+### Real moon phases
 
-If you use **Windowed Panels**, you've been losing more room than you realised. Every floating window reserved a strip at the top for its title bar, so even windows snapped perfectly edge-to-edge left a visible gap between their *contents*. TheTargonian counted six of those gaps in his layout — close to half a window of game text.
+The moons now show their **actual phase**, computed from DragonRealms' own orbital constants and timed against the **game server's clock**, so a PC whose clock has drifted can't skew the sky. Each moon is drawn as only its lit part — a crescent hanging in nothing, the way a real one looks — with a faint earthshine glow on the dark side at night, and brightness that swells toward full.
 
-Two changes fix it properly:
+Hover any moon for its phase now and next:
 
-- **The drag handle now sits *over* your content instead of taking a slice of it.** It reserves nothing, so what you arrange is exactly what you get. It stays quiet until you hover the window.
-- **Locking your layout hides it entirely** — and drops the window shadow and softens the border — so locked Windowed Panels finally read like docked panels.
+```
+Now:  waxing gibbous · 71% lit
+Next: full in ~1d 4h
+```
 
-*Heads-up:* vitals, status and command bars you saved before this update still carry the old title allowance, so they load a touch taller than they need to be. Resizing is now WYSIWYG, so dragging the bottom edge up once fixes it for good — or use the new **Fit bars to content** button in the Panel Manager to snap all of them at once. (It never moves windows you've placed — only their heights — so a neighbour below may end up with a small gap or overlap to drag closed.)
+The **MOONS line in the header** has a tooltip too, listing all three at once — handy when the orrery pill is hidden.
 
-### Fixed: the Genie map ignored your theme until it finished loading
+Phases no longer tilt to face the sun. It's the truer thing for a sphere, but on a stylised sky it looked like the moon had been knocked sideways, and the same phase appeared as different shapes at dusk and midnight. The lit side now sits where a calendar puts it: right while waxing, left while waning.
 
-On a light theme the map canvas sat **dark brown** while it loaded, and while it waited for game data — then snapped to the right colour the moment a zone appeared. The loading veil was a fixed dark colour that never followed the theme. It does now, along with several other map details that were stuck on dark-theme colours: the stop button, the legend's swatches, and the room-id badges.
+### Weather you can actually see
 
-*Still to do:* a handful of map surfaces (the error overlay, the room detail panel) are still on fixed dark colours and will look out of place on light themes. They're on the list.
+Weather prose is now read for **severity**, not just presence. "A few scattered clouds", "partly cloudy", "very cloudy" and "completely overcast" each draw a genuinely different sky — more cloud, and bigger cloud, as it thickens — with a solid overcast deck reserved for wording that really means a closed sky.
 
-### SimuCoins: setup in Settings, one click to collect
+**The fog effect is gone.** A translucent haze washed out the sky, the moons and the landscape all at once and read as a broken render rather than as weather. Fog still counts (it hides shooting stars and thickens the cloud), it just isn't painted.
 
-The coin popover was doing two jobs, and it fell over for anyone with more than a couple of accounts — JadedSoul's list made it taller than the screen, impossible to scroll, and clicking inside it shoved the *entire client* out of view until you clicked something else. That last part was nastier than it looked, and it's fixed at the root.
+**Shooting stars are rare again.** Six of them on short cycles worked out to one streak every 1.7 seconds — less "rare sight", more meteor shower. Now it's roughly one every thirty seconds.
 
-So the two jobs are now split:
+### Windowed Panels: the interactions that were missing
 
-- **Settings → SimuCoins** is where you set things up: which accounts are watched, Auto-claim, each account's current status, and the full explanation of exactly what gets sent — sitting right above the switch that does it.
-- **The coin** in the top bar is just the payoff. It lights up when coins are waiting, and one click **collects them from every watched account at once**. It's now the same size whether you have one account or twenty.
+- **Right-click → Close**, anywhere on a window. On a panel window it closes the stream you're looking at; on an Experience it closes the Experience. Also in the stream's own right-click menu, next to Clear.
+- **Drag a stream from one window to another** — the same gesture as reordering tabs, just released over a different window's tab strip.
+- **Reordering tabs works while the layout is locked.** The lock now has a clear line: it freezes *where windows are and how big they are*, never what's inside them. Closing and reordering streams stay available.
 
-Nothing about your privacy changed: still nothing sent until you enable an account, still your own saved password to Simutronics' own store over HTTPS, still no store data on disk, still checked once per launch and never in a background loop.
+Closing is deliberately not offered on the command, vitals and icon bars, or on the game window itself — those are hard to get back if you hit them by accident.
 
-### Lich Dashboard fixes
+### Layout Manager
 
-- **Fixed: you couldn't edit Lich scripts at all.** The **Edit** button on the Scripts tab has been permanently greyed out since v0.18.0, insisting "this file couldn't be read" about scripts that had loaded perfectly. Nobody reported it — it turned up in a bug sweep. Editing works again.
+The **Panels** button is now **Layout**, and the Panel Manager is the **Layout Manager**. Inside, the mode choice is a proper chooser: two cards showing what each mode is, which one you're using, and — plainly — that **Static Panels is legacy**. Switching converts your layout for you, and switching back leaves it as you left it. The Windowed options (Lock, Fit bars, Rebuild) now explain what they do instead of hiding it in a tooltip.
 
-- **It no longer loses your place after saving.** Search for a line, edit the file, save — and the view returns to the line you found instead of stranding you somewhere else.
-- **The Scripts editor's find box** said "Search YAML…" while you were editing Ruby. It doesn't any more.
-- Validation banners are slimmer — they were rendering taller than their own text.
+Nothing about your saved layout changed — this is a rename and a redesign, not a migration.
+
+### Accounts
+
+- **Remove an account** from the logon screen, with `✕ Remove` on the account header. It **archives rather than deletes**: your characters' settings and logs are kept, and adding the account back later restores them exactly as they were.
+- **"Show password"** when typing one in, so a typo doesn't turn into "the login doesn't work" an hour later.
+- **"+ Add account" starts blank.** It used to pre-fill your last-used account, which looked like adding a new one while actually re-submitting an existing one.
+- The Add Character window's buttons no longer come out different sizes with wrapped labels.
+- The launcher's logo and its button row swapped places, so the buttons sit with the characters they act on.
+
+### macOS
+
+Our first Mac tester found three real problems, all now fixed:
+
+- **The app can now be quit.** Closing the window, ⌘Q and File → Quit all left it running with no windows and Force Quit as the only exit.
+- **Connecting explains itself.** If a character's password isn't saved, Lichborne needs it before it can connect — it used to just show the "Add account" screen with no explanation, which looked like it had forgotten your character. It now says exactly what it needs and why.
+- **Lich Setup tells you when a path is wrong** as soon as you open it, instead of staying silent until you press Auto Detect. And if you try to connect with Lich before it's set up, the error now points you at Lich Setup rather than showing a raw `spawn ENOENT`.
+
+If you're on macOS or Linux and want Lich, you'll need Lich 5 and **Ruby 4** installed — then **⚙ Lich Setup → Auto Detect** will find them.
 
 ### Also
 
-- **Fixed: resizing a very small floating window snapped it bigger.** Dragging a window's *side* could jump its *height* — most visible on a compact vitals bar, which is smaller than the normal minimum size. Resizing now only constrains the edge you're actually dragging.
-
-### macOS: "damaged and can't be opened" 🍎
-
-Our first Mac tester couldn't open Lichborne at all — macOS said **"Lichborne is damaged and can't be opened. You should move it to the Trash."**
-
-**Nothing was damaged.** That's how Apple Silicon words "this app isn't notarized by Apple," and our own instructions were wrong: we told you to expect a friendly "unidentified developer" prompt with an **Open Anyway** button. That button doesn't appear for this one.
-
-Two things changed. The app is now **ad-hoc signed**, which Apple Silicon requires before it will run anything at all. And the instructions everywhere now lead with the step that actually works:
-
-```bash
-xattr -cr /Applications/Lichborne.app
-```
-
-Run that once after dragging Lichborne to Applications and it opens normally from then on. (If macOS offers **System Settings → Privacy & Security → Open Anyway** instead, that works too.)
-
-The real cure is Apple's $99/yr certificate, which a free project isn't buying yet — if Mac interest keeps up, we'll revisit it.
-
-### Credits
-
-**Zithri** joins the contributors list for that report — first Mac tester, first Mac bug, day one. The name pills in **Help → About Lichborne** also sit properly centred now.
-
-### Notes
-
-- **Still chasing one:** Sekmeht reported a search highlight sitting about half a line off after validating and saving a YAML. The surrounding code is hardened in this build — the editor's measurements now re-check themselves whenever anything about its layout changes — but we could not reproduce the offset itself, so it may not be gone. If you see it, please shout, and a screenshot with the validation banner visible would help a lot.
-- Windows, Linux and Mac behaviour is otherwise unchanged from v0.18.0.
+- "cloudless" no longer reads as cloudy.
+- The password-saving notice named Linux keyrings on every platform; it now names the right one for your OS.

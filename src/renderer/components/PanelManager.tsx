@@ -120,50 +120,83 @@ export default function PanelManager({
     <div className="pm-backdrop" {...backdropHandlers(() => onClose())}>
       <div className="pm-modal">
         <div className="pm-header">
-          <span className="pm-title">Panel Manager</span>
-          <button className="pm-reset" onClick={onResetLayout}>Reset Panels</button>
+          <span className="pm-title">Layout Manager</span>
+          {/* Resets the DOCKED zone layout, which is a no-op you can't see while
+              in Windowed mode -- so it only appears where it does something. The
+              windowed equivalent is "Rebuild from panels" below. */}
+          {layoutMode !== 'free' && (
+            <button className="pm-reset" onClick={onResetLayout}
+                    title="Restore the four docked panel slots and their streams to defaults">
+              Reset Panels
+            </button>
+          )}
           <button className="pm-close" onClick={onClose}>×</button>
         </div>
 
         <div className="pm-body">
+          {/* MODE CHOOSER (v0.18.2, Sekmeht). This used to be a single banner
+              describing whichever mode you were already in, with one "Switch
+              to..." button -- so the choice itself, and the fact that one option
+              is on its way out, were both invisible until you clicked. Two cards
+              side by side state it plainly: what each mode IS, which one you are
+              in, and that Static is LEGACY. Both render in the SAME shape
+              whichever is active (UX standard #2), so nothing jumps on switch. */}
           {onToggleLayoutMode && (
-            <div className="pm-freelayout-banner">
-              <div className="pm-freelayout-text">
-                <strong>{layoutMode === 'free' ? 'Windowed Panels' : 'Panel Mode'}</strong>
-                <span>
-                  {layoutMode === 'free'
-                    ? 'Your panels are floating windows — drag titles to move, edges to resize, snap to align.'
-                    : 'Static Panels (docked). Switch to Windowed Panels to float them as draggable, snappable windows.'}
-                </span>
+            <Section label="Layout mode">
+              <div className="pm-modes">
+                <ModeCard
+                  name="Windowed Panels"
+                  current={layoutMode === 'free'}
+                  badge={layoutMode === 'free' ? null : 'Recommended'}
+                  badgeKind="rec"
+                  desc="Each panel is a window you place yourself — drag it to move, drag an edge to resize, and it snaps to the other windows and to the screen edges. Lock it once it looks right."
+                  onSwitch={layoutMode === 'free' ? undefined : onToggleLayoutMode}
+                />
+                <ModeCard
+                  name="Static Panels"
+                  current={layoutMode !== 'free'}
+                  badge="Legacy"
+                  badgeKind="legacy"
+                  desc="Panels are docked into four fixed slots around the game text, and streams are moved between those slots from this window."
+                  note="Being retired — new work goes into Windowed Panels. Switching converts your current layout for you, and switching back leaves it as you left it."
+                  onSwitch={layoutMode !== 'free' ? undefined : onToggleLayoutMode}
+                />
               </div>
-              <div className="pm-freelayout-actions">
-                {layoutMode === 'free' && onToggleFreeLock && (
-                  <label className="pm-freelayout-lock" title="Prevent windows from being dragged or resized">
-                    <input type="checkbox" checked={!!freeLayoutLocked} onChange={onToggleFreeLock} />
-                    Lock windows
-                  </label>
-                )}
-                {layoutMode === 'free' && !freeLayoutLocked && onFitChromeWindows && (
-                  <button className="pm-freelayout-rebuild" onClick={onFitChromeWindows}
-                          title="Resize the vitals / status / command windows to exactly the height of the bar inside them — usually smaller, but it will also grow one you had shrunk so far the bar was cut off. Positions are not changed, so a neighbour below may end up with a gap or an overlap to drag closed.">
-                    Fit bars to content
-                  </button>
-                )}
-                {layoutMode === 'free' && onRebuildFromPanels && (
-                  <button className="pm-freelayout-rebuild" onClick={onRebuildFromPanels}
-                          title="Re-snapshot your current panels layout into windows">
-                    Rebuild from panels
-                  </button>
-                )}
-                <button className="pm-freelayout-toggle" onClick={onToggleLayoutMode}>
-                  {layoutMode === 'free' ? 'Switch to Static Panels' : 'Switch to Windowed Panels'}
-                </button>
-              </div>
-            </div>
+            </Section>
           )}
-          {/* Add-window controls (not floating on the overlay) — a section in
-              the Panel Manager's own row layout. Hidden while locked. */}
-          {layoutMode === 'free' && !freeLayoutLocked && onAddFreeWindow && freeAddItems && freeAddItems.length > 0 && (
+
+          {layoutMode === 'free' && (
+            <Section label="Windows">
+              {onToggleFreeLock && (
+                <Row label="Lock windows"
+                     desc="Freezes where windows sit and how big they are, so you cannot nudge one by accident. What is inside them stays yours to change — you can still reorder, close and add streams while locked.">
+                  <label className="pm-inline-check">
+                    <input type="checkbox" checked={!!freeLayoutLocked} onChange={onToggleFreeLock} />
+                    {freeLayoutLocked ? 'Locked' : 'Unlocked'}
+                  </label>
+                </Row>
+              )}
+              {!freeLayoutLocked && onFitChromeWindows && (
+                <Row label="Fit bars to content"
+                     desc="Resizes the vitals / status / command windows to exactly the height of the bar inside. Usually shrinks them, but it will also grow one you had shrunk so far the bar was cut off. Positions do not move, so a neighbour below may be left with a gap or an overlap to drag closed.">
+                  <button onClick={onFitChromeWindows}>Fit</button>
+                </Row>
+              )}
+              {onRebuildFromPanels && (
+                <Row label="Rebuild from panels"
+                     desc="Discards the current window arrangement and lays fresh windows out from your docked-panels layout. Use it to start over.">
+                  <button onClick={onRebuildFromPanels}>Rebuild</button>
+                </Row>
+              )}
+            </Section>
+          )}
+
+          {/* Add-window controls (not floating on the overlay) -- a section in
+              the Layout Manager's own row layout. Available while LOCKED too: a
+              locked window can still have its streams closed (right-click ->
+              Close), so hiding the only way to add one back would let you
+              destroy but never rebuild. */}
+          {layoutMode === 'free' && onAddFreeWindow && freeAddItems && freeAddItems.length > 0 && (
             <Section label="Add Window">
               {freeAddItems.map(it => (
                 <Row key={it.kind} label={it.label}>
@@ -171,14 +204,6 @@ export default function PanelManager({
                 </Row>
               ))}
             </Section>
-          )}
-          {/* In Free Layout the zone manager doesn't apply (windows aren't
-              bound to zones), so show a short note instead and hide it. */}
-          {layoutMode === 'free' && (
-            <div className="pm-freelayout-note">
-              Windows are managed on screen — drag titles to move, edges to resize, snap to align.
-              Use <strong>Add window</strong> above to add a panel or re-add a bar.
-            </div>
           )}
           {/* The zone manager below (Panel Locations / per-zone Streams /
               Available Streams) is PANELS-mode only — in Free Layout it's
@@ -294,11 +319,50 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+// `desc` is optional so every existing caller is untouched, but a row whose
+// action is not self-evident should carry one -- UX standard #8: a control that
+// is named without being explained is half-built.
+function Row({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
   return (
-    <div className="pm-row">
-      <span className="pm-row-label">{label}</span>
+    <div className={`pm-row${desc ? ' pm-row--described' : ''}`}>
+      <span className="pm-row-label">
+        {label}
+        {desc && <span className="pm-row-desc">{desc}</span>}
+      </span>
       <div className="pm-row-actions">{children}</div>
+    </div>
+  )
+}
+
+// One layout mode, as a card. Module scope rather than defined inside the
+// render (UX standard #4), and the SAME markup whether or not it is the active
+// mode, so switching never reflows the pair.
+function ModeCard({ name, current, badge, badgeKind, desc, note, onSwitch }: {
+  name: string
+  current: boolean
+  badge: string | null
+  badgeKind: 'rec' | 'legacy'
+  desc: string
+  note?: string
+  onSwitch?: () => void
+}) {
+  return (
+    <div className={`pm-mode${current ? ' pm-mode--current' : ''}${badgeKind === 'legacy' ? ' pm-mode--legacy' : ''}`}>
+      <div className="pm-mode-head">
+        <span className="pm-mode-name">{name}</span>
+        {current && <span className="pm-mode-chip pm-mode-chip--current">In use</span>}
+        {badge && <span className={`pm-mode-chip pm-mode-chip--${badgeKind}`}>{badge}</span>}
+      </div>
+      <p className="pm-mode-desc">{desc}</p>
+      {note && <p className="pm-mode-note">{note}</p>}
+      {/* The footer slot is always present so the two cards stay the same
+          height; the active one states where you are instead of offering a
+          move (UX standard #2 -- same shape, different content). */}
+      <div className="pm-mode-foot">
+        {onSwitch
+          ? <button className="pm-mode-switch" onClick={onSwitch}>Use {name}</button>
+          : <span className="pm-mode-here">This is your current layout.</span>}
+      </div>
     </div>
   )
 }

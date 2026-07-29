@@ -150,6 +150,92 @@ export function listCharacterProfiles(): string[] {
 // Launcher's right-click → Delete action. Silently no-ops if the file is
 // already gone. The saved password (keyed by account, not character) is
 // intentionally left alone — multiple characters may share an account.
+// ── Archive (v0.18.2) ───────────────────────────────────────────────────────
+// Removing an ACCOUNT from the launcher must not destroy the characters on it
+// (Sekmeht: "the characters' profiles and logs should remain, just in case they
+// are added back at another time"). So their YAMLs are MOVED here rather than
+// deleted, and re-adding the account puts them back with their themes, layout,
+// automations and contacts intact.
+//
+// It lives INSIDE profiles/ deliberately: both directory readers filter on
+// `.endsWith('.yaml')` (listCharacterProfiles, and backupAllProfiles through
+// it), so a subdirectory is invisible to them and the archive cannot leak back
+// into the launcher's character list. If you ever change that filter to
+// something looser, exclude this folder explicitly.
+//
+// Logs are NOT touched by any of this — they live under {userData}/Logs and
+// nothing here reaches them, so a returning character keeps its history with a
+// gap for the time it was away.
+export function getArchiveDir(): string {
+  return path.join(getProfilesDir(), 'Archive')
+}
+
+function ensureArchiveDir(): string {
+  const dir = getArchiveDir()
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/** Character names with an archived profile waiting to be restored. */
+export function listArchivedProfiles(): string[] {
+  try {
+    const dir = getArchiveDir()
+    if (!fs.existsSync(dir)) return []
+    return fs.readdirSync(dir)
+      .filter(f => f.endsWith('.yaml'))
+      .map(f => f.replace(/\.yaml$/, ''))
+  } catch { return [] }
+}
+
+// Move one profile (and its backups, so the live folder is left clean) into the
+// archive. Returns false only if there was nothing to move.
+//
+// `renameSync` with a copy+unlink fallback: a rename is atomic within a volume,
+// but userData can sit on a different filesystem from a redirected profiles
+// folder, where rename throws EXDEV.
+function moveProfile(character: string, fromDir: string, toDir: string): boolean {
+  const src = path.join(fromDir, `${character}.yaml`)
+  if (!fs.existsSync(src)) return false
+  const dest = path.join(toDir, `${character}.yaml`)
+  const move = (a: string, b: string) => {
+    try {
+      fs.renameSync(a, b)
+    } catch {
+      fs.copyFileSync(a, b)
+      fs.unlinkSync(a)
+    }
+  }
+  try {
+    move(src, dest)
+  } catch (err) {
+    console.error('[profiles] archive move failed for', src, err)
+    return false
+  }
+  // Backups follow the profile so the source folder does not accumulate
+  // orphaned .bak files for a character that is no longer there.
+  for (const backup of backupFilesFor(src)) {
+    try { move(backup, path.join(toDir, path.basename(backup))) } catch { /* best effort */ }
+  }
+  return true
+}
+
+/** Move a character's profile OUT of the launcher's view, keeping the data. */
+export function archiveCharacterProfile(character: string): boolean {
+  const to = ensureArchiveDir()
+  return moveProfile(character, getProfilesDir(), to)
+}
+
+/** Put an archived profile back. No-ops (false) if nothing is archived. */
+export function restoreCharacterProfile(character: string): boolean {
+  const from = getArchiveDir()
+  if (!fs.existsSync(from)) return false
+  // Never clobber a live profile with an archived one — if a character of the
+  // same name was created while this was archived, the LIVE file wins and the
+  // archived copy stays put rather than silently replacing real settings.
+  if (fs.existsSync(path.join(getProfilesDir(), `${character}.yaml`))) return false
+  return moveProfile(character, from, ensureProfilesDir())
+}
+
 export function deleteCharacterProfile(character: string): void {
   const dir = getProfilesDir()
   const target = path.join(dir, `${character}.yaml`)

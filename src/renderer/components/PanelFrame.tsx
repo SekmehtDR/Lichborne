@@ -155,6 +155,13 @@ interface Props {
   // (no lock concept there — the Panel Manager's arrow buttons remain as the
   // click alternative).
   reorderTabs?: boolean
+  // Cross-frame tab drag (v0.18.2). `frameId` identifies THIS strip in the drag
+  // payload; `onAdoptTab` receives a tab dragged in from a DIFFERENT frame and
+  // is responsible for both halves of the move (removing it from the source and
+  // inserting it here) — only the owner of the window list can do that
+  // atomically. Omit either and the strip stays reorder-only.
+  frameId?: string
+  onAdoptTab?: (from: { frameId: string; tabId: string }, index: number) => void
   // v0.15.1 (§34 dual-hosting): Experiences addable as tabs from the + menu
   // ([e]-badged section below a separator). `experienceDefs` is the registry
   // list (id + label); `renderExperienceTab` renders one by id on the shared
@@ -183,6 +190,8 @@ export default function PanelFrame({
   onLichPause, onLichResume, onLichKill, onLichRefresh,
   getPanelFontSize, onAdjustPanelFontSize,
   reorderTabs = false,
+  frameId,
+  onAdoptTab,
   experienceDefs = [], renderExperienceTab,
   getExperienceHidden, onSetExperienceOption,
 }: Props) {
@@ -304,12 +313,65 @@ export default function PanelFrame({
     onTabsChange(next)
   }
 
+  // A STABLE-IDENTITY wrapper around closeTab, for the memoized StreamPanel
+  // (pitfall #82c). `closeTab` is a plain function re-created on every render,
+  // and this panel re-renders on every game line — passing it straight through
+  // would give StreamPanel a fresh prop each time and silently defeat its memo
+  // across every open stream. The latest-closure ref (pitfall #31) keeps the
+  // identity fixed forever while still calling the current closeTab.
+  const closeTabRef = useRef(closeTab)
+  useEffect(() => { closeTabRef.current = closeTab })
+  const closeStreamRef = useRef((id: string) => closeTabRef.current(id))
+
+  // A tab drag carries its origin so a drop can tell a REORDER from a MOVE.
+  // A custom MIME type is what makes the strip able to say "I accept this"
+  // during dragover: the browser hides getData() until drop (so the payload
+  // itself is unreadable then), but `types` is always visible — so the type's
+  // PRESENCE is the only signal available at hover time.
+  const TAB_MIME = 'application/x-lichborne-tab'
+  function readTabDrag(e: React.DragEvent): { frameId: string; tabId: string } | null {
+    try {
+      const raw = e.dataTransfer.getData(TAB_MIME)
+      const v = raw ? JSON.parse(raw) : null
+      return v && typeof v.frameId === 'string' && typeof v.tabId === 'string' ? v : null
+    } catch { return null }
+  }
+  // Foreign = a tab drag with no LOCAL drag in progress, i.e. it started in
+  // another frame. `dragTabId` is per-frame state, so this is exact.
+  const isForeignTabDrag = (e: React.DragEvent) =>
+    !dragTabId && !!onAdoptTab && !!frameId && e.dataTransfer.types.includes(TAB_MIME)
+
+  // Where a foreign tab would land if dropped over `overTabId` — the same
+  // midpoint rule the local reorder uses, minus the vacating-slot adjustment
+  // (the tab isn't in this list yet, so nothing shifts).
+  function dropIndexOver(e: React.DragEvent, overTabId: string): number {
+    const to = tabs.findIndex(t => t.id === overTabId)
+    if (to < 0) return tabs.length
+    const rect = e.currentTarget.getBoundingClientRect()
+    return e.clientX < rect.left + rect.width / 2 ? to : to + 1
+  }
+
+  // Returns true when it consumed the drop as a cross-frame MOVE.
+  function handleForeignDrop(e: React.DragEvent, index: number): boolean {
+    const from = readTabDrag(e)
+    if (!from || !onAdoptTab || !frameId || from.frameId === frameId) return false
+    onAdoptTab(from, index)
+    return true
+  }
+
   // F46: live reorder while dragging over a sibling tab. Standard sortable
   // midpoint rule: inserting BEFORE the hovered tab when the pointer is in
   // its left half, AFTER in its right half; the `from < target` adjustment
   // accounts for the dragged tab vacating its slot, and the `target ===
   // from` bail keeps the strip stable (no flip-flop jitter at the boundary).
   function handleTabDragOver(e: React.DragEvent, overTabId: string) {
+    if (isForeignTabDrag(e)) {
+      // Accept, but do NOT live-reorder: the dragged tab isn't in this list, so
+      // there is nothing here to move around until the drop actually lands.
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      return
+    }
     if (!dragTabId) return
     // preventDefault even over the dragged tab itself (and the strip's empty
     // space — see the list-level handler) so the cursor reads "move"
@@ -362,7 +424,7 @@ export default function PanelFrame({
           onLichPause ?? NOOP, onLichResume ?? NOOP,
           onLichKill ?? NOOP, onLichRefresh ?? NOOP,
           mapAnimations, compactExp,
-          renderExperienceTab, activeFontSize,
+          renderExperienceTab, activeFontSize, closeStreamRef.current,
         )}
         {activeTab && (() => {
           // F55 follow-up: an active EXPERIENCE tab with registry options gets
@@ -430,11 +492,17 @@ export default function PanelFrame({
           className="panel-tab-list"
           ref={tabListRef}
           onDragOver={reorderTabs ? (e => {
-            if (!dragTabId) return
+            if (!dragTabId && !isForeignTabDrag(e)) return
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
           }) : undefined}
-          onDrop={reorderTabs ? (e => { e.preventDefault(); setDragTabId(null) }) : undefined}
+          // Dropped on the strip's empty space → append. (A drop ON a tab
+          // stops propagation, so this only ever sees the gap past the end.)
+          onDrop={reorderTabs ? (e => {
+            e.preventDefault()
+            handleForeignDrop(e, tabs.length)
+            setDragTabId(null)
+          }) : undefined}
         >
           {tabs.map(tab => {
             const isActive = activeId === tab.id
@@ -451,9 +519,16 @@ export default function PanelFrame({
                   setDragTabId(tab.id)
                   e.dataTransfer.effectAllowed = 'move'
                   e.dataTransfer.setData('text/plain', tab.id)
+                  if (frameId) e.dataTransfer.setData(TAB_MIME, JSON.stringify({ frameId, tabId: tab.id }))
                 }) : undefined}
                 onDragOver={reorderTabs ? (e => handleTabDragOver(e, tab.id)) : undefined}
-                onDrop={reorderTabs ? (e => { e.preventDefault(); setDragTabId(null) }) : undefined}
+                onDrop={reorderTabs ? (e => {
+                  e.preventDefault()
+                  // Stop the strip's handler from also firing and appending.
+                  e.stopPropagation()
+                  handleForeignDrop(e, dropIndexOver(e, tab.id))
+                  setDragTabId(null)
+                }) : undefined}
                 onDragEnd={reorderTabs ? (() => setDragTabId(null)) : undefined}
               >
                 {/* Experience tabs: label resolves LIVE from the registry
@@ -629,6 +704,7 @@ function renderPanel(
   compactExp = false,
   renderExperienceTab?: (expId: string) => React.ReactNode,
   panelFontSize?: number,
+  onCloseStream?: (streamId: string) => void,
 ) {
   // B172: StreamPanel is memoized, so every prop must be referentially
   // stable — onClear/onToggleTimestamp now take the streamId as an argument
@@ -638,7 +714,7 @@ function renderPanel(
   const sp = (id: string, lines: TextLine[]) => (
     <StreamPanel streamId={id} lines={lines} onClear={onClearStream} onHighlight={onHighlight} onTrigger={onTrigger}
       onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety} showTimestamp={!!streamTimestamps[id]}
-      onToggleTimestamp={onToggleTimestamp} />
+      onToggleTimestamp={onToggleTimestamp} onCloseStream={onCloseStream} />
   )
   switch (tab.type) {
     case 'room':          return <RoomPanel room={roomState} onSendCommand={onSendCommand} />
@@ -660,7 +736,7 @@ function renderPanel(
       <StreamPanel streamId={tab.id} lines={streamLines[tab.id] ?? EMPTY_ARRAY} onClear={onClearStream}
         onHighlight={onHighlight} onTrigger={onTrigger} onSendCommand={onSendCommand} autoLinkUrls={autoLinkUrls} webLinkSafety={webLinkSafety}
         showTimestamp={!!streamTimestamps[tab.id]}
-        onToggleTimestamp={onToggleTimestamp}
+        onToggleTimestamp={onToggleTimestamp} onCloseStream={onCloseStream}
         emptyMessage={tab.id === AI_STREAM ? AI_STREAM_EMPTY : `Waiting for content on stream "${tab.label}"…`} />
     )
     case 'experience':    return (

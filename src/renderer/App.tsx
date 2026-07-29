@@ -200,6 +200,9 @@ function AppShell() {
   // the wizard is opened via "↺ Refresh" on a launcher account header (v0.8.0).
   const [showWizard, setShowWizard] = useState(false)
   const [wizardPrefillAccount, setWizardPrefillAccount] = useState<string | undefined>(undefined)
+  // Why the wizard was opened, when it was not the user asking for it. Shown at
+  // the top of step 1 so an involuntary trip there explains itself.
+  const [wizardReason, setWizardReason] = useState<string | undefined>(undefined)
   // Bumped each time the wizard adds tiles — Launcher useEffect-keyed on this
   // re-fetches the profiles list so newly-discovered characters appear.
   const [launcherRefreshKey, setLauncherRefreshKey] = useState(0)
@@ -799,12 +802,16 @@ function AppShell() {
     const adv = loadAdvanced()
     const password = await window.api.loadPassword(c.account)
     if (password === null) {
-      // No saved password → open the wizard so the user can re-enter it. The
-      // wizard reads account from localStorage on mount and auto-loads any
-      // existing password; with neither present the user types it fresh.
+      // No saved password → we cannot connect, so send the user to the one
+      // screen that can capture it. WITH A REASON: bare, this looks like the
+      // app forgetting the character and demanding it be added again — our
+      // first macOS tester read exactly that ("keeps getting me to try and add
+      // an acct") and reported it as a Lich failure, when Lich was never
+      // reached. The wizard is prefilled with the account below.
       localStorage.setItem('lichborne.account', c.account)
       setPendingConnect(null)
       setShowAdd(false)
+      setWizardReason(`Lichborne needs the password for account "${c.account}" to connect ${c.name}. ` + 'It is not saved on this machine — enter it below to continue.')
       setShowWizard(true)
       return
     }
@@ -1164,14 +1171,17 @@ function AppShell() {
           onCompleted={(addedCount) => {
             setShowWizard(false)
             setWizardPrefillAccount(undefined)
+            setWizardReason(undefined)
             if (addedCount > 0) setLauncherRefreshKey(k => k + 1)
           }}
           onCancel={() => {
             setShowWizard(false)
             setWizardPrefillAccount(undefined)
+            setWizardReason(undefined)
           }}
           onOpenLichSetup={() => setShowLichSetup(true)}
           prefillAccount={wizardPrefillAccount}
+          reason={wizardReason}
         />
       )}
 

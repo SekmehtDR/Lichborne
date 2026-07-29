@@ -89,6 +89,73 @@ export function computeSunPhase(sun: { riseAt?: number; setAt?: number }, now: n
 export const MOON_UP_MINUTES:   Record<string, number> = { katamba: 177, yavash: 177, xibar: 174 }
 export const MOON_DOWN_MINUTES: Record<string, number> = { katamba: 174, yavash: 175, xibar: 172 }
 
+// ── Lunar phase (F64a, DESIGN §34.9) ────────────────────────────────────────
+//
+// A PURE function of time. These are the DR CLIENT's own hard-coded constants
+// (its `DR_MOONS` sidereal periods and `DR_EPOCH_SKEW_SECONDS`), mined from
+// moonwatch.lic v4.5.0 `Moons.phase` and recorded in Knowledge.md §16. They are
+// explicitly NOT moonwatch's calibrated synodic constants, so they carry no
+// per-character offset and are identical on every instance.
+//
+// The consequence worth protecting: **phase needs neither Lich nor moonwatch.**
+// A direct-SGE player gets correctly-phased moons even though the rise/set
+// timers (which DO come from the moonwatch stream) are unavailable to them.
+// Don't make any of this depend on `moons` state arriving.
+const SIDEREAL_ROIS: Record<string, number> = { katamba: 14_847, xibar: 9_983, yavash: 16_171 }
+const PHASE_EPOCH_SKEW_ROIS = 80_895        // client DR_EPOCH_SKEW_SECONDS 4_853_700 / 60
+const PHASE_DAYS_PER_YEAR = 400
+
+/** The eight phases in cycle order; index 0 is the [0,45°) bucket. */
+export const MOON_PHASE_NAMES = [
+  'new', 'waxing crescent', 'first quarter', 'waxing gibbous',
+  'full', 'waning gibbous', 'third quarter', 'waning crescent',
+] as const
+
+export interface MoonPhase {
+  index: number        // 0..7 into MOON_PHASE_NAMES
+  name: string
+  angle: number        // 0..359 — phase angle; 0 = new, 180 = full
+  /** Lit fraction of the disc, 0..1. Drives BOTH the rendered shape and F64's
+   *  moonlight strength, so the two can never disagree. */
+  illum: number
+  /** true while waxing (angle < 180) — which limb is lit. */
+  waxing: boolean
+  nextName: string
+  secondsToNext: number
+}
+
+/**
+ * A moon's phase at an absolute moment.
+ *
+ * `serverUnixMs` MUST be server time, not `Date.now()` — this is absolute-time
+ * math, so a skewed client clock silently shifts the answer (pitfall #87/B192).
+ * Callers get it from `ServerClockEvent`'s offset.
+ *
+ * Integer division throughout, mirroring the Ruby verbatim — using floats here
+ * moves bucket boundaries by up to a few hours.
+ */
+export function moonPhase(moon: string, serverUnixMs: number): MoonPhase | null {
+  const sidereal = SIDEREAL_ROIS[moon]
+  if (!sidereal) return null
+  const min = Math.floor(serverUnixMs / 60_000)
+  const orbital = Math.floor(((min % sidereal) * 360) / sidereal)
+  const doy = Math.floor((min + PHASE_EPOCH_SKEW_ROIS) / 360) % PHASE_DAYS_PER_YEAR
+  const angle = (orbital + Math.floor((doy * 360) / PHASE_DAYS_PER_YEAR)) % 360
+  const index = Math.floor((angle * 8) / 360) % 8
+  // Average of the orbital rate and the day-of-year rate — good to a few minutes
+  // across a bucket that lasts ~a day, which is all a display in hours needs.
+  const rate = (360 / sidereal) + ((360 / PHASE_DAYS_PER_YEAR) / 360)
+  return {
+    index,
+    name: MOON_PHASE_NAMES[index],
+    angle,
+    illum: (1 - Math.cos((angle * Math.PI) / 180)) / 2,
+    waxing: angle < 180,
+    nextName: MOON_PHASE_NAMES[(index + 1) % 8],
+    secondsToNext: Math.round(((45 - (angle % 45)) / rate) * 60),
+  }
+}
+
 const MOON_BY_LETTER: Record<string, 'katamba' | 'yavash' | 'xibar'> = { k: 'katamba', y: 'yavash', x: 'xibar' }
 
 /** Parse a moonwatch stream line (`[k]+(90) [y]-(59) [x]-(88)`), or null.
@@ -145,9 +212,21 @@ export interface WeatherFx {
   rain?: boolean
   snow?: boolean
   storm?: boolean
+  // PARSED BUT NOT DRAWN as of v0.18.2 (Sekmeht: "avoid the fog effect in
+  // general") — a haze layer washed the whole scene out rather than reading as
+  // weather. The flag is still meaningful and still used: it suppresses shooting
+  // stars and floors the cloud cover, because an obscured sky is an obscured sky
+  // whether or not we render the murk. See MoonsPrecip.
   fog?: boolean
   wind?: boolean
   heavy?: boolean   // intensity → denser/faster effect
+  /** Cloud COVER, 0..1 — how much sky is hidden, from DR's own degree words
+   *  ("a few scattered" → "completely overcast"). Drives how many clouds the
+   *  scene draws, so severity reads at a glance. Conditions impose a floor: a
+   *  storm cannot be a clear sky no matter what adjective precedes it. */
+  cover?: number
+  /** Precipitation density, 0..1 — "light drizzle" vs "torrential downpour". */
+  precip?: number
 }
 
 export function detectWeather(text: string): WeatherFx {
@@ -161,7 +240,11 @@ export function detectWeather(text: string): WeatherFx {
   if (has(/\b(snow|flurr|blizzard|sleet|wintry)/))                          fx.snow = true
   if (has(/\b(rain|drizzl|shower|downpour|deluge|sprinkl|pelt)/))           fx.rain = true
   if (has(/\b(storm|thunder|lightning|tempest|squall)/))                    fx.storm = true
-  if (has(/\b(cloud|overcast|dreary|gloom|grey sk|gray sk|leaden|sullen|dark sk)/)) fx.clouds = true
+  // `cloud(?!less)` — "cloudLESS" is the opposite of cloudy, and matching it as
+  // clouds made a cloudless sky render overcast: `clear` is unset further down
+  // whenever clouds are set, so the word defeated itself. Found by the severity
+  // harness, not by eye.
+  if (has(/\b(cloud(?!less)|overcast|dreary|gloom|grey sk|gray sk|leaden|sullen|dark sk)/)) fx.clouds = true
   if (has(/\b(fog|mist|haz[ey]|murk|smog|shroud)/))                         fx.fog = true
   if (has(/\b(wind|breez|gust|blustery|blowing|gale)/))                     fx.wind = true
   if (has(/\b(clear|cloudless|sunny|bright|starry|starlit|fair skies|calm|serene|placid)/)) fx.clear = true
@@ -172,6 +255,41 @@ export function detectWeather(text: string): WeatherFx {
   // "Clear" is only truly clear when nothing's in the sky (a "starry sky marred
   // by clouds" mentions both — that's partly-cloudy, not clear).
   if (fx.clouds || fx.rain || fx.snow || fx.storm || fx.fog) fx.clear = false
+
+  // ── SEVERITY (Sekmeht) ────────────────────────────────────────────────────
+  // The flags above answer "are there clouds?"; `cover` answers "HOW MANY", so
+  // the scene can actually draw "a few scattered clouds" differently from
+  // "completely overcast" instead of rendering one fixed cloudbank for both.
+  //
+  // DR grades its sky prose with degree words, so they are the signal — read
+  // MOST SPECIFIC FIRST, because the phrases overlap ("a FEW scattered clouds"
+  // contains "scattered"; "very cloudy" and "cloudy" share a stem). The first
+  // match wins and the rest are skipped.
+  const DEGREES: [RegExp, number][] = [
+    [/\b(completely|entirely|totally|utterly|solid|unbroken|blanket)/, 1],
+    [/\b(overcast|leaden|sullen|dreary|gloom)/,                        0.92],
+    [/\b(very|heav|thick|dense|dark)/,                                 0.85],
+    [/\b(mostly|largely|widely)/,                                      0.72],
+    [/\b(partly|partially|somewhat|patch|broken|here and there)/,      0.45],
+    [/\b(scattered|occasional|drifting|wisp|thin|light|faint)/,        0.3],
+    [/\b(a few|few|couple|handful|sparse|slight)/,                     0.2],
+  ]
+  const degree = DEGREES.find(([re]) => has(re))?.[1]
+
+  // FLOORS: some conditions imply cover regardless of the adjectives, because
+  // you cannot have a storm through a clear sky (Sekmeht). A stated degree can
+  // still push cover HIGHER than its floor, never lower — "a few clouds" during
+  // a thunderstorm is not a description we should believe over "thunderstorm".
+  const floor =
+      fx.storm ? 0.95
+    : fx.snow || fx.rain ? 0.75
+    : fx.fog ? 0.5
+    : fx.clouds ? 0.35
+    : 0
+  fx.cover = fx.clear && !fx.clouds ? 0 : Math.max(floor, degree ?? 0)
+  // Precipitation density rides the same wording, so "light drizzle" and
+  // "torrential downpour" are not the same wall of rain.
+  if (fx.rain || fx.snow) fx.precip = Math.max(0.35, fx.heavy ? 0.95 : (degree ?? 0.6))
   return fx
 }
 
@@ -304,6 +422,10 @@ export interface ExperienceProps {
   // v0.15.0 (Weather & Moons): the parsed moonwatch state + observed sun
   // transitions. Absent until a moonWindow line has arrived this session.
   moons?: MoonsState
+  /** DR's clock minus ours, in ms (F64a). Add to `Date.now()` for server time.
+   *  Lunar phase is absolute-time math, so it must not run on the user's clock
+   *  (pitfall #87 / B192). 0 = no prompt seen yet, i.e. assume they agree. */
+  serverClockOffsetMs?: number
   // v0.16.x (G1 Combat HUD facet): live combat state for the Tableau's HUD
   // layers (readiness rings / threat markers / danger frame / stance+hands).
   combat?: ExperienceCombatState
@@ -416,6 +538,7 @@ export const EXPERIENCES: ExperienceDef[] = [
       { id: 'sky',        label: 'Living sky',         desc: 'The backdrop that follows the day: bright at noon, warm at sunrise and sunset, starry at night. Off = a neutral dusk sky.' },
       { id: 'moonglow',   label: 'Moon glow',          desc: 'A soft glow around each moon in its own lore colour — ruby Yavash, silver-blue Xibar, dusky Katamba.' },
       { id: 'sunlight',   label: 'Sun-lit moons',      desc: 'Each moon lit from the sun\'s direction, with a bright side fading to a shadowed one (a terminator). Off = evenly-lit discs.' },
+      { id: 'phase',      label: 'Moon phases',        desc: 'Each moon shows its true shape — crescent, quarter, gibbous or full — computed from Elanthia\'s own orbits, and brightens as it fills: a full moon floods the sky, a thin crescent barely marks it. Off = evenly-lit whole discs. Works without Lich or moonwatch.' },
       { id: 'pill',       label: 'At-a-glance panel',  desc: 'The frosted panel above the footer showing the Sun and three moons with the time to each one\'s next rise or set.' },
       { id: 'countdowns', label: 'Countdown labels',   desc: 'The "sets in 88m" / "rises in 152m" chips under each body. Off by default — the at-a-glance panel already shows these.', defaultHidden: true },
       { id: 'names',      label: 'Name labels',        desc: 'The Katamba / Yavash / Xibar / Sun name plates on each body. Off by default — the at-a-glance panel already names them.', defaultHidden: true },
@@ -424,7 +547,7 @@ export const EXPERIENCES: ExperienceDef[] = [
       { id: 'seasonal',   label: 'Seasonal touches',   desc: 'Dresses the landscape by season — snow, snow-capped trees and an iced-over lake in winter; blossoms in spring; lush greens and fireflies on summer nights; autumn colours and falling leaves. (Needs the season from a TIME check; epilepsy-safe / Effects-off disables the moving parts.)' },
       { id: 'effects',    label: 'Rise & set effects', desc: 'The gentle horizon rings while a body rises or sets, plus star twinkle and the occasional shooting star. (The epilepsy-safe accessibility setting also disables these.)' },
       { id: 'weather',    label: 'Weather',            desc: 'The last sky prose you observed (after WEATHER or any sky-glance), shown verbatim. Click ⟳ to check the weather now.' },
-      { id: 'weatherfx',  label: 'Weather effects',    desc: 'Live sky animation matching the detected weather — falling snow or rain, drifting clouds, fog. (The epilepsy-safe accessibility setting also disables these.)' },
+      { id: 'weatherfx',  label: 'Weather effects',    desc: 'Live sky animation matching the detected weather — falling snow or rain, drifting clouds, an overcast deck. (The epilepsy-safe accessibility setting also disables these.)' },
       { id: 'calendar',   label: 'Calendar',           desc: 'The Elanthian date, month, year, season and time of day (from the TIME command). Click ⟳ to refresh — it and the weather are checked silently.' },
     ],
     textEquivalent: 'The Moons stream panel (moonwatch\'s own window) and `perceive moons`; sunrise/sunset announce themselves in the main window; weather is the WEATHER command / any sky-glance.',

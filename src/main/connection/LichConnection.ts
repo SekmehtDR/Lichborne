@@ -97,6 +97,33 @@ export class LichConnection extends EventEmitter {
     lichPath = expandHome(lichPath)
     const rubywPath = this.resolveRubyw(rubyPath)
 
+    // PRE-FLIGHT: fail with a sentence the player can act on.
+    // Without this, an unconfigured install spawns '' or a missing path and the
+    // banner shows a raw `spawn ENOENT` — which reads as "Lichborne is broken"
+    // rather than "Lich isn't set up here". It bit our first macOS tester
+    // (Zithri, v0.18.2): DEFAULT_RUBY is deliberately EMPTY on macOS/Linux (see
+    // lichSettings — a plausible /usr/bin/ruby would pin users to a Ruby too old
+    // for Lich), so a fresh non-Windows install ALWAYS lands here until Lich
+    // Setup has run. Checked before the log file is opened so a doomed launch
+    // leaves nothing behind.
+    //
+    // Deliberately NOT a silent fallback to a direct connection: DIRECT bypasses
+    // Lich entirely, so quietly switching would strand a Lich player without
+    // scripts, maps or vars and never tell them why.
+    const missing =
+      !rubyPath                    ? 'No Ruby interpreter is configured'
+      : !fs.existsSync(rubyPath)   ? `Ruby was not found at ${rubyPath}`
+      : !lichPath                  ? 'No Lich path is configured'
+      : !fs.existsSync(lichPath)   ? `Lich was not found at ${lichPath}`
+      : null
+    if (missing) {
+      throw new Error(
+        `${missing}. Open Lich Setup (the launcher's ⚙ Lich Setup button, or Settings) ` +
+        'and set the Ruby and Lich paths — Auto Detect will find them if Lich and Ruby 4 are installed. ' +
+        'To play without Lich instead, switch this character to Direct on its tile.'
+      )
+    }
+
     // Open the per-session launch log (truncate per launch → bounded size,
     // holds only the latest session). Per-character filename so concurrent
     // sessions never interleave into one file. Best-effort: if we can't open

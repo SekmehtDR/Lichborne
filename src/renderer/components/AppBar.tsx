@@ -99,7 +99,7 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
             the `--overflow` items inside the ⋯ More menu below. Both sets are
             ALWAYS rendered; CSS decides which is visible (no width-measurement
             JS, same stance as the static More grouping). */}
-        <button className={`app-bar-collapsible btn-panel-manager${st?.panelManager ? ' btn-panel-manager--active' : ''}`} onClick={() => dispatchSessionAction('toggle-panels')}>Panels</button>
+        <button className={`app-bar-collapsible btn-panel-manager${st?.panelManager ? ' btn-panel-manager--active' : ''}`} onClick={() => dispatchSessionAction('toggle-panels')}>Layout</button>
         <button className={`app-bar-collapsible btn-map${st?.panelMap ? ' btn-map--active' : ''}`}                       onClick={() => dispatchSessionAction('toggle-maps')}>Maps</button>
         <button className={`app-bar-collapsible btn-experiences${st?.panelExperiences ? ' btn-experiences--active' : ''}`} onClick={() => dispatchSessionAction('toggle-experiences')}>Experiences</button>
         <button className={`app-bar-collapsible btn-automations${st?.panelAutomations ? ' btn-automations--active' : ''}`} onClick={() => dispatchSessionAction('toggle-automations')}>Automations</button>
@@ -117,7 +117,7 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
             <div className="app-bar-more-menu">
               {/* B178: the collapsed inline buttons, visible only when the
                   narrow tier hides them from the bar (CSS-gated). */}
-              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelManager ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-panels'); setMoreOpen(false) }}>Panels</button>
+              <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelManager ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-panels'); setMoreOpen(false) }}>Layout</button>
               <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelMap ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-maps'); setMoreOpen(false) }}>Maps</button>
               <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelExperiences ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-experiences'); setMoreOpen(false) }}>Experiences</button>
               <button className={`app-bar-more-item app-bar-more-item--overflow${st?.panelAutomations ? ' app-bar-more-item--active' : ''}`} onClick={() => { dispatchSessionAction('toggle-automations'); setMoreOpen(false) }}>Automations</button>

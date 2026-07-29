@@ -125,7 +125,13 @@
      stay equal-height at small fonts too. */
   min-height: 9px;
   line-height: 1;
-  padding: 0 0.4em 0 0.55em;
+  /* RIGHT PADDING IS FIXED px AND CLEARS THE CORNER RESIZE HANDLE (Sekmeht:
+     "the mouse wants to try and resize the window each time"). `.fl-rz-ne` is a
+     10×10 box pinned to the top-right corner; with an em-sized right padding
+     the ✕ sat inside it at small fonts, so the pointer armed a resize before it
+     ever reached the button. 14px pushes the button clear of that 10px box with
+     margin to spare — and it must stay px, because the handle is px. */
+  padding: 0 14px 0 0.55em;
   flex-shrink: 0;
   /* Soft "light handle" instead of a hard grey block (step-2 polish): a gentle
      top-lighter gradient blended toward the window body, so it reads as chrome,
@@ -186,9 +192,13 @@
   font-family: inherit;
   font-size: 1.15em;   /* the glyphs read small at the 0.5em bar font; bump them */
   line-height: 1;
-  /* No vertical padding — the slim title bar is ~1 line tall, so the glyphs sit
-     flush; horizontal padding keeps a click target. */
-  padding: 0 0.25em;
+  /* HIT AREA. The header is only ~9px tall, so the glyph alone was a painfully
+     small target — Sekmeht could not land the ✕ at all. Vertical padding grows
+     the clickable box to ~17px WITHOUT changing the header's height, because
+     the header is a fixed-height flex row and an overlay: the extra area simply
+     hangs over the content below instead of moving anything. Purely a hit
+     target — the glyph is unchanged. */
+  padding: 4px 0.3em;
   border-radius: 3px;
   cursor: pointer;
   /* QUIET BY DEFAULT (CLAUDE.md polish #1): the collapse/close controls are
@@ -197,11 +207,17 @@
      (opacity, not display) so the title width never jumps. */
   opacity: 0;
   transition: color 0.12s, background 0.12s, opacity 0.12s;
-  /* Top of the window's z-order (see .fl-rz): the corner resize handles now sit
-     at z 2 so they can be grabbed through the overlay header, and these buttons
-     must stay clickable above them. */
+  /* TOP of the window's z-order, and it has to be a big number rather than 3.
+     `.fl-body` is `position: relative` with `z-index: auto`, so it creates NO
+     stacking context — every z-index inside a window's CONTENT competes
+     directly with the chrome. An Experience's view-controls cluster sits at
+     z 6, which beat the old z 3 and painted over the close button, making it
+     unclickable however precisely you aimed (Sekmeht).
+     Window chrome must always win over hosted content, so this sits well above
+     anything content is likely to use. If you add a content layer above 12,
+     raise this instead of lowering that. */
   position: relative;
-  z-index: 3;
+  z-index: 12;
 }
 .fl-window:hover .fl-tb-btn,
 .fl-window--focused .fl-tb-btn { opacity: 0.6; }
@@ -369,28 +385,89 @@
 .fl-rz-se { bottom: 0; right: 0;   width: 10px; height: 10px; cursor: nwse-resize; }
 .fl-rz-sw { bottom: 0; left: 0;    width: 10px; height: 10px; cursor: nesw-resize; }
 
-/* ── Panel Manager "Free Layout (beta)" banner ─────────────────────────── */
-.pm-freelayout-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 12px;
-  /* Inset the border to line up with the 14px row content below it (the body
-     has no horizontal padding), so the banner no longer spans the full modal
-     width edge-to-edge. */
-  margin: 0 14px 12px;
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-base));
-  border: 1px solid var(--accent-dim);
-  border-radius: 6px;
+/* ── Layout Manager: the mode chooser ───────────────────────────── */
+/* Two equal cards. `1fr 1fr` (not auto) so the pair stays symmetric whichever
+   one is active and whichever carries the longer copy — an asymmetric pair
+   reads as one option being an afterthought, which is the opposite of what a
+   chooser is for. Collapses to a single column when the modal is narrow. */
+.pm-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px 14px 12px;
 }
-/* Fill the row so the description wraps into the space instead of leaving a
-   large empty gap between the text and the action buttons on a wide modal. */
-.pm-freelayout-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-.pm-freelayout-text strong { color: var(--accent); }
-.pm-freelayout-text span { color: var(--text-muted); font-size: 0.85rem; }
-.pm-freelayout-toggle {
-  flex-shrink: 0;
+@media (max-width: 720px) { .pm-modes { grid-template-columns: 1fr; } }
+
+/* Flex column + the always-present footer (see ModeCard) is what keeps the two
+   cards the same height with the switch buttons on one line. */
+.pm-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-base);
+}
+/* The ACTIVE card is the only accented surface here, so "where am I" is a
+   glance rather than a read. */
+.pm-mode--current {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-base));
+}
+/* Legacy is MUTED, never alarming — it still works, it is simply not where
+   the project is going (UX standard #5: hierarchy from muting). An inactive
+   legacy card recedes; once it is the active one the --current rule above wins
+   the background back, so you can always see what you are actually using. */
+.pm-mode--legacy:not(.pm-mode--current) { opacity: 0.72; }
+
+.pm-mode-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pm-mode-name { color: var(--text-primary); font-weight: 600; }
+
+/* Chips: fixed-hue tints mixed toward the surface, so they keep their meaning
+   and their contrast on every theme (Principle #4 / UX standard #6). */
+.pm-mode-chip {
+  font-size: 0.68rem;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.pm-mode-chip--current {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid var(--accent-dim);
+}
+.pm-mode-chip--rec {
+  color: color-mix(in srgb, #3fb950 70%, var(--text-primary));
+  background: color-mix(in srgb, #3fb950 14%, transparent);
+  border: 1px solid color-mix(in srgb, #3fb950 40%, transparent);
+}
+.pm-mode-chip--legacy {
+  color: color-mix(in srgb, #d29922 70%, var(--text-primary));
+  background: color-mix(in srgb, #d29922 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d29922 40%, transparent);
+}
+
+.pm-mode-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.pm-mode-note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  font-style: italic;
+}
+/* margin-top:auto pins the footer to the bottom of whichever card has the
+   shorter copy, so the two switch buttons line up. */
+.pm-mode-foot { margin-top: auto; padding-top: 4px; }
+.pm-mode-switch {
   background: var(--bg-btn);
   border: 1px solid var(--accent-dim);
   color: var(--accent);
@@ -400,21 +477,20 @@
   cursor: pointer;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-.pm-freelayout-toggle:hover { background: var(--bg-hover); border-color: var(--accent); }
-.pm-freelayout-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
-.pm-freelayout-rebuild {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
-}
-.pm-freelayout-rebuild:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent-dim); }
+.pm-mode-switch:hover { background: var(--bg-hover); border-color: var(--accent); }
+.pm-mode-here { color: var(--text-dim); font-size: 0.78rem; }
 
-.pm-freelayout-lock {
+/* Rows that carry an explanation stack label-over-description and top-align
+   their action, instead of the single-line centred layout. */
+.pm-row--described { align-items: flex-start; }
+.pm-row--described .pm-row-label { display: flex; flex-direction: column; gap: 3px; }
+.pm-row-desc {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  font-weight: normal;
+}
+.pm-inline-check {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -424,13 +500,8 @@
   user-select: none;
   white-space: nowrap;
 }
-.pm-freelayout-lock input { cursor: pointer; }
+.pm-inline-check input { cursor: pointer; }
 
-/* Free-Layout mode note (replaces the zone manager in the Panel Manager). */
-.pm-freelayout-note {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  line-height: 1.5;
-  padding: 6px 14px 2px;   /* align with the 14px row inset */
-}
-.pm-freelayout-note strong { color: var(--text-secondary); }
+/* (The "Free-Layout mode note" that used to live here is gone — the v0.18.2
+   Layout Manager says the same thing in the Windowed Panels mode card and the
+   Windows section, so a separate floating paragraph was repeating itself.) */

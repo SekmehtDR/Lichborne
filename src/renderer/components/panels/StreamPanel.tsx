@@ -26,9 +26,14 @@ interface Props {
   webLinkSafety?: boolean
   showTimestamp?: boolean
   onToggleTimestamp?: (streamId: string) => void
+  onCloseStream?: (streamId: string) => void
+  // Close this stream — the menu equivalent of the × on its tab (Sekmeht:
+  // "I can do this by clicking the x by log, so why not have the right-click
+  // option"). Takes the streamId for the same reason onClear does: a stable
+  // identity, no per-render closure (see the memo note above).
 }
 
-export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp, onToggleTimestamp }: Props) {
+export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClear, onHighlight, onTrigger, onSendCommand, autoLinkUrls = true, webLinkSafety = true, showTimestamp, onToggleTimestamp, onCloseStream }: Props) {
   const { contacts, templates, nameRegex, onContactClick } = useContacts()
   const { matchRules, lineRules } = useHighlights()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -135,7 +140,12 @@ export default memo(function StreamPanel({ streamId, lines, emptyMessage, onClea
         ]
         const tsGroup = onToggleTimestamp ? [{ label: showTimestamp ? 'Disable Timestamps' : 'Enable Timestamps', onClick: () => onToggleTimestamp(streamId) }] : []
         const clGroup = onClear ? [{ label: 'Clear', onClick: () => onClear(streamId) }] : []
-        const groups = [hlGroup, trGroup, tsGroup, clGroup].filter(g => g.length > 0)
+        // Own group, so it reads as the destructive one rather than sitting
+        // flush against Clear. The floating window's own right-click Close
+        // never reaches here — this menu preventDefaults first — so a stream
+        // that draws its own menu has to offer it itself.
+        const csGroup = onCloseStream ? [{ label: 'Close', onClick: () => onCloseStream(streamId) }] : []
+        const groups = [hlGroup, trGroup, tsGroup, clGroup, csGroup].filter(g => g.length > 0)
         const items = groups.flatMap((g, i) => i < groups.length - 1 ? [...g, sep] : g)
         return (
           <ContextMenu x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} items={items} />

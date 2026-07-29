@@ -82,7 +82,11 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
     suffixes: ['settings'], // panelFontSizes is stripped out (owned by Layout)
   },
   {
-    id: 'layout', label: 'Panel Layout', kind: 'config',
+    // LABEL follows the v0.18.2 "Layout Manager" rename; the `id` MUST NOT —
+    // it is the key this category is serialized under in every .lb.yaml bundle
+    // already on disk, so renaming it would make old exports silently skip this
+    // category on import. Labels are display, ids are data.
+    id: 'layout', label: 'Layout', kind: 'config',
     desc: 'Static-panel zones (which are added, streams/tabs, active tabs, widths & heights), per-panel font overrides, AND the Windowed Panels layout (window positions/sizes, mode, lock).',
     suffixes: [
       'mainTopAdded', 'topAdded', 'midAdded', 'bottomAdded',

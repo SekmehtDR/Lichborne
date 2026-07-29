@@ -108,6 +108,9 @@ declare global {
       writeCharacterProfile: (character: string, data: unknown) => Promise<void>
       listCharacterProfiles: () => Promise<string[]>
       deleteCharacterProfile: (character: string) => Promise<void>
+      archiveCharacterProfile: (character: string)         => Promise<boolean>
+      restoreCharacterProfile: (character: string)         => Promise<boolean>
+      listArchivedProfiles: ()                             => Promise<string[]>
       // Profile Transfer (platform-wide .lb.yaml export/import → Exports/ folder)
       profileTransferExport: (filename: string, yamlText: string) => Promise<string>
       profileTransferListExports: () => Promise<{ name: string; mtimeMs: number }[]>

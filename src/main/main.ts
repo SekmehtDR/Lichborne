@@ -13,7 +13,7 @@ import { SceneParser } from './parser/SceneParser'
 import { LichBridge } from './lichbridge'
 import { registerLichSqliteHandlers } from './lichbridge/sqliteReader'
 import { registerSessionLogHandlers, flushAllSessionLogs } from './sessionLog'
-import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, backupAllProfiles, ensureProfilesDir, ensureExportsDir, getExportsDir } from './profiles'
+import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeCharacterProfile, listCharacterProfiles, deleteCharacterProfile, archiveCharacterProfile, restoreCharacterProfile, listArchivedProfiles, backupAllProfiles, ensureProfilesDir, ensureExportsDir, getExportsDir } from './profiles'
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import { registerAIHandlers } from './ai'
 import { registerSimuCoinHandlers } from './simucoin'
@@ -526,6 +526,18 @@ function runAppShutdown() {
   Promise.all([flushAll, drain]).finally(() => {
     stamp('destroy')
     for (const w of Array.from(windows.values())) if (!w.isDestroyed()) w.destroy()
+    // EXPLICIT QUIT — do not rely on `window-all-closed`.
+    // This path is reached by the primary window's close handler, which called
+    // preventDefault() to hold the app open for the drain. If the shutdown was
+    // triggered by app.quit() (Cmd+Q, File → Quit, the dock menu), that
+    // preventDefault CANCELLED the quit — so once the drain is done nothing
+    // re-issues it. Windows and Linux happen to recover because
+    // `window-all-closed` quits for non-darwin; macOS deliberately does not,
+    // which left the app running with zero windows and Force Quit as the only
+    // exit (Zithri, v0.18.2). Quitting here fixes every platform at the source
+    // and makes the non-darwin branch a redundant safety net rather than the
+    // mechanism.
+    app.quit()
   })
 }
 
@@ -1215,6 +1227,12 @@ ipcMain.handle('profile:read-character',            (_e, character: string)     
 ipcMain.handle('profile:write-character',           (_e, character: string, data: unknown) => writeCharacterProfile(character, data))
 ipcMain.handle('profile:list',                      ()                               => listCharacterProfiles())
 ipcMain.handle('profile:delete-character',          (_e, character: string)          => deleteCharacterProfile(character))
+// Archive = remove from the launcher WITHOUT destroying the data (v0.18.2).
+// Used by the launcher's Remove-account action; restore runs when the account
+// is added back, so a returning character keeps its settings.
+ipcMain.handle('profile:archive-character',         (_e, character: string)          => archiveCharacterProfile(character))
+ipcMain.handle('profile:restore-character',         (_e, character: string)          => restoreCharacterProfile(character))
+ipcMain.handle('profile:list-archived',             ()                               => listArchivedProfiles())
 
 // ── Profile Transfer IPC (platform-wide .lb.yaml export/import) ────────────────
 // Exports live in a dedicated `Exports/` folder next to `profiles/` (see
@@ -1507,7 +1525,7 @@ function setupMenu() {
           { label: 'Reset Font Size',    click: () => sendMenuAction('font-reset') },
         ] },
         { type: 'separator' },
-        { label: 'Panel Manager', click: () => sendMenuAction('toggle-panels') },
+        { label: 'Layout Manager', click: () => sendMenuAction('toggle-panels') },
         { label: 'Show Map',      click: () => sendMenuAction('toggle-maps') },
         { label: 'Experiences',   click: () => sendMenuAction('toggle-experiences') },
         { label: 'Theme…',        click: () => sendMenuAction('toggle-theme') },
@@ -1626,6 +1644,11 @@ app.whenReady().then(() => {
   if (app.isPackaged) setupAutoUpdater()
 })
 
+// Safety net only: the real quit is issued by runAppShutdown() once the drain
+// finishes (see there). This still covers any path that ends up with no windows
+// without going through that drain. The darwin guard is the platform
+// convention — an app with no windows normally stays alive — and it is exactly
+// why the shutdown path could not lean on this hook.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })

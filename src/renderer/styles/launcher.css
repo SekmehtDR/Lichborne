@@ -38,7 +38,11 @@
   display: flex;
   justify-content: center;
   gap: 6px;
-  padding: 0 4px 16px;
+  /* Sits BELOW the logo lockup since v0.18.2, so its 16px of separation moved
+     from the bottom to the top: the gap it now owns is the one between the
+     buttons and the character groups below. See .launcher-logo's margin note,
+     which balances the other side. */
+  padding: 0 4px 24px;
 }
 
 /* v0.8.0 UX: Add-account + Bulk-Connect buttons sit alongside Lich Setup
@@ -106,16 +110,16 @@
   justify-content: center;
   gap: 0.85rem;
   width: fit-content;
-  /* EVENLY SPACED between the top buttons and the start of Favorites
-     (Sekmeht's mockup). The gap above the lockup is not this margin alone —
-     `.launcher-topbar` already contributes `padding-bottom: 16px`, and
-     `.launcher-groups` contributes nothing above itself, so the arithmetic is:
-         above = 16px (topbar) + 12px (here) = 28px
-         below = 28px (here)
-     Previously this was `0 auto 28px`, i.e. 16px above versus 28px + the
-     instruction row + its 18px below — visibly top-heavy. If you change the
-     topbar's bottom padding, re-balance the 12px here to match. */
-  margin: 12px auto 28px;
+  /* EVENLY SPACED around the lockup. v0.18.2 put the logo ABOVE the action
+     row, so the arithmetic flipped: nothing contributes above the lockup now
+     (it is the first thing on the screen), and the row below it owns the gap
+     down to the character groups.
+         above = 28px (here)
+         below = 16px (here) + 24px (.launcher-topbar padding-bottom) = 40px
+     The lockup is deliberately closer to the buttons than to the top edge, so
+     the hero and its actions read as ONE block rather than two.
+     If you change the topbar's bottom padding, re-balance these to match. */
+  margin: 28px auto 16px;
 }
 
 /* Hero logo art. The source PNG is a TRANSPARENT 1024×1024 canvas whose
@@ -640,7 +644,30 @@
 
 /* Refresh-from-account button — sibling of the toggle button, not nested.
    v0.8.0 (bug 1 fix). */
-.launcher-account-refresh {
+
+/* The character names inside the confirm dialog — a quiet block, since the
+   sentence around it already carries the weight. */
+.launcher-dialog-list {
+  margin-top: 6px;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* Account-header actions — ONE metrics rule for both buttons so they cannot
+   drift apart. Remove started as its own block and immediately did: it omitted
+   `align-self: center`, and because the header is `align-items: stretch` it
+   grew to the full header height and towered over Refresh (Sekmeht: "too
+   large"). Same shape of bug as the wizard footer's odd button out — a
+   selector that should have been in a shared group and wasn't.
+   Adding another header button? Add it here, not in a new rule. Only the
+   HOVER differs between them (accent vs danger, below). */
+.launcher-account-refresh,
+.launcher-account-remove {
+  /* Load-bearing: the header is align-items:stretch, so without this the
+     button is as tall as the header band instead of as tall as its text. */
   align-self: center;
   margin-right: 8px;
   background: transparent;
@@ -650,8 +677,19 @@
   padding: 3px 9px;
   font-family: inherit;
   font-size: 0.72rem;
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+/* Destructive, so it is quiet at rest and unmistakable once you reach for it
+   (UX standard #1 — a permanently red button in a list of accounts is a glyph
+   you learn to ignore). */
+.launcher-account-remove:hover {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 }
 
 .launcher-account-refresh:hover {

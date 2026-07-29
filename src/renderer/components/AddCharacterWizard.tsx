@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
-import { GAMES } from '../lichSettings'
+import { GAMES, IS_MAC, IS_WINDOWS } from '../lichSettings'
 import { useSessions } from '../SessionsContext'
 import type { CharacterProfile } from '../profile-types'
 import '../styles/wizard.css'
@@ -34,6 +34,10 @@ interface Props {
   onCompleted: (addedCount: number) => void
   onCancel: () => void
   prefillAccount?: string
+  // Set when the wizard was opened FOR the user rather than BY them (today:
+  // connecting a character whose password is not saved). Rendered at the top of
+  // step 1 so the trip here is never unexplained.
+  reason?: string
   // Opens the Lich Setup dialog. Surfaced as a small link in the footer so
   // users can fix path/port issues without abandoning their input.
   onOpenLichSetup: () => void
@@ -46,12 +50,27 @@ interface DiscoveredCharacter {
   existing: boolean   // already has a profile YAML — checkbox disabled
 }
 
-export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSetup, prefillAccount }: Props) {
+export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSetup, prefillAccount, reason }: Props) {
   const { sessions } = useSessions()
 
   const [step,     setStep]     = useState<Step>(1)
-  const [account,  setAccount]  = useState(() => prefillAccount ?? localStorage.getItem('lichborne.account') ?? '')
+  // ADD ACCOUNT STARTS BLANK (Sekmeht, v0.18.2). `prefillAccount` is set ONLY by
+  // the per-account "↺ Refresh" button, which deliberately re-opens this wizard
+  // for a KNOWN account. The old `?? localStorage.getItem('lichborne.account')`
+  // fallback also fired on the blank "+ Add account" path, so that button
+  // silently pre-filled your LAST-USED account — it looked like adding a new
+  // account while actually re-submitting an existing one, re-saving its stored
+  // password along the way. An empty field is the honest default; the refresh
+  // path still gets its prefill because it passes one explicitly.
+  const [account,  setAccount]  = useState(prefillAccount ?? '')
   const [password, setPassword] = useState('')
+  // Reveal the password while typing it (Zithri, v0.18.2). This is the only
+  // place in the live UI where an account password is TYPED rather than reused
+  // from the OS credential store, and a silent typo here surfaces much later as
+  // "the login doesn't work" — a support round-trip for something the user
+  // could have seen. Local state only: never persisted, and gone the moment the
+  // wizard closes.
+  const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(() => localStorage.getItem('lichborne.rememberPassword') === 'true')
   const [game,     setGame]     = useState<string>('DR')
 
@@ -184,11 +203,36 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
       }
     } catch { /* fall back to default behavior (just expand the new account) */ }
 
+    // A character removed with its account was ARCHIVED, not deleted, so adding
+    // the account back must restore that profile rather than overwrite it with
+    // a blank stub — otherwise "remove and re-add" silently destroys the themes,
+    // layout, automations and contacts the archive existed to protect.
+    // Read once: the wizard adds a whole account at a time, so one lookup
+    // covers every character in the loop below.
+    let archived = new Set<string>()
+    try {
+      archived = new Set((await window.api.listArchivedProfiles()).map(n => n.toLowerCase()))
+    } catch { /* no archive, or unreadable — every character just gets a stub */ }
+
     // Stub profile per checked character. No `state` — the character has
     // nothing saved yet; their first connect creates real entries via the
     // dynamic-state pipeline.
     let added = 0
     for (const name of names) {
+      // Restore wins when there is something to restore. It is deliberately
+      // guarded main-side too: restore refuses to clobber a live profile of the
+      // same name, so a character recreated while archived keeps its real
+      // settings and the stale archive copy is left alone.
+      if (archived.has(name.toLowerCase())) {
+        try {
+          if (await window.api.restoreCharacterProfile(name)) {
+            added += 1
+            continue
+          }
+        } catch (err) {
+          console.error(`Failed to restore archived profile for ${name}`, err)
+        }
+      }
       const stub: CharacterProfile = {
         profileVersion: 2,
         account,
@@ -290,15 +334,27 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
                 />
               </label>
 
+              {reason && <div className="wiz-reason">{reason}</div>}
+
               <label className="wiz-label">
                 Password
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="current-password"
                   disabled={busy}
                 />
+              </label>
+
+              <label className="wiz-checkbox">
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={e => setShowPassword(e.target.checked)}
+                  disabled={busy}
+                />
+                Show password
               </label>
 
               <label className="wiz-checkbox">
@@ -312,9 +368,18 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
               </label>
               {!secureStore && (
                 <p className="wiz-hint">
-                  Password saving is unavailable — no OS keyring was found. Install
-                  GNOME Keyring or KWallet (Linux) to enable it; you can still
-                  connect by typing the password each time.
+                  {/* Named the Linux keyrings on every platform, which is
+                      baffling advice on macOS or Windows. safeStorage backs onto
+                      Keychain / DPAPI / libsecret respectively, so the guidance
+                      has to follow the platform. */}
+                  Password saving is unavailable — this machine's secure credential
+                  store could not be reached
+                  {IS_MAC
+                    ? ' (macOS Keychain).'
+                    : IS_WINDOWS
+                      ? ' (Windows Credential Manager).'
+                      : ' — install GNOME Keyring or KWallet to enable it.'}
+                  {' '}You can still connect by typing the password each time.
                 </p>
               )}
 
@@ -444,9 +509,11 @@ export default function AddCharacterWizard({ onCompleted, onCancel, onOpenLichSe
                   onClick={continueWithDisconnect}
                   disabled={conflictBusy}
                 >
-                  {conflictBusy
-                    ? `Disconnecting ${pendingConflict.character}…`
-                    : `Disconnect ${pendingConflict.character} and continue`}
+                  {/* The character is named twice in the text above, so the
+                      button does not repeat it — interpolating a name made this
+                      the longest label in the wizard and its width depended on
+                      whose character it was. */}
+                  {conflictBusy ? 'Disconnecting…' : 'Disconnect and continue'}
                 </button>
               </div>
             </div>

@@ -29,3 +29,9 @@ jobs:
       - run: npm run build:main
       - run: npm run build:renderer
       - run: npx tsc --noEmit
+      # Semantic check of release.yml + the artifact-name contract. Not a YAML
+      # lint — see the script's header for the incident that motivated it.
+      # Runs here (not only in the release workflow) so a broken release
+      # pipeline is caught on the commit that breaks it, rather than at 2am on
+      # release night when a build job dies mid-matrix.
+      - run: node .github/scripts/check-workflow.mjs

@@ -236,9 +236,13 @@ Players can save named layouts and switch between them:
 
 Layout profiles are saved to `~/.lichborne/layouts/[name].json`.
 
-### 2.5 Panel Manager
+### 2.5 Layout Manager (was "Panel Manager")
 
-A dedicated UI (accessible via the **Panels** toolbar button) lets the user shape the layout in two independent dimensions: which **panel slots** exist in the layout, and which **streams** live in each slot.
+**RENAMED v0.18.2 (F78, Sekmeht): the toolbar button is now `Layout` and the modal is the `Layout Manager`.** The rename is **DISPLAY ONLY** — every persisted identifier is unchanged (`layoutMode`, `freeWindows`, `freeLayoutLocked`, `panelWidth`, `panelFontSizes`, the four zone keys), as is the `toggle-panels` session action and the `panelManager` status flag, so no migration was needed. The one place it reached data: Profile Transfer serialises categories by **id**, so that category's `label` moved `'Panel Layout'` → `'Layout'` while `id: 'layout'` deliberately did not — renaming the id would make every `.lb.yaml` already on disk silently skip the category on import. *Labels are display, ids are data.*
+
+**The mode choice is a CHOOSER, not a status banner (v0.18.2).** It was one banner describing whichever mode you were already in, with a single "Switch to…" button — so the choice itself, and the fact that Static Panels is being retired, were invisible until you clicked. Two cards now state it: what each mode IS, which one is `In use`, that Static is `Legacy`, and that switching converts your layout (and switching back leaves it as you left it). Both render in the SAME shape whichever is active (UX standard #2) so nothing jumps on switch; Legacy is **muted rather than alarming** — it still works — and regains its background when it IS the active mode, so you can always see what you're using. The free-mode controls (Lock windows / Fit bars to content / Rebuild from panels) became described rows with visible explanations rather than hover-only tooltips (UX standard #8). "Reset Panels" renders only in Static mode, because it resets the docked zones and is a no-op you can't see in Windowed.
+
+A dedicated UI lets the user shape the layout in two independent dimensions: which **panel slots** exist in the layout, and which **streams** live in each slot.
 
 **Panel slots (v0.8.1, "V2").** The layout has four fixed slots:
 
@@ -6331,6 +6335,12 @@ FIXED-height (never auto).
 
 ### 33.8 Unlimited windows, add/remove, safety net (requirements #3, #7)
 
+**THE LOCK FREEZES THE CONTAINER, NEVER THE CONTENT (stated v0.18.2, Sekmeht).** `freeLayoutLocked` exists to stop you knocking a window's POSITION or SIZE askew by accident. It has no stake in what lives inside a window, and gating content operations on it made "locked" read as "read-only", which it isn't — users run locked most of the time. Concretely: **tab drag-reorder is NOT lock-gated** (F46 originally passed `!freeLayoutLocked`; reversed), **right-click → Close works while locked**, and **Add Window stays available while locked** (a locked window can still have its streams closed, so hiding the only way to add one back would let you destroy but never rebuild). Apply this split to any future lock-adjacent feature.
+
+**Right-click → Close (F76, v0.18.2).** The ✕ is a hover-only ~1em glyph beside the corner resize handle and is absent entirely on a collapsed or locked window, so a context menu is the reliable way to dismiss something. Bound on the window ROOT — one handler covering every part of every window in every state, including a locked window that renders no chrome for a handler to sit on — and it **yields to any inner surface that already claimed the event** via `e.defaultPrevented` (stream text, the maps, Debug and the tab strip all `preventDefault` and keep their own richer menus). **"Close" means the CONTENT, not the container:** a tabbed window closes its ACTIVE STREAM (the window follows only if that was its last tab), an Experience closes itself. **Chrome bars (command/vitals/icon) and the GAME window are excluded entirely** — equipment rather than content, recoverable only through Layout Manager → Add Window, which is a poor trade for a one-item menu you can hit by accident. That exclusion is a separate predicate from `isChrome` on purpose: `isChrome` also drives the `--chrome` styling and minimum size, so folding the game window into it would silently restyle it. Streams additionally carry Close in their OWN body menu, since that menu preventDefaults first and so never sees the window-level one.
+
+**Cross-window stream drag (F77, v0.18.2).** Dragging a tab onto another window's tab strip MOVES it there. The move is ONE atomic state update (`adoptTabIntoWindow` in GameWindow) — as two steps a failure could duplicate or lose the stream, and duplicate tab ids within one window break React keys and `activeId`. It lives in GameWindow rather than PanelFrame because a frame only knows its own tabs; only the owner of the window list can take from one and give to another. An emptied source window closes, matching what closing its last stream does. Transport is a **custom MIME type**, not the existing `text/plain`: the browser hides `getData()` until the drop fires, so a type's PRESENCE is the only signal a strip can inspect at hover time to decide whether to accept the drag at all. Removing the tab is the whole job — in free mode every "is this stream watched/visible" aggregation derives from `freeWindows[].tabs` (pitfall #79), so routing and unread state follow automatically.
+
 - **New Window** mints an empty `kind:'panel'` window (cascade-offset); the user fills it via PanelFrame's
   existing `+` menu. **No 4-slot cap** — the limit was a zone-system artifact, gone here. An empty panel
   window shows the `EmptyPanelSlot`-style "add a stream" placeholder.
@@ -6819,6 +6829,30 @@ gates** (procedural fallbacks always).
        so it reads `4 Ka'len the Sea Drake · 457 A.V. · ❄️ winter` (the daypart moved to the sky
        label — Tier 1). Season/daypart are taken VERBATIM from TIME line 3 (winter wraps the year
        boundary, so a naïve day→season quartering would be wrong).
+     - **F81 — GRADED weather severity (v0.18.2, Sekmeht: "I'd like to add adjectives too, like
+       completely, very… so Lichborne can add more clouds, take away clouds").** `WeatherFx` gained a
+       0–1 **`cover`** and **`precip`** alongside the booleans, from a most-specific-first DEGREES
+       table (ordering is load-bearing: "a FEW scattered clouds" contains "scattered", "very cloudy"
+       shares a stem with "cloudy") plus **condition floors** — a thunderstorm cannot sit under a
+       mostly-clear sky, so storm floors cover at 0.95, rain/snow 0.75, fog 0.5, clouds 0.35, while a
+       stated degree may still push ABOVE a floor. Cover drives cloud COUNT (the array grew 4 → 10
+       bodies, sliced by cover) **and per-cloud SIZE**, so a sky thickens by containing more cloud.
+       **An overcast DECK** — a gradient solid overhead and gone by the horizon, deliberately the
+       INVERSE of the fog gradient — fades in only past **0.9** cover. It first appeared at 0.6 and
+       was reported as looking foggy at "very cloudy", which is the whole lesson: *a translucent sheet
+       over the entire sky reads as FOG, a different condition the prose may not have reported at
+       all.* **THE FOG LAYER WAS REMOVED ENTIRELY** in the same pass (Sekmeht: "let's avoid the fog
+       effect in general") — a haze dulls the sky gradient, the moons and the landscape at once and
+       reads as a washed-out render rather than as weather, at any opacity that would make it legible.
+       `WeatherFx.fog` is still PARSED and still carries meaning (it suppresses shooting stars and
+       floors cover); it simply has no layer, and both the type and the render site say so, so nobody
+       "fixes" the missing effect. Locked by `tmp-moon-harness/weather.mjs` (21 assertions over the
+       degree ladder, monotonicity, floors and precip density) — which immediately found **B242**,
+       `\bcloud` matching *cloudless*. Also v0.18.2: **shooting stars made rare** — six streaks on
+       8–13s cycles is a COMBINED rate of one every 1.7s, so cycles went to 150–210s (~one per 30s)
+       with the keyframe's visible window shrunk to 0.8% so the streak still crosses in ~1.5s. The
+       duration governs BOTH frequency and speed; change one without the other and you get
+       slow-motion meteors.
      - **Weather-effect sky animations + season icons (v0.17.0):** `detectWeather(prose)` regexes the
        captured weather line into `WeatherFx` flags (snow / rain / clouds / fog / wind / storm / clear
        / heavy — `\b`-anchored keyword sets; `gale` is WIND not storm; storm ⇒ rain+heavy+clouds; any
@@ -6973,13 +7007,43 @@ gates** (procedural fallbacks always).
        **F68** aurora/fireflies, **F69** sun-lit moons, **F70** seasonal horizon, plus the living landscape +
        moon-colour corrections above. PLANNED: **F64** moon
        utility layer (which moons are up + lore affinity + moonlight strength — the Moon Mage hook),
-       **F65** conjunction detection (2–3 moons clustering → highlight), **F66** consolidated "next event"
-       readout (replace the repeated "rises in Nm" chips), **F71** iconified strip labels (☀🌙☁ vs the
+       **F65** conjunction detection — BUILT v0.18.2: pairs are measured in SCREEN distance scaled by
+       the pair's own radii, not arc progress (progress is normalised across arcs of different lengths,
+       and "together" means what the player can SEE; scaling by radii also keeps big Katamba and small
+       Xibar comparable), highlighted with a quiet shared halo and named in the pill, with all three
+       mutually close reported as one triple rather than three pairs —
+       **F66** consolidated "next event" readout — ALREADY BUILT (see the status note above), **F71** iconified strip labels (☀🌙☁ vs the
        SKY/MOONS/WEATHER words), **F72** stale-as-atmosphere (the whole sky desaturates/dims when data is
        stale, blooms back on refresh — a scene-wide extension of the F-current amber ⟳ nudge), **F73**
        compact mode (a minimal horizon-band layout for small tabs). Priority order for the next pass:
        F64 + F65 (utility), then F72 — plus **F64a** (lunar phase) below, which slots in with F64.
-     - **F64a — LUNAR PHASE. SPEC ONLY — DEFERRED TO A FUTURE VERSION (Sekmeht, 2026-07-28).** Spec'd
+     - **STATUS UPDATE (v0.18.2): F64a, F64 and F65 are BUILT; F66 was already built.** The deferral
+       recorded below was lifted — Sekmeht asked to work the moonwatch findings in properly rather
+       than carry them. Shipped: **F64a** lunar phase (the pure function + server-clock anchor +
+       phased disc shapes), **F64** the moon utility layer (combined moonlight), **F65** conjunction
+       detection. **F66 needed no work** — the consolidated next-event readout already exists in the
+       header (`nextMoon`, the soonest moon transition) and the repeated per-body countdown chips it
+       was meant to replace have been `defaultHidden` since v0.17.0; the backlog entry was stale, so
+       it is marked done rather than re-implemented. Still PLANNED: **F71** iconified strip labels,
+       **F72** stale-as-atmosphere, **F73** compact mode, and F64a's `observe` correction layer.
+     - **F64a — LUNAR PHASE. BUILT in v0.18.2** (the deferral below was lifted the same day it was
+       recorded — kept verbatim because the design reasoning still governs the code). **What actually
+       shipped, and the decisions worth not re-litigating:** the phase math is a pure function of the
+       DR client's constants in [experiences.ts](src/renderer/experiences.ts), locked by
+       `tmp-moon-harness` against an independent transcription of the Ruby (116 assertions; it caught
+       a real typo in the reference on its first run). Server time arrives via a new `ServerClockEvent`
+       — the parser's `lastPromptTime` was private — emitted only on first sight and >2s drift, since
+       a prompt fires every game turn. The disc shape is a **MASK, not a replacement disc**: the
+       shadow is the complement of one lit path, so F69's lit gradient keeps painting underneath. A
+       mirrored "shadow path" was tried in design and is WRONG — it degenerates to zero area at *new*,
+       exactly when the shadow should be the whole disc. The phase group ROTATES to face the sun,
+       reusing F69's existing light vector, because phase and sun-lighting are the same physical fact
+       and would otherwise visibly disagree. Katamba is deliberately NOT special-cased: emitting no
+       light, its soot palette already renders phase as a subtle occultation, which is lore-correct.
+       Phase names live in the pill TOOLTIP (three "waning gibbous"-length strings would swamp the
+       strip) and are marked **"(computed)"** — unlike the moonwatch-fed rise/set times, phase has no
+       feed to correct against. **The `observe` correction layer (step 3) is still NOT built.**
+     - **F64a — original spec. DEFERRED (Sekmeht, 2026-07-28) — superseded by the BUILT note above.** Spec'd
        from moonwatch 4.5.0 and folded into F64 rather than given a new number. **Nothing here is
        built, and none of it is part of v0.18.1** — it is written down so the research doesn't have to
        be redone, and Sekmeht will pick it up in a fresh version. The proposed build order was:

@@ -70,13 +70,15 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.18.1**
+**v0.18.2**
 
-- **Windowed Panels stop wasting space.** Every floating window used to reserve a strip at the top for its title bar, so even windows snapped edge-to-edge left a visible gap between their contents — close to half a window's worth once you had a few stacked. The drag handle now sits **over** the content instead of taking a slice of it, and **locking your layout hides it entirely**, so locked Windowed Panels finally look like docked panels. What you arrange is what you get. *(Vitals, status and command bars saved before this update load slightly taller than they need to be — drag the bottom edge up once and it sticks.)*
-- **SimuCoin setup moved to Settings → SimuCoins.** Choosing which accounts are watched, Auto-claim, and each account's current status now live in Settings, where there's room for a list. The **coin** in the top bar is just the payoff: it lights up when coins are waiting, and one click **collects them from every watched account at once**.
-- **Fixed: the SimuCoin popover could push the whole client off-screen.** With several accounts it grew taller than the window, couldn't be scrolled, and clicking inside it shoved the entire interface out of view until you clicked something else. Both halves are fixed.
-- **Fixed: the Lich Dashboard lost your place after saving.** Search for a line, edit the file, save — and the view no longer strands you somewhere else; it returns to the line you found.
-- **Fixed:** the **Scripts** editor's find box said "Search YAML…" while you were editing Ruby.
+- **The moons show their real phase.** Each moon is drawn as only its lit part, computed from DragonRealms' own orbital constants and timed against the game server's clock. Hover one for `Now:` and `Next:`; the **MOONS** line in the header now has a tooltip listing all three.
+- **Weather has degrees.** "A few scattered clouds", "very cloudy" and "completely overcast" draw genuinely different skies. The old fog haze is gone — it washed out the whole scene — and shooting stars are rare again rather than every couple of seconds.
+- **The Panels button is now Layout**, and the Panel Manager is the **Layout Manager**. Inside, a two-card chooser shows what each layout mode is, which you're using, and that **Static Panels is legacy**. Your saved layout is untouched.
+- **Right-click → Close** on any floating window or stream, and you can **drag a stream from one window to another**. Reordering tabs works while the layout is locked — locking freezes *where windows are*, not what's inside them.
+- **Remove an account** from the logon screen (`✕ Remove` on the account header). It **archives** rather than deletes: settings and logs are kept, and adding the account back restores them.
+- **"Show password"** when typing one, and **"+ Add account" now starts blank** instead of pre-filling your last-used account.
+- **macOS fixes:** the app can actually be quit (⌘Q and the red X used to leave it running); connecting tells you when it needs a password instead of showing the "Add account" screen unexplained; and Lich Setup flags a bad path as soon as you open it.
 
 ---
 
@@ -165,7 +167,7 @@ High-level tours of what each feature does and where to configure it. Most thing
 Lichborne shows the game plus side "panels" (streams like Thoughts, Combat, Room, Experience, Maps…).
 
 - **Static Panels** (default) — panels sit docked in tidy zones.
-- **Windowed Panels** — flip this in the **Panels** manager and your *whole* layout floats: main text, input bar, vitals, status icons, and every panel become independent windows you can drag, resize, and **snap together** (they click flush to each other and the screen edges, with guide lines). Add as many panel windows as you like, hide a window's title bar for a compact look, and **lock** the layout when it's just right — locking hides every window's drag handle and border chrome, so a locked layout reads like the docked one. The drag handle sits *over* your content rather than taking a slice of it, so what you arrange is exactly what you get once locked. If the vitals / status / command bars look taller than their contents, **Fit bars to content** in the Panels manager snaps them down in one click.
+- **Windowed Panels** — flip this in the **Layout** manager (**Layout** on the top bar → *Layout Manager*) and your *whole* layout floats: main text, input bar, vitals, status icons, and every panel become independent windows you can drag, resize, and **snap together** (they click flush to each other and the screen edges, with guide lines). Add as many panel windows as you like, hide a window's title bar for a compact look, and **lock** the layout when it's just right — locking hides every window's drag handle and border chrome, so a locked layout reads like the docked one. The drag handle sits *over* your content rather than taking a slice of it, so what you arrange is exactly what you get once locked. If the vitals / status / command bars look taller than their contents, **Fit bars to content** in the Panels manager snaps them down in one click.
 
 Either way, **drag a stream tab along its bar to reorder it**, and add streams with a panel's **+** button. Your layout is per-character and saved across launches. *(Windowed Panels is where Lichborne is heading — see [Roadmap](#on-the-horizon-roadmap).)*
 

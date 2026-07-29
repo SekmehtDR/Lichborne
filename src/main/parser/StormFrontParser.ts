@@ -158,6 +158,9 @@ export class StormFrontParser {
   // mirror that. `lastPromptTime` is the latest server time seen; pending* hold a
   // <roundTime>/<castTime> end-value awaiting the next prompt to anchor it.
   private lastPromptTime = 0                   // server Unix seconds; 0 = none seen yet
+  // Last server-clock offset EMITTED (ms). null = never emitted. Re-emitted only
+  // on drift > 2s so a per-turn prompt doesn't become a per-turn event.
+  private lastClockOffsetMs: number | null = null
   private pendingRtEnd: number | null = null
   private pendingCtEnd: number | null = null
   private pendingAimEnd: number | null = null  // AimTimerDialog firingTimer; 0 = clear
@@ -213,6 +216,9 @@ export class StormFrontParser {
     this.lastRoomTitle     = ''
     this.rtExpires     = 0
     this.lastPromptTime = 0
+    // Cleared with the rest of the per-session state (pitfall #4) so a new login
+    // re-emits the offset instead of assuming the previous session's.
+    this.lastClockOffsetMs = null
     this.pendingRtEnd  = null
     this.pendingCtEnd  = null
     this.pendingAimEnd = null
@@ -751,7 +757,20 @@ export class StormFrontParser {
         // bar (Frostbite's `t_to > 300000 ? 300000` cap; Genie does end − gametime
         // too). Fall back to value*1000 only if no server time has ever been seen.
         const t = parseInt(attrs.time ?? '0', 10)
-        if (t > 0) this.lastPromptTime = t
+        if (t > 0) {
+          this.lastPromptTime = t
+          // Surface the server clock as an OFFSET so the renderer can compute
+          // absolute moments (the Moons experience's lunar phase) against DR's
+          // clock rather than the user's — same reason RT/CT anchor here (B192).
+          // Emitted only on first sight and on real drift: a prompt arrives every
+          // game turn, and this value is effectively constant for a session, so
+          // per-prompt emission would be a per-turn event carrying no news.
+          const offsetMs = t * 1000 - Date.now()
+          if (this.lastClockOffsetMs === null || Math.abs(offsetMs - this.lastClockOffsetMs) > 2000) {
+            this.lastClockOffsetMs = offsetMs
+            this.emit({ type: 'server-clock', offsetMs })
+          }
+        }
         const anchor = t > 0 ? t : this.lastPromptTime
         const anchoredExpiry = (end: number) =>
           anchor > 0 ? Date.now() + Math.max(0, Math.min(300, end - anchor)) * 1000 : end * 1000

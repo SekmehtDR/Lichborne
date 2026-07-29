@@ -361,6 +361,11 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<LauncherCharacter | null>(null)
+  // Removing a whole ACCOUNT — its characters AND its saved password. Held as
+  // the account name plus the character names captured at click time, so the
+  // confirm dialog states exactly what it is about to delete rather than
+  // re-deriving it from a list that may have refreshed underneath it.
+  const [pendingAccountDelete, setPendingAccountDelete] = useState<{ account: string; names: string[] } | null>(null)
   const [showHidden, setShowHidden] = useState(false)
   const [editingNotes, setEditingNotes] = useState<LauncherCharacter | null>(null)
   // Favorites discoverability hint — shows above the first account section
@@ -449,6 +454,39 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
       console.error('Failed to delete character profile', err)
     }
     setPendingDelete(null)
+    refresh()
+  }
+
+  // Removing an account ARCHIVES its characters rather than deleting them
+  // (Sekmeht): the YAMLs move to profiles/Archive/ and come back automatically
+  // if the account is added again, so themes, layout, automations and contacts
+  // survive a break. Logs are never touched by any of this — a returning
+  // character keeps its history, with a gap for the time it was away.
+  //
+  // ORDER MATTERS: profiles first. If the password step fails, you are left
+  // with a credential for an account that has no visible characters — harmless
+  // and invisible (an account with no characters is never listed). The reverse
+  // order could leave listed characters that can no longer sign in, which is
+  // the failure that actually costs something.
+  //
+  // Sequential rather than Promise.all: a handful of small file moves, and a
+  // partial failure is far easier to reason about when the order is fixed.
+  async function confirmDeleteAccount() {
+    if (!pendingAccountDelete) return
+    const { account, names } = pendingAccountDelete
+    for (const name of names) {
+      try {
+        await window.api.archiveCharacterProfile(name)
+      } catch (err) {
+        console.error(`Failed to archive character profile ${name}`, err)
+      }
+    }
+    try {
+      await window.api.deletePassword(account)
+    } catch (err) {
+      console.error(`Failed to delete saved password for ${account}`, err)
+    }
+    setPendingAccountDelete(null)
     refresh()
   }
 
@@ -542,16 +580,6 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
     return (
       <div className="launcher launcher--empty">
         {!compact && (
-          <LauncherTopBar
-            onOpenLichSetup={onOpenLichSetup}
-            onAddNew={onAddNew}
-            onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
-            bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
-            onReconnectLast={handleReconnectLastClick}
-            reconnectCount={lastSessionTiles.length}
-          />
-        )}
-        {!compact && (
           <div className="launcher-logo">
             {/* The logo art CARRIES the wordmark, so it replaces the old
                 <h1>Lichborne</h1> rather than sitting above it — hence the
@@ -564,6 +592,16 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
               <p className="launcher-version">v{__APP_VERSION__}</p>
             </div>
           </div>
+        )}
+        {!compact && (
+          <LauncherTopBar
+            onOpenLichSetup={onOpenLichSetup}
+            onAddNew={onAddNew}
+            onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
+            bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
+            onReconnectLast={handleReconnectLastClick}
+            reconnectCount={lastSessionTiles.length}
+          />
         )}
         <div className="launcher-welcome">
           <h2>Welcome to Lichborne</h2>
@@ -598,16 +636,6 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
   return (
     <div className={`launcher${compact ? ' launcher--compact' : ''}`}>
       {!compact && (
-        <LauncherTopBar
-          onOpenLichSetup={onOpenLichSetup}
-          onAddNew={onAddNew}
-          onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
-          bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
-          onReconnectLast={handleReconnectLastClick}
-          reconnectCount={lastSessionTiles.length}
-        />
-      )}
-      {!compact && (
         <div className="launcher-logo">
           {/* The logo art CARRIES the wordmark, so it replaces the old
               <h1>Lichborne</h1> rather than sitting above it — hence the
@@ -635,6 +663,22 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
         <div className="launcher-heading">
           Pick a character to connect
         </div>
+      )}
+      {/* ORDER: the logo lockup comes FIRST, the action row beneath it
+          (Sekmeht + Binu, v0.18.2 — swapped from action-row-first). The lockup
+          is the identity and says what this screen is for ("Pick a character to
+          connect"); the buttons are what you do about it, so they read second.
+          It also puts the actions directly above the character tiles they act
+          on, instead of separated from them by the whole hero block. */}
+      {!compact && (
+        <LauncherTopBar
+          onOpenLichSetup={onOpenLichSetup}
+          onAddNew={onAddNew}
+          onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
+          bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
+          onReconnectLast={handleReconnectLastClick}
+          reconnectCount={lastSessionTiles.length}
+        />
       )}
 
       {connectError && (
@@ -749,9 +793,36 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
                     type="button"
                     className="launcher-account-refresh"
                     onClick={() => onRefreshAccount(account)}
-                    title={`Re-run discovery for ${account} to add new characters`}
+                    title={`Re-run discovery for ${account} to add new characters, or re-enter its saved password`}
                   >
                     ↺ Refresh
+                  </button>
+                )}
+                {/* Removing an account is offered ONLY on the full logon screen,
+                    never in the compact launcher that opens over a live session:
+                    this component cannot see which characters are connected, and
+                    deleting the profile of one that is mid-session is not a
+                    state worth supporting. The logon screen is the disconnected
+                    surface, so the question cannot arise there. */}
+                {!compact && (
+                  <button
+                    type="button"
+                    className="launcher-account-remove"
+                    onClick={() => setPendingAccountDelete({
+                      account,
+                      // From the FULL character list, not this group's sections:
+                      // `groups` is built from `visibleCharacters`, so with
+                      // "Show hidden" off the sections omit hidden characters.
+                      // Collecting from them deleted only what was on screen
+                      // while still forgetting the account password — leaving
+                      // orphaned hidden profiles that could never sign in again,
+                      // and an account section that reappears the moment you
+                      // toggle Show hidden. Removing an account removes ALL of it.
+                      names: characters.filter(c => c.account === account).map(c => c.name),
+                    })}
+                    title={`Remove ${account} and its characters from this screen`}
+                  >
+                    ✕ Remove
                   </button>
                 )}
               </div>
@@ -842,6 +913,43 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
                 onClick={confirmDelete}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingAccountDelete && (
+        <div className="launcher-connecting" {...backdropHandlers(() => setPendingAccountDelete(null))}>
+          <div className="launcher-connecting-card launcher-dialog">
+            <div className="launcher-dialog-head">Remove account?</div>
+            <div className="launcher-dialog-body">
+              <div>
+                Remove <span className="launcher-connecting-name">{pendingAccountDelete.account}</span>?
+              </div>
+              <div className="launcher-dialog-note">
+                Takes{' '}
+                <strong>
+                  {pendingAccountDelete.names.length}{' '}
+                  {pendingAccountDelete.names.length === 1 ? 'character' : 'characters'}
+                </strong>{' '}
+                off this screen and forgets the account's saved password.
+                {/* Naming them is the point of the confirmation: the section may
+                    be collapsed, so the count alone does not tell you what goes. */}
+                {pendingAccountDelete.names.length > 0 && (
+                  <div className="launcher-dialog-list">{pendingAccountDelete.names.join(', ')}</div>
+                )}
+                Nothing is deleted — each character's settings and logs are kept, and adding the
+                account again restores them exactly as they were.
+              </div>
+            </div>
+            <div className="launcher-dialog-foot">
+              <button className="launcher-connecting-cancel" onClick={() => setPendingAccountDelete(null)}>Cancel</button>
+              <button
+                className="launcher-connecting-cancel launcher-connecting-cancel--danger"
+                onClick={confirmDeleteAccount}
+              >
+                Remove account
               </button>
             </div>
           </div>

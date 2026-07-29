@@ -1056,6 +1056,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   const moonsState = useMemo<MoonsState | undefined>(
     () => moonData ? { ...moonData, ...(sunState ? { sun: sunState } : {}) } : undefined,
     [moonData, sunState])
+  // DR's clock minus ours, from <prompt time> (F64a). 0 until the first prompt,
+  // which just means "assume they agree" — a sane default, and phase buckets
+  // last ~a day so a session's first seconds are never misleading. Deliberately
+  // SEPARATE from moonsState: phase needs only this, so it keeps working for a
+  // direct-SGE player who has no moonwatch stream and therefore no moonsState.
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState(0)
   // Recent scene-speech events (§35 speech capturers) — the Tableau's bubble
   // feed. Capped small; bubbles also expire by timestamp in the component.
   const [sceneSpeech, setSceneSpeech] = useState<SceneSpeechItem[]>([])
@@ -2189,6 +2195,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       // Weather & Moons: last moonwatch line + sun transition seen this batch,
       // applied after the loop (one setState per batch at most).
       let batchMoons: ReturnType<typeof parseMoonLine> = null
+      let batchClockOffset: number | null = null
       let batchSun: boolean | null = null
       let batchWeather: string | null = null
       let batchWeatherIndoor = false
@@ -2432,6 +2439,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
             processVariableChangeRef.current('roomname', evt.title)
             if (evt.roomId != null) processVariableChangeRef.current('roomid', String(evt.roomId))
             break
+          case 'server-clock':
+            // DR's own clock, as an offset from ours. Rare by construction (see
+            // the parser) — first sight plus real drift.
+            batchClockOffset = evt.offsetMs
+            break
           case 'room-id':
             // v0.8.8 (Rakkor): roomId from <nav rm='X'/> when no fresh
             // <streamWindow subtitle='...'/> arrives for a transition.
@@ -2615,6 +2627,11 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         const parsed = batchMoons
         setMoonData(prev => ({ katamba: prev?.katamba, yavash: prev?.yavash, xibar: prev?.xibar, ...parsed, reportedAt: Date.now() }))
       }
+      // Server-clock offset (F64a). The parser emits this rarely — first sight
+      // and real drift only — so a plain set is fine; there is no per-turn churn
+      // to batch away. Lunar phase is absolute-time math, so it must run on DR's
+      // clock rather than the user's (pitfall #87 / B192).
+      if (batchClockOffset !== null) setServerClockOffsetMs(batchClockOffset)
       // A rise stamps riseAt, a set stamps setAt — keeping the OTHER anchor so
       // computeSunPhase can derive the true day length from the pair. Replay
       // batches (pitfall #60) re-stamp "now", which is close enough: a replay
@@ -4350,6 +4367,51 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     setFreeWindows(prev => prev.map(w => (w.id === id ? { ...w, ...patch } : w)))
   }, [])
 
+  // Move a tab BETWEEN floating windows by dragging it (v0.18.2, Sekmeht) —
+  // the same gesture as reordering, just released over a different window's tab
+  // strip. Both halves happen in ONE state update because they must be atomic:
+  // done as two (remove there, add here) any failure leaves the stream either
+  // duplicated or lost, and duplicate tab ids across the SAME window would
+  // break React keys and activeId.
+  //
+  // Lives here rather than in PanelFrame because a frame only knows its own
+  // tabs — only the owner of the window list can take from one and give to
+  // another.
+  const adoptTabIntoWindow = useCallback((targetId: string, from: { frameId: string; tabId: string }, index: number) => {
+    freeInitRef.current = true
+    setFreeWindows(prev => {
+      const source = prev.find(w => w.id === from.frameId)
+      const tab = source?.tabs?.find(t => t.id === from.tabId)
+      const target = prev.find(w => w.id === targetId)
+      if (!source || !tab || !target || targetId === from.frameId) return prev
+      // Already open there → drop it rather than mint a duplicate id.
+      if ((target.tabs ?? []).some(t => t.id === from.tabId)) return prev
+      return prev.flatMap(w => {
+        if (w.id === from.frameId) {
+          const idx = (w.tabs ?? []).findIndex(t => t.id === from.tabId)
+          const rest = (w.tabs ?? []).filter(t => t.id !== from.tabId)
+          // An emptied source window closes, matching what closing its last
+          // stream does — an empty frame left behind is nobody's intent.
+          if (rest.length === 0) return []
+          return [{
+            ...w,
+            tabs: rest,
+            activeId: w.activeId === from.tabId
+              ? (rest[Math.min(idx, rest.length - 1)] ?? rest[rest.length - 1]).id
+              : w.activeId,
+          }]
+        }
+        if (w.id === targetId) {
+          const next = (w.tabs ?? []).slice()
+          next.splice(Math.max(0, Math.min(index, next.length)), 0, tab)
+          // Select what was just dropped — you dragged it here to look at it.
+          return [{ ...w, tabs: next, activeId: tab.id }]
+        }
+        return [w]
+      })
+    })
+  }, [])
+
   // CASCADE conversion (§33.6, revised 2026-06-09 — Sekmeht). The original
   // "measure-and-mint" recreated the panels layout pixel-for-pixel, but the
   // panels strips are stacked edge-to-edge and titled WINDOWS are bigger (they
@@ -4617,6 +4679,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         onCommand={sendCommand}
         hidden={hidden}
         moons={moonsState}
+        serverClockOffsetMs={serverClockOffsetMs}
         combat={experienceCombat}
         weather={weather ?? undefined}
         calendar={calendar ?? undefined}
@@ -4647,9 +4710,20 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         return (
           <PanelFrame
             {...sharedFrameProps}
-            // F46: tab drag-reorder follows the layout lock — Lock freezes
-            // window geometry, and tab order is part of the layout.
-            reorderTabs={!freeLayoutLocked}
+            // F46: tab drag-reorder is available REGARDLESS of the layout lock
+            // (Sekmeht, v0.18.2 — reversing the original "reorder follows the
+            // lock"). Lock freezes the WINDOW ARRANGEMENT — position and size,
+            // the things you'd knock askew by accident. What's inside a window
+            // stays yours to manage: the same call as right-click → Close on a
+            // stream, which also circumvents the lock. Reordering a tab strip
+            // can't disturb a single window edge, so the lock has no stake in
+            // it, and users run locked most of the time — gating content
+            // operations on it made lock mean "read-only", which it isn't.
+            reorderTabs
+            // Cross-window drag: this strip's identity in the drag payload, and
+            // the handler for a tab dragged in from another window.
+            frameId={win.id}
+            onAdoptTab={(from, index) => adoptTabIntoWindow(win.id, from, index)}
             tabs={tabs}
             activeId={win.activeId && tabs.some(t => t.id === win.activeId) ? win.activeId : (tabs[0]?.id ?? '')}
             onTabsChange={t => updateWindow(win.id, {
