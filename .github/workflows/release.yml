@@ -95,6 +95,16 @@ jobs:
         run: npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code signing on ANY platform today (Windows never signed; Mac
+          # ships unsigned by decision). Stops electron-builder from hunting
+          # for a signing identity in the runner's keychain on mac.
+          # KEEP THIS INSIDE THIS STEP'S `env:` — it was once orphaned into the
+          # verify step's `run:` below by an edit that anchored on the GH_TOKEN
+          # line, which both failed the job (the shell tried to execute
+          # `CSC_IDENTITY_AUTO_DISCOVERY:`) and silently un-set the variable, so
+          # electron-builder started searching the keychain again. The YAML still
+          # PARSED, so a syntax check did not catch it.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       # Proof IN THE LOG that the packaged .app really carries a signature
       # (B238). We have no Mac to test on, an unsigned arm64 app fails only in a
       # user's hands with "is damaged and can't be opened", and the verify job
@@ -111,10 +121,6 @@ jobs:
           echo "Verifying $APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign --display --verbose=2 "$APP"
-          # No code signing on ANY platform today (Windows never signed; Mac
-          # ships unsigned by decision). Stops electron-builder from hunting
-          # for a signing identity in the runner's keychain on mac.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
   verify:
     # `needs: build` alone would SKIP this job when any matrix build fails —
