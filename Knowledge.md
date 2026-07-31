@@ -798,3 +798,35 @@ Facts that matter for a front-end integrating with these installs:
   stay stable across Lich versions, so stored client paths survive upgrades.
 - **lich.db3 lives at `<lich_dir>/data/lich.db3` on every platform** (DATA_DIR in
   `lib/constants.rb` is install-dir-relative) — the same derivation-from-lichPath works everywhere.
+
+
+### 18.1 Lich reads scripts with the process LOCALE encoding (verified 2026-07-30)
+
+`Lich::Common::Script#initialize` reads a `.lic` and walks its lines with a
+regex ([script.rb:956-957](file:///c:/temp/lich-dev/lich-5/lib/common/script.rb) —
+`for line in data` / `if line =~ /^([\d_\w]+):$/`). The read uses Ruby's
+`Encoding.default_external`, which Ruby derives from the **locale environment**
+(`LANG` / `LC_ALL`) at interpreter start.
+
+Consequence for any front-end that SPAWNS Lich: if the child has no locale set,
+`default_external` is **US-ASCII**, and the first non-ASCII byte in a script —
+including one inside a comment — raises:
+
+```
+--- Lich: error: invalid byte sequence in US-ASCII
+    .../lib/common/script.rb:957:in 'block in Lich::Common::Script#initialize'
+```
+
+This is a LAUNCH-ENVIRONMENT fact, not a Lich bug and not a script bug. The same
+script runs correctly from a terminal (a login shell exports `LANG`) and under
+Qt-based front-ends (Qt calls `setlocale()` during app startup, so its spawned
+Ruby inherits a locale). A macOS app launched from Finder/the dock exports
+neither — the same environment hole that removes the shell `PATH`.
+
+Windows is unaffected: Ruby there derives its default external encoding from the
+active code page and has no `LANG` convention.
+
+Lichborne's handling: `spawnEnv()` in
+[LichConnection.ts](src/main/connection/LichConnection.ts) defaults
+`LANG=en_US.UTF-8` for the Lich child on non-Windows platforms, and only when
+neither `LANG` nor `LC_ALL` is already set (B250, v0.18.3).

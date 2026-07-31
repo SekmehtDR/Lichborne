@@ -163,6 +163,12 @@ contextBridge.exposeInMainWorld('api', {
   // preload; exposing it here saves an async IPC round-trip for UI that
   // branches on platform (defaults, chords, setup copy).
   platform: process.platform,
+  // For SUPPORT: a tester saying "I'm on 0.18.3" does not say whether that is
+  // Windows x64, macOS arm64 or a Linux AppImage — and those three behave
+  // differently (unsigned + no auto-update on mac, AppImage paths on linux).
+  // Surfaced in Help → About so it is answerable without a round-trip.
+  arch: process.arch,
+  isAppImage: !!process.env.APPIMAGE,
 
   // Whether safeStorage-backed password saving works (false on Linux without
   // a secret service — GNOME Keyring / KWallet).

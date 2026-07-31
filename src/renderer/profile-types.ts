@@ -42,6 +42,17 @@ export interface SharedProfile {
   // Automations panel. Optional → older files default it to false. The stats
   // DATA is per-character (state.automationStats); only this enable flag is shared.
   automationAnalytics?: boolean
+  // Named Bulk Connect sets (F85, v0.18.3 — Binu): a "team" of characters,
+  // at most one per account, launched together. App-wide by definition — a set
+  // spans accounts, so it cannot live in a character profile. Optional → older
+  // files default to []. Stores NAMES; unknown ones are ignored at load rather
+  // than pruned, so a set survives a character being archived and restored.
+  bulkSets?: { name: string; characters: string[] }[]
+  // Command-history preferences (F82, v0.18.3). App-wide: the history DATA is
+  // per-character (state.commandHistory), but how recall should BEHAVE is a
+  // set-once preference, like the Session Log settings. Optional → older files
+  // default to minLength 0, which is exactly the pre-F82 behaviour.
+  commandHistory?: { minLength: number }
   // User-defined named colors (v0.14.6, `/colors add`). App-wide — a color
   // vocabulary is shared like themes. Optional → older files default to [].
   customColors?: { name: string; hex: string }[]

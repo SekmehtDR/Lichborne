@@ -1075,6 +1075,12 @@ function AppShell() {
             refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
             onBulkConnect={(characters) => setBulkPickerSource(characters)}
+            /* F85 — a saved set skips the picker. Routed through
+               handleReconnectLast because it already does everything a set
+               launch needs: one-per-account dedup, skipping characters already
+               on, and the per-account KEEP/SWITCH chooser when an account is
+               busy with someone else. */
+            onConnectSet={handleReconnectLast}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {
@@ -1150,6 +1156,12 @@ function AppShell() {
             refreshKey={launcherRefreshKey}
             onConnect={handleCardConnect}
             onBulkConnect={(characters) => setBulkPickerSource(characters)}
+            /* F85 — a saved set skips the picker. Routed through
+               handleReconnectLast because it already does everything a set
+               launch needs: one-per-account dedup, skipping characters already
+               on, and the per-account KEEP/SWITCH chooser when an account is
+               busy with someone else. */
+            onConnectSet={handleReconnectLast}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {

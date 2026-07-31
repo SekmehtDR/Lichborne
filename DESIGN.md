@@ -236,6 +236,37 @@ Players can save named layouts and switch between them:
 
 Layout profiles are saved to `~/.lichborne/layouts/[name].json`.
 
+### 2.4b Command history — app-wide minimum length (F82, v0.18.3)
+
+`↑`/`↓` recall keeps every non-blank command you type, which means a session of
+`n` / `s` / `ne` buries the long command you wanted back (Qij, via Sekmeht).
+`SharedProfile.commandHistory.minLength` (0-5) is the shortest command worth
+remembering. **Default 0 = the pre-F82 behaviour exactly** — nobody's history
+changes until they opt in — and it only affects NEW entries, so existing short
+commands age out naturally against the 200 cap.
+
+APP-WIDE rather than per-character: the history DATA is per-character
+(`state.commandHistory`), but how recall should BEHAVE is a set-once preference,
+like the Session Log settings. Surfaced in Settings → Behavior and as
+`/history` (status) / `/history min N` (alias `/hist`) — a bare+verbs noun, so
+it depends on the `NOUNS_WITH_VERBS` palette rule and must NOT also define a
+`status` verb.
+
+Three decisions worth keeping:
+- **Slash commands are always remembered**, whatever the threshold. `/ai`,
+  `/mode` and `/panel` are short but are exactly what you want to recall, and
+  they are never the movement spam the setting exists to filter.
+- **Length is measured after trimming**, so `"  s  "` cannot slip past a min of 3.
+- **The value is read FRESH at push time**, not held in a ref: it is a tiny
+  localStorage read, and it means a Settings change applies instantly to every
+  open character with no cross-window event to wire (the
+  `loadSessionLogSettings` precedent).
+
+The gate needed exactly ONE insertion point because `dispatchUserText` is the
+sole writer of history (see the command-send pipeline) — every other path
+passes `pushToHistory: false`. The browse index still resets on Enter even when
+the command was not stored, so Enter always returns you to the live line.
+
 ### 2.5 Layout Manager (was "Panel Manager")
 
 **RENAMED v0.18.2 (F78, Sekmeht): the toolbar button is now `Layout` and the modal is the `Layout Manager`.** The rename is **DISPLAY ONLY** — every persisted identifier is unchanged (`layoutMode`, `freeWindows`, `freeLayoutLocked`, `panelWidth`, `panelFontSizes`, the four zone keys), as is the `toggle-panels` session action and the `panelManager` status flag, so no migration was needed. The one place it reached data: Profile Transfer serialises categories by **id**, so that category's `label` moved `'Panel Layout'` → `'Layout'` while `id: 'layout'` deliberately did not — renaming the id would make every `.lb.yaml` already on disk silently skip the category on import. *Labels are display, ids are data.*
@@ -1757,7 +1788,7 @@ The launcher ([Launcher.tsx](src/renderer/components/Launcher.tsx)) is the prima
 
 **Section structure (top-down):**
 
-1. **Top bar** — `⚡ Bulk Connect` (conditional on ≥2 accounts with connectable characters), `+ Add account` (accent-colored, persistent — always reachable regardless of scroll), `⚙ Lich Setup`.
+1. **Top bar** — `⚡ Team Login` (conditional on ≥2 accounts with connectable characters), `+ Add account` (accent-colored, persistent — always reachable regardless of scroll), `⚙ Lich Setup`.
 2. **Welcome card** — when there are zero character profiles on disk. Single `+ Add account` CTA.
 3. **Favorites discoverability hint** — a single dismissable line above the account sections, shown only when the user has tiles but no Favorites and hasn't already dismissed (`lichborne.launcher.favTipDismissed` localStorage flag).
 4. **Favorites section** — always at the top, always expanded. Mirrors any tile with `profile.favorite === true`. Account-mixed, so tiles here keep the account name in their meta line (the `showAccount` prop is true here, false in the account-section context). Hidden overrides favorite — a hidden + favorited character only appears here when Show Hidden is on.
@@ -1824,7 +1855,66 @@ Two IPC channels for disconnect, differing only in wait semantics:
 
 App shutdown (`mainWindow.on('close')`) uses a third variant: `gracefulDisconnect({ quickClose: true })` — sends QUIT, calls `socket.end()` so the OS sends FIN after the send buffer drains (bytes guaranteed to leave), then force-closes. No server-ack wait. Shutdown drops from up-to-5s/session to ~300ms total. A "Closing — disconnecting N characters…" overlay (or "Closing — backing up profiles…" when no sessions are active) paints during the brief work via the new `shutdown-starting` IPC.
 
-### 13.6.4 Bulk Connect
+### 13.6.4 Team Login (was "Bulk Connect")
+
+**RENAMED v0.18.3 (Sekmeht).** "Bulk" described the mechanism; "team" describes
+the point, and it matches what a saved set actually is. **Display only** — the
+filename, the `bulk-connect` menu action, `bulkConnectSeparateWindows` and
+`bulkSets` are unchanged, because they are contracts rather than labels.
+
+**F85 (v0.18.3, Binu) — exclusions and named sets.**
+
+- **Per-account include checkboxes.** Every saved account used to be logged in,
+  with no way to leave one out. Exclusion is tracked SEPARATELY from the pick,
+  so unticking and re-ticking an account restores the character you had chosen
+  rather than resetting it to the default.
+- **Named sets** — a saved team, `SharedProfile.bulkSets` (app-wide: a set spans
+  accounts by definition, so it cannot live in a character profile). A set
+  stores CHARACTER NAMES, at most one per account — both DR's rule and the only
+  shape this picker can express. Loading one REPLACES the whole selection: an
+  account the set does not mention is ticked off, because a team should give you
+  exactly that team.
+- **A set is a template, not a connect list.** At connect time whoever is
+  already logged in is simply dropped and the rest connect. That distinction is
+  load-bearing in the other direction too: **saving** a set must use a separate
+  roster function, because the connect list excludes already-connected accounts
+  and reusing it saved sets that silently omitted anyone on at the time — you
+  would only discover it the next day when the team came back one short.
+- **Two entry points.** The picker (build/load/delete) and the launcher's
+  **▦ Sets…** dropdown, which only renders once a set exists. The launcher path
+  routes through `handleReconnectLast`, so it inherits `planReconnect`'s
+  already-on skips, one-per-account dedup, and the per-account keep/switch
+  chooser when a DIFFERENT character holds an account.
+- **Unknown names are dropped, not errors.** F79 archives characters rather than
+  deleting them, so a set naming an archived character should launch the rest of
+  the team now and work in full again if that character is restored.
+- **No slash command** (Principle #11 asked and answered): Team Login is a
+  launcher action and there is no command bar before you connect.
+
+**Modal layout (reworked v0.18.3 after a UX review).** Three labelled zones, in
+the order the user acts:
+
+```
+Team Login                                   ×
+  one short line: pick one per account…
+  SET      [ Load a saved set… ▾ ] [Delete]   <- load rewrites everything below
+  ── ACCOUNTS ───────────── 3 of 5 selected   <- live count
+  [x] account   [ character ▾ ]
+  ── SAVE AS A SET ─────────────────────────
+  what a set IS, taught here at the point of use
+  [ Save these 3 as a set… ]                  <- reserved height
+  ☐ Open each character in its own window     <- inside the body
+                          [Cancel] [Connect 3]
+```
+
+Load is above the list because it REWRITES the list; save is below because it
+SUMMARISES it. The "what is a set" explanation lives on the save row rather than
+in a preamble — it is needed once, and a header paragraph is re-read every time
+the modal opens. The connect option sits inside `.cne-body` (it previously sat
+between body and footer with a hardcoded inset that was 2px out of line). See
+polish standard #11 for the generalised rules.
+
+
 
 [BulkConnectPicker.tsx](src/renderer/components/BulkConnectPicker.tsx) + `runBulkConnect` in App.tsx. Surfaces only when ≥2 accounts have at least one connectable (non-hidden) character. Picker lists each account with a dropdown of its non-hidden characters; defaults to a favorited character if any, else first alphabetical. Already-connected accounts are disabled. Confirm → sequential connect (one character at a time — DR's account-slot rule forbids parallel within the same account; sequential is also simpler for error isolation across different accounts). Progress overlay during the run; per-character errors don't abort; final summary modal lists what succeeded and what failed.
 
@@ -7686,6 +7776,33 @@ Short records for the rest of the v0.15.2 review batch (full behavior in Tracker
 
 ## 41. Cross-Platform Support — Windows · Linux · macOS (v0.18.0)
 
+**Supportability audit (v0.18.3).** A pass over all three platforms looking for
+things that make a tester's report hard to act on. Two fixes:
+
+- **B252 — an AppImage's own path is a temp mount.** `app.getPath('exe')` is
+  `/tmp/.mount_.../usr/bin` there, so "open the install directory" opened a
+  folder that disappears on quit. `$APPIMAGE` carries the real path. See
+  pitfall #119 — it governs anything resolved relative to the executable.
+- **F95 — Help → About reports platform + arch.** "v0.18.3" alone is not
+  actionable when macOS is unsigned with no auto-update and Linux may be an
+  AppImage. Now `v0.18.3 · macOS arm64`, beside the version so it travels in a
+  screenshot. `process.arch` and `isAppImage` joined `platform` on the bridge.
+
+**Verified correct in the same pass** (recorded so they are not re-audited):
+scrollbars are styled globally at 12px, which forces CLASSIC scrollbars on macOS
+rather than overlay ones — so the panel controls' 18px scrollbar-clearing
+offsets are right on all three platforms; menu accelerators all use
+`CmdOrCtrl`; the primary modifier is additive (`ctrlKey || (IS_MAC && metaKey)`)
+and `formatKeyCombo` refuses `metaKey` so a macro can never bind a Cmd chord the
+OS owns; no hardcoded path separators remain; and no user-facing copy assumes
+Windows.
+
+**Known gaps, deliberately left to the backlog:** Linux `safeStorage` is
+silently unavailable without a keyring (the Add Account wizard warns, but
+nothing else does — **F86** Setup Health is the right home), and there is no
+diagnostics bundle (**F88**).
+
+
 ### 41.1 Stance
 
 v0.18.0 makes Lichborne cross-platform. **Windows x64 is the stable platform; Linux x64 (AppImage) and macOS arm64 (dmg+zip) ship as labeled BETAS.** The macOS build is deliberately **UNSIGNED** — a free-project decision (no Apple Developer account; the $99/yr Developer ID cert is revisited only if Mac demand proves out). Consequences of unsigned Mac builds, all handled explicitly:
@@ -8016,3 +8133,87 @@ The Moons sky was also measured with `.moons-pill`'s `backdrop-filter` removed a
 **Two limits on this result, stated rather than glossed:** everything was measured on the dev machine, which has headroom to spare — the **Linux and macOS betas will land on weaker hardware**, and the three items above plus the pill's blur are what would bite there first; that is a watch-list, not a finding, and it is unproven from here. And the crowded Tableau run exercised figures, bubbles, wisps and captions but left `combat` undefined, so **the readiness rings, BAL/POS/RNG gauges and the assess arena are unmeasured**.
 
 Harness: `tmp-map-perf/` (gitignored) — `exp-bench.jsx` (commit time), `anim-bench.jsx` (continuous sky under rAF), `scene-cost.mjs` (per-line capturers).
+
+
+---
+
+## 46. Prioritised Backlog — features & UX polish (snapshot 2026-07-30)
+
+A holistic pass over the client against the mission (§1, §24), taken at v0.18.3.
+**Priorities, not commitments** — a snapshot of where the value is, to be
+re-cut when it stops matching reality. Items already spec'd elsewhere keep their
+existing ids (§32's G/X/AI series); genuinely new ideas are numbered F86+.
+
+**The finding that shapes the list.** Phases 1-5 are complete and the client is
+functionally mature — text pipeline, panels, automations, imports, profiles,
+multi-character, cross-platform are all done and hardened. Two things are thin:
+
+1. **The first ten minutes.** Our first macOS tester hit THREE separate walls in
+   one sitting (B246 no saved password → unexplained wizard; B250 no locale →
+   `spawn ENOENT`; B247 Lich Setup silent about a bad path). None was a missing
+   feature — each was the client failing to say what it needed. Lichborne is
+   currently much better than its first impression suggests.
+2. **The joy layer.** The Experiences platform (§34) carries 2 of the 16
+   surfaces the G/X series describe. That platform is what makes this client
+   *ours* rather than another front-end, and it is where enjoyability per unit
+   of effort is highest.
+
+### Tier 1 — small effort, disproportionate payoff
+
+| Item | Effort | Rationale |
+|---|---|---|
+| **Screenshot in README** | XS | A visual product with no picture. The single biggest first-impression gap; the README carries an HTML comment marking where it goes. |
+| **F86 — Setup Health panel** | S | One surface listing Lich ✓/✗, session logging, AI, SimuCoins, each with a fix link. Answers all three of Zithri's walls at once and turns "it's broken" into "here's what's missing". |
+| **F87 — What's New on first launch after an update** | S | release-notes.md is written every version and almost nobody sees it. Show it in-app once per version, dismissible. |
+| **F88 — Diagnostics bundle** | S | One button → zip of the launch log, versions, and a SANITISED profile. Every tester report so far has opened with us asking for context by hand. |
+| **G3 — Life Orbs** | S | Vitals as orbs rather than bars. Data already parsed, opt-in, pure cosmetic joy. |
+| **F89 — Per-character accent colour on tabs** | S | Multi-boxers identify a tab by colour far faster than by name. Rides the existing per-character settings pipeline. |
+
+### Tier 2 — medium effort, high enjoyability
+
+| Item | Effort | Rationale |
+|---|---|---|
+| **G2 — Wound Paper-Doll** | M | Per-part injuries AND scars are already parsed (B224) and currently drive only a text list. Highest payoff-per-line left in the codebase. |
+| **G6 — Active Spells & Buffs board** | M | Practical every session; the stream already exists. |
+| **G10 — Reactive Soundscape** | M | Sound is the one sense the client does not use. Needs care with the epilepsy-safe/motion conventions — the equivalent rule for audio is "never startle, always mutable". |
+| **AI5 — Chronicle (auto journal)** | M | The most delightful AI idea in §32, and it reuses the v0.17.1 Catch Me Up log pipeline (extractors, dedup, tiering) almost wholesale. |
+| **§43 modal chrome unification** — 9 dialogs still on their own | M | The `--modal-*` tokens exist; without this the app reads as assembled rather than designed. |
+| **map-panel.css light-theme audit** (~23 literals, pitfall #75c) | M | A known queue of light-theme bug reports waiting to be filed. |
+
+### Tier 3 — large, and they define the next chapter
+
+| Item | Effort | Rationale |
+|---|---|---|
+| **Retire Static Panels** (§33 stages 1-2) | L | The biggest simplification available. The interim cost compounds: EVERY new feature needs two branches (pitfall #79), and that tax is paid on every release until it lands. |
+| **X3 — Empath's Ward** | L | Deepest guild-specific payoff; party frames are genuinely novel for DR. |
+| **AI6 — Ask Your Logs** | L | Needs the embeddings capability the §10 adapter deliberately left dark — the first feature that would light it up. |
+
+### New ideas (not previously in §32)
+
+- **F90 — Character palette (`Ctrl+P`).** Fuzzy-jump to any character by name.
+  Nine tabs is already past what `Ctrl+1-9` serves well, and the slash palette
+  proves the interaction works here.
+- **F91 — Profile backup browser.** Five rolling timestamped backups per
+  character already exist on disk (§20) with no way to see or restore one.
+  Cheap insurance against the failure class Principle #8 exists to prevent.
+- **F92 — "Explain this screen" overlay.** A dismissible onboarding pass
+  labelling the vitals bar, icon bar and panels. The natural extension of UX
+  standard #8 from individual controls to the whole window.
+- **F93 — Session summary card on disconnect.** Time played, ranks gained, coin
+  earned. Nearly free from the Catch Me Up extractors, and a genuinely pleasant
+  end-of-session moment.
+- **F94 — Theme sharing.** Themes are already portable data; a paste-a-string
+  import would turn that into a community.
+
+### Deliberately held
+
+- **G9 / AI9 image generation.** Cost and scope out of proportion to the
+  payoff, and it needs the `image` capability the adapter leaves dark.
+- **Anything resembling a script runtime.** The Lich line (Principle #2). It has
+  held cleanly so far and should keep holding.
+
+### Suggested first cut
+
+A **"first ten minutes" release**: the README screenshot, F86, F87 and F88.
+All Tier 1, all small, and together they close the exact failure mode that cost
+a tester two days. Then ONE Experience (G2) to keep the joy layer moving.

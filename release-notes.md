@@ -1,63 +1,47 @@
-## v0.18.2 — The moons, properly 🌒 · Layout Manager · macOS catches up 🍎
+## v0.18.3 — Your reports, fixed 🔍
 
-The Moons experience got the full treatment this release, Windowed Panels picked up the interactions it was missing, and — thanks to our first Mac tester actually putting the beta through its paces — macOS got a serious pass.
+Almost everything here came from someone hitting a problem and telling us. Thank you.
 
-### Real moon phases
+### Two long-standing bugs, finally pinned down
 
-The moons now show their **actual phase**, computed from DragonRealms' own orbital constants and timed against the **game server's clock**, so a PC whose clock has drifted can't skew the sky. Each moon is drawn as only its lit part — a crescent hanging in nothing, the way a real one looks — with a faint earthshine glow on the dark side at night, and brightness that swells toward full.
+**The Lich Dashboard's search highlight sat between two lines.** Reported more than once and never reproducible — because it's invisible in short files. Two clues cracked it: it was fine in the Ruby script editor but wrong in a YAML profile, and the screenshot was at line 1083. That combination means the error was *accumulating*, and it was: the editor's line height didn't land exactly on the browser's internal layout grid, so the highlight drifted a fraction of a pixel per line — about a sixth of a row by line 1000. Now exact at any line number.
 
-Hover any moon for its phase now and next:
+**A Lich script that works in other front-ends failed here on macOS** (thanks Zithri) with `invalid byte sequence in US-ASCII`. That turned out to be Lichborne's fault, not the script's: a Mac app launched from Finder or the dock inherits no shell environment, so Ruby had no language setting and read the script file as plain ASCII — one curly quote or accented character anywhere in it, even in a comment, and the script died before it ran. Lichborne now hands Lich a UTF-8 locale. If you've had scripts fail here that work elsewhere, try them again.
 
-```
-Now:  waxing gibbous · 71% lit
-Next: full in ~1d 4h
-```
+### Command history is yours to tune
 
-The **MOONS line in the header** has a tooltip too, listing all three at once — handy when the orrery pill is hidden.
+Requested by **Qij**: a history full of `n`, `s` and `ne` buries the long command you actually wanted back. **Settings → Behavior → "Remember commands of at least N characters"**, or `/history min 3` from the command bar.
 
-Phases no longer tilt to face the sun. It's the truer thing for a sphere, but on a stylised sky it looked like the moon had been knocked sideways, and the same phase appeared as different shapes at dusk and midnight. The lit side now sits where a calendar puts it: right while waxing, left while waning.
+Default is **0 — remember everything**, exactly as before, so nothing changes until you choose it. Slash commands like `/ai` are always kept regardless, and your existing history is left alone.
 
-### Weather you can actually see
+### Team Login (was Bulk Connect)
 
-Weather prose is now read for **severity**, not just presence. "A few scattered clouds", "partly cloudy", "very cloudy" and "completely overcast" each draw a genuinely different sky — more cloud, and bigger cloud, as it thickens — with a solid overcast deck reserved for wording that really means a closed sky.
+Two things Binu asked for, and a rename that follows from them.
 
-**The fog effect is gone.** A translucent haze washed out the sky, the moons and the landscape all at once and read as a broken render rather than as weather. Fog still counts (it hides shooting stars and thickens the cloud), it just isn't painted.
+You can now **untick accounts** instead of logging in one character from every account you own. And you can **save a selection as a named set** — a team like *farm* or *rescue* — then launch it later, either from the picker or straight from the **▦ Sets…** button on the logon screen.
 
-**Shooting stars are rare again.** Six of them on short cycles worked out to one streak every 1.7 seconds — less "rare sight", more meteor shower. Now it's roughly one every thirty seconds.
+A set is a template of who you want. Anyone already logged in is simply skipped, and the rest connect.
 
-### Windowed Panels: the interactions that were missing
+"Bulk Connect" described the mechanism; **Team Login** describes the point — and it matches what a set actually is. Nothing about your saved settings changed.
 
-- **Right-click → Close**, anywhere on a window. On a panel window it closes the stream you're looking at; on an Experience it closes the Experience. Also in the stream's own right-click menu, next to Clear.
-- **Drag a stream from one window to another** — the same gesture as reordering tabs, just released over a different window's tab strip.
-- **Reordering tabs works while the layout is locked.** The lock now has a clear line: it freezes *where windows are and how big they are*, never what's inside them. Closing and reordering streams stay available.
+### You can see when a character drops
 
-Closing is deliberately not offered on the command, vitals and icon bars, or on the game window itself — those are hard to get back if you hit them by accident.
+The status dot beside the Lichborne wordmark used to describe only the tab you were looking at, so a character that disconnected in a background tab went unnoticed. It now has three states:
 
-### Layout Manager
+- 🟢 this tab **and every other open tab** are connected
+- 🟡 this tab is fine, but another one has dropped — hover to see who
+- 🔴 the tab you're on is disconnected
 
-The **Panels** button is now **Layout**, and the Panel Manager is the **Layout Manager**. Inside, the mode choice is a proper chooser: two cards showing what each mode is, which one you're using, and — plainly — that **Static Panels is legacy**. Switching converts your layout for you, and switching back leaves it as you left it. The Windowed options (Lock, Fit bars, Rebuild) now explain what they do instead of hiding it in a tooltip.
+A tab that's busy reconnecting doesn't raise the warning.
 
-Nothing about your saved layout changed — this is a rename and a redesign, not a migration.
+### Moons
 
-### Accounts
-
-- **Remove an account** from the logon screen, with `✕ Remove` on the account header. It **archives rather than deletes**: your characters' settings and logs are kept, and adding the account back later restores them exactly as they were.
-- **"Show password"** when typing one in, so a typo doesn't turn into "the login doesn't work" an hour later.
-- **"+ Add account" starts blank.** It used to pre-fill your last-used account, which looked like adding a new one while actually re-submitting an existing one.
-- The Add Character window's buttons no longer come out different sizes with wrapped labels.
-- The launcher's logo and its button row swapped places, so the buttons sit with the characters they act on.
-
-### macOS
-
-Our first Mac tester found three real problems, all now fixed:
-
-- **The app can now be quit.** Closing the window, ⌘Q and File → Quit all left it running with no windows and Force Quit as the only exit.
-- **Connecting explains itself.** If a character's password isn't saved, Lichborne needs it before it can connect — it used to just show the "Add account" screen with no explanation, which looked like it had forgotten your character. It now says exactly what it needs and why.
-- **Lich Setup tells you when a path is wrong** as soon as you open it, instead of staying silent until you press Auto Detect. And if you try to connect with Lich before it's set up, the error now points you at Lich Setup rather than showing a raw `spawn ENOENT`.
-
-If you're on macOS or Linux and want Lich, you'll need Lich 5 and **Ruby 4** installed — then **⚙ Lich Setup → Auto Detect** will find them.
+The sun now sits properly **behind** the moons — previously a moon near its new phase is drawn as almost nothing, so the sun shone straight through it. And when a nearly-dark moon crosses the sun it now shows as a **shadowed disc with a rim**, so you can see it's there instead of wondering where it went.
 
 ### Also
 
-- "cloudless" no longer reads as cloudy.
-- The password-saving notice named Linux keyrings on every platform; it now names the right one for your OS.
+- Script filters now say **`scripts/`** and **`custom/`** instead of "core" and "custom" — "core" implied a script shipped with Lich, when it only ever meant "in the main scripts folder". If you save your own scripts there, they were being labelled as Lich's.
+- The "Type a game command" hint for new users is easier to read.
+- Fixed: the **⋯ menu on a character card** did nothing when you opened the launcher over a live session — it was opening behind the window.
+- **Help → About** now shows your platform and architecture next to the version — handy when reporting a bug.
+- Fixed (Linux): **File → Open Installation Directory** opened a temporary folder instead of where your AppImage actually lives.

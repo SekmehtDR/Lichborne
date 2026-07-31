@@ -121,7 +121,21 @@
 
 .ctx-menu {
   position: fixed;
-  z-index: 500;
+  /* ABOVE EVERY MODAL. A context menu is PORTALED to document.body, so it
+     escapes the subtree of whatever opened it and its z-index has to win on its
+     own — being "inside" a modal in React says nothing about paint order.
+     At 500 it lost to every modal in the app (wizard 600, AI consent 620,
+     add-character 1000, connecting overlay 1500, Quick Send 2000): the menu
+     opened correctly and rendered UNDERNEATH the modal's scrim, which reads as
+     "the button does nothing" (Sekmeht: the ⋯ on a character card in the
+     compact launcher, v0.18.3).
+     2100 clears the highest modal with room to spare. The few 9999 popovers
+     (the PanelFrame + menu, the app-bar ⋯ menu, a map tooltip) are deliberately
+     left above it — none of them can host a context menu, and a transient menu
+     should not outrank the control that spawned it.
+     RULE: any new portaled popover needs a z ABOVE the modal tier, and any new
+     modal must stay BELOW 2100. */
+  z-index: 2100;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -579,11 +593,30 @@
 }
 
 /* F58 first-session hint — GameWindow only sets the placeholder attr while the
-   character has never sent a command, so veterans never see it. Explicit faint
-   theme var (Chromium's default placeholder grey is a literal that can vanish
-   on light themes — pitfall #34 family). */
+   character has never sent a command, so veterans never see it. Never Chromium's
+   default placeholder grey: that is a literal that can vanish on light themes
+   (pitfall #34 family).
+
+   LIFTED off --text-faint in v0.18.3 (Sekmeht) — a first-time user should be
+   able to READ the one line telling them what the box is for.
+
+   Deliberately NOT the next step up the text ramp, because THE RAMP IS NOT
+   MONOTONIC ACROSS THEME FAMILIES (the pitfall #63 inversion, still live).
+   Measured against each family's input background:
+       dark  : faint 3.81  dim 4.7  muted 5.5   <- faint is the LEAST visible
+       light : faint 6.69  dim 5.6  muted 4.6   <- faint is the MOST visible
+   So --text-muted would lift the hint on dark themes and DIM it on light ones.
+   Any single ramp var trades one family for the other.
+
+   A mix toward --text-primary is measured from the input's own background, so
+   it lands at a consistent RELATIVE contrast whatever the theme does. 70% is
+   the ratio that lifts dark themes substantially while leaving light ones at
+   least as readable as before (real typed text sits at ~16-17, so the hint is
+   still unmistakably secondary):
+       dark  3.81 -> 7.98      light 6.69 -> 6.39 (both far above the 4.5 AA floor)
+   (Principle #4 / pitfall #63.) */
 .command-input::placeholder {
-  color: var(--text-faint);
+  color: color-mix(in srgb, var(--text-primary) 70%, var(--bg-input));
   opacity: 1;
 }
 

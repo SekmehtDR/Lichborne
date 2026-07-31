@@ -1469,7 +1469,7 @@ function setupMenu() {
       label: 'File',
       submenu: [
         { label: 'Login with Character…', click: () => sendMenuAction('login-character') },
-        { label: 'Bulk Connect…',         click: () => sendMenuAction('bulk-connect') },
+        { label: 'Team Login…',           click: () => sendMenuAction('bulk-connect') },
         { type: 'separator' },
         { label: 'Export Profile…', click: () => sendMenuAction('profile-export') },
         { label: 'Import Profile…', click: () => sendMenuAction('profile-import') },
@@ -1484,11 +1484,23 @@ function setupMenu() {
         },
         {
           label: 'Open Installation Directory',
-          click: () => shell.openPath(
-            app.isPackaged
-              ? path.dirname(app.getPath('exe'))
+          // APPIMAGE FIRST (Linux). An AppImage runs from a temporary
+          // squashfs mount, so `app.getPath('exe')` is something like
+          // /tmp/.mount_LichbXXXXXX/usr/bin — a directory that does not
+          // survive the app quitting and tells a user nothing about where
+          // their install lives. Electron's AppImage launcher exports
+          // $APPIMAGE with the real path to the .AppImage file, so open the
+          // folder the user actually keeps it in. Unset on every other
+          // platform and on a non-AppImage Linux build, which fall through to
+          // the exe's own directory.
+          click: () => {
+            const appImage = process.env.APPIMAGE
+            shell.openPath(
+              appImage ? path.dirname(appImage)
+              : app.isPackaged ? path.dirname(app.getPath('exe'))
               : app.getAppPath()
-          ),
+            )
+          },
         },
         { type: 'separator' },
         { label: 'Disconnect', click: () => sendMenuAction('disconnect') },

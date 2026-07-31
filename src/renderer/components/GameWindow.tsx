@@ -59,6 +59,7 @@ import { THEMES, applyTheme, applyCustomTheme, registerThemeAppliedHook } from '
 import { exportCharacterProfile, scheduleProfileSave, scheduleSharedProfileSave } from '../profile'
 import { scopedKey, GLOBAL_RULES_SCOPE, asGlobalRules } from '../characterScope'
 import { loadCommandHistory, saveCommandHistory, COMMAND_HISTORY_MAX } from '../commandHistory'
+import { loadCommandHistorySettings, saveCommandHistorySettings, shouldRememberCommand } from '../commandHistorySettings'
 import { useSessions, makeCharacterId } from '../SessionsContext'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
@@ -3950,6 +3951,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       getTriggers: () => triggers,
       applyTriggers: rules => { saveTriggers(session.character, rules); setTriggers(rules); saveProfile() },
       getMainTimestamps: () => !!streamTimestamps['main'],
+      // F82 (Qij). App-wide, so it goes straight to the shared store and then
+      // flushes _shared.yaml — there is no per-character state to touch.
+      getCommandHistoryMinLength: () => loadCommandHistorySettings().minLength,
+      setCommandHistoryMinLength: (n: number) => {
+        saveCommandHistorySettings({ minLength: n })
+        scheduleSharedProfileSave()
+      },
       toggleMainTimestamps: () => toggleStreamTimestamp('main'),
       // Phase 2 `edit` verbs — open the Automations panel with the rule selected.
       openRuleEditor: (tab, ruleId) => {
@@ -4124,12 +4132,22 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   function dispatchUserText(text: string, opts: { pushToHistory: boolean; clearInput: boolean }) {
     if (!text.trim()) return
     if (opts.pushToHistory) {
-      if (historyRef.current[0] !== text) {
+      // F82 minimum length. Read FRESH rather than held in a ref: it is a tiny
+      // localStorage read on a keypress-rate path, and it means a Settings
+      // change applies instantly to every open character with no cross-window
+      // event to wire (the loadSessionLogSettings precedent).
+      //
+      // There is exactly ONE writer of history (this function), so the gate
+      // lands here and covers every path automatically.
+      const remember = shouldRememberCommand(text, loadCommandHistorySettings().minLength)
+      if (remember && historyRef.current[0] !== text) {
         historyRef.current = [text, ...historyRef.current].slice(0, COMMAND_HISTORY_MAX)
         // F57: persist so ↑ recall survives restarts. Synchronous but tiny
         // (≤200 short strings); try/catch'd inside — never throws mid-send.
         saveCommandHistory(session.character, historyRef.current)
       }
+      // Reset the browse position even when the command was NOT stored —
+      // pressing Enter always returns you to the live line.
       historyIdxRef.current = -1
       historyDraftRef.current = ''
     }

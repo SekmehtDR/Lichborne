@@ -54,6 +54,31 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
   const st = active?.status
   const connected = st?.connected ?? false
 
+  // THREE-STATE CONNECTION DOT (Sekmeht). The dot only ever described the
+  // ACTIVE tab, so a character that dropped in a background tab was invisible
+  // until you happened to click it — the dot sat green while someone was
+  // logged out. Green now means "everything is fine", not merely "this tab is
+  // fine":
+  //   red    — the tab you are looking at is disconnected (unchanged)
+  //   YELLOW — this tab is connected, but another open tab is NOT: go look
+  //   green  — this tab and every other open tab are connected
+  //
+  // A tab mid-RECONNECT is deliberately not counted: it is already being dealt
+  // with, and a warning you can't act on is noise (UX standard #1 — every glyph
+  // on screen should mean "look at me").
+  //
+  // Scope is THIS WINDOW's tabs — the sessions the tab bar beside this dot
+  // actually shows, so the warning always has something you can click to. A
+  // decoupled window carries its own app bar and warns about its own tabs.
+  const othersDown = sessions.filter(s =>
+    s.characterId !== activeId && !s.status.connected && !reconnectingIds?.has(s.characterId))
+  const dotState: 'on' | 'warn' | 'off' = !connected ? 'off' : othersDown.length > 0 ? 'warn' : 'on'
+  const dotTitle =
+    dotState === 'off' ? 'Disconnected'
+    : dotState === 'warn'
+      ? `Connected — but ${othersDown.map(s => s.character).join(', ')} ${othersDown.length === 1 ? 'is' : 'are'} disconnected`
+      : 'Connected'
+
   // "More ⋯" overflow dropdown for the less-frequently-used buttons (static
   // grouping — no width measurement; declutters the bar and keeps it usable on
   // narrow windows). The app-bar sits at the top of the window, so the menu
@@ -74,11 +99,13 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
 
   return (
     <div className="app-bar">
-      <span className="app-bar-brand" title={connected ? 'Connected' : 'Disconnected'}>
+      <span className="app-bar-brand" title={dotTitle}>
         {/* Wordmark wrapped in ONE element so the flex `gap` on .app-bar-brand
             spaces the dot away from the word, NOT "Lich" from "borne". */}
         <span className="app-bar-wordmark"><span className="toolbar-title-lich">Lich</span><span className="toolbar-title-borne">borne</span></span>
-        <span className={`app-bar-status-dot${connected ? ' app-bar-status-dot--on' : ''}`} />
+        <span className={`app-bar-status-dot app-bar-status-dot--${dotState}`}
+              role="status"
+              aria-label={dotTitle} />
       </span>
 
       <CharacterTabBar onAdd={onAdd} onClose={onClose} onReconnect={onReconnect} reconnectingIds={reconnectingIds} />

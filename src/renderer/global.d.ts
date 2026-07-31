@@ -64,6 +64,8 @@ declare global {
         baseFolderExists: boolean; rubyVersion: string | null; isWindows: boolean
       }>
       platform: string
+      arch: string
+      isAppImage: boolean
       secureStorageAvailable: () => Promise<boolean>
       simucoinCheck: (account: string, claim?: boolean) => Promise<SimuCoinStatus>
       simucoinCached: () => Promise<SimuCoinStatus[]>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { loadCommandHistorySettings, saveCommandHistorySettings, CMD_HISTORY_MIN_MAX } from '../commandHistorySettings'
 import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage, SimuCoinStatus } from '../../shared/types'
@@ -165,6 +166,17 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   // the modal portals to document.body, so ids could collide if a second
   // SettingsPanel is ever mounted in the same document.
   const [query, setQuery] = useState('')
+  // F82 (Qij, via Sekmeht) — APP-WIDE, so it lives in _shared.yaml rather than
+  // per-character `settings`. Held in local state and flushed on change, the
+  // same shape the Session Log block uses.
+  const [cmdHist, setCmdHist] = useState(() => loadCommandHistorySettings())
+  function setCmdHistMin(n: number) {
+    const next = { minLength: Math.max(0, Math.min(CMD_HISTORY_MIN_MAX, n)) }
+    setCmdHist(next)
+    saveCommandHistorySettings(next)
+    scheduleSharedProfileSave()
+  }
+
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
 
   // Land on a requested section (the coin popover's "Set up in Settings…").
@@ -787,6 +799,34 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
             checked={settings.mapAnimations}
             onChange={v => set('mapAnimations', v)}
           />}
+
+          {/* F82 — app-wide (all characters), unlike everything above it in
+              this section. The hint says so, because a Behavior section that
+              silently mixes scopes is the kind of thing that surprises people
+              later. */}
+          <div className="sp-field-row">
+            <label className="sp-field-label" htmlFor="sp-cmdhist-min">
+              Remember commands of at least{' '}
+              <span className="sp-field-hint">(0 = remember everything · all characters)</span>
+            </label>
+            <div className="sp-number-row">
+              <button className="sp-num-btn" onClick={() => setCmdHistMin(cmdHist.minLength - 1)}>−</button>
+              <input
+                id="sp-cmdhist-min"
+                type="number" min={0} max={CMD_HISTORY_MIN_MAX} step={1}
+                value={cmdHist.minLength}
+                onChange={e => setCmdHistMin(parseInt(e.target.value) || 0)}
+                className="sp-number-input"
+              />
+              <button className="sp-num-btn" onClick={() => setCmdHistMin(cmdHist.minLength + 1)}>+</button>
+              <span className="sp-field-hint">characters</span>
+            </div>
+          </div>
+          <div className="sp-field-desc">
+            {cmdHist.minLength <= 0
+              ? 'Every command you type is kept for up-arrow recall.'
+              : `Commands under ${cmdHist.minLength} characters — "n", "se" and the like — are no longer kept, so up-arrow reaches the ones you actually want. Slash commands are always kept, and existing history is left alone.`}
+          </div>
           </section>}
 
           {/* ── Session Log ─────────────────────────────────────── */}

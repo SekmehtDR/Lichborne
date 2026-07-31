@@ -168,3 +168,108 @@
 .cne-btn-save:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 14%, var(--accent-bg));
 }
+
+/* ── Team Login (F85, v0.18.3) ─────────────────────────────────────────────
+   The picker's body was a flat stack of `.cne-row`s at a uniform 12px gap —
+   two paragraphs, the set controls and every account row all siblings — so
+   nothing said where one concern ended and the next began (Sekmeht's layout
+   review). These give it three legible zones: load a set · choose accounts ·
+   save what you chose. Hierarchy comes from a muted label plus a hairline,
+   not from more spacing (UX standard #5).
+   Defined here rather than inline: the component previously carried ~15
+   `style={{}}` objects, which is what made it awkward to adjust at all. */
+
+/* Team Login is WIDER than the notes editor it borrows this chrome from: its
+   rows carry a checkbox, an account name, a "already connected — skipped" note
+   AND a full-width select, where the notes editor holds two short fields. 560
+   was a deliberate inline override before the v0.18.3 restructure; folding the
+   inline styles into classes dropped it and silently narrowed the modal by
+   40px. Keep it a class, not an inline style. */
+.tl-modal { width: min(560px, 92vw); }
+
+/* Section label — uppercase, letter-spaced, quiet; pinned line-height so the
+   strip is text-height and never inherits the game leading (standard #7). */
+.tl-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.tl-section-label {
+  font-size: 0.68rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+}
+/* "3 of 5" — the running answer to "what will Connect actually do". */
+.tl-section-count {
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A control row inside a zone: label on the left, controls filling the rest. */
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tl-row-label {
+  font-size: 0.68rem;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.tl-grow { flex: 1; min-width: 150px; }
+
+/* One account. The whole row is the label so the checkbox and the name share a
+   hit target; the select sits beneath, indented to clear the checkbox so the
+   list reads as a column of characters rather than a zigzag. */
+.tl-account { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.tl-account-head { display: flex; align-items: center; gap: 8px; }
+.tl-account-name { color: var(--text-primary); font-weight: 600; }
+.tl-account-note { font-size: 0.7rem; color: var(--text-faint); }
+/* Excluded / unavailable accounts recede rather than disappear — the row keeps
+   its place so the list never reflows as sessions come and go (standard #2). */
+.tl-account--off { opacity: 0.55; }
+.tl-account .cne-input { margin-left: 22px; }   /* clears the checkbox column */
+
+/* Hint that sits WITH its control instead of in a preamble. */
+.tl-hint {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The save row reserves its height whether it shows a button or the name
+   field, so starting a save never shifts the account list (standard #2). */
+.tl-saverow { min-height: 30px; }
+
+/* Destructive, and only on hover — quiet at rest (standard #1), matching the
+   account Remove button rather than wearing the neutral cancel style. */
+.tl-btn-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-danger) 55%, transparent);
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
+/* Connect options live INSIDE the body. This checkbox used to sit between the
+   body and the footer with a hardcoded 16px inset against the body's 14px —
+   2px out of line with everything above it. */
+.tl-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}

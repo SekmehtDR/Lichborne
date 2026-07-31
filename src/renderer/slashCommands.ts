@@ -13,6 +13,7 @@
 // makes, so a slash-created rule is byte-compatible with an editor-created one.
 
 import { newHighlight, type HighlightRule, HIGHLIGHT_EFFECTS } from './highlights'
+import { CMD_HISTORY_MIN_MAX } from './commandHistorySettings'
 import { newMute, type MuteRule } from './mutes'
 import { newSubstitute, type SubstituteRule } from './substitutes'
 import { newContact, newTemplate, formatLastSeen, DR_GUILDS, type Contact, type ContactTemplate } from './contacts'
@@ -45,6 +46,10 @@ export interface SlashContext {
   getTriggers: () => TriggerRule[]
   applyTriggers: (rules: TriggerRule[]) => void
   getMainTimestamps: () => boolean
+  /** App-wide command-history minimum length (F82). Read/write via the ctx so
+   *  the registry stays pure — it never touches storage itself. */
+  getCommandHistoryMinLength: () => number
+  setCommandHistoryMinLength: (n: number) => void
   toggleMainTimestamps: () => void
   // Phase 2 `edit` verbs: open the Automations panel at `tab` with the rule
   // selected in its detail pane (the TriggersPanel openRuleId pattern).
@@ -1069,6 +1074,40 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
 
   // ── /timestamps ─────────────────────────────────────────────────────────
   {
+    // BARE + VERBS (the /ai, /colors shape): the bare form reports, the verbs
+    // change things. Do NOT add a `status` verb — the palette suppresses the
+    // bare commit for such nouns, and a status verb would duplicate the bare
+    // output as a second identical row (see NOUNS_WITH_VERBS in SlashPalette).
+    noun: 'history', nounAliases: ['hist'], verb: '',
+    args: [], options: [], flags: [],
+    description: 'Show how command history is remembered',
+    example: '/history',
+    run: (ctx) => {
+      const n = ctx.getCommandHistoryMinLength()
+      return ok(n <= 0
+        ? 'Command history: remembering every command (no minimum length).'
+        : `Command history: only commands of ${n}+ characters are remembered. Slash commands are always kept.`)
+    },
+  },
+  {
+    noun: 'history', nounAliases: ['hist'], verb: 'min',
+    args: [{ name: 'length', required: true, kind: 'word', hint: `0-${CMD_HISTORY_MIN_MAX} — 0 remembers everything` }],
+    options: [], flags: [],
+    description: 'Set the shortest command worth remembering for up-arrow recall',
+    example: '/history min 3',
+    run: (ctx, p) => {
+      const raw = p.args[0]
+      const n = Number(raw)
+      if (!/^\d+$/.test(raw) || !Number.isFinite(n) || n > CMD_HISTORY_MIN_MAX) {
+        return err(`/history min takes a whole number 0-${CMD_HISTORY_MIN_MAX} — not "${raw}". 0 remembers everything.`)
+      }
+      ctx.setCommandHistoryMinLength(n)
+      return ok(n === 0
+        ? 'Command history: remembering every command.'
+        : `Command history: commands under ${n} characters are no longer remembered (slash commands still are). Existing history is unchanged.`)
+    },
+  },
+  {
     noun: 'timestamps', nounAliases: ['ts'], verb: '',
     args: [{ name: 'on|off', required: false, kind: 'word', hint: 'omit to toggle' }],
     options: [], flags: [],
@@ -1219,6 +1258,7 @@ const NOUN_HELP: Record<string, string> = {
   mute:       'Hide lines you never want to see (spam, weather, a chatty NPC)',
   sub:        'Rewrite matching text into something shorter or clearer',
   alias:      'Typed shortcuts — one word expands into full commands',
+  history:    'Control which commands the up-arrow remembers',
   trigger:    'React to game text automatically (text matches → command sends)',
   contact:    'Track players — their names get colored everywhere they appear',
   template:   'Reusable name styles (like Friends/Enemies) to file contacts under',

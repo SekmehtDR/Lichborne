@@ -38,6 +38,30 @@ export interface ConnectRetryOptions {
   onProgress?: (elapsedSeconds: number) => void
 }
 
+
+// Environment for the Lich child.
+//
+// A UTF-8 LOCALE IS LOAD-BEARING (ohbeanz, v0.18.3). Ruby derives
+// `Encoding.default_external` from the locale, so with no LANG it falls back to
+// US-ASCII — and Lich reads each `.lic` with that encoding, then regex-matches
+// every line (`script.rb` Script#initialize). One non-ASCII byte anywhere in
+// the file — a curly quote, an em dash, an accented name in a comment — and the
+// script dies before it runs:
+//     --- Lich: error: invalid byte sequence in US-ASCII
+// The same script works from a terminal, and worked in another front-end, which
+// makes it look like a Lichborne incompatibility. It isn't: it is the identical
+// root cause as `resolveRubyw`'s note that a GUI app launched from Finder/the
+// dock inherits NO SHELL ENVIRONMENT. No PATH, and no LANG either.
+//
+// Only defaults when absent, so a user who has deliberately set a locale keeps
+// it, and only off Windows — Windows Ruby derives its default from the code
+// page, has no LANG convention, and is the platform this already works on.
+function spawnEnv(): NodeJS.ProcessEnv | undefined {
+  if (process.platform === 'win32') return undefined   // inherit unchanged
+  if (process.env.LANG || process.env.LC_ALL) return undefined
+  return { ...process.env, LANG: 'en_US.UTF-8' }
+}
+
 export class LichConnection extends EventEmitter {
   private socket: net.Socket | null = null
   private lichProcess: cp.ChildProcess | null = null
@@ -149,6 +173,7 @@ export class LichConnection extends EventEmitter {
         this.lichProcess = cp.spawn(rubywPath, args, {
           detached: true,
           stdio: logFd === null ? 'ignore' : ['ignore', logFd, logFd],
+          env: spawnEnv(),
         })
       } catch (err) {
         if (logFd !== null) { try { fs.closeSync(logFd) } catch { /* ignore */ } }

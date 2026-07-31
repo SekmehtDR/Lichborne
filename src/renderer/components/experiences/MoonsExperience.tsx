@@ -1002,6 +1002,31 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
   const sunBody = showSun && sunPhase?.day ? skyPos(sunPhase.progress, CX, ARC_RX) : null
   const sunCrest = showSun && sunPhase && !sunPhase.day ? crestPos(sunPhase.phaseMin, sunPhase.toNextMin, SUN_R) : null
 
+  // TRANSIT SILHOUETTE (Sekmeht, v0.18.3). A moon near NEW is drawn as almost
+  // nothing — correct against open sky, where a real unlit limb genuinely is
+  // invisible — but it means a moon crossing the SUN vanishes at exactly the
+  // moment it should be most obvious: "I saw the sun setting then realised
+  // Xibar was there too, but Xibar was invisible."
+  //
+  // Against a bright source an unlit moon reads as a DARK DISC, so the closer a
+  // moon is to the sun the more it earns a shadowed rim. Two factors multiply,
+  // and both matter: PROXIMITY (nothing at all when they are far apart, so the
+  // rest of the sky is unchanged) and how UNLIT it is (a gibbous moon already
+  // reads on its own; a new one needs the help). The pairing means the effect
+  // only ever appears in the situation that motivated it.
+  //
+  // Squared falloff so it eases in rather than switching on at a threshold.
+  const sunOnScreen = sunBody && sunPhase?.day ? { x: sunBody.x, y: sunBody.y } : sunCrest ? { x: sunCrest.x, y: sunCrest.y } : null
+  const transitNearness = (mx: number, my: number, mr: number): number => {
+    if (!sunOnScreen) return 0
+    const d = Math.hypot(mx - sunOnScreen.x, my - sunOnScreen.y)
+    // Reach a little past touching, so the silhouette fades in as they close
+    // rather than popping the instant the discs overlap.
+    const reach = SUN_R + mr + 26
+    const near = clamp01(1 - d / reach)
+    return near * near
+  }
+
   // ── Bucket B (F67–F70) derivations ──────────────────────────────────────
   // Season comes from the Elanthian calendar (undefined until TIME is checked);
   // ambient life is also gated on a clear-ish sky and the ⚙ effects layer +
@@ -1375,17 +1400,63 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
             <stop offset="60%" stopColor="#2f79dd" />
             <stop offset="100%" stopColor="#17509e" />
           </radialGradient>
-          <radialGradient id={`${uid}-sun`} cx="40%" cy="40%" r="70%">
-            <stop offset="0%" stopColor="#fff7d6" />
-            <stop offset="55%" stopColor="#f8ce4e" />
-            <stop offset="100%" stopColor="#e09a28" />
+          {/* THE SUN IS A LIGHT SOURCE, NOT A BALL (Sekmeht, v0.18.3: "it isn't a
+              3D yellow ball like it looks now").
+              Two things made it read as a sphere, and both are fixed here:
+                (a) the highlight was OFF-CENTRE (cx/cy 40%), which is how you
+                    shade a lit sphere — the sun has no visible shading at all,
+                    it is uniformly blinding;
+                (b) the rim ended on an opaque darker orange, giving it a hard
+                    edge and a "far side".
+              Now: centred, hot near-white core, and the last stop is fully
+              TRANSPARENT so the disc has no edge to find — it dissolves into the
+              halo below, which in turn dissolves into the sky's sunglow wash.
+              Three layers, each feathering into the next. */}
+          <radialGradient id={`${uid}-sun`} cx="50%" cy="50%" r="62%">
+            <stop offset="0%"   stopColor="#fffdf2" />
+            <stop offset="34%"  stopColor="#fff3c4" />
+            <stop offset="68%"  stopColor="#f8ce4e" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#f6c243" stopOpacity="0" />
           </radialGradient>
+          {/* Halo — replaces two FLAT translucent circles whose own edges were
+              visible as faint rings. A single smooth falloff instead, carrying
+              the disc outward until it meets the sky glow. */}
+          <radialGradient id={`${uid}-sun-halo`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%"   stopColor="#ffe9a8" stopOpacity="0.5" />
+            <stop offset="30%"  stopColor="#f8ce4e" stopOpacity="0.28" />
+            <stop offset="62%"  stopColor="#f2ba3e" stopOpacity="0.1" />
+            <stop offset="100%" stopColor="#e09a28" stopOpacity="0" />
+          </radialGradient>
+          {/* A touch of blur ACROSS the disc — the hazy surface. Scaled off
+              SUN_R so it holds at any zoom, and the filter region is generous
+              because a blur clipped by its own box gets a hard edge back, which
+              is the one thing this is here to remove. */}
+          <filter id={`${uid}-sun-soft`} x="-70%" y="-70%" width="240%" height="240%">
+            <feGaussianBlur stdDeviation={SUN_R * 0.16} />
+          </filter>
           {/* Reflective water for the lake + stream (⚙ Trees & water) — a sky
               reflection: lighter at the far edge, deeper near, day → night. */}
           <linearGradient id={`${uid}-water`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%"   stopColor={mixHex('#9fbcd6', '#1b2636', landNight)} />
             <stop offset="100%" stopColor={mixHex('#5f86a4', '#0e141e', landNight)} />
           </linearGradient>
+          {/* SUN OCCLUDER — every up-moon punched out of the sun's layer.
+              The sun is already painted BEFORE the moons, so paint order was
+              never the problem: since F64a masks each moon to its LIT part, the
+              unlit limb is fully TRANSPARENT, and an overlapping sun shone
+              straight through the moon's dark side (Sekmeht: "the Sun should be
+              behind all of the moons"). A moon is an opaque sphere — it must
+              hide what is behind it whether or not that side is lit.
+              Subtractive rather than additive on purpose: painting an opaque
+              disc behind each moon would need to match the SKY, and the sky is
+              an HTML gradient layer under the SVG, so nothing here can sample
+              it. Punching the moons out of the SUN needs no colour at all.
+              Full disc radius, so the shadowed limb occludes exactly like the
+              lit one. Per-instance id (pitfall #95). */}
+          <mask id={`${uid}-sun-occl`} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={HORIZON_Y}>
+            <rect x={0} y={0} width={W} height={HORIZON_Y} fill="#fff" />
+            {upLit.map(({ b }) => <circle key={b.k} cx={b.x} cy={b.y} r={b.s.r} fill="#000" />)}
+          </mask>
           {/* Overcast DECK — solid overhead, gone by the horizon. Rendering
               overcast as a flat all-over wash instead made it read as haze
               (Sekmeht), which is exactly the look we no longer draw at all.
@@ -1501,11 +1572,10 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
 
         {/* 1 — day sun (behind the ground, so it sinks behind the horizon as it sets) */}
         {sunBody && sunPhase?.day && (
-          <g>
+          <g mask={upLit.length > 0 ? gref('sun-occl') : undefined}>
             <title>{`${SUN_LORE}\n\nSets at ~${fmtClock(now + sunPhase.toNextMin * 60_000)} (${sunPhase.assumed ? '≈' : ''}${sunPhase.toNextMin}m)`}</title>
-            <circle cx={sunBody.x} cy={sunBody.y} r={26} fill="#f8ce4e" opacity={0.14} />
-            <circle cx={sunBody.x} cy={sunBody.y} r={19} fill="#f8ce4e" opacity={0.18} />
-            <circle cx={sunBody.x} cy={sunBody.y} r={SUN_R} fill={gref('sun')} />
+            <circle cx={sunBody.x} cy={sunBody.y} r={SUN_R * 2.7} fill={gref('sun-halo')} />
+            <circle cx={sunBody.x} cy={sunBody.y} r={SUN_R * 1.08} fill={gref('sun')} filter={gref('sun-soft')} />
             {anim && sunPhase.progress <= NEAR && <TransitionRings x={sunBody.x} y={sunBody.y} r={16} color="#f8ce4e" kind="rise" />}
             {anim && sunPhase.progress >= 1 - NEAR && <TransitionRings x={sunBody.x} y={sunBody.y} r={16} color="#f8ce4e" kind="set" />}
           </g>
@@ -1513,9 +1583,12 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
         {/* cresting DOWN sun — solid, full-size, only during the fixed sink (just
             after set) / emerge (just before rise) window; hidden through the night. */}
         {sunCrest && (
-          <g>
+          <g mask={upLit.length > 0 ? gref('sun-occl') : undefined}>
             <title>{`${SUN_LORE}\n\nRises at ~${fmtClock(now + sunPhase!.toNextMin * 60_000)} (${sunPhase!.assumed ? '≈' : ''}${sunPhase!.toNextMin}m)`}</title>
-            <circle cx={sunCrest.x} cy={sunCrest.y} r={SUN_R} fill={gref('sun')} />
+            {/* Same haze at the horizon — this is where the glow is most of
+                what you actually see of it. */}
+            <circle cx={sunCrest.x} cy={sunCrest.y} r={SUN_R * 2.7} fill={gref('sun-halo')} />
+            <circle cx={sunCrest.x} cy={sunCrest.y} r={SUN_R * 1.08} fill={gref('sun')} filter={gref('sun-soft')} />
             {anim && <TransitionRings x={sunCrest.x} y={sunCrest.y} r={SUN_R + 4} color={sunCrest.kind === 'rise' ? '#f8ce4e' : '#e09a28'} kind={sunCrest.kind} />}
           </g>
         )}
@@ -1524,6 +1597,26 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
         {[...upLit].sort((a, b) => MOON_DEPTH[a.b.k] - MOON_DEPTH[b.b.k]).map(({ b, lit, phase }) => (
           <g key={b.k}>
             <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Setting any moment' : `Sets at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}${phaseLines(b.k)}`}</title>
+            {/* Transit silhouette — FIRST in the group, so a partly-lit moon
+                still paints its crescent over the top and only the shadowed
+                part reads dark. Rides the ⚙ Phase layer: with phases off every
+                moon is a full disc and there is nothing to rescue. */}
+            {showPhase && phase && (() => {
+              const strength = transitNearness(b.x, b.y, b.s.r) * (1 - phase.illum)
+              if (strength < 0.02) return null
+              return (
+                <>
+                  {/* Body: a touch of shadow so the disc separates from the
+                      glare rather than being a bare ring on nothing. */}
+                  <circle cx={b.x} cy={b.y} r={b.s.r} fill="#0b0d14" opacity={0.55 * strength} />
+                  {/* Rim: what actually makes it legible. Slightly lighter than
+                      the fill so the edge stays visible against a dark sky too,
+                      which is where a setting sun puts it. */}
+                  <circle cx={b.x} cy={b.y} r={b.s.r} fill="none"
+                    stroke="#1b2030" strokeOpacity={0.9 * strength} strokeWidth={1.1} />
+                </>
+              )
+            })()}
             {/* Soft primary-colour glow behind the disc (Sekmeht, ⚙ Moon glow).
                 Katamba emits an ominous MIASMATIC (dark-violet) haze — it darkens a
                 bright day sky AND reads as a shadowy purple on a dark one. It HOLDS

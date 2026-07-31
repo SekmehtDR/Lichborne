@@ -66,6 +66,17 @@
   background: var(--color-success, #4caf7d);
   box-shadow: 0 0 4px color-mix(in srgb, var(--color-success) 55%, transparent);
 }
+/* AMBER — this tab is connected but another open one is not. There is no
+   `--color-warning` in the palette (only danger/success), so the hue is fixed
+   and mixed toward --text-primary the way every other semantic cue here is, so
+   it keeps its meaning and self-corrects on light themes (Principle #4 / UX
+   standard #6). Colour only, no pulse: motion is decoration, colour is signal,
+   and a blinking dot in the chrome would be the kind of glyph you learn to
+   ignore (polish standards #1 and #9b). */
+.app-bar-status-dot--warn {
+  background: color-mix(in srgb, #d29922 80%, var(--text-primary));
+  box-shadow: 0 0 4px color-mix(in srgb, #d29922 55%, transparent);
+}
 
 .app-bar-actions {
   display: flex;

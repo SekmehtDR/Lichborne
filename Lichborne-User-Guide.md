@@ -70,15 +70,16 @@ A few ideas shape everything:
 
 > This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
 
-**v0.18.2**
+**v0.18.3**
 
-- **The moons show their real phase.** Each moon is drawn as only its lit part, computed from DragonRealms' own orbital constants and timed against the game server's clock. Hover one for `Now:` and `Next:`; the **MOONS** line in the header now has a tooltip listing all three.
-- **Weather has degrees.** "A few scattered clouds", "very cloudy" and "completely overcast" draw genuinely different skies. The old fog haze is gone — it washed out the whole scene — and shooting stars are rare again rather than every couple of seconds.
-- **The Panels button is now Layout**, and the Panel Manager is the **Layout Manager**. Inside, a two-card chooser shows what each layout mode is, which you're using, and that **Static Panels is legacy**. Your saved layout is untouched.
-- **Right-click → Close** on any floating window or stream, and you can **drag a stream from one window to another**. Reordering tabs works while the layout is locked — locking freezes *where windows are*, not what's inside them.
-- **Remove an account** from the logon screen (`✕ Remove` on the account header). It **archives** rather than deletes: settings and logs are kept, and adding the account back restores them.
-- **"Show password"** when typing one, and **"+ Add account" now starts blank** instead of pre-filling your last-used account.
-- **macOS fixes:** the app can actually be quit (⌘Q and the red X used to leave it running); connecting tells you when it needs a password instead of showing the "Add account" screen unexplained; and Lich Setup flags a bad path as soon as you open it.
+- **Command history is yours to tune** (requested by Qij). Settings → Behavior → *"Remember commands of at least N characters"*, or `/history min 3`. Stops a history full of `n` and `se` burying the command you wanted back. Default is 0 — remember everything, exactly as before.
+- **Team Login** (was Bulk Connect, requested by Binu). You can now untick accounts instead of logging in one from every account you own — and save a selection as a **named set**, so a team like *farm* or *rescue* logs in with one click from the logon screen.
+- **Help → About** now shows your platform and architecture beside the version — include it when reporting a bug.
+- **The status dot warns you when a character drops.** It used to describe only the tab you were looking at; now yellow means another open tab has disconnected (hover to see who), green means everything is connected.
+- **Fixed: the Lich Dashboard's search highlight sat between two lines** in long profiles — a fraction-of-a-pixel drift that only showed up past a few hundred lines.
+- **Fixed (macOS): Lich scripts containing any accented character or curly quote failed to start**, even though they work in other front-ends. Lichborne wasn't giving Lich a language setting, so it read script files as plain ASCII.
+- **Moons:** the sun now sits properly behind the moons, and a nearly-dark moon crossing the sun shows as a shadowed disc instead of vanishing.
+- Script filters now say **`scripts/`** and **`custom/`** rather than "core" and "custom", which wrongly implied a script shipped with Lich.
 
 ---
 
@@ -154,7 +155,7 @@ This tells DragonRealms to include your full status (hidden, stunned, roundtime,
 - **Pop a character into its own window** — right-click its tab, use the **Window** menu, or tick "open each in its own window" when bulk-connecting. It's still one app, so Quick Send and Lich coordination keep working. (You can also launch the app more than once to keep two teams fully separate.)
 - **Right-click any tab** for quick actions — Reconnect a dropped character, Disconnect, or move it between windows (only the choices that apply are shown).
 - **⟲ Reconnect Last** on the launcher brings your whole crew back in one click. If an account already has a different character on, Lichborne asks which you want rather than bouncing anyone.
-- **Bulk Connect** logs several characters in at once (DR allows one character per account, so this runs them in sequence).
+- **Team Login** logs several characters in at once (DR allows one character per account, so it's one from each). Tick only the accounts you want, and save a selection as a **named set** — a team like *farm* or *rescue* — then launch it later from the picker or the **▦ Sets…** button on the logon screen. Anyone already logged in is simply skipped.
 
 ---
 
@@ -470,6 +471,12 @@ Plain `Home`/`End` edit the command box (where your cursor usually is); hold `Ct
 ---
 
 ## Getting Help
+
+> **Reporting a bug?** Open **Help → About Lichborne** and include the line under
+> the logo — it reads something like `v0.18.3 · macOS arm64` and tells us which
+> build you're on. Windows, macOS and Linux behave differently in a few places,
+> so that one line often saves a round-trip.
+
 
 - **Discord** — the friendliest place for questions, bug reports, and chat. The invite link is in **Help → About Lichborne** inside the app.
 - **Help → About Lichborne** — shows your exact version, the credits, and links to the Discord and the project on GitHub. Handy to have open when reporting an issue (mention your version!).

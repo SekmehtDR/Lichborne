@@ -1016,7 +1016,7 @@
      must share an identical per-line height or the numbers drift ~1px/line and
      by line ~50 they're 2-3 lines off the content they label. Keep this value
      in lockstep with .ld-yaml-preview / .ld-yaml-editor. */
-  line-height: 1.3rem;
+  line-height: 21px;
   color: var(--text-faint);
   padding: 0 8px 0 4px;
 }
@@ -1051,8 +1051,20 @@
   /* MUST match .ld-line-num / .ld-yaml-editor line-height (absolute) so the
      gutter, the syntax-highlighted view, and the search overlay all share one
      per-line height. getComputedStyle(pre).lineHeight (read by the search /
-     overlay math) returns this absolute px, so search lands true. */
-  line-height: 1.3rem;
+     overlay math) returns this absolute px, so search lands true.
+
+     AND IT MUST BE A WHOLE NUMBER OF PIXELS — not `1.3rem` (B236, v0.18.3).
+     Chromium lays out on a 1/64px grid (LayoutUnit). 1.3rem = 20.8px is NOT
+     representable there (20.8 x 64 = 1331.2), so the USED height snaps to
+     1331/64 = 20.796875px while getComputedStyle still reports "20.8px". The
+     search overlay positions itself as `paddingTop + n * lineHeight`, so that
+     0.003125px/line discrepancy ACCUMULATES: invisible in a 200-line script,
+     ~3.4px (a sixth of a row) by line 1083 of a long profile — which is exactly
+     the "highlight sits between two lines, but only in the YAML" report, and
+     why it never reproduced in the Ruby editor on short files.
+     An integer px is exactly representable, so computed == used and the
+     arithmetic is exact at any line number. Keep all four sites integer px. */
+  line-height: 21px;
   color: var(--text-primary);
   background: transparent;
   margin: 0;
@@ -1253,7 +1265,7 @@
   /* MUST match .ld-line-num / .ld-yaml-preview line-height (absolute) — the
      edit-mode gutter and scrollElementToLine() rely on a shared per-line
      height. See the .ld-line-num note. */
-  line-height: 1.3rem;
+  line-height: 21px;
   resize: none;
   padding: 12px 16px;
   outline: none;
@@ -1281,7 +1293,7 @@
   box-sizing: border-box;
   font-family: monospace;
   font-size: 0.79rem;
-  line-height: 1.3rem;
+  line-height: 21px;
   padding: 12px 16px;
   white-space: pre;
   tab-size: 2;

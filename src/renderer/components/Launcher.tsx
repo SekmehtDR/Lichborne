@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import type { CharacterProfile } from '../profile-types'
 import { loadLastSessionCharacters } from '../profile'
+import { loadBulkSets } from '../bulkSets'
 import ContextMenu from './ContextMenu'
 import CharacterNotesEditor, { guildLabel } from './CharacterNotesEditor'
 import '../styles/launcher.css'
@@ -49,6 +50,10 @@ interface Props {
   // last-session set already matched to existing, non-hidden tiles; App
   // filters out already-connected characters and runs the bulk-connect flow.
   onReconnectLast?: (characters: LauncherCharacter[]) => void
+  /** F85 — launch a saved set by name from the launcher's top bar. Resolution
+   *  (names → characters) happens HERE, where the character list lives; App
+   *  just receives the resolved list and runs the existing plan/connect path. */
+  onConnectSet?: (characters: LauncherCharacter[]) => void
 }
 
 // Game-section ordering inside an account. DR (and its DRT variant) come
@@ -75,6 +80,8 @@ function LauncherTopBar({
   onBulkConnect,
   bulkConnectEnabled,
   onReconnectLast,
+  onConnectSet,
+  bulkSets = [],
   reconnectCount = 0,
 }: {
   onOpenLichSetup: () => void
@@ -82,6 +89,9 @@ function LauncherTopBar({
   onBulkConnect?: () => void
   bulkConnectEnabled: boolean
   onReconnectLast?: () => void
+  /** F85 — launch a saved set by name, straight from the launcher. */
+  onConnectSet?: (setName: string) => void
+  bulkSets?: { name: string; characters: string[] }[]
   reconnectCount?: number
 }) {
   return (
@@ -104,11 +114,29 @@ function LauncherTopBar({
           onClick={onBulkConnect}
           disabled={!bulkConnectEnabled}
           title={bulkConnectEnabled
-            ? 'Connect one character per account in sequence'
-            : 'Need at least 2 accounts with connectable characters to bulk-connect'}
+            ? 'Log in a team — one character per account, in sequence'
+            : 'Need at least 2 accounts with connectable characters to log in a team'}
         >
-          ⚡ Bulk Connect
+          ⚡ Team Login
         </button>
+      )}
+      {/* F85 (Binu, refined by Sekmeht: "there should also be a bulk option on
+          the logon screen"). One click launches a saved team WITHOUT going
+          through the picker — the picker is where you BUILD a set, this is
+          where you use it. Renders only once a set exists, so nobody sees an
+          empty control (UX standard #1). */}
+      {onConnectSet && bulkSets.length > 0 && (
+        <select
+          className="launcher-topbar-btn launcher-topbar-btn--bulk"
+          value=""
+          onChange={e => { const n = e.target.value; if (n) onConnectSet(n) }}
+          title="Log in a saved set of characters"
+        >
+          <option value="">▦ Sets…</option>
+          {bulkSets.map(s => (
+            <option key={s.name} value={s.name}>{s.name} ({s.characters.length})</option>
+          ))}
+        </select>
       )}
       {onAddNew && (
         <button className="launcher-topbar-btn launcher-topbar-btn--add" onClick={onAddNew} title="Add account">
@@ -357,9 +385,29 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast }: Props) {
+export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
+  // F85 — saved sets, re-read on refresh so a set created in the picker shows
+  // up here without a restart.
+  const [bulkSets, setBulkSets] = useState(() => loadBulkSets())
+  useEffect(() => { setBulkSets(loadBulkSets()) }, [refreshKey])
+
+  // Names → characters. Unknown names are DROPPED rather than treated as an
+  // error: a set that mentions an archived character should still launch the
+  // rest of the team (F79 archives rather than deletes, so the name may come
+  // back later). Hidden tiles are excluded, matching every other bulk path.
+  function launchSet(setName: string) {
+    const set = bulkSets.find(s => s.name === setName)
+    if (!set || !characters) return
+    const wanted = new Set(set.characters.map(n => n.toLowerCase()))
+    const resolved = characters.filter(c => !c.hidden && wanted.has(c.name.toLowerCase()))
+    // One per account — DR's rule, and the set may predate a character moving.
+    const perAccount = new Map<string, LauncherCharacter>()
+    for (const c of resolved) if (!perAccount.has(c.account)) perAccount.set(c.account, c)
+    if (perAccount.size > 0) onConnectSet?.([...perAccount.values()])
+  }
+
   const [pendingDelete, setPendingDelete] = useState<LauncherCharacter | null>(null)
   // Removing a whole ACCOUNT — its characters AND its saved password. Held as
   // the account name plus the character names captured at click time, so the
@@ -677,6 +725,8 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
           bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
           onReconnectLast={handleReconnectLastClick}
+          onConnectSet={onConnectSet ? launchSet : undefined}
+          bulkSets={bulkSets}
           reconnectCount={lastSessionTiles.length}
         />
       )}

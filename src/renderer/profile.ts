@@ -2,6 +2,8 @@ import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter, GLOBAL_RULES_SCOPE } from './characterScope'
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
+import { loadBulkSets, saveBulkSets } from './bulkSets'
+import { loadCommandHistorySettings, saveCommandHistorySettings } from './commandHistorySettings'
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
 import { loadAIConfig, saveAIConfig, DEFAULT_AI_CONFIG } from './aiConfig'
 import { loadCustomColors, saveCustomColors } from './colors'
@@ -96,6 +98,8 @@ export function buildSharedProfile(): SharedProfile {
     ai:         loadAIConfig(),
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
+    commandHistory: loadCommandHistorySettings(),
+    bulkSets:   loadBulkSets(),
     customColors: loadCustomColors(),
     simucoin:   loadSimuCoinConfig(),
     lastSessionCharacters: loadLastSessionCharacters(),
@@ -263,6 +267,14 @@ export async function importSharedProfile(): Promise<void> {
 
   if (data.automationAnalytics !== undefined) {
     localStorage.setItem('lichborne.automationAnalytics', String(data.automationAnalytics))
+  }
+
+  // Coerced on the way in (the loader clamps too), so a hand-edited or
+  // future-version value can never disable recall outright.
+  if (Array.isArray(data.bulkSets)) saveBulkSets(data.bulkSets)
+
+  if (data.commandHistory && typeof data.commandHistory === 'object') {
+    saveCommandHistorySettings(data.commandHistory as { minLength: number })
   }
 
   if (Array.isArray(data.customColors)) {

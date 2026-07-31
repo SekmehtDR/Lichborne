@@ -86,6 +86,24 @@ function SessionPill({ lichPath, session }: { lichPath: string; session: Session
 
 interface ScriptEntry { name: string; source: 'core' | 'custom'; lastModified: number }
 
+// DISPLAY labels for `source`. The VALUES stay 'core' | 'custom' — they are the
+// data contract that picks a directory in `write-lich-script` — but they were
+// being rendered raw, and "core" reads as "shipped with Lich" when it only ever
+// meant "directly in scripts/". A Mac tester wrote his own scripts, saved them
+// there rather than in custom/, and reported them as mis-filed: "custom scripts
+// I've written are all bundled under core right now" (ohbeanz, v0.18.3).
+// Nothing can actually tell a Lich-authored script from a user one at that path
+// — there is no manifest — so the honest fix is to name the FOLDER rather than
+// imply provenance. (Labels are display, ids are data — the same split as
+// Transfer's category `label` vs `id`.)
+const SOURCE_LABEL: Record<'core' | 'custom', string> = { core: 'scripts/', custom: 'custom/' }
+const FILTER_LABEL: Record<'all' | 'core' | 'custom', string> = { ...SOURCE_LABEL, all: 'all' }
+const FILTER_TITLE: Record<'all' | 'core' | 'custom', string> = {
+  custom: 'Scripts in scripts/custom/ — where your own scripts belong: Lich looks there first, and updates never overwrite them.',
+  core: "Scripts directly in scripts/ — Lich's own scripts live here, and so does anything you saved there yourself.",
+  all: 'Every script in both folders.',
+}
+
 function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; session: SessionInfo; onSendCommand: (cmd: string) => void }) {
   const [scripts, setScripts] = useState<ScriptEntry[]>([])
   const [search,  setSearch]  = useState('')
@@ -203,7 +221,8 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
         <div className="lp-filter-tabs lp-filter-tabs--rail">
           {(['custom', 'core', 'all'] as const).map(f => (
             <button key={f} className={`lp-filter-tab${filter === f ? ' lp-filter-tab--active' : ''}`}
-              onClick={() => setFilter(f)}>{f}</button>
+              title={FILTER_TITLE[f]}
+              onClick={() => setFilter(f)}>{FILTER_LABEL[f]}</button>
           ))}
         </div>
         <div className="lp-body">
@@ -214,7 +233,8 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
                 className={`lp-row${selected?.name === s.name && selected?.source === s.source ? ' lp-row--selected' : ''}${isEditing && !(selected?.name === s.name && selected?.source === s.source) ? ' lp-row--locked' : ''}`}
                 onClick={() => { if (!isEditing) selectScript(s) }}
               >
-                <span className={`lp-source-badge lp-source-badge--${s.source}`}>{s.source}</span>
+                <span className={`lp-source-badge lp-source-badge--${s.source}`}
+                      title={FILTER_TITLE[s.source]}>{SOURCE_LABEL[s.source]}</span>
                 <span className="lp-script-name">{s.name}</span>
                 <span className="lp-modified">{fmtDate(s.lastModified)}</span>
               </div>
@@ -269,7 +289,8 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
               </>
             ) : (
               <>
-                <span className="ld-profile-name">{selected.name}<span className={`lp-source-badge lp-source-badge--${selected.source}`}>{selected.source}</span></span>
+                <span className="ld-profile-name">{selected.name}<span className={`lp-source-badge lp-source-badge--${selected.source}`}
+                        title={FILTER_TITLE[selected.source]}>{SOURCE_LABEL[selected.source]}</span></span>
                 <YamlSearchField value={yamlSearch} placeholder="Search script…"
                   onChange={v => { setYamlSearch(v); viewRef.current?.resetSearch() }}
                   onFind={() => { const line = viewRef.current?.find(yamlSearch) ?? -1; if (line >= 0) setLastFoundLine(line) }} />
@@ -292,7 +313,10 @@ function ScriptsTab({ lichPath, session, onSendCommand }: { lichPath: string; se
         {/* Core-script warning */}
         {selected?.source === 'core' && originalContent !== null && (
           <div className="ld-script-warning">
-            ⚠ <strong>Core Lich script.</strong> A Lich update can overwrite your changes, and edits here can affect Lich itself. Prefer copying it into <code>scripts/custom/</code> and editing that.
+            {/* Careful not to assert this is one of LICH's scripts — it may be
+                the user's own, saved into scripts/ rather than custom/. The
+                warning is about the LOCATION, which is true either way. */}
+            ⚠ <strong>This script lives in <code>scripts/</code>.</strong> A Lich update can overwrite anything in that folder, and if it is one of Lich's own scripts, edits here can affect Lich itself. Copy it into <code>scripts/custom/</code> and edit that instead — Lich looks there first and updates leave it alone.
           </div>
         )}
 
