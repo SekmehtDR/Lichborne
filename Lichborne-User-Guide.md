@@ -68,20 +68,28 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
-> This section is a snapshot of the **current release** — it's replaced each version, not kept as a running history. For the full changelog, see the [Releases page](https://github.com/SekmehtDR/Lichborne/releases).
+**v0.18.4**
 
-**v0.18.3**
-
-- **Command history is yours to tune** (requested by Qij). Settings → Behavior → *"Remember commands of at least N characters"*, or `/history min 3`. Stops a history full of `n` and `se` burying the command you wanted back. Default is 0 — remember everything, exactly as before.
-- **Team Login** (was Bulk Connect, requested by Binu). You can now untick accounts instead of logging in one from every account you own — and save a selection as a **named set**, so a team like *farm* or *rescue* logs in with one click from the logon screen.
-- **Help → About** now shows your platform and architecture beside the version — include it when reporting a bug.
-- **The status dot warns you when a character drops.** It used to describe only the tab you were looking at; now yellow means another open tab has disconnected (hover to see who), green means everything is connected.
-- **Fixed: the Lich Dashboard's search highlight sat between two lines** in long profiles — a fraction-of-a-pixel drift that only showed up past a few hundred lines.
-- **Fixed (macOS): Lich scripts containing any accented character or curly quote failed to start**, even though they work in other front-ends. Lichborne wasn't giving Lich a language setting, so it read script files as plain ASCII.
-- **Moons:** the sun now sits properly behind the moons, and a nearly-dark moon crossing the sun shows as a shadowed disc instead of vanishing.
-- Script filters now say **`scripts/`** and **`custom/`** rather than "core" and "custom", which wrongly implied a script shipped with Lich.
-
----
+- **The sky is accurate.** The sun and moons now match the community moonwatch
+  site to the minute. The sun in particular is computed from the game's real
+  seasonal daylight rather than an even day/night split, so it is right whether
+  or not you use Lich.
+- **Teams on the logon screen.** Save a line-up in Team Login and it appears in
+  a Teams section, showing who is on it. One click logs the team in and skips
+  anyone already playing. Pin a team to Favorites, and give it notes so you
+  remember what it is for.
+- **Team Login can be stopped part-way** instead of sitting through the whole run.
+- **Cancel actually cancels.** Stopping a connection part-way no longer logs the
+  character in behind your back.
+- **The Debug window stays put and stays visible** — it can be moved even when
+  your layout is locked, and it no longer hides behind the game window.
+- Fixed: `INV HELP` and other tables no longer lose their column alignment.
+- Fixed: text seen through a shadewatch mirror, the arena view or distant gaze
+  no longer breaks apart mid-sentence.
+- Fixed: the Genie map could get stuck on "waiting for game data" after
+  switching to the Lich map and back.
+- The Living Tableau had a polish pass — speech bubbles no longer overlap each
+  other, the gauges, or the thought log.
 
 ## On the Horizon (Roadmap)
 
@@ -155,7 +163,7 @@ This tells DragonRealms to include your full status (hidden, stunned, roundtime,
 - **Pop a character into its own window** — right-click its tab, use the **Window** menu, or tick "open each in its own window" when bulk-connecting. It's still one app, so Quick Send and Lich coordination keep working. (You can also launch the app more than once to keep two teams fully separate.)
 - **Right-click any tab** for quick actions — Reconnect a dropped character, Disconnect, or move it between windows (only the choices that apply are shown).
 - **⟲ Reconnect Last** on the launcher brings your whole crew back in one click. If an account already has a different character on, Lichborne asks which you want rather than bouncing anyone.
-- **Team Login** logs several characters in at once (DR allows one character per account, so it's one from each). Tick only the accounts you want, and save a selection as a **named set** — a team like *farm* or *rescue* — then launch it later from the picker or the **▦ Sets…** button on the logon screen. Anyone already logged in is simply skipped.
+- **Team Login** logs several characters in at once (DR allows one character per account, so it's one from each). Tick only the accounts you want, and tick **Save this line-up as a team** to remember it. Saved teams appear in a **Teams** section on the logon screen — each one shows who is on it, and a single Connect logs the whole team in, skipping anyone already playing. Pin a team with the heart and it joins **Favorites** at the top; the ⋯ menu edits its name and notes, or deletes it. A long team run can be **stopped** part-way: whoever is connecting finishes, and the rest are skipped and listed so you can start them whenever you like.
 
 ---
 

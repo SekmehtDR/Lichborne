@@ -13,6 +13,7 @@
 import type { ComponentType } from 'react'
 import type { RoomState, ScenePlayer, SceneCreature } from '../shared/types'
 import type { CombatRange, AssessEntity } from '../shared/combatExtract'
+import { sunPositionAt } from '../shared/elanthianSun'
 import type { AppSettings } from './settings'
 import type { Contact, ContactTemplate } from './contacts'
 import type { FloatRect } from './freeLayout'
@@ -31,7 +32,14 @@ import MoonsExperience from './components/experiences/MoonsExperience'
 
 export interface MoonInfo {
   up: boolean
-  minutes: number   // remaining minutes AT reportedAt (display = minutes − elapsed)
+  minutes: number   // remaining minutes AT reportedAt, exactly as the script floored it
+  /** When `minutes` last stepped DOWN by exactly 1 within the same arc.
+   *  moonwatch reports `floor(seconds / 60)`, so at the instant of a clean step
+   *  the TRUE remaining was exactly `minutes` — an exact anchor we can then
+   *  interpolate from continuously. Undefined until the first clean step is
+   *  seen (first sight of a moon, or a rise/set jump), where
+   *  `moonRemainingMinutes` falls back to the mid-bucket estimate. */
+  anchorAt?: number
 }
 
 export interface MoonsState {
@@ -61,7 +69,35 @@ export interface SunPhase {
   assumed: boolean      // true when the day length is the 180/180 assumption
 }
 
-/** Live sun phase from the observed anchors, or null if nothing observed yet. */
+/**
+ * The sun, COMPUTED — the authoritative source as of v0.18.4.
+ *
+ * Wraps `sunPositionAt` (the verbatim moonwatch.lic port in
+ * [elanthianSun.ts](src/shared/elanthianSun.ts)) in the `SunPhase` shape the
+ * scene already renders. Never "assumed": the day length comes from the game's
+ * own per-day-of-year tables rather than the even 180/180 split
+ * `computeSunPhase` had to guess at, which is what ran the sun minutes fast.
+ *
+ * `serverUnixMs` MUST be server time (pitfall #87/B192) — same rule as
+ * `moonPhase`, and for the same reason.
+ */
+export function exactSunPhase(serverUnixMs: number): SunPhase {
+  const p = sunPositionAt(serverUnixMs / 1000)
+  return {
+    day: p.up,
+    progress: Math.min(1, Math.max(0, p.progress)),
+    toNextMin: Math.max(0, Math.round(p.secondsToNext / 60)),
+    phaseMin: Math.round(p.phaseSec / 60),
+    assumed: false,
+  }
+}
+
+/** SUPERSEDED by `exactSunPhase` — kept only until the computed model has been
+ *  confirmed against the community site across a full DR year (the observed
+ *  anchors it reads are a real-world cross-check we do not want to delete on
+ *  day one). Derives the phase from observed sunrise/sunset prose, assuming an
+ *  even 180/180 day when it has seen only one transition. That assumption is
+ *  the bug: Elanthia's daylight runs 120→240 rois across the seasons. */
 export function computeSunPhase(sun: { riseAt?: number; setAt?: number }, now: number): SunPhase | null {
   const cycleMs = SUN_CYCLE_MINUTES * 60_000
   let dayMs = cycleMs / 2
@@ -83,11 +119,105 @@ export function computeSunPhase(sun: { riseAt?: number; setAt?: number }, now: n
   return { day, progress: Math.min(1, progress), toNextMin, phaseMin, assumed }
 }
 
-// Orbital constants from moonwatch.lic (Settings['rise']/'set', in minutes) —
-// each moon's time below / above the horizon. Used to POSITION a moon along
-// the sky arc from its remaining minutes (progress = 1 − remaining/duration).
-export const MOON_UP_MINUTES:   Record<string, number> = { katamba: 177, yavash: 177, xibar: 174 }
-export const MOON_DOWN_MINUTES: Record<string, number> = { katamba: 174, yavash: 175, xibar: 172 }
+const MOON_KEYS_ALL = ['katamba', 'yavash', 'xibar'] as const
+
+/** True remaining, in minutes, at the instant moonwatch's floored countdown
+ *  steps down to N — it steps at `seconds == 60N + 59`, not at `60N`. */
+const STEP_TOP_MIN = 59 / 60
+
+// Orbital constants — moonwatch.lic's own `Moons::CONSTANTS` (re-read against
+// v4.5.0): `cycle` = rise→rise, `visible` = rise→set, both in SECONDS. These
+// are v4.2+'s OLS-FIT FRACTIONAL periods; the script switched to them precisely
+// so predicted phase stops drifting, and we carried its PRE-v4.2 rounded
+// integers (177/177/174 up, 174/175/172 down) long after. Five of those six
+// were SHORT — up to 0.78 min — and since arc position is
+// `1 − remaining/duration`, a short duration renders the moon BEHIND the real
+// sky. Derived here rather than hand-rounded so the two can never drift again.
+const MOON_CYCLE_SEC:   Record<string, number> = { katamba: 21_088.611, yavash: 21_129.564, xibar: 20_848.143 }
+const MOON_VISIBLE_SEC: Record<string, number> = { katamba: 10_602,     yavash: 10_624,     xibar: 10_482 }
+
+/** Each moon's time ABOVE the horizon, in minutes (rise→set). */
+export const MOON_UP_MINUTES: Record<string, number> = {
+  katamba: MOON_VISIBLE_SEC.katamba / 60,
+  yavash:  MOON_VISIBLE_SEC.yavash  / 60,
+  xibar:   MOON_VISIBLE_SEC.xibar   / 60,
+}
+/** Each moon's time BELOW the horizon, in minutes (set→next rise). */
+export const MOON_DOWN_MINUTES: Record<string, number> = {
+  katamba: (MOON_CYCLE_SEC.katamba - MOON_VISIBLE_SEC.katamba) / 60,
+  yavash:  (MOON_CYCLE_SEC.yavash  - MOON_VISIBLE_SEC.yavash)  / 60,
+  xibar:   (MOON_CYCLE_SEC.xibar   - MOON_VISIBLE_SEC.xibar)   / 60,
+}
+
+/**
+ * Remaining minutes for a moon RIGHT NOW — continuous, never a stairstep.
+ *
+ * The old shape subtracted `Math.floor(elapsed / 60_000)`, so the value (and
+ * therefore the arc position derived from it) changed only once per whole
+ * minute: the moon froze for 60s while the real sky kept moving, then jumped.
+ * Because flooring elapsed can only ever HOLD THE MOON BACK, the error was
+ * one-sided — 0 → 0.98 min behind, sawtooth, every minute.
+ *
+ * `anchorAt` (set by `mergeMoonReport` on a clean 1-minute step) is an EXACT
+ * moment — but NOT the one you would first guess, and getting this wrong cost
+ * a release. The script reports `floor(seconds / 60)`, so the displayed value
+ * becomes `M` when `seconds` hits `60M + 59`, i.e. when the true remaining is
+ * `M + 59/60` — the TOP of the bucket, very nearly `M + 1`. Anchoring at `M`
+ * instead ran the moons a constant minute fast (Lichborne 70m against the
+ * website's 71m). Hence STEP_TOP_MIN.
+ *
+ * Before the first step lands we only know the script floored, i.e. the truth
+ * was uniformly somewhere in `[minutes, minutes+1)` — so take the midpoint,
+ * which bounds the error at ±0.5 min either way. It self-corrects within 60s,
+ * when the moon's own tick arrives.
+ *
+ * Returns a FLOAT for geometry; round at the point of DISPLAY.
+ */
+export function moonRemainingMinutes(info: MoonInfo, reportedAt: number, now: number): number {
+  const exact = info.anchorAt != null
+  const anchor = exact ? info.anchorAt! : reportedAt
+  const base = exact ? info.minutes + STEP_TOP_MIN : info.minutes + 0.5
+  return Math.max(0, base - (now - anchor) / 60_000)
+}
+
+/**
+ * Fold a fresh moonwatch report into the previous one, stamping the exact
+ * anchor described above.
+ *
+ * MERGE, never replace — a moon absent from one line (malformed/partial) must
+ * never vanish from the sky; its countdown drifts until the next full report,
+ * which is the lesser evil. The normal all-three line overwrites everything.
+ *
+ * The anchor rules, in order:
+ *  - same arc, value UNCHANGED → carry the existing anchor. The script also
+ *    re-pushes on a 60s heartbeat and whenever ANY of the three ticks, so most
+ *    reports do not move a given moon and must not discard its anchor.
+ *  - same arc, value stepped down by exactly 1 → the tick just happened, so
+ *    NOW is an exact anchor.
+ *  - anything else (first sight, or the big jump when a moon rises/sets, where
+ *    the new value is floored mid-bucket) → no anchor; estimate until the next
+ *    clean step.
+ */
+export function mergeMoonReport(
+  prev: Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> | null | undefined,
+  parsed: Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'>,
+  at: number,
+): Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> {
+  const out: Pick<MoonsState, 'katamba' | 'yavash' | 'xibar'> =
+    { katamba: prev?.katamba, yavash: prev?.yavash, xibar: prev?.xibar }
+  for (const k of MOON_KEYS_ALL) {
+    const next = parsed[k]
+    if (!next) continue
+    const before = out[k]
+    let anchorAt: number | undefined
+    if (before && before.up === next.up) {
+      if (before.minutes === next.minutes) anchorAt = before.anchorAt
+      else if (before.minutes - next.minutes === 1) anchorAt = at
+    }
+    out[k] = { up: next.up, minutes: next.minutes, anchorAt }
+  }
+  return out
+}
 
 // ── Lunar phase (F64a, DESIGN §34.9) ────────────────────────────────────────
 //

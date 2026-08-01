@@ -39,6 +39,10 @@ interface Props {
   roomDesc?:    string                      // current Lich room description — disambiguates title collisions
   roomExits?:   string[]                    // live compass tokens ('e','nw',…) — exit-set discriminator (mirrors Genie's Node.Compare)
   onSendCommand: (cmd: string) => void
+  /** Survives the Lich/Genie view switch, which unmounts this component.
+   *  Owned by MapPanel (one per character — never share across sessions);
+   *  mutated in place, so writing to it never triggers a render. */
+  persist?: { zoneId: string; level: number; prev: GenieMatch | null }
   // Genie folder picker — surfaced inline so the view is usable standalone
   // when no folder is configured yet.
   genieMapsDir:        string
@@ -483,10 +487,24 @@ function bfsZoneRoomPath(zone: GenieZone, fromId: number, toId: number): number[
 export default function GenieMapView({
   zones, roomTitle, roomDesc = '', roomExits, onSendCommand,
   genieMapsDir, genieLoading, genieReady, genieProgress,
-  onPickGenieFolder, onClearGenieFolder, mapAnimations = true,
+  onPickGenieFolder, onClearGenieFolder, mapAnimations = true, persist,
 }: Props) {
-  const [currentZoneId, setCurrentZoneId] = useState<string>('')
-  const [currentLevel,  setCurrentLevel]  = useState<number>(0)
+  // SEEDED FROM MapPanel's persist ref, not from nothing. Switching to the Lich
+  // map UNMOUNTS this view (MapPanel renders it conditionally), so a fresh
+  // mount used to lose both the displayed zone and — worse — the resolver's
+  // breadcrumb. With no breadcrumb, tiers 5/5b/6 of resolveGenieRoom have
+  // nothing to walk from, so an ambiguous same-titled room can resolve to
+  // null; `currentLocation` then stays null, the auto-switch below never
+  // fires, and the view sits on "N zones loaded · waiting for game data"
+  // indefinitely, because the resolve effect only re-runs when pool / desc /
+  // exits change and none of those move between same-titled rooms. Sekmeht hit
+  // exactly that: Genie → Lich map → back → stuck until a manual zone pick.
+  //
+  // MapPanel outlives the switch, so it holds the state and we seed from it.
+  // Deliberately NOT solved by keeping this view permanently mounted: that
+  // would add ~1000 SVG nodes per CHARACTER for anyone parked on the Lich map.
+  const [currentZoneId, setCurrentZoneId] = useState<string>(() => persist?.zoneId ?? '')
+  const [currentLevel,  setCurrentLevel]  = useState<number>(() => persist?.level ?? 0)
   const [transform,     setTransform]     = useState<Transform>({ x: 0, y: 0, scale: 1 })
   // Tracks the transform we last painted with, so we can detect a
   // large jump (zone switch via stub, ◆ from far away, fit-to-view)
@@ -549,6 +567,14 @@ export default function GenieMapView({
     setHoveredId(null)
     setTooltipPos(null)
   }, [currentZoneId])
+
+  // Mirror the displayed zone/level into MapPanel so they survive the view
+  // switch that unmounts us. Its OWN effect on purpose: folding it into the
+  // zone-change cleanup above would have added `currentLevel` to that effect's
+  // deps, and a level change would then clear walk timers mid-walk.
+  useEffect(() => {
+    if (persist) { persist.zoneId = currentZoneId; persist.level = currentLevel }
+  }, [currentZoneId, currentLevel, persist])
 
   // UI hover/selection reset on level change. Selection or hover may
   // point to a room that's no longer visible on the new floor; if that
@@ -666,8 +692,10 @@ export default function GenieMapView({
   // cross-zone hold behave differently in dev vs packaged builds). The breadcrumb
   // (`prevLocationRef`) and the cross-zone hold counter (`staleCountRef`) are
   // advanced in exactly ONE place here, deterministically, after the resolve.
-  const [currentLocation, setCurrentLocation] = useState<GenieMatch | null>(null)
-  const prevLocationRef = useRef<GenieMatch | null>(null)
+  const [currentLocation, setCurrentLocation] = useState<GenieMatch | null>(() => persist?.prev ?? null)
+  // Seeded too — this is the breadcrumb the resolution ladder walks from, and
+  // losing it across a view switch is what left the map unrecoverable.
+  const prevLocationRef = useRef<GenieMatch | null>(persist?.prev ?? null)
   const staleCountRef   = useRef(0)
   // Idempotency gate: StrictMode invokes effects twice on mount, and the effect
   // mutates refs — without this the breadcrumb / stale counter would advance
@@ -692,8 +720,26 @@ export default function GenieMapView({
     // Advance the breadcrumb only on a real (non-null) match so a transient
     // unmatched title (unmapped zone) doesn't wipe it.
     if (match) prevLocationRef.current = match
+    if (match && persist) persist.prev = match
     setCurrentLocation(curr => (curr === match ? curr : match))
-  }, [pool, roomDesc, roomExits, sourceFileToZoneId])
+  }, [pool, roomDesc, roomExits, sourceFileToZoneId, persist])
+
+  // SELF-HEAL. Two ways the displayed zone can end up pointing at nothing: a
+  // fresh mount before the first resolve lands, and a cross-zone stub whose
+  // target XML isn't among the loaded zones (`setCurrentZoneId(target)` on a
+  // stub click doesn't verify it exists). Either leaves `activeZone`
+  // undefined, which renders the "waiting for game data" placeholder with no
+  // path back — the auto-switch below only fires when `currentLocation`
+  // CHANGES, and standing still never changes it. Adopting the player's own
+  // zone whenever the displayed one is invalid costs nothing and can't fight
+  // manual browsing, because a zone the user picked from the dropdown is by
+  // definition present in `zones`.
+  useEffect(() => {
+    if (!currentLocation) return
+    if (currentZoneId && zones.has(currentZoneId)) return
+    setCurrentZoneId(currentLocation.zone.id)
+    setCurrentLevel(currentLocation.node.z)
+  }, [currentLocation, currentZoneId, zones])
 
   // Auto-switch displayed zone ONLY when `currentLocation` itself changes —
   // i.e., the player walked. We deliberately do NOT depend on currentZoneId

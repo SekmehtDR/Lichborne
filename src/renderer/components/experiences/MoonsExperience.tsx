@@ -11,7 +11,7 @@
 // masquerades as live truth (§32.4 text-equivalent spirit).
 import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import type { ExperienceProps } from '../../experiences'
-import { MOON_UP_MINUTES, MOON_DOWN_MINUTES, computeSunPhase, detectWeather, moonPhase, type MoonInfo, type MoonPhase, type SunPhase, type CalendarInfo, type WeatherFx } from '../../experiences'
+import { MOON_UP_MINUTES, MOON_DOWN_MINUTES, exactSunPhase, detectWeather, moonPhase, moonRemainingMinutes, type MoonPhase, type SunPhase, type CalendarInfo, type WeatherFx } from '../../experiences'
 
 // Season → a little emoji for the date readout (Sekmeht). Colored splashes in an
 // otherwise-monochrome strip, one per season.
@@ -649,9 +649,14 @@ function underPos(progress: number, cx: number, rx: number): { x: number; y: num
   return { x: cx + rx * Math.cos(theta), y: HORIZON_Y + UNDER_DEPTH * Math.sin(theta) }
 }
 
-function remainingMinutes(info: MoonInfo, reportedAt: number, now: number): number {
-  return Math.max(0, info.minutes - Math.floor((now - reportedAt) / 60_000))
-}
+// Continuous remaining minutes (a FLOAT — see moonRemainingMinutes). Geometry
+// uses it raw so the moon glides; anything TEXTUAL goes through remLabel.
+const remainingMinutes = moonRemainingMinutes
+
+/** Whole minutes for DISPLAY. Rounds to nearest (closest to the truth), but
+ *  never renders "0m" while the event is still ahead — 0 is reserved for
+ *  "now", which every caller already branches on via `rem <= 0`. */
+const remLabel = (r: number) => (r <= 0 ? 0 : Math.max(1, Math.round(r)))
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 
@@ -869,7 +874,15 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
   // real-time periodic, so day/night AUTO-ADVANCES — no stale binary flip).
   // Computed regardless of the sun toggle: the SKY needs it even with the
   // sun disc hidden.
-  const sunPhase = moons.sun ? computeSunPhase(moons.sun, now) : null
+  // The sun is COMPUTED, not observed (v0.18.4). It used to be derived from
+  // whichever sunrise/sunset prose we happened to have witnessed, with an even
+  // 180/180 day assumed until both had been seen — but Elanthia's daylight
+  // swings 120→240 rois across the year, so mid-spring ran ~26 min short and
+  // the sun read minutes ahead of the community site. `exactSunPhase` is
+  // moonwatch's own model, ported verbatim, so we agree with the script and
+  // the site by construction — and it needs neither Lich nor a transition to
+  // witness, so it works direct-SGE from the first frame.
+  const sunPhase = exactSunPhase(serverNow)
   // Realistic continuous sky (Sekmeht): blend weights from the sun's
   // ELEVATION — sin(π·progress), positive by day, negative by night — so the
   // backdrop brightens toward noon, glows warm near the horizon (sunrise AND
@@ -1241,7 +1254,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
     const rem = remainingMinutes(m, moons.reportedAt, now)
     const when = rem <= 0
       ? (m.up ? 'setting now' : 'rising now')
-      : `${m.up ? 'sets' : 'rises'} in ${fmtDur(rem)}`
+      : `${m.up ? 'sets' : 'rises'} in ${fmtDur(remLabel(rem))}`
     return p
       ? `${MOON_STYLE[k].label} — ${p.name}, ${Math.round(p.illum * 100)}% lit · ${when}`
       : `${MOON_STYLE[k].label} — ${when}`
@@ -1257,7 +1270,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
     ...(sunPhase ? [{ key: 'sun', label: 'Sun', up: sunPhase.day, min: sunPhase.toNextMin, assumed: !!sunPhase.assumed }] : []),
     ...MOON_KEYS.filter(k => moons[k]).map(k => ({
       key: k, label: MOON_STYLE[k].label, up: !!moons[k]!.up,
-      min: remainingMinutes(moons[k]!, moons.reportedAt, now), assumed: false,
+      min: remLabel(remainingMinutes(moons[k]!, moons.reportedAt, now)), assumed: false,
     })),
   ]
 
@@ -1322,8 +1335,8 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
                 <span className="moons-foot-key">moons</span>
                 <span className="moons-foot-v">
                   {MOON_STYLE[nextMoon.k].label} {nextMoon.up
-                    ? (nextMoon.rem <= 0 ? 'setting…' : `sets in ${nextMoon.rem}m`)
-                    : (nextMoon.rem <= 0 ? 'rising…' : `rises in ${nextMoon.rem}m`)}
+                    ? (nextMoon.rem <= 0 ? 'setting…' : `sets in ${remLabel(nextMoon.rem)}m`)
+                    : (nextMoon.rem <= 0 ? 'rising…' : `rises in ${remLabel(nextMoon.rem)}m`)}
                   {/* F65 — spelled out rather than the "Y+X" initials an earlier
                       pass used: a two-letter code is exactly the label that
                       needs explaining, which UX standard #8 says not to ship.
@@ -1596,7 +1609,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
             (Yavash → Katamba → Xibar) so overlaps respect MOON_DEPTH. */}
         {[...upLit].sort((a, b) => MOON_DEPTH[a.b.k] - MOON_DEPTH[b.b.k]).map(({ b, lit, phase }) => (
           <g key={b.k}>
-            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Setting any moment' : `Sets at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}${phaseLines(b.k)}`}</title>
+            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Setting any moment' : `Sets at ~${fmtClock(now + b.rem * 60_000)} (${remLabel(b.rem)}m)`}${phaseLines(b.k)}`}</title>
             {/* Transit silhouette — FIRST in the group, so a partly-lit moon
                 still paints its crescent over the top and only the shadowed
                 part reads dark. Rides the ⚙ Phase layer: with phases off every
@@ -1784,7 +1797,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
             window; hidden the rest of the time (the pill carries the rise time). */}
         {[...downBodies].sort((a, b) => MOON_DEPTH[a.k] - MOON_DEPTH[b.k]).map(b => b.crest && (
           <g key={b.k}>
-            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Rising any moment' : `Rises at ~${fmtClock(now + b.rem * 60_000)} (${b.rem}m)`}${phaseLines(b.k)}`}</title>
+            <title>{`${MOON_LORE[b.k]}\n\n${b.rem <= 0 ? 'Rising any moment' : `Rises at ~${fmtClock(now + b.rem * 60_000)} (${remLabel(b.rem)}m)`}${phaseLines(b.k)}`}</title>
             <circle cx={b.crest.x} cy={b.crest.y} r={b.s.r} fill={gref(`moon-${b.k}`)}
               stroke={b.s.atmo > 0 ? b.s.rim : 'none'}
               strokeWidth={0.7 + 0.9 * b.s.atmo}
@@ -1975,7 +1988,7 @@ function MoonsExperience({ moons, hidden, settings, weather, calendar, serverClo
           )
         })()}
         {upBodies.map(b => {
-          const t = b.rem <= 0 ? 'setting…' : `sets in ${b.rem}m`
+          const t = b.rem <= 0 ? 'setting…' : `sets in ${remLabel(b.rem)}m`
           return (
             <g key={`t-${b.k}`}>
               {showNames && <text x={b.x} y={b.y - b.s.r - 6} className="moons-name" textAnchor="middle">{b.s.label}</text>}

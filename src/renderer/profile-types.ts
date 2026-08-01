@@ -1,6 +1,7 @@
 import type { CustomTheme } from './myThemes'
 import type { SessionLogSettings } from './sessionLogSettings'
 import type { AIConfig } from './aiConfig'
+import type { BulkSet } from './bulkSets'
 
 // ── Shared (_shared.yaml) ─────────────────────────────────────────────────────
 
@@ -47,7 +48,11 @@ export interface SharedProfile {
   // spans accounts, so it cannot live in a character profile. Optional → older
   // files default to []. Stores NAMES; unknown ones are ignored at load rather
   // than pruned, so a set survives a character being archived and restored.
-  bulkSets?: { name: string; characters: string[] }[]
+  /** Saved teams. Uses the REAL BulkSet type rather than an inline shape:
+   *  the inline one omitted `favorite` and `notes`, so the round-trip only
+   *  preserved them by structural-typing accident, and the first edit that
+   *  rebuilt an entry would have dropped them with nothing to warn you. */
+  bulkSets?: BulkSet[]
   // Command-history preferences (F82, v0.18.3). App-wide: the history DATA is
   // per-character (state.commandHistory), but how recall should BEHAVE is a
   // set-once preference, like the Session Log settings. Optional → older files

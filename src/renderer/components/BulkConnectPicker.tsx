@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'
 import type { LauncherCharacter } from './Launcher'
 import { exportSharedProfile } from '../profile'
-import { loadBulkSets, saveBulkSets, upsertBulkSet, removeBulkSet, BULK_SET_NAME_MAX, type BulkSet } from '../bulkSets'
+import { loadBulkSets, saveBulkSets, upsertBulkSet, BULK_SET_NAME_MAX, type BulkSet } from '../bulkSets'
 import '../styles/character-notes-editor.css'
 
 // App-wide preference persisted in _shared.yaml (via buildSharedProfile /
@@ -47,11 +47,15 @@ interface AccountGroup {
 
 interface Props {
   groups: AccountGroup[]
+  /** Preload this saved team on open — the launcher's Teams row ⋯ → Edit, so
+   *  "edit a team" lands on the surface that built it rather than a second
+   *  editor. Null for a normal Team Login (nothing preselected). */
+  initialSetName?: string | null
   onCancel: () => void
   onConfirm: (picks: LauncherCharacter[], separateWindows: boolean) => void
 }
 
-export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props) {
+export default function BulkConnectPicker({ groups, initialSetName = null, onCancel, onConfirm }: Props) {
   // Per-account selection. Default: first favorited if any, else first
   // alphabetical. Accounts that are already connected get null (skipped).
   const [picks, setPicks] = useState<Map<string, string>>(() => {
@@ -80,9 +84,11 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
 
   // ── Named sets (F85) ──────────────────────────────────────────────────────
   const [sets, setSets] = useState<BulkSet[]>(() => loadBulkSets())
-  const [activeSet, setActiveSet] = useState('')
-  const [namingSet, setNamingSet] = useState(false)
-  const [setName, setSetName] = useState('')
+  // Saving is OPT-IN (Sekmeht): unticked this modal is honestly just a
+  // multi-character login and shows no team vocabulary at all. Pre-ticked when
+  // editing an existing team, since that is the whole reason you opened it.
+  const [saveAsTeam, setSaveAsTeam] = useState(!!initialSetName)
+  const [setName, setSetName] = useState(initialSetName ?? '')
 
   function persistSets(next: BulkSet[]) {
     setSets(next)
@@ -127,7 +133,6 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
   // mention is ticked off, not left as it was. A set is a team, so loading one
   // should give you exactly that team and nothing else.
   function applySet(name: string) {
-    setActiveSet(name)
     if (!name) return
     const set = sets.find(x => x.name === name)
     if (!set) return
@@ -145,21 +150,28 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
     setExcluded(nextExcluded)
   }
 
+  // Preload on open (Teams row → Edit). Mount-only by design: `applySet`
+  // REPLACES the whole selection, so re-running it on a later render would
+  // discard edits the user had just made.
+  const preloadedRef = useRef(false)
+  useEffect(() => {
+    if (preloadedRef.current || !initialSetName) return
+    preloadedRef.current = true
+    applySet(initialSetName)
+  }, [initialSetName])
+
   function commitSetName() {
     const name = setName.trim().slice(0, BULK_SET_NAME_MAX)
     const chars = setMembership()
     if (!name || chars.length === 0) return
     persistSets(upsertBulkSet(sets, { name, characters: chars }))
-    setActiveSet(name)
-    setNamingSet(false)
-    setSetName('')
   }
 
-  function deleteActiveSet() {
-    if (!activeSet) return
-    persistSets(removeBulkSet(sets, activeSet))
-    setActiveSet('')
-  }
+  /** Would saving overwrite a team that already exists under this name? */
+  const isReplacing = sets.some(x => x.name.trim().toLowerCase() === setName.trim().toLowerCase())
+
+  // Deletion moved to the launcher's Teams row ⋯ along with the load
+  // dropdown — one place to manage a team, one place to build one.
 
   // v0.11.0: optionally open each connected character in its own window (the
   // first stays in this window; the rest are decoupled into new windows).
@@ -189,6 +201,9 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
   }
 
   function handleConfirm() {
+    // Ticked → this connect ALSO saves. One decision (the checkbox), one
+    // click; requiring Save-then-Connect would be two buttons for one intent.
+    if (saveAsTeam && setName.trim() && setMembership().length > 0) commitSetName()
     onConfirm(currentSelection(), separateWindows)
   }
 
@@ -218,30 +233,6 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
             Pick one character from each account you want to bring. DragonRealms allows one
             character per account, so anyone already logged in is skipped.
           </p>
-
-          {/* ── LOAD ─────────────────────────────────────────────────────── */}
-          <div className="tl-row">
-            <span className="tl-row-label">Set</span>
-            <select
-              className="cne-input tl-grow"
-              value={activeSet}
-              onChange={e => applySet(e.target.value)}
-            >
-              <option value="">
-                {sets.length ? 'Load a saved set…' : 'No saved sets yet'}
-              </option>
-              {sets.map(s => (
-                <option key={s.name} value={s.name}>{s.name} ({s.characters.length})</option>
-              ))}
-            </select>
-            {activeSet && (
-              <button
-                className="cne-btn cne-btn-cancel tl-btn-danger"
-                onClick={deleteActiveSet}
-                title={`Delete the "${activeSet}" set`}
-              >Delete</button>
-            )}
-          </div>
 
           {/* ── ACCOUNTS ─────────────────────────────────────────────────── */}
           <div className="tl-section">
@@ -291,54 +282,57 @@ export default function BulkConnectPicker({ groups, onCancel, onConfirm }: Props
             )
           })}
 
-          {/* ── SAVE ─────────────────────────────────────────────────────── */}
-          <div className="tl-section">
-            <span className="tl-section-label">Save as a set</span>
-          </div>
-          <p className="tl-hint">
-            A <strong>set</strong> is a saved line-up — name this one <em>farm</em> or
-            <em> rescue</em> and the whole team logs in with one click next time, from the
-            dropdown above or the <strong>▦ Sets…</strong> button on the logon screen.
-          </p>
-          <div className="tl-row tl-saverow">
-            {namingSet ? (
-              <>
-                {/* An inline field, not window.prompt — the renderer must never
-                    block on a native dialog mid-play. */}
+          {/* ── SAVE (opt-in) ───────────────────────────────────────────────
+              Saving is a MODIFIER on what you were already doing, not its own
+              zone with its own workflow (Sekmeht). Unticked there is no team
+              vocabulary in the way at all and this is honestly just a
+              multi-character login; ticked, it also remembers the line-up.
+              That matches the order people actually decide in — you build the
+              selection first and only then decide it is worth keeping. */}
+          <label className="tl-option tl-saveteam">
+            <input
+              type="checkbox"
+              checked={saveAsTeam}
+              disabled={membershipCount === 0}
+              onChange={e => setSaveAsTeam(e.target.checked)}
+            />
+            Save this line-up as a team
+          </label>
+          {saveAsTeam && (
+            <>
+              <div className="tl-row tl-saverow">
                 <input
                   className="cne-input tl-grow"
                   autoFocus
                   maxLength={BULK_SET_NAME_MAX}
-                  placeholder="Name this set…"
+                  placeholder="Name this team…"
                   value={setName}
                   onChange={e => setSetName(e.target.value)}
                   onKeyDown={e => {
                     if (e.key === 'Enter') { e.preventDefault(); commitSetName() }
-                    // Esc closes the NAME FIELD, not the whole modal — the
+                    // Esc unticks rather than closing the modal — the
                     // document-level handler would otherwise cancel everything.
-                    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setNamingSet(false) }
+                    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setSaveAsTeam(false) }
                   }}
                 />
-                <button className="cne-btn cne-btn-save" onClick={commitSetName} disabled={!setName.trim()}>
-                  {sets.some(x => x.name.toLowerCase() === setName.trim().toLowerCase()) ? 'Replace' : 'Save'}
+                {/* Save WITHOUT connecting — you are defining a roster for
+                    later. Connect saves too (see handleConfirm), so this is
+                    the "not right now" path, not the only way to save. */}
+                <button
+                  className="cne-btn cne-btn-cancel"
+                  onClick={commitSetName}
+                  disabled={!setName.trim()}
+                  title={`Save these ${membershipCount} characters as a team without logging in`}
+                >
+                  {isReplacing ? 'Replace team' : 'Save team'}
                 </button>
-                <button className="cne-btn cne-btn-cancel" onClick={() => setNamingSet(false)}>Cancel</button>
-              </>
-            ) : (
-              <button
-                className="cne-btn cne-btn-cancel"
-                onClick={() => { setSetName(activeSet); setNamingSet(true) }}
-                disabled={membershipCount === 0}
-                title={membershipCount === 0
-                  ? 'Tick at least one account first'
-                  : `Save these ${membershipCount} characters as a named set (anyone already connected is included)`}
-              >
-                {membershipCount === 0
-                  ? 'Save as…'
-                  : `Save these ${membershipCount} as a set…`}
-              </button>
-            )}
-          </div>
+              </div>
+              <p className="tl-hint">
+                Saved teams appear in the <strong>Teams</strong> section on the logon
+                screen, where one click logs the whole team in.
+              </p>
+            </>
+          )}
 
           {/* Connect OPTIONS belong with the connect action, and inside the
               body — this used to sit between the body and the footer with a

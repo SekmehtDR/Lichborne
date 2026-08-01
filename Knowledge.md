@@ -830,3 +830,61 @@ Lichborne's handling: `spawnEnv()` in
 [LichConnection.ts](src/main/connection/LichConnection.ts) defaults
 `LANG=en_US.UTF-8` for the Lich child on non-Windows platforms, and only when
 neither `LANG` nor `LC_ALL` is already set (B250, v0.18.3).
+
+## Elanthia's sun and moons — the verified model (v0.18.4)
+
+Mined from `moonwatch.lic` v4.5.0 (read 2026-07-31,
+`C:/Ruby4Lich5/Lich5/scripts/moonwatch.lic`) and cross-checked by evaluating its
+own Ruby `DRTime` module. Recorded so none of it is re-derived.
+
+**The DR day.** 60s = 1 roisan, 30 roisaen = 1 anlas, 12 anlaen = 1 day, so a DR
+day is **21,600 real seconds (6 real hours)** and a DR year is 400 days
+(100 real days). Calendar anchor: `CALENDAR_EPOCH = 1_688_607_948`,
+`CALIBRATION_YEAR = 446` — at that Unix second it was year 446, day 0, midnight.
+Everything else is arithmetic from there, which is why Lichborne can compute the
+whole calendar with no game command.
+
+**Daylight is seasonal and NOT symmetric.** Day length swings from **120 rois at
+the winter solstice** through **180 at the equinoxes** to **240 at the summer
+solstice**. Sunrise and sunset are stored in two INDEPENDENT 400-entry empirical
+tables (the modal observed rois across ~1900 logged events over ~1.2 DR years) —
+`rise + set` is 360 on only **332 of 400 days**, so sunset cannot be derived as
+`ROIS_PER_DAY - rise`. The cosine that Elanthipedia documents
+(`90 + 29.51*cos(2*pi*d/400)`) matches only ~69% of days and is kept in the
+script purely as a fallback; the game's curve is close to but not truly
+sinusoidal. **Do not approximate the sun — the tables are the model.**
+
+**Moon periods are fractional.** `Moons::CONSTANTS` holds OLS-fit periods in
+seconds — katamba cycle 21,088.611 / visible 10,602; xibar 20,848.143 / 10,482;
+yavash 21,129.564 / 10,624 — replacing pre-v4.2 rounded integers precisely so
+predicted phase stops drifting. The game fires moon events on **60-second server
+tick boundaries**, and the script quantizes its prediction to the nearest tick.
+
+**The stream format floors.** `moonWindow` carries `[k]+(N)` where
+`N = (seconds / 60).to_i` — an integer FLOOR. So the displayed value becomes N
+at the instant `seconds` hits `60N + 59`, i.e. when the true remaining is
+`N + 59/60`, very nearly `N+1`. Anchoring interpolation at N rather than at the
+top of that bucket runs a client a constant minute fast.
+
+**`XMLData.server_time` is prompt-driven.** Lich sets it from
+`<prompt time=...>` (`xmlparser.rb:549`) and does not advance it between
+prompts, so an idle character's script computes against a frozen clock. This
+affects Genie and Frostbite identically; it is not a Lichborne behaviour.
+
+## DR protocol — mid-sentence stream chunking (v0.18.4)
+
+When you view another room (shadewatch mirror, arena view, distant gaze) DR
+splits a SINGLE sentence across consecutive `pushStream`/`popStream` blocks on
+ONE physical line, with no newline between the fragments:
+
+```
+...shatters into a thousand<popStream/><pushStream id="familiar"/> small projectiles!
+```
+
+A front-end must therefore treat the stream boundary as a text boundary, NOT a
+line boundary. How the siblings cope: **Profanity** flushes on both open and
+close, but its flush writes characters to a window, so consecutive flushes
+append to the same line; **Frostbite** caches across chunks while inside a
+stream (`onProcess` withholds until the stream closes) and re-joins the block
+with `aggregateXml`; **Genie** switches output window on push and restores on
+pop. See CLAUDE.md pitfall #120 for what this cost Lichborne.

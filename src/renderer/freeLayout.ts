@@ -26,6 +26,47 @@ export interface FloatWindow {
 
 export type LayoutMode = 'panels' | 'free'
 
+/**
+ * Is this the Debug window? Identified by its TAB, which is also how
+ * `toggleFreeDebugWindow` adds and removes it — one predicate, so the two can
+ * never disagree about which window Debug is.
+ *
+ * Debug is the one DELIBERATE exception to the lock (Sekmeht). §33.8 draws the
+ * lock's line at container vs content: it freezes position and size, and only
+ * content operations circumvent it. Debug inverts that, because it is not part
+ * of the layout you froze — it is a transient diagnostic surface you open,
+ * read and close. Locking it in place is all cost and no benefit: a locked
+ * window renders no header at all, so there is nothing left to grab, and the
+ * window it most often lands behind is the game text itself.
+ */
+export const isDebugWindow = (w: FloatWindow) => (w.tabs ?? []).some(t => t.id === 'debug')
+
+/**
+ * Ceiling at which WindowLayer renormalizes stored `z` back to 1..N, so it
+ * cannot grow without bound. Exported because DEBUG_Z has to clear it — the
+ * two are one contract and must not drift apart in separate files.
+ */
+export const Z_RENORMALIZE_CEILING = 100_000
+
+/**
+ * Display-only z that keeps Debug above every ordinary window.
+ *
+ * ABSOLUTE, not an offset. The first cut was `DEBUG_Z + win.z` with
+ * DEBUG_Z = 10_000, which silently stopped working once any window's stored z
+ * passed 10,000 — reachable because click-to-front increments z per focus and
+ * nothing renormalizes until 100,000. Debug would then sink behind the game
+ * window again after a long session, which is the exact complaint this was
+ * built to fix. Sitting one above the renormalization ceiling means no
+ * ordinary window can ever reach it.
+ *
+ * Applied at RENDER, never written to `w.z` — the stored order stays untouched
+ * so click-to-front keeps working and nothing odd persists to the profile. It
+ * cannot escape over a modal either: `.window-layer` is
+ * `position: absolute; z-index: 60`, which makes it a stacking context, so
+ * every z inside it is scoped beneath the overlay tiers (≥ 100).
+ */
+export const DEBUG_Z = Z_RENORMALIZE_CEILING + 1
+
 // Minimum on-screen window size, in px. Enforced on resize so a window
 // can't shrink to an unusable sliver even in a cramped container. Overlap
 // is allowed, so this never blocks placement.

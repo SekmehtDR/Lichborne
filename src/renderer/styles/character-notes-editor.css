@@ -273,3 +273,18 @@
   cursor: pointer;
   user-select: none;
 }
+
+/* Team Login: the SAVE opt-in (v0.18.4). Saving is a modifier on the connect
+   you were already making, so the checkbox needs to read as a separate
+   decision from the account list above it without becoming its own zone —
+   a hairline and a little air, per polish standard #5 (hierarchy from
+   dividers and muting, not margins alone). */
+.tl-saveteam {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--modal-border) 65%, transparent);
+  font-weight: 500;
+}
+/* The name field + Save sit under the ticked checkbox — indented so they read
+   as belonging to it rather than as a new row of the form. */
+.tl-saveteam + .tl-saverow { margin-left: 1.55em; }

@@ -567,7 +567,9 @@
   font-size: 0.78em;
   font-weight: 700;
   line-height: 1.2;
-  margin-bottom: 0.12em;
+  /* 0.12em let the name and the first line of speech very nearly touch, which
+     read as one run-on block rather than a label above its content. */
+  margin-bottom: 0.28em;
   color: color-mix(in srgb, var(--bubble-tint, var(--accent)) 70%, var(--text-primary));
 }
 
@@ -651,9 +653,13 @@
 }
 :root[data-epilepsy-safe='true'] .tableau-wisp { animation: none; }
 /* Recede as they age UP the stack — the newest (bottom, nth-last-child(1)) is
-   freshest at full opacity; older ones above fade so the eye tracks the newest. */
-.tableau-wisp:nth-last-child(2) { opacity: 0.68; }
-.tableau-wisp:nth-last-child(n+3) { opacity: 0.42; }
+   freshest at full opacity; older ones above fade so the eye tracks the newest.
+   Floors raised (0.68/0.42 → 0.78/0.58): the colour is ALREADY
+   `--experience-scene-muted`, so the old third step was muted text dimmed
+   again to ~0.42 — under the readable floor on light themes, where the muted
+   ramp starts much closer to the background. The ordering still reads. */
+.tableau-wisp:nth-last-child(2) { opacity: 0.78; }
+.tableau-wisp:nth-last-child(n+3) { opacity: 0.58; }
 
 .tableau-wisp-speaker {
   color: var(--experience-scene-text);

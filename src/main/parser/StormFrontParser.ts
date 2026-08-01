@@ -132,6 +132,8 @@ export class StormFrontParser {
   private injuryBuf: Array<{ id: string; name: string; height: number; width: number }> = []
 
   private pendingSegments: TextSegment[] = []
+  /** Stream the pending buffer belongs to — see `claimPending`. */
+  private pendingStream = 'main'
   private events: GameEvent[] = []
 
   // §35.6 perf gate: scene line capturers run ONLY while the session has an
@@ -200,6 +202,7 @@ export class StormFrontParser {
     this.currentPreset = undefined
     this.colorStack    = []
     this.pendingSegments = []
+    this.pendingStream = 'main'
     this.events        = []
     this.captureCtx    = null
     this.captureBuf    = ''
@@ -309,7 +312,24 @@ export class StormFrontParser {
 
   private static readonly URL_RE = /https?:\/\/[^\s<>"']+/g
 
+  /**
+   * Claim the pending buffer for the CURRENT stream, flushing first if it
+   * still holds text bound for a different one.
+   *
+   * This is what makes deferring the push/pop flush safe: segments are only
+   * ever emitted under the stream they were actually written to, and a line
+   * carrying content for two streams still splits at the boundary — it just
+   * no longer splits when the stream is the same on both sides.
+   *
+   * MUST be called before every `pendingSegments.push`.
+   */
+  private claimPending() {
+    if (this.pendingSegments.length > 0 && this.pendingStream !== this.activeStream) this.flushSegments()
+    if (this.pendingSegments.length === 0) this.pendingStream = this.activeStream
+  }
+
   private pushSegment(text: string, extra: Partial<TextSegment> = {}) {
+    this.claimPending()
     const topColor = this.colorStack[this.colorStack.length - 1]
     this.pendingSegments.push({
       text,
@@ -342,7 +362,14 @@ export class StormFrontParser {
     if (!cleaned) return
     // Skip leading whitespace-only tokens (start of line), but preserve spaces that
     // appear between segments on the same line (e.g. between adjacent <a href> links).
-    if (!cleaned.trim() && this.pendingSegments.length === 0) return
+    //
+    // NOT IN MONO MODE, where leading whitespace IS the layout. `INV HELP` is
+    // the case that exposed this: its indented rows begin with a <d> command
+    // link, so the indent arrives as a whitespace-only text token with nothing
+    // pending yet and was dropped — every <d>-led row jumped to column 0 while
+    // the plain-text rows beside it kept their indent, shearing the table in
+    // half. Same reasoning as the mono carve-out in the `preset` capture below.
+    if (!cleaned.trim() && this.pendingSegments.length === 0 && !this.monoMode) return
     // <d>TEXT</d> with no cmd attr — first non-empty text node becomes the command
     if (this.linkCmdIsText && !this.linkCmd) {
       const candidate = cleaned.trim()
@@ -379,8 +406,20 @@ export class StormFrontParser {
   private tagStart(name: string, attrs: Record<string, string>, selfClosing: boolean) {
     switch (name) {
 
+      // NOTE both stream cases below deliberately do NOT flush. DR splits a
+      // single sentence across CONSECUTIVE pushStream blocks on ONE physical
+      // line — shadewatch mirrors, arena view and distant gaze all do it:
+      //
+      //   ...shatters into a thousand<popStream/><pushStream id="familiar"/> small projectiles!
+      //
+      // Flushing on every push/pop emitted each fragment as its own line, so
+      // remote-viewed text arrived shredded mid-word ("A crimson mist" /
+      // " briefly appears around" / " Sheearyn's arms."). Flushing is now
+      // deferred to `claimPending`, which fires only when the target stream
+      // genuinely changes — so a same-stream pop→push merges, while a real
+      // switch (DR's talk-then-main speech double-emit) still splits. The
+      // end-of-line flush in parse() closes the line either way.
       case 'pushstream': {
-        this.flushSegments()
         const id = attrs.id ?? ''
         const target = normalizeStreamId(id)
         this.streamStack.push(this.activeStream)
@@ -391,7 +430,6 @@ export class StormFrontParser {
       }
 
       case 'popstream':
-        this.flushSegments()
         this.activeStream = this.streamStack.pop() ?? 'main'
         break
 
@@ -897,6 +935,7 @@ export class StormFrontParser {
         const content = this.monoMode ? rawBuf.replace(/[\r\n]/g, '') : text
         // Emit captured text with preset style into current stream
         if (content) {
+          this.claimPending()
           const topColor = this.colorStack[this.colorStack.length - 1]
           this.pendingSegments.push({
             text: content,
@@ -1053,7 +1092,11 @@ export class StormFrontParser {
       return
     }
 
-    const defaultPreset = STREAM_DEFAULT_PRESET[this.activeStream]
+    // The pending buffer belongs to whichever stream was active when its first
+    // segment landed — NOT necessarily the one active now, since push/pop no
+    // longer flush. Emitting under `activeStream` here would misfile a line
+    // whose stream changed after the text was written.
+    const defaultPreset = STREAM_DEFAULT_PRESET[this.pendingStream]
     const segments = defaultPreset
       ? this.pendingSegments.map(s =>
           (!s.preset && !s.fg && !s.bg) ? { ...s, preset: defaultPreset } : s)
@@ -1061,7 +1104,7 @@ export class StormFrontParser {
 
     const evt: GameEvent = {
       type: 'stream-text',
-      stream: this.activeStream,
+      stream: this.pendingStream,
       segments,
       timestamp: Date.now(),
       ...(this.monoMode ? { mono: true } : {}),

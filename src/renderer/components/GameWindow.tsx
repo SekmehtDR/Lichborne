@@ -36,11 +36,11 @@ import PanelManager from './PanelManager'
 import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
-import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
+import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
 import { nanoid } from 'nanoid'
-import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
+import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, isDebugWindow, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
 import '../styles/free-layout.css'
 import ThemePicker from './ThemePicker'
 import SettingsPanel from './SettingsPanel'
@@ -2620,13 +2620,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       // batches (pitfall #60) re-seed this too, so a window handoff keeps the
       // sky; the replayed line's reportedAt is "now", which slightly
       // understates data age until the next live report (accepted).
-      // MERGE over the previous report, never replace — a moon absent from one
-      // line (malformed/partial) must never vanish from the sky (its stale
-      // countdown drifts until the next full report, which is the lesser
-      // evil). The normal all-three line overwrites everything anyway.
+      // `mergeMoonReport` owns the merge (never replace — a moon absent from a
+      // malformed line must not vanish from the sky) AND stamps each moon's
+      // exact interpolation anchor, so it needs the PREVIOUS report to diff
+      // against. Keep it pure and in experiences.ts: the anchor rules are
+      // subtle and the moon harness covers them.
       if (batchMoons) {
         const parsed = batchMoons
-        setMoonData(prev => ({ katamba: prev?.katamba, yavash: prev?.yavash, xibar: prev?.xibar, ...parsed, reportedAt: Date.now() }))
+        const at = Date.now()
+        setMoonData(prev => ({ ...mergeMoonReport(prev, parsed, at), reportedAt: at }))
       }
       // Server-clock offset (F64a). The parser emits this rarely — first sight
       // and real drift only — so a plain set is fine; there is no per-turn churn
@@ -4584,7 +4586,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // empty. Collection follows tab presence via the `debugOpen` memo, so the
   // window ✕ and the tab ✕ also turn collection off — no separate bookkeeping.
   function toggleFreeDebugWindow() {
-    const hasDebug = (w: FloatWindow) => (w.tabs ?? []).some(t => t.id === 'debug')
+    // Shared with the lock exemption + always-on-top in freeLayout.ts, so
+    // "which window is Debug" has exactly one definition.
+    const hasDebug = isDebugWindow
     if (freeWindows.some(hasDebug)) {
       const next: FloatWindow[] = []
       for (const w of freeWindows) {

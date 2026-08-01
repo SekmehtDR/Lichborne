@@ -6,6 +6,71 @@
 
 ---
 
+## v0.18.4 — the sky told the truth, and the logon screen grew teams
+
+Mostly tester-driven, and two of the reports turned out to be the same shape:
+a display that was confidently wrong.
+
+- **The moons and the sun were both fast/slow against the community site.** The
+  moons were a stairstep (the arc position only moved once a minute, and
+  flooring elapsed can only hold a moon BACK) plus orbital constants still on
+  moonwatch's pre-v4.2 rounded integers. The sun was worse — not drift but a
+  wrong MODEL, assuming an even 180/180 day when Elanthian daylight swings
+  120/180/240 rois across the year. moonwatch's model is now ported verbatim,
+  tables and all, and **diffed against its own Ruby: 52 timestamps, 2104
+  assertions, zero mismatches.** The sun is a pure function of server time now,
+  so it works direct-SGE with nothing observed. B253, B254.
+- **Two parser bugs from real captures.** `INV HELP` sheared in half because
+  mono-mode leading whitespace was dropped before `<d>` links (B255); and
+  shadewatch / arena / distant gaze shredded sentences mid-word because DR
+  splits one sentence across consecutive pushStream blocks and we treated a
+  stream boundary as a line boundary (B256, pitfall #120). Reading how
+  Profanity, Frostbite and Genie handle the same tags is what settled the
+  design — none of them ends a line there, and their flush writes characters
+  where ours emits a line.
+- **The Genie map could strand permanently** on "waiting for game data" after a
+  trip to the Lich map, because the view switch unmounts it and the resolver
+  lost its breadcrumb (B257). MapPanel holds that state now. Deliberately not
+  fixed by keeping the view mounted — that costs ~1000 SVG nodes per CHARACTER.
+- **Living Tableau UI/UX pass.** Status chips stopped landing on the gauges,
+  bubbles stopped overlapping each other (the header clamp was re-creating the
+  collision it was meant to avoid — pitfall #123), bubbles now avoid the thought
+  log and gauge band, spacing scales with the font, and the faintest wisp is
+  readable again. Sekmeht: *"the living tableau looks good this version."*
+- **Teams on the logon screen** (F97). The Sets dropdown named a noun and
+  explained nothing; a collapsible section shows the members, so the content IS
+  the explanation. Favorites became the quick-select block for teams AND
+  characters, teams gained notes and a pin, and Team Login was restructured so
+  saving is an opt-in checkbox rather than its own zone.
+- **Debug window** is exempt from the window lock and always on top (F96), and
+  **Cancel on the connecting screen actually cancels** (B261) — it had been
+  wired only to the 1.5s grace timer, so past that it hid the overlay while the
+  login carried on.
+
+**Team Login can be stopped part-way** (F98), reversing a recorded decision.
+The old note said a mid-sequence cancel would leave a partially-connected
+state — true, but partial is unavoidable once the run starts, so the real
+choice was an escape or none. It is **Stop**, not Cancel: the character in
+flight lands and is kept, the rest are skipped and reported as skipped rather
+than failed.
+
+A macOS pass found the new code platform-neutral throughout, with one real
+issue: symbol glyphs like the Teams header's crossed swords can arrive as
+colour emoji there and stop obeying `color`. Fixed with a text-presentation
+selector; 26 pre-existing glyphs of the same class are recorded but deliberately
+unswept, since macOS rendering cannot be verified from this machine (B262,
+pitfall #125). A CSS audit of every class rendered by a touched file — the
+repeatable version of what B260 caught by accident — found one more missing
+rule.
+
+Four of this version's defects were caught by the pre-merge check rather than by
+a tester: the Debug z-offset that would have been outgrown, a cancel flag reset
+at one of four call sites, a bubble policy that could drop every bubble in a
+short panel, and pinned teams leaking into the Add Character modal. Two silent
+data-loss traps were caught while building Teams — a coercer that rebuilds
+entries destroys fields it does not copy (pitfall #121), and an upsert that
+overwrites wholesale wipes what the caller did not supply.
+
 ## Current Status
 
 **Phase 1 — Complete ✅**

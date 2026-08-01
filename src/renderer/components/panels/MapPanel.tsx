@@ -6,7 +6,7 @@ import { scopedKey } from '../../characterScope'
 import { useCharacter } from '../../CharacterContext'
 import { useProfileSaver } from '../../hooks/useProfileSaver'
 import MapImageView from './MapImageView'
-import GenieMapView from './GenieMapView'
+import GenieMapView, { type GenieMatch } from './GenieMapView'
 import '../../styles/map-panel.css'
 
 interface Props {
@@ -91,6 +91,15 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
   // Populated by `loadGenie` below; consumed by GenieMapView.
   const [genieZones, setGenieZones] = useState<Map<string, GenieZone>>(new Map())
   const genieGenRef = useRef(0)  // incremented on each load start/cancel to abort stale loads
+  // Genie view state that must OUTLIVE the view switch. Switching to the Lich
+  // map unmounts GenieMapView, which used to drop both the displayed zone and
+  // the resolver's breadcrumb — and without the breadcrumb an ambiguous
+  // same-titled room can fail to resolve, stranding the map on "waiting for
+  // game data" with no way back. MapPanel is per-CHARACTER and stays mounted
+  // across the switch, so it holds them. One ref per MapPanel instance means
+  // no cross-session bleed (pitfall #6) — never hoist this to module scope.
+  const geniePersistRef = useRef<{ zoneId: string; level: number; prev: GenieMatch | null }>(
+    { zoneId: '', level: 0, prev: null })
 
   // ── Load Lich JSON ───────────────────────────────────────────────────────────
 
@@ -407,6 +416,7 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
           onPickGenieFolder={pickGenieFolder}
           onClearGenieFolder={clearGenieFolder}
           mapAnimations={mapAnimations}
+          persist={geniePersistRef.current}
         />
       )}
     </div>

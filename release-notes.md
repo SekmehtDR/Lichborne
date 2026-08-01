@@ -1,47 +1,44 @@
-## v0.18.3 — Your reports, fixed 🔍
+## v0.18.4 — An accurate sky, and teams on the logon screen 🌙
 
-Almost everything here came from someone hitting a problem and telling us. Thank you.
+### The sky now matches moonwatch
 
-### Two long-standing bugs, finally pinned down
+Both the sun and the moons were drifting against
+[the community moonwatch site](https://moonwatch.dr.elanthia.online/), and for
+different reasons.
 
-**The Lich Dashboard's search highlight sat between two lines.** Reported more than once and never reproducible — because it's invisible in short files. Two clues cracked it: it was fine in the Ruby script editor but wrong in a YAML profile, and the screenshot was at line 1083. That combination means the error was *accumulating*, and it was: the editor's line height didn't land exactly on the browser's internal layout grid, so the highlight drifted a fraction of a pixel per line — about a sixth of a row by line 1000. Now exact at any line number.
+- **The moons** were moving in one-minute jumps instead of gliding, and were
+  using out-of-date orbital constants. Both fixed — they now track the site.
+- **The sun** was assuming every Elanthian day is the same length. It isn't:
+  daylight swings from two real hours at midwinter to four at midsummer. The
+  sun is now computed from the game's real seasonal tables, so it is accurate
+  all year — and because it is pure maths, it works whether or not you run Lich.
 
-**A Lich script that works in other front-ends failed here on macOS** (thanks Zithri) with `invalid byte sequence in US-ASCII`. That turned out to be Lichborne's fault, not the script's: a Mac app launched from Finder or the dock inherits no shell environment, so Ruby had no language setting and read the script file as plain ASCII — one curly quote or accented character anywhere in it, even in a comment, and the script died before it ran. Lichborne now hands Lich a UTF-8 locale. If you've had scripts fail here that work elsewhere, try them again.
+### Teams on the logon screen
 
-### Command history is yours to tune
+The old Sets dropdown told you nothing about what it was. Saved line-ups now get
+their own **Teams** section on the logon screen, showing who is on each team.
 
-Requested by **Qij**: a history full of `n`, `s` and `ne` buries the long command you actually wanted back. **Settings → Behavior → "Remember commands of at least N characters"**, or `/history min 3` from the command bar.
+- One click logs the whole team in, skipping anyone already playing.
+- Pin a team with the ♥ and it joins **Favorites** at the top.
+- Give a team **notes** — what it's for, who tanks, whatever you want.
+- In Team Login, saving is now just a checkbox: leave it unticked and it's
+  simply a quick way to log several characters in.
 
-Default is **0 — remember everything**, exactly as before, so nothing changes until you choose it. Slash commands like `/ai` are always kept regardless, and your existing history is left alone.
+### Fixes
 
-### Team Login (was Bulk Connect)
-
-Two things Binu asked for, and a rename that follows from them.
-
-You can now **untick accounts** instead of logging in one character from every account you own. And you can **save a selection as a named set** — a team like *farm* or *rescue* — then launch it later, either from the picker or straight from the **▦ Sets…** button on the logon screen.
-
-A set is a template of who you want. Anyone already logged in is simply skipped, and the rest connect.
-
-"Bulk Connect" described the mechanism; **Team Login** describes the point — and it matches what a set actually is. Nothing about your saved settings changed.
-
-### You can see when a character drops
-
-The status dot beside the Lichborne wordmark used to describe only the tab you were looking at, so a character that disconnected in a background tab went unnoticed. It now has three states:
-
-- 🟢 this tab **and every other open tab** are connected
-- 🟡 this tab is fine, but another one has dropped — hover to see who
-- 🔴 the tab you're on is disconnected
-
-A tab that's busy reconnecting doesn't raise the warning.
-
-### Moons
-
-The sun now sits properly **behind** the moons — previously a moon near its new phase is drawn as almost nothing, so the sun shone straight through it. And when a nearly-dark moon crosses the sun it now shows as a **shadowed disc with a rim**, so you can see it's there instead of wondering where it went.
-
-### Also
-
-- Script filters now say **`scripts/`** and **`custom/`** instead of "core" and "custom" — "core" implied a script shipped with Lich, when it only ever meant "in the main scripts folder". If you save your own scripts there, they were being labelled as Lich's.
-- The "Type a game command" hint for new users is easier to read.
-- Fixed: the **⋯ menu on a character card** did nothing when you opened the launcher over a live session — it was opening behind the window.
-- **Help → About** now shows your platform and architecture next to the version — handy when reporting a bug.
-- Fixed (Linux): **File → Open Installation Directory** opened a temporary folder instead of where your AppImage actually lives.
+- **Team Login can be stopped part-way.** A long team run no longer has to be
+  sat through — Stop finishes whoever is connecting and skips the rest, which
+  are listed so you can start them later.
+- **Cancel now actually cancels a connection.** Previously it only worked for
+  the first second and a half; after that it hid the dialog while the character
+  logged in anyway.
+- **The Debug window can be moved even when your layout is locked**, and always
+  stays above other windows instead of disappearing behind the game text.
+- **`INV HELP` and similar tables** keep their column alignment.
+- **Text seen through a shadewatch mirror, the arena view or distant gaze** no
+  longer breaks apart mid-sentence.
+- **The Genie map** could get permanently stuck on "waiting for game data" after
+  switching to the Lich map and back.
+- **The Living Tableau** got a polish pass: speech bubbles no longer overlap
+  each other, the combat gauges, or the thought log, and faint text is readable
+  again.

@@ -9,6 +9,7 @@ import GameWindow from './components/GameWindow'
 import AppBar from './components/AppBar'
 import QuickSend from './components/QuickSend'
 import BulkConnectPicker from './components/BulkConnectPicker'
+import { showToast } from './toasts'
 import ToastHost from './components/ToastHost'
 import { GroupsProvider } from './components/GroupsContext'
 import { SessionsProvider, useSessions, type CharacterId } from './SessionsContext'
@@ -144,6 +145,22 @@ function AppShell() {
   const [reconnectPrompt, setReconnectPrompt] = useState<{ todo: LauncherCharacter[]; conflicts: ReconnectConflict[] } | null>(null)
   const [reconnectBusy, setReconnectBusy] = useState(false)
 
+  // Everyone logged in across ALL windows. Feeds the launcher's Teams rows so
+  // they grey the members Connect will skip — planReconnect reads the same
+  // roster, so the row's count and the actual outcome cannot disagree.
+  const connectedCharacterNames = useMemo(
+    () => roster.filter(r => r.character).map(r => r.character as string), [roster])
+
+  // Teams row ⋯ → Edit. Opens Team Login with that team already loaded, so
+  // "edit" means the surface you built it on rather than a second editor.
+  function openTeamForEdit(setName: string) {
+    void loadCharacterCards().then(cards => {
+      if (!cards.length) return
+      setBulkPickerSet(setName)
+      setBulkPickerSource(cards)
+    })
+  }
+
   function handleReconnectLast(picks: LauncherCharacter[]) {
     if (reconnectPrompt) return
     // Eligibility lives in the PURE planReconnect (reconnectPlan.ts) so the
@@ -211,6 +228,9 @@ function AppShell() {
   //  - bulkProgress: sequential connect is running; shows progress overlay
   //  - bulkSummary: all attempts done; shows summary modal with per-char status
   const [bulkPickerSource, setBulkPickerSource] = useState<LauncherCharacter[] | null>(null)
+  // Team to preload when the picker opens from a Teams row's Edit (null = a
+  // normal Team Login, nothing preselected).
+  const [bulkPickerSet, setBulkPickerSet] = useState<string | null>(null)
   const [bulkProgress, setBulkProgress] = useState<{ currentIndex: number; total: number; currentName: string } | null>(null)
   // NOTE: the live connect commentary deliberately does NOT live in AppShell
   // state. It updates ~once per SECOND during a Lich wait, and GameWindow is
@@ -219,7 +239,14 @@ function AppShell() {
   // to 30s — a real hitch while other characters are playing. It lives in the
   // <ConnectStep> leaf below instead, which subscribes itself; nothing else
   // in the tree re-renders when a step arrives (v0.18.0 perf audit).
-  const [bulkSummary, setBulkSummary] = useState<{ ok: string[]; failed: { name: string; error: string }[] } | null>(null)
+  const [bulkSummary, setBulkSummary] = useState<
+    { ok: string[]; failed: { name: string; error: string }[]; skipped?: string[]; stopped?: boolean } | null>(null)
+  // Set by the progress overlay's Stop button; read at the top of each loop
+  // iteration in runBulkConnect.
+  const bulkStopRef = useRef(false)
+  // Mirrors the ref for RENDER only (a ref change does not re-render). The ref
+  // stays the source of truth because the loop closure cannot see state.
+  const [bulkStopped, setBulkStopped] = useState(false)
   const [showLichSetup, setShowLichSetup] = useState(false)
   const [showQuickSend, setShowQuickSend] = useState<{ initialCommand: string } | null>(null)
   // Profile Transfer (Launcher → Transfer). AppShell hosts the modal because it
@@ -792,13 +819,33 @@ function AppShell() {
   function cancelPendingConnect() {
     pendingCancelledRef.current = true
     if (pendingTimerRef.current) {
+      // Still in the 1.5s grace window — nothing has been attempted, so this
+      // is a clean, instant cancel with no side effects.
       clearTimeout(pendingTimerRef.current)
       pendingTimerRef.current = null
+    } else {
+      // The login is ALREADY in flight and there is no abort for it, so the
+      // attempt runs to completion and `runConnect` tears the session down on
+      // arrival. Say so: the account slot stays busy until then, and a user who
+      // immediately tries another character on the same account would otherwise
+      // hit a bare "invalid login key" with no idea why.
+      showToast({
+        title: 'Cancelling',
+        message: 'The connection attempt has to finish before that account is free again — nothing will be added.',
+      })
     }
     setPendingConnect(null)
   }
 
   async function runConnect(c: LauncherCharacter) {
+    // EVERY entry starts uncancelled. `handleCardConnect` resets this before
+    // its grace timer, but three other paths reach here — the tab menu's
+    // Reconnect, and both attempts of the account-conflict resolve — and none
+    // of them did. So after any cancelled connect, the stale `true` made the
+    // next one return instantly and silently: a Reconnect that spun and did
+    // nothing, with no error to explain it. Resetting at the top is safe
+    // because cancellation during THIS attempt is set after this line runs.
+    pendingCancelledRef.current = false
     const adv = loadAdvanced()
     const password = await window.api.loadPassword(c.account)
     if (password === null) {
@@ -836,7 +883,32 @@ function AppShell() {
       lichMode:      adv.lichMode,
     }
 
+    // CANCEL, honoured for real (Sekmeht: "there's no way to stop it until you
+    // login, then have to logout").
+    //
+    // The Cancel button already existed but only worked during the 1.5s grace
+    // window before `runConnect` started — after that it hid the overlay while
+    // the login carried on in main, so the character connected anyway and had
+    // to be logged out by hand. A button that stops working after a second and
+    // a half is worse than no button.
+    //
+    // `window.api.login` has no abort, so cancellation is honoured at the two
+    // points either side of it: skip the work entirely if the user bailed
+    // during the password read, and TEAR DOWN the session if the login had
+    // already landed. Doing it before `handleConnected` is what matters — the
+    // tab is never added, so a cancelled connect never flashes a session into
+    // existence and out again.
+    if (pendingCancelledRef.current) return
+
     const result = await window.api.login(creds)
+    if (pendingCancelledRef.current) {
+      // Landed anyway (it was in flight when Cancel was pressed). Close it out
+      // so we don't strand a live connection with no tab attached to it.
+      if (result.ok && result.sessionId) {
+        try { await window.api.disconnectAwait(result.sessionId) } catch (err) { console.error(err) }
+      }
+      return
+    }
     if (!result.ok) {
       const raw = result.error ?? 'Connection failed'
       const friendly = /invalid login key/i.test(raw)
@@ -859,6 +931,13 @@ function AppShell() {
       await exportCharacterProfile(c.account, c.name, c.game, c.useLich)
     } catch (err) { console.error(err) }
 
+    // Last check: the profile import/export above is awaited, so Cancel can
+    // land in that window too.
+    if (pendingCancelledRef.current) {
+      try { await window.api.disconnectAwait(result.sessionId) } catch (err) { console.error(err) }
+      return
+    }
+
     setPendingConnect(null)
     handleConnected({
       sessionId: result.sessionId,
@@ -875,10 +954,29 @@ function AppShell() {
   // sequence — we accumulate them and show a summary at the end. v0.8.0 (F21).
   async function runBulkConnect(picks: LauncherCharacter[], separateWindows = false) {
     setBulkPickerSource(null)
+    setBulkPickerSet(null)
     const ok: string[] = []
     const failed: { name: string; error: string }[] = []
+    // STOP, not cancel (Sekmeht: the individual connect got a Cancel and a team
+    // login had none). Deliberately weaker than the single-character Cancel,
+    // and the label says so. `window.api.login` cannot be aborted, so the
+    // character mid-flight is going to land whatever we do — and tearing it
+    // down would throw away a wait of up to 30s and leave its account slot
+    // churning. So Stop means "attempt no MORE characters": the current one
+    // finishes and is kept, the remainder are skipped and reported as such.
+    // A ref, not state, because the loop body holds a stale closure over any
+    // state value for the whole run.
+    bulkStopRef.current = false
+    setBulkStopped(false)
+    let stopped = false
+    const skipped: string[] = []
     for (let i = 0; i < picks.length; i++) {
       const c = picks[i]
+      if (bulkStopRef.current) {
+        stopped = true
+        skipped.push(...picks.slice(i).map(p => p.name))
+        break
+      }
       setBulkProgress({ currentIndex: i + 1, total: picks.length, currentName: c.name })
       try {
         const adv = loadAdvanced()
@@ -924,7 +1022,7 @@ function AppShell() {
       }
     }
     setBulkProgress(null)
-    setBulkSummary({ ok, failed })
+    setBulkSummary({ ok, failed, skipped, stopped })
   }
 
   // Build per-account groups for the BulkConnectPicker. Filters out hidden
@@ -1081,6 +1179,12 @@ function AppShell() {
                on, and the per-account KEEP/SWITCH chooser when an account is
                busy with someone else. */
             onConnectSet={handleReconnectLast}
+            /* Who a team row should grey out. Roster = every window's sessions,
+               so a character connected in a DECOUPLED window counts too — the
+               same source planReconnect skips against, which is what keeps the
+               row's promise ("Connect 2") equal to what actually happens. */
+            connectedNames={connectedCharacterNames}
+            onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {
@@ -1162,6 +1266,12 @@ function AppShell() {
                on, and the per-account KEEP/SWITCH chooser when an account is
                busy with someone else. */
             onConnectSet={handleReconnectLast}
+            /* Who a team row should grey out. Roster = every window's sessions,
+               so a character connected in a DECOUPLED window counts too — the
+               same source planReconnect skips against, which is what keeps the
+               row's promise ("Connect 2") equal to what actually happens. */
+            connectedNames={connectedCharacterNames}
+            onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
             onRefreshAccount={(account) => {
@@ -1337,15 +1447,23 @@ function AppShell() {
       {bulkPickerSource && (
         <BulkConnectPicker
           groups={buildBulkGroups(bulkPickerSource)}
-          onCancel={() => setBulkPickerSource(null)}
+          initialSetName={bulkPickerSet}
+          onCancel={() => { setBulkPickerSource(null); setBulkPickerSet(null) }}
           onConfirm={runBulkConnect}
         />
       )}
 
-      {/* Bulk Connect progress — single "currently connecting Sekmeht (1 of 3)…"
-          overlay during the sequential connect. No cancel button mid-sequence
-          (would leave a partially-connected state); user can disconnect any
-          unwanted tabs afterward. */}
+      {/* Team Login progress — single "currently connecting Sekmeht (1 of 3)…"
+          overlay during the sequential connect.
+          This used to say "no cancel button mid-sequence (would leave a
+          partially-connected state)". REVERSED in v0.18.4 (Sekmeht: the
+          individual connect has a Cancel and a team login had none). The old
+          objection was real but pointed the wrong way — partial connection is
+          unavoidable the moment the run starts, so the choice was never
+          "partial or clean", it was "partial with an escape or partial while
+          you sit through every remaining Lich wait". Hence STOP rather than
+          Cancel: it skips the characters not yet attempted and keeps the one
+          in flight, because that login cannot be aborted anyway. */}
       {bulkProgress && (
         <div className="launcher-connecting" style={{ zIndex: 9000 }}>
           <div className="launcher-connecting-card">
@@ -1365,6 +1483,22 @@ function AppShell() {
                 />
               </div>
             </div>
+            {/* Only worth offering while there is something left to skip — on
+                the last character Stop could not do anything, and a button
+                that cannot act is worse than none (UX standard #1). Disables
+                itself once pressed so the state is visible rather than the
+                click just seeming to do nothing while the current login runs
+                to completion. */}
+            {bulkProgress.currentIndex < bulkProgress.total && (
+              <button
+                className="launcher-connecting-cancel"
+                disabled={bulkStopped}
+                onClick={() => { bulkStopRef.current = true; setBulkStopped(true) }}
+                title="Finish the character currently connecting, then stop — the rest are skipped"
+              >
+                {bulkStopped ? 'Stopping…' : 'Stop'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1378,15 +1512,28 @@ function AppShell() {
             {/* Title states the OUTCOME, not just that it finished — "all
                 connected" vs "N didn't connect" is the thing the user needs. */}
             <div className="launcher-dialog-head">
-              {bulkSummary.failed.length === 0
-                ? `Connected ${bulkSummary.ok.length} character${bulkSummary.ok.length === 1 ? '' : 's'}`
-                : `Connected ${bulkSummary.ok.length}, ${bulkSummary.failed.length} failed`}
+              {/* A STOPPED run says so in the title. Reporting only "Connected
+                  2" after the user pressed Stop reads as the team having been
+                  short, rather than as their own choice being honoured. */}
+              {bulkSummary.stopped
+                ? `Stopped — connected ${bulkSummary.ok.length} of ${bulkSummary.ok.length + bulkSummary.failed.length + (bulkSummary.skipped?.length ?? 0)}`
+                : bulkSummary.failed.length === 0
+                  ? `Connected ${bulkSummary.ok.length} character${bulkSummary.ok.length === 1 ? '' : 's'}`
+                  : `Connected ${bulkSummary.ok.length}, ${bulkSummary.failed.length} failed`}
             </div>
             <div className="launcher-dialog-body">
               {bulkSummary.ok.length > 0 && (
                 <div className="launcher-result launcher-result--ok">
                   <span className="launcher-result-icon" aria-hidden="true">✓</span>
                   <span>{bulkSummary.ok.join(', ')}</span>
+                </div>
+              )}
+              {/* Skipped is NOT a failure — muted, and named so it is obvious
+                  they can simply be connected afterwards. */}
+              {(bulkSummary.skipped?.length ?? 0) > 0 && (
+                <div className="launcher-result launcher-result--skipped">
+                  <span className="launcher-result-icon" aria-hidden="true">–</span>
+                  <span>Skipped: {bulkSummary.skipped!.join(', ')}</span>
                 </div>
               )}
               {bulkSummary.failed.length > 0 && (

@@ -20,6 +20,13 @@ export interface BulkSet {
   name: string
   /** Character names, at most one per account (DR allows one active each). */
   characters: string[]
+  /** Pinned into the launcher's Favorites block — Sekmeht: "think of
+   *  favorites as their quick select to things", so it holds both characters
+   *  and teams rather than characters alone. */
+  favorite?: boolean
+  /** Free-form notes, shown on the team's row. Same idea as a character
+   *  profile's notes: what this team is FOR. */
+  notes?: string
 }
 
 const KEY = 'lichborne.bulkSets'
@@ -44,7 +51,12 @@ function coerce(raw: unknown): BulkSet[] {
       : []
     if (characters.length === 0) continue
     seen.add(key)
-    out.push({ name, characters })
+    // Copy EVERY field: coerce rebuilds the object and saveBulkSets runs it on
+    // the way out, so anything omitted here is silently destroyed on the next
+    // save rather than merely ignored on load.
+    const favorite = r?.favorite === true
+    const notes = typeof r?.notes === 'string' ? r.notes : undefined
+    out.push({ name, characters, ...(favorite ? { favorite } : {}), ...(notes ? { notes } : {}) })
   }
   return out
 }
@@ -56,9 +68,29 @@ export function loadBulkSets(): BulkSet[] {
   } catch { return [] }
 }
 
+/** Storage key, exported so a cross-window `storage` listener can match it. */
+export const BULK_SETS_KEY = KEY
+
+/**
+ * Fired after any write, so surfaces showing the team list refresh.
+ *
+ * A `storage` event NEVER fires in the window that made the write, so the
+ * launcher's Teams section stayed stale after the picker saved a team — save,
+ * Cancel, and the team wasn't there (Sekmeht). Same trap as the
+ * analytics-changed / ai-key-changed / simucoin-changed precedents.
+ *
+ * Dispatched from `saveBulkSets` itself rather than from each call site, so
+ * every writer is covered and no future one can forget.
+ */
+export const BULK_SETS_CHANGED_EVENT = 'lichborne:bulk-sets-changed'
+
 export function saveBulkSets(sets: BulkSet[]): void {
   try { localStorage.setItem(KEY, JSON.stringify(coerce(sets))) }
   catch (e) { console.error('[bulk-sets] write failed:', e) }
+  // Outside the try: a quota failure still leaves the in-memory list changed,
+  // and a listener re-reading is harmless either way.
+  try { document.dispatchEvent(new CustomEvent(BULK_SETS_CHANGED_EVENT)) }
+  catch { /* never throw from a notification */ }
 }
 
 /**
@@ -69,7 +101,11 @@ export function upsertBulkSet(sets: BulkSet[], set: BulkSet): BulkSet[] {
   const i = sets.findIndex(s => s.name.toLowerCase() === set.name.toLowerCase())
   if (i < 0) return [...sets, set]
   const next = sets.slice()
-  next[i] = set
+  // PRESERVE the fields the caller didn't supply. Team Login knows only the
+  // name and the roster, so a plain overwrite would silently wipe the notes
+  // and the favorite pin every time you re-saved a team from there — a
+  // destructive edit disguised as an update.
+  next[i] = { ...sets[i], ...set }
   return next
 }
 

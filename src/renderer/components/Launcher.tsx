@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { backdropHandlers } from "../utils/backdropClose"
 import type { CharacterProfile } from '../profile-types'
-import { loadLastSessionCharacters } from '../profile'
-import { loadBulkSets } from '../bulkSets'
+import { loadLastSessionCharacters, exportSharedProfile } from '../profile'
+import { loadBulkSets, saveBulkSets, removeBulkSet, upsertBulkSet, BULK_SET_NAME_MAX, BULK_SETS_KEY, BULK_SETS_CHANGED_EVENT } from '../bulkSets'
 import ContextMenu from './ContextMenu'
 import CharacterNotesEditor, { guildLabel } from './CharacterNotesEditor'
 import '../styles/launcher.css'
@@ -54,6 +55,13 @@ interface Props {
    *  (names → characters) happens HERE, where the character list lives; App
    *  just receives the resolved list and runs the existing plan/connect path. */
   onConnectSet?: (characters: LauncherCharacter[]) => void
+  /** Characters currently logged in ANYWHERE (all windows, from the roster).
+   *  Lets a team row grey the members it will skip — `planReconnect` drops
+   *  whoever is already on, so without this a Connect on a mostly-connected
+   *  team looks like it did nothing. */
+  connectedNames?: string[]
+  /** Open Team Login with this team preloaded (the row's ⋯ → Edit). */
+  onEditSet?: (setName: string) => void
 }
 
 // Game-section ordering inside an account. DR (and its DRT variant) come
@@ -80,8 +88,6 @@ function LauncherTopBar({
   onBulkConnect,
   bulkConnectEnabled,
   onReconnectLast,
-  onConnectSet,
-  bulkSets = [],
   reconnectCount = 0,
 }: {
   onOpenLichSetup: () => void
@@ -89,9 +95,6 @@ function LauncherTopBar({
   onBulkConnect?: () => void
   bulkConnectEnabled: boolean
   onReconnectLast?: () => void
-  /** F85 — launch a saved set by name, straight from the launcher. */
-  onConnectSet?: (setName: string) => void
-  bulkSets?: { name: string; characters: string[] }[]
   reconnectCount?: number
 }) {
   return (
@@ -120,24 +123,14 @@ function LauncherTopBar({
           ⚡ Team Login
         </button>
       )}
-      {/* F85 (Binu, refined by Sekmeht: "there should also be a bulk option on
-          the logon screen"). One click launches a saved team WITHOUT going
-          through the picker — the picker is where you BUILD a set, this is
-          where you use it. Renders only once a set exists, so nobody sees an
-          empty control (UX standard #1). */}
-      {onConnectSet && bulkSets.length > 0 && (
-        <select
-          className="launcher-topbar-btn launcher-topbar-btn--bulk"
-          value=""
-          onChange={e => { const n = e.target.value; if (n) onConnectSet(n) }}
-          title="Log in a saved set of characters"
-        >
-          <option value="">▦ Sets…</option>
-          {bulkSets.map(s => (
-            <option key={s.name} value={s.name}>{s.name} ({s.characters.length})</option>
-          ))}
-        </select>
-      )}
+      {/* The `▦ Sets…` dropdown that used to sit here was REMOVED in favour of
+          the Teams section in the body (Sekmeht: "it just sticks out and
+          doesn't have a lot of information about what it is or what it does").
+          It named a noun with no explanation and hid its contents behind a
+          click — polish standard #8. Two entry points where one is unlabelled
+          is worse than one good one, so this is gone rather than duplicated:
+          Team Login is where you BUILD a team, the section is where you use
+          one. Don't re-add it. */}
       {onAddNew && (
         <button className="launcher-topbar-btn launcher-topbar-btn--add" onClick={onAddNew} title="Add account">
           + Add account
@@ -154,6 +147,138 @@ function LauncherTopBar({
         ⚙ Lich Setup
       </button>
     </div>
+  )
+}
+
+export interface TeamMemberView { name: string; state: 'on' | 'ready' | 'missing' }
+export interface TeamRowView {
+  name: string
+  members: TeamMemberView[]
+  readyCount: number
+  favorite: boolean
+  notes?: string
+}
+
+/** One team, as it appears in BOTH the Favorites and Teams blocks. Hoisted to
+ *  module scope and shared rather than copied into each section — two copies
+ *  of a row are compatible only until someone restyles one of them. */
+function TeamRow({ team, onConnect, onToggleFavorite, onMenu }: {
+  team: TeamRowView
+  onConnect: (name: string) => void
+  onToggleFavorite: (name: string, next: boolean) => void
+  onMenu: (e: React.MouseEvent, name: string) => void
+}) {
+  return (
+    <div className="launcher-team">
+      <button
+        type="button"
+        className={`launcher-team-fav${team.favorite ? ' launcher-team-fav--on' : ''}`}
+        onClick={() => onToggleFavorite(team.name, !team.favorite)}
+        aria-pressed={team.favorite}
+        title={team.favorite ? 'Remove from Favorites' : 'Pin to Favorites'}
+      >{team.favorite ? '♥' : '♡'}</button>
+      <div className="launcher-team-main">
+        <div className="launcher-team-name">{team.name}</div>
+        <div className="launcher-team-members">
+          {team.members.map(m => (
+            <span
+              key={m.name}
+              className={`launcher-team-member launcher-team-member--${m.state}`}
+              title={m.state === 'on' ? `${m.name} is already logged in — Connect will skip them`
+                   : m.state === 'missing' ? `${m.name} is no longer on this machine (archived or removed)`
+                   : m.name}
+            >{m.name}</span>
+          ))}
+        </div>
+        {/* Notes say what the team is FOR, the same job they do on a character
+            profile. Shown inline rather than behind a hover, because that is
+            the whole reason someone wrote them. */}
+        {team.notes && <div className="launcher-team-notes">{team.notes}</div>}
+      </div>
+      <button
+        type="button"
+        className="launcher-team-connect"
+        disabled={team.readyCount === 0}
+        onClick={() => onConnect(team.name)}
+        title={team.readyCount === 0
+          ? 'Everyone on this team is already logged in'
+          : `Log in ${team.readyCount} character${team.readyCount === 1 ? '' : 's'}`}
+      >Connect{team.readyCount > 0 ? ` ${team.readyCount}` : ''}</button>
+      <button
+        type="button"
+        className="launcher-team-menu"
+        aria-label={`More options for ${team.name}`}
+        onClick={e => onMenu(e, team.name)}
+      >⋯</button>
+    </div>
+  )
+}
+
+/** Edit a team's name and notes — the team-level twin of Edit Profile.
+ *  Roster editing stays in Team Login; this is the metadata around it. */
+function TeamEditor({ team, existingNames, onCancel, onSave }: {
+  team: TeamRowView
+  existingNames: string[]
+  onCancel: () => void
+  onSave: (originalName: string, name: string, notes: string) => void
+}) {
+  const [name, setName] = useState(team.name)
+  const [notes, setNotes] = useState(team.notes ?? '')
+  const trimmed = name.trim()
+  // Renaming onto another team would silently merge two teams into one.
+  const clash = existingNames.some(n =>
+    n.toLowerCase() !== team.name.toLowerCase() && n.toLowerCase() === trimmed.toLowerCase())
+  return createPortal(
+    <div className="cne-backdrop" {...backdropHandlers(onCancel)}>
+      <div className="cne-modal">
+        <div className="cne-header">
+          <span className="cne-title">Edit Team — {team.name}</span>
+          <button className="cne-close" onClick={onCancel} title="Cancel">×</button>
+        </div>
+        <div className="cne-body">
+          {/* Markup mirrors CharacterNotesEditor exactly — `.cne-label` wraps
+              its own control and `.cne-row` is the field row. Inventing
+              `.cne-field` / `.cne-warn` / `.cne-hint` here would have rendered
+              unstyled: none of them exist (pitfall #113). */}
+          <div className="cne-row">
+            <label className="cne-label">
+              Name
+              <input
+                className="cne-input"
+                autoFocus
+                maxLength={BULK_SET_NAME_MAX}
+                value={name}
+                onChange={e => setName(e.target.value)}
+              />
+            </label>
+          </div>
+          <label className="cne-label cne-label--notes">
+            Notes
+            <textarea
+              className="cne-input cne-textarea"
+              rows={7}
+              placeholder="What this team is for — farming run, rescue crew, who tanks, whatever you'd like to remember."
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </label>
+          {clash && (
+            <div className="launcher-team-editor-warn">
+              A team called “{trimmed}” already exists — pick another name.
+            </div>
+          )}
+        </div>
+        <div className="cne-footer">
+          <button className="cne-btn cne-btn-cancel" onClick={onCancel}>Cancel</button>
+          <button
+            className="cne-btn cne-btn-save"
+            disabled={!trimmed || clash}
+            onClick={() => onSave(team.name, trimmed, notes)}
+          >Save</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -385,13 +510,101 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet }: Props) {
+export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   // F85 — saved sets, re-read on refresh so a set created in the picker shows
   // up here without a restart.
   const [bulkSets, setBulkSets] = useState(() => loadBulkSets())
   useEffect(() => { setBulkSets(loadBulkSets()) }, [refreshKey])
+  // Live-refresh the Teams section. TWO signals, because they cover different
+  // cases: the custom event for a write in THIS window (Team Login saving a
+  // team — a `storage` event never fires in the writing window, which is why
+  // saving then cancelling left the section empty), and `storage` for a write
+  // in ANOTHER window, since teams are app-wide in _shared.yaml.
+  useEffect(() => {
+    const reread = () => setBulkSets(loadBulkSets())
+    const onStorage = (e: StorageEvent) => { if (e.key === BULK_SETS_KEY) reread() }
+    document.addEventListener(BULK_SETS_CHANGED_EVENT, reread)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      document.removeEventListener(BULK_SETS_CHANGED_EVENT, reread)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+  // Teams section collapse. INVERTED flag, the `favCollapsed` shape: the key
+  // stores COLLAPSED, so an absent key reads as expanded and no existing
+  // install folds the section shut on upgrade.
+  const [teamsCollapsed, setTeamsCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('lichborne.launcher.teamsCollapsed') === '1' } catch { return false }
+  })
+  function toggleTeamsCollapsed() {
+    setTeamsCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('lichborne.launcher.teamsCollapsed', next ? '1' : '0') } catch { /* quota — in-memory only */ }
+      return next
+    })
+  }
+  const [teamMenu, setTeamMenu] = useState<{ x: number; y: number; name: string } | null>(null)
+  const [editingTeam, setEditingTeam] = useState<TeamRowView | null>(null)
+
+  /** Rename and/or re-note a team. A rename is remove-then-upsert so the entry
+   *  keeps its place in the list rather than jumping to the end. */
+  function saveTeamEdit(originalName: string, name: string, notes: string) {
+    const current = loadBulkSets()
+    const existing = current.find(t => t.name === originalName)
+    if (!existing) { setEditingTeam(null); return }
+    const renamed = { ...existing, name, notes: notes.trim() || undefined }
+    const next = originalName.toLowerCase() === name.toLowerCase()
+      ? upsertBulkSet(current, renamed)
+      : current.map(t => (t.name === originalName ? renamed : t))
+    saveBulkSets(next)
+    exportSharedProfile().catch(console.error)
+    setEditingTeam(null)
+  }
+  const connectedSet = useMemo(
+    () => new Set(connectedNames.map(n => n.toLowerCase())), [connectedNames])
+  // A team member is one of three things, and the row says which: ON (already
+  // logged in, so Connect will skip it), KNOWN (a real tile we'll connect), or
+  // MISSING (archived or deleted — F79 archives rather than deletes, so the
+  // name may come back; the team still launches without it).
+  const teamRows = useMemo(() => bulkSets.map(set => {
+    const byName = new Map((characters ?? []).filter(c => !c.hidden).map(c => [c.name.toLowerCase(), c]))
+    const members = set.characters.map(name => {
+      const key = name.toLowerCase()
+      const known = byName.get(key)
+      return { name, state: !known ? 'missing' as const : connectedSet.has(key) ? 'on' as const : 'ready' as const }
+    })
+    return {
+      name: set.name, members,
+      readyCount: members.filter(m => m.state === 'ready').length,
+      favorite: !!set.favorite, notes: set.notes,
+    }
+  }), [bulkSets, characters, connectedSet])
+  // Empty in COMPACT (the launcher embedded in Add Character) for the same
+  // reason the Teams section is hidden there: you came to add an account, not
+  // to launch a team. Zeroed HERE rather than at the render site so the
+  // Favorites count can't disagree with what the block actually shows.
+  const favoriteTeams = useMemo(
+    () => (compact ? [] : teamRows.filter(t => t.favorite)), [teamRows, compact])
+
+  // Favorites is the QUICK-SELECT block (Sekmeht: "think of favorites as their
+  // quick select to things"), so it holds characters AND pinned teams. The
+  // Teams block below still lists every team, pinned or not — pinning promotes,
+  // it doesn't move.
+  function toggleTeamFavorite(name: string, next: boolean) {
+    const updated = loadBulkSets().map(t => (t.name === name ? { ...t, favorite: next } : t))
+    saveBulkSets(updated)          // dispatches BULK_SETS_CHANGED_EVENT → re-read
+    exportSharedProfile().catch(console.error)
+  }
+  const teamRowProps = {
+    onConnect: launchSet,
+    onToggleFavorite: toggleTeamFavorite,
+    onMenu: (e: React.MouseEvent, name: string) => {
+      e.preventDefault()
+      setTeamMenu({ x: e.clientX, y: e.clientY, name })
+    },
+  }
 
   // Names → characters. Unknown names are DROPPED rather than treated as an
   // error: a set that mentions an archived character should still launch the
@@ -725,8 +938,6 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
           bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
           onReconnectLast={handleReconnectLastClick}
-          onConnectSet={onConnectSet ? launchSet : undefined}
-          bulkSets={bulkSets}
           reconnectCount={lastSessionTiles.length}
         />
       )}
@@ -741,7 +952,8 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
       )}
 
       <div className="launcher-groups">
-        {favoriteCharacters.length > 0 && (
+
+        {(favoriteCharacters.length > 0 || favoriteTeams.length > 0) && (
           <div className={`launcher-section launcher-section--favorites${favCollapsed ? ' launcher-section--collapsed' : ''}`}>
             {/* A real <button> (not a clickable div) so Enter/Space work
                 natively — the same lesson the account header learned in
@@ -756,9 +968,17 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
               <span className="launcher-account-chevron" aria-hidden="true">{favCollapsed ? '▶' : '▼'}</span>
               <span className="launcher-section-header-heart" aria-hidden="true">♥</span>
               Favorites
-              <span className="launcher-account-count">{favoriteCharacters.length}</span>
+              <span className="launcher-account-count">{favoriteCharacters.length + favoriteTeams.length}</span>
             </button>
-            {!favCollapsed && (
+            {!favCollapsed && (<>
+            {/* Pinned TEAMS lead the quick-select block: a team is a bigger
+                action than a single character, and keeping the rows above the
+                card grid stops two different shapes interleaving. */}
+            {favoriteTeams.length > 0 && (
+              <div className="launcher-teams launcher-teams--infav">
+                {favoriteTeams.map(t => <TeamRow key={`favteam::${t.name}`} team={t} {...teamRowProps} />)}
+              </div>
+            )}
             <div className="launcher-grid">
               {favoriteCharacters.map(c => (
                 <CharacterCard
@@ -776,6 +996,50 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
                 />
               ))}
             </div>
+            </>)}
+          </div>
+        )}
+
+        {/* TEAMS (F85 follow-up). Replaces the `▦ Sets…` dropdown, which named
+            a noun and explained nothing — polish standard #8. A section makes
+            the content the explanation: seeing the members answers "what is a
+            team?" without help text. Renders NOTHING at zero teams (standard
+            #1), so it costs space only once you have one. Same collapsible
+            shape as the account blocks, so there's no new interaction. */}
+        {/* Not in COMPACT — that's the launcher embedded in the Add Character
+            modal, where you came to add an account, not to launch a team. */}
+        {!compact && onConnectSet && teamRows.length > 0 && (
+          <div className={`launcher-section launcher-section--teams${teamsCollapsed ? ' launcher-section--collapsed' : ''}`}>
+            <button
+              type="button"
+              className="launcher-section-header"
+              onClick={toggleTeamsCollapsed}
+              aria-expanded={!teamsCollapsed}
+              title={teamsCollapsed ? 'Expand' : 'Collapse'}
+            >
+              <span className="launcher-account-chevron" aria-hidden="true">{teamsCollapsed ? '▶' : '▼'}</span>
+              {/* Crossed swords — thematic, and it reads as "a party" where a
+                  square read as nothing.
+                  U+2694 + U+FE0E. The trailing selector is VARIATION
+                  SELECTOR-15 (TEXT presentation) — NOT U+FE0F, which is its
+                  emoji-presentation opposite and would give a colour glyph
+                  that ignores `color`. U+2694 is Emoji=Yes /
+                  Emoji_Presentation=No, so Windows renders it monochrome from
+                  Segoe UI Symbol but macOS can resolve it through Apple Color
+                  Emoji instead, where it would arrive coloured and stop
+                  matching the accent band. VS15 asks for the text form
+                  explicitly. Best-effort rather than a guarantee — it still
+                  depends on a text font having the glyph — so if a Mac tester
+                  reports a coloured icon, swap to a non-emoji codepoint such
+                  as U+2691 (flag) rather than adding more selectors. */}
+              <span className="launcher-section-header-glyph" aria-hidden="true">⚔︎</span>
+              Teams
+              <span className="launcher-account-count">{teamRows.length}</span>
+            </button>
+            {!teamsCollapsed && (
+              <div className="launcher-teams">
+                {teamRows.map(t => <TeamRow key={t.name} team={t} {...teamRowProps} />)}
+              </div>
             )}
           </div>
         )}
@@ -928,6 +1192,35 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
         )}
       </div>
 
+      {editingTeam && (
+        <TeamEditor
+          team={editingTeam}
+          existingNames={teamRows.map(t => t.name)}
+          onCancel={() => setEditingTeam(null)}
+          onSave={saveTeamEdit}
+        />
+      )}
+      {teamMenu && (
+        <ContextMenu
+          x={teamMenu.x}
+          y={teamMenu.y}
+          onClose={() => setTeamMenu(null)}
+          items={[
+            { label: 'Edit Team…', onClick: () => setEditingTeam(teamRows.find(t => t.name === teamMenu.name) ?? null) },
+            ...(onEditSet ? [{ label: 'Change Members…', onClick: () => onEditSet(teamMenu.name) }] : []),
+            {
+              label: 'Delete Team',
+              onClick: () => {
+                // Same write path the picker uses, then re-read so the section
+                // updates without waiting for a refreshKey bump.
+                const next = removeBulkSet(loadBulkSets(), teamMenu.name)
+                saveBulkSets(next)
+                setBulkSets(next)
+              },
+            },
+          ]}
+        />
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}

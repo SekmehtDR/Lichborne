@@ -273,9 +273,27 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
   // frame the gauges appear (no one-frame overlap flash).
   const gaugeRef = useRef<HTMLDivElement>(null)
   const [gaugeH, setGaugeH] = useState(0)
+  // The self's status chips hang BELOW its name, so they extend the figure's
+  // footprint downward by an amount the gauge clamp can't guess — with
+  // "Bleeding" up, the chip landed on top of the BAL bar (Sekmeht). Measured
+  // rather than estimated because the row grows with the number of active
+  // indicators and with the per-window font. Same layout-effect timing as the
+  // gauges: after layout, before paint, so there's no one-frame overlap flash.
+  const statusRef = useRef<HTMLDivElement>(null)
+  const [statusH, setStatusH] = useState(0)
+  // The thought log's height, for the same reason the gauges' is measured: the
+  // bubble layer reserves the bottom band both of them sit in, so a bubble
+  // can't land on top of either (they are all TEXT — a bubble over the wisps
+  // is two unreadable things, not one).
+  const wispsRef = useRef<HTMLDivElement>(null)
+  const [wispH, setWispH] = useState(0)
   useLayoutEffect(() => {
     const h = gaugeRef.current?.offsetHeight ?? 0
     setGaugeH(prev => (prev === h ? prev : h))
+    const s = statusRef.current?.offsetHeight ?? 0
+    setStatusH(prev => (prev === s ? prev : s))
+    const w = wispsRef.current?.offsetHeight ?? 0
+    setWispH(prev => (prev === w ? prev : w))
   })
 
   // Re-render once a second while any bubble is still live so expiry is
@@ -562,8 +580,10 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
   // automatically. Floored at 46% so an extreme-short box doesn't shove the self
   // up into the seated band. Applied to selfPos IN PLACE so the self's speech
   // bubble anchor (below) and the figure render both use the clamped position.
+  // `statusH` extends the reserve because the chips hang below the name and so
+  // are the true bottom of the self block whenever any indicator is up.
   if (showGauges && gaugeH > 0 && sceneSize.h > 0) {
-    const clearY = Math.max(46, ((sceneSize.h - 2 * gaugeH) / sceneSize.h) * 100)
+    const clearY = Math.max(46, ((sceneSize.h - (2 * gaugeH + statusH)) / sceneSize.h) * 100)
     if (clearY < selfPos.y) selfPos = { x: selfPos.x, y: clearY }
   }
 
@@ -642,11 +662,28 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
   const bubbleMaxW = Math.min(16 * fs, Math.max(10 * fs, sceneSize.w * 0.55))
   if (sceneSize.w > 0) {
     const W = sceneSize.w, H = sceneSize.h
+    // Spacing derived from the game font, not fixed px (pitfall #45's family).
+    // These were 8 / 10 / 4 / 14 raw pixels, so at font 20+ the bubbles crowded
+    // each other and the tail crept toward the corner while the text around
+    // them grew.
+    const GAP = 0.7 * fs          // breathing room between bubbles
+    const LIFT = 0.85 * fs        // how far above a blocker to retry
+    const EDGE = 0.35 * fs        // keep clear of the stage sides
+    const TAIL_INSET = 1.15 * fs  // tail stays this far inside the bubble's corner
+    const topLimit = 2.6 * fs     // below the room title / description header
     const placed: { l: number; t: number; r: number; b: number }[] = []
+    // Reserve the bottom band. The thought log (bottom-LEFT) and the
+    // BAL/POS/RNG panel (bottom-CENTRE) both live there and the bubble layer
+    // knew about neither. One full-width rect covers both and costs nothing:
+    // bubbles grow UPWARD from their speaker's head, so this only ever binds
+    // for a figure standing unusually low.
+    const bottomReserve = Math.max(gaugeH, wispH)
+    if (bottomReserve > 0) placed.push({ l: 0, t: H - bottomReserve - GAP, r: W, b: H })
     const entries = [...bubbles.values()]
       .filter(b => b.channel !== 'emote')
       .sort((a, b) => b.ts - a.ts)      // newest first = closest to its speaker
-      .slice(0, 6)                      // cap so the collision layout stays readable
+      .slice(0, 12)                     // runaway guard only; the real limit is
+                                        // "what fits", enforced per-bubble below
     entries.forEach((b, i) => {
       const k = b.speaker.toLowerCase()
       const anchor = selfKeys.has(k) ? selfPos : (seatedPosByKey.get(k) ?? unseenPosByKey.get(k))
@@ -658,23 +695,48 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
       const textW = b.text.length * 0.54 * fs + 2.2 * fs
       const w = Math.min(bubbleMaxW, textW)
       const rows = Math.max(1, Math.ceil(textW / bubbleMaxW))
-      const h = rows * 1.4 * fs + 2.3 * fs            // + name row + padding + tail
-      const cx = Math.min(W - w / 2 - 4, Math.max(w / 2 + 4, ax))
+      // + name row + padding + tail. Adds to ~2.6em in reality (0.94 name,
+      // 0.28 its margin, 0.8 padding, 0.76 tail), so 2.3 was UNDER-generous and
+      // let bubbles touch. Err high — an over-estimate is only extra spacing.
+      const h = rows * 1.4 * fs + 2.8 * fs
+      const cx = Math.min(W - w / 2 - EDGE, Math.max(w / 2 + EDGE, ax))
       let bottom = ay - (selfKeys.has(k) ? 3.0 : 2.4) * fs   // clear the avatar head
       let guard = 0
-      while (guard++ < 10) {
+      while (guard++ < 12) {
         const t = bottom - h
-        const hit = placed.find(p => cx - w / 2 < p.r + 8 && cx + w / 2 > p.l - 8 && t < p.b + 8 && bottom > p.t - 8)
+        const hit = placed.find(p => cx - w / 2 < p.r + GAP && cx + w / 2 > p.l - GAP && t < p.b + GAP && bottom > p.t - GAP)
         if (!hit) break
-        bottom = hit.t - 10        // bump above the bubble in the way
+        bottom = hit.t - LIFT      // bump above the bubble in the way
       }
-      const top = Math.max(2.6 * fs, bottom - h)      // never over the header
+      let top = bottom - h
+      // OUT OF HEADROOM → DROP IT, never clamp. Clamping to the header was the
+      // overlap bug: it shoved the bubble back DOWN into the very space the
+      // loop had just spent twelve iterations escaping, and then recorded the
+      // clamped rect in `placed` while the loop had tested the unclamped one,
+      // so the two disagreed for everything laid afterwards. Because `entries`
+      // is newest-first, whatever runs out of room is the OLDEST speech in the
+      // room — dropping it keeps the live conversation and discards what was
+      // already unreadable. This is also what replaced the arbitrary cap of 6:
+      // the column now holds exactly as much as the panel can show.
+      if (top < topLimit) {
+        // ...EXCEPT the first one placed. Dropping unconditionally regressed a
+        // SHORT stage — a panel-tab Tableau where the speaker sits high enough
+        // that even one bubble won't fit above them — into showing NO speech at
+        // all, which is worse than the overlap this replaced. `laidBubbles` is
+        // still empty here only for the newest entry (they are sorted
+        // newest-first), so clamping it can't collide with another BUBBLE.
+        // It can still land on the reserved bottom band in a stage too short
+        // for either — accepted: showing the live line beats showing none.
+        // Everything after it still drops.
+        if (laidBubbles.length > 0) return
+        top = topLimit
+      }
       placed.push({ l: cx - w / 2, t: top, r: cx + w / 2, b: top + h })
       laidBubbles.push({
         key: `${b.speaker}-${b.id}`, item: b,
         tint: avatarColor(b.speaker, contacts, contactTemplates).color,
         left: cx, top,
-        tailDx: Math.max(-(w / 2 - 14), Math.min(w / 2 - 14, ax - cx)),
+        tailDx: Math.max(-(w / 2 - TAIL_INSET), Math.min(w / 2 - TAIL_INSET, ax - cx)),
         z: 40 - i,                 // newest stacks on top
       })
     })
@@ -699,7 +761,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
       {/* Thought/ESP wisps — telepathy drifts at the scene edge; the speaker
           gets NO body in the room (§32.2's phantom rule). */}
       {wisps.length > 0 && (
-        <div className="tableau-wisps">
+        <div className="tableau-wisps" ref={wispsRef}>
           {wisps.slice(-3).map(w => (
             <div key={w.id} className="tableau-wisp">
               <span className="tableau-wisp-speaker">{w.speaker}</span>
@@ -930,7 +992,7 @@ function TableauExperience({ character, roomState, sceneCast, speech: rawSpeech,
             </div>
             <div className="tableau-name">{character}</div>
             {selfStatuses.length > 0 && (
-              <div className="tableau-self-status">
+              <div className="tableau-self-status" ref={statusRef}>
                 {selfStatuses.map(s => (
                   <span
                     key={s.key}

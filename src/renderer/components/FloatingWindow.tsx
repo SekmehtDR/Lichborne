@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { minSizeFor, type FloatWindow } from '../freeLayout'
+import { minSizeFor, isDebugWindow, DEBUG_Z, type FloatWindow } from '../freeLayout'
 import ContextMenu from './ContextMenu'
 
 // One draggable / resizable floating window (DESIGN.md §33.4). Hosts a
@@ -302,7 +302,11 @@ export default function FloatingWindow({ win, container, focused, onFocus, onCha
       ref={rootRef}
       data-win-id={win.id}
       className={`fl-window${focused ? ' fl-window--focused' : ''}${isChrome ? ' fl-window--chrome' : ''}${locked ? ' fl-window--locked' : ''}`}
-      style={{ left: px.left, top: px.top, width: px.width, height: px.height, zIndex: win.z }}
+      // Debug floats above the other windows (Sekmeht: "I've had it disappear
+      // behind the game window and couldn't find it"). Offset at render only —
+      // see DEBUG_Z for why this can't leak into stored order or over a modal.
+      style={{ left: px.left, top: px.top, width: px.width, height: px.height,
+               zIndex: isDebugWindow(win) ? DEBUG_Z : win.z }}
       onMouseDown={() => onFocus(win.id)}
       onContextMenu={noCloseMenu ? undefined : openCtx}
     >

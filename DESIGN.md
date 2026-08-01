@@ -1857,6 +1857,52 @@ App shutdown (`mainWindow.on('close')`) uses a third variant: `gracefulDisconnec
 
 ### 13.6.4 Team Login (was "Bulk Connect")
 
+**Teams on the logon screen (v0.18.4).** The `Sets...` dropdown was removed: it
+named a noun, explained nothing, and hid its contents behind a click
+(polish standard #8). Saved teams now have a collapsible **Teams** section, and
+the members ARE the explanation — seeing `farm - Agan, Sekmeht` answers "what
+is a team?" with no help text.
+
+- **Order is Favorites, Teams, Accounts.** Favorites is the QUICK-SELECT block
+  (Sekmeht: *"think of favorites as their quick select to things"*), so it holds
+  pinned teams AND favourited characters, teams first because a team is the
+  bigger action. Pinning promotes; the Teams block still lists everything.
+- **Rows state what Connect will do.** Members already logged in are struck
+  through, since `planReconnect` skips them; archived members (F79 archives
+  rather than deletes) are faint italic; the button counts only who it will
+  actually log in, and disables when that is nobody.
+- **`BulkSet` gained `favorite` and `notes`**, both optional, so no profile
+  version change. Notes are the team-level twin of a character profile's notes
+  and render on the row. An **Edit Team** dialog owns name + notes; changing WHO
+  is on a team stays in Team Login, and the dialog says so.
+- **Saving is an opt-in checkbox, not a zone.** Unticked, the modal shows no
+  team vocabulary at all and is honestly a multi-character login; ticked, the
+  name field appears, **Save team** stores without connecting, and **Connect**
+  does both — one decision at the checkbox rather than two buttons for one
+  intent. The load dropdown went with the restructure, because the section is
+  where you pick a team and the row's kebab preloads the modal for editing.
+- **One hoisted `TeamRow`** serves both sections; two copies would be compatible
+  only until someone restyled one (the `.tp-` lesson).
+- Hidden in the COMPACT launcher (inside Add Character) — including the pinned
+  copies, zeroed at source so the Favorites count cannot disagree with the block.
+
+**Stopping a run (F98, v0.18.4).** The progress overlay carries a **Stop**
+button, reversing the earlier "no cancel mid-sequence" decision. The word is
+chosen: it promises less than the single-character Cancel, because
+`window.api.login` cannot be aborted. Stop means *attempt no more characters* —
+the one in flight completes and is KEPT, since tearing it down would discard a
+wait of up to 30s and leave its account slot churning. Remaining characters are
+reported as **skipped** (muted, not failure-red — nothing went wrong) and the
+summary title states that the run was stopped, so a short team reads as the
+user's choice rather than an error. The stop flag is a ref: the loop body holds
+a stale closure over any state value for the whole run.
+
+**Storage discipline learned here (pitfall #121):** `coerce` rebuilds every
+entry and `saveBulkSets` runs it on the way OUT, so a field it does not copy is
+destroyed on the next save rather than ignored on load; and `upsertBulkSet` must
+MERGE, because Team Login supplies only name + roster and a wholesale overwrite
+wipes notes and pins. Both are locked by the rules harness.
+
 **RENAMED v0.18.3 (Sekmeht).** "Bulk" described the mechanism; "team" describes
 the point, and it matches what a saved set actually is. **Display only** — the
 filename, the `bulk-connect` menu action, `bulkConnectSeparateWindows` and
@@ -7210,6 +7256,25 @@ gates** (procedural fallbacks always).
    parsers come online — X6 Scene Composer is the natural follow-on, compositing X1's rendered
    scene into the shareable comic panel).
 
+**The sun is COMPUTED, not observed (v0.18.4, B254).** It used to be derived
+from whichever sunrise/sunset prose had been witnessed, assuming an even
+180/180 day until both had been seen. Elanthian daylight is neither even nor
+fixed — 120 rois at the winter solstice, 180 at the equinoxes, 240 at the
+summer solstice — so the assumption ran minutes fast, and deriving the length
+from a single observed gap is no better because the real values are
+per-day-of-year. [elanthianSun.ts](src/shared/elanthianSun.ts) is a VERBATIM
+port of moonwatch's `DRTime` model: both 400-entry empirical tables (rise and
+set stored independently, since they sum to 360 on only 332 of 400 days) plus
+the calendar epoch in [elanthianTime.ts](src/shared/elanthianTime.ts).
+**Verified by evaluating moonwatch's own Ruby and diffing 52 timestamps across
+10 fields — 2104 assertions.** Consequence worth protecting: the sun is now a
+pure function of server time like lunar phase, so it needs neither Lich nor the
+community feed nor a witnessed transition. Do not reintroduce an observation
+dependency. The prose capture, Firebase fetch and lich.db3 synth that used to
+feed it are now redundant and can be retired once the model has been watched
+across a full day.
+
+
 ---
 
 ## 35. SceneParser — Scene-Event Capturer Registry (designed 2026-06-12; Phase 1 built)
@@ -7801,6 +7866,23 @@ Windows.
 silently unavailable without a keyring (the Add Account wizard warns, but
 nothing else does — **F86** Setup Health is the right home), and there is no
 diagnostics bundle (**F88**).
+
+**macOS pass over v0.18.4 (B262).** The release's new code is platform-neutral
+by construction — no `process.platform` gates, no path building, no
+meta/ctrl handling, no lifecycle hooks — which is what pitfall #115 predicts
+(the code is usually fine; the defaults and the lifecycle are what assume
+Windows). Two things checked and CLEARED: `fmtClock` uses
+`toLocaleTimeString`, so a 24-hour Mac correctly shows 24-hour time, and the
+computed sun (B254) actually improves the Mac case, since `DEFAULT_RUBY` is
+empty there and Mac users are the likeliest to be on direct-SGE.
+
+The one finding was **glyph presentation**: symbol codepoints that are
+`Emoji=Yes, Emoji_Presentation=No` render monochrome on Windows but can resolve
+through Apple Color Emoji on macOS, where they ignore `color`. The new Teams
+header glyph got U+FE0E; **26 pre-existing bare glyphs are recorded but NOT
+swept**, because macOS rendering cannot be verified from here and no Mac tester
+has raised it — one screenshot of the Lich Setup button decides whether the
+sweep is worth doing. See pitfall #125.
 
 
 ### 41.1 Stance

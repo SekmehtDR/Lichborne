@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FloatWindow } from '../freeLayout'
+import { isDebugWindow, Z_RENORMALIZE_CEILING, type FloatWindow } from '../freeLayout'
 import FloatingWindow from './FloatingWindow'
 
 // The Free-Layout overlay (DESIGN.md §33.4). A pointer-through layer
@@ -77,7 +77,7 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
     const target = windows.find(w => w.id === id)
     if (!target || target.z === maxZ) return  // already on top
     let next = windows.map(w => (w.id === id ? { ...w, z: maxZ + 1 } : w))
-    if (maxZ + 1 > 100000) {
+    if (maxZ + 1 > Z_RENORMALIZE_CEILING) {
       // Renormalize z to 1..N (preserving order) so it can't grow unbounded.
       const order = [...next].sort((a, b) => a.z - b.z)
       const zMap = new Map(order.map((w, i) => [w.id, i + 1]))
@@ -134,7 +134,11 @@ export default function WindowLayer({ windows, onWindowsChange, renderContent, l
           onCloseActiveTab={closeActiveTab}
           getSnapTargets={getSnapTargets}
           guideRefs={{ v: guideVRef, h: guideHRef }}
-          locked={locked}
+          // Debug stays movable while the layout is locked — see isDebugWindow.
+          // Keeping its header is the point: a locked window renders none, so
+          // exempting it from the lock is also what gives it something to grab,
+          // and the visible chrome reads as "this one still moves".
+          locked={locked && !isDebugWindow(win)}
         >
           {renderContent(win)}
         </FloatingWindow>
