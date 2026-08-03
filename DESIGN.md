@@ -3751,16 +3751,18 @@ Trailing **U+FE0E** (text variation selector) forces text-style rendering in bro
 
 The per-color effect system introduced enough sustained animation work to dominate frame budget on dense zones. Two targeted optimizations:
 
-**Pause during interaction (transient).** The pan group `<g>` gets the `genie-pan-dragging` class when `isDragging || inMotion` is true. CSS rule `.genie-pan-dragging * { animation-play-state: paused !important }` cascades through every descendant.
+**Pause during interaction (transient).** The pan group `<g>` gets the `genie-pan-dragging` class when `isDragging || inMotion || zooming` is true. The CSS rule pauses by **enumerating the animated classes as descendants** — `.genie-pan-dragging .genie-ripple, .genie-pan-dragging .genie-mote-drift-n, …` — never `.genie-pan-dragging *`.
+
+> **The wildcard was the v0.18.5 perf bug (B263) — do not restore it.** Blink derives a style invalidation set per selector: `.a .b` invalidates only descendants carrying `.b`, while `.a *` invalidates the entire subtree. With ~1057 room groups under the pan group that meant a full-subtree style recalculation on *every toggle* of the class — and because `inMotion` flips on every room change, walking toggled it continuously. Style recalc is main-thread, so it stole frames from the text pipeline in the same renderer. Full write-up: CLAUDE.md pitfall #126.
 
 - `isDragging` flips true on mousedown, false on mouseup. Pauses animations during manual pan/zoom.
 - `inMotion` flips true on any `currentLocation` change and a `MOTION_QUIET_MS = 800` timer resets. When 800ms elapse with no further walk, `inMotion` flips back to false. Pauses animations during sustained player walking.
 
-The locator sonar ping is **exempt** from this transient freeze (`.genie-pan-dragging .genie-here-ping { animation-play-state: running !important }`, higher specificity) — you still want to see yourself mid-walk.
+The locator sonar ping is **exempt** from this transient freeze — you still want to see yourself mid-walk. Since v0.18.5 that exemption is expressed by **omission**: `genie-here-ping` (and `genie-heartbeat`) simply aren't in the transient rule's selector list. The old `{ animation-play-state: running !important }` counter-rules existed only to win back against the wildcard and are gone. An exemption that can't be out-specified is one fewer specificity duel to lose later.
 
 Why: Chrome DevTools profiling showed Layerize ~33% + Recalculate Style ~22% + Paint ~14% during drag, and Layerize ~17% + Recalculate Style ~16% + Layout ~11% during cross-map walking — all attributable to continuously-running animations the user wasn't stationary long enough to appreciate during those scenarios. Pausing frees frame budget for transform updates and React reconciliation.
 
-**Pause permanently (opt-out setting, v0.6.9).** `settings.mapAnimations` (Settings → Genie Map Animations, **default on**) threads to `GenieMapView` as the `mapAnimations` prop. When off, the pan group instead gets a distinct `genie-anim-off` class — `.genie-anim-off * { animation-play-state: paused !important }`, the same cascade applied permanently. Unlike the transient class it has **no ping exemption**: "off" stops the sonar ping too. The two freeze classes are mutually exclusive on the pan group (`!mapAnimations ? 'genie-anim-off' : (isDragging || inMotion) ? 'genie-pan-dragging' : ''`), so there is no specificity duel between the ping-pause and the ping-exemption rules. Effect *elements* stay in the DOM — only paused, not removed — so a cold mount with the setting off freezes them at their 0% keyframe (fade-in effects like motes therefore read as absent rather than static).
+**Pause permanently (opt-out setting, v0.6.9).** `settings.mapAnimations` (Settings → Genie Map Animations, **default on**) threads to `GenieMapView` as the `mapAnimations` prop. When off, the pan group instead gets a distinct `genie-anim-off` class, which enumerates the animated classes the same way the transient freeze does (v0.18.5 — see the note above) but applied permanently. Unlike the transient class it covers **every** animated class, ping and heartbeat included: "off" stops the sonar ping too. Its list is kept comprehensive even where entries are inert today (most aren't mounted while the setting is off), because `genie-heartbeat` and `genie-aura-fire` already render outside the `showEffects` gate and the next effect to do so would silently escape a list pruned to "what is mounted right now". The two freeze classes are mutually exclusive on the pan group (`!mapAnimations ? 'genie-anim-off' : (isDragging || inMotion) ? 'genie-pan-dragging' : ''`), so there is no specificity duel between the ping-pause and the ping-exemption rules. Effect *elements* stay in the DOM — only paused, not removed — so a cold mount with the setting off freezes them at their 0% keyframe (fade-in effects like motes therefore read as absent rather than static).
 
 **Why class-based, not pointer-events.** Earlier attempts toggled `pointer-events: none` on the pan group during drag for hit-test savings, but that shifts the click-target off the inner node `<g>` (mousedown sets `isDragging` true *before* `click` fires), silently breaking click-to-walk. The animation-pause class doesn't have this hazard because it only affects animation execution, not event routing.
 
@@ -3769,7 +3771,7 @@ Why: Chrome DevTools profiling showed Layerize ~33% + Recalculate Style ~22% + P
 - **Effects are omitted from the DOM, not paused.** The 10 animated effect groups (sparkles, heartbeats, coin glints, ripples, bubbles, caution/implode rings, leaf/dirt falls, XP rises) render only when `showEffects = mapAnimations && !isDragging && !inMotion`. While travelling/panning/off they are *not mounted* — no elements, no layers, no Layerize/Paint/Recalculate Style. They re-mount once the player has been still for `MOTION_QUIET_MS` (lowered 800 → **600ms**: long enough to ride through a sub-600ms running cadence without re-mount churn, short enough to feel responsive on stop; the mount is cheap now that the set is viewport-capped).
 - **Viewport culling.** The effect memos iterate `nearbyNodes` — the rooms inside the current pan/zoom rectangle, with `EFFECT_CAP` (30) as a backstop for zoomed-far-out views — instead of every COLOR_LEGEND room in the zone. Idle-in-the-Crossing was ~29% Recalculate Style with all ~150 colored rooms animating; capping to what's on screen bounds it regardless of zone density. `nearbyNodes` returns the stable `EMPTY_NODES` ref while effects are off, so the effect memos don't even recompute during travel.
 
-The `genie-pan-dragging` / `genie-anim-off` classes still exist — they now cover only what *stays* rendered: the sonar ping and the static/fire auras. **Healer heartbeats are a priority effect** — rendered zone-wide (full `visibleNodes`), outside the `showEffects` gate, and CSS-exempt from the travel freeze (`.genie-pan-dragging .genie-heartbeat` stays running), so a healer is always findable; healers are rare, so always-on is cheap. Node **hover is suppressed during motion** (`onNodeHoverEnter` checks `inMotionRef`) — the map scrolling under a stationary cursor otherwise fires a pointer enter/leave storm.
+The `genie-pan-dragging` / `genie-anim-off` classes still exist — they now cover only what *stays* rendered: the sonar ping and the static/fire auras. **Healer heartbeats are a priority effect** — rendered zone-wide (full `visibleNodes`), outside the `showEffects` gate, and CSS-exempt from the travel freeze (omitted from the transient rule's selector list, so nothing pauses it), so a healer is always findable; healers are rare, so always-on is cheap. Node **hover is suppressed during motion** (`onNodeHoverEnter` checks `inMotionRef`) — the map scrolling under a stationary cursor otherwise fires a pointer enter/leave storm.
 
 **Parse cache.** Initial Genie parse takes several seconds for a 122-XML folder. `genie-cache:load` / `genie-cache:save` IPC handlers (defined in `main.ts`) serialize the parsed `Map<zoneId, GenieZone>` to `userData/genie-cache.json` and verify a fingerprint (sorted `filename:mtimeMs:size` segments joined with `|`) on subsequent loads. If the fingerprint matches: skip the file-read loop entirely, `JSON.parse` the cache, hand the renderer a ready zones map in ~50ms.
 
@@ -8218,6 +8220,101 @@ Harness: `tmp-map-perf/` (gitignored) — `exp-bench.jsx` (commit time), `anim-b
 
 
 ---
+
+### 45.8 Second pass — style invalidation, and animation nobody can see (v0.18.5)
+
+Triggered by "the client feels sluggish, and it hasn't always been this way" on
+a machine far too strong for that to be capacity (i7-11700F / 32GB / RTX 3060).
+Three structural findings, and one methodological one that matters more than any
+of them.
+
+**The methodological finding first: §45.7 measured the wrong axis.** The v0.18.0
+Experiences profiling timed React's **render** phase (`flushSync` against the
+production bundle) and concluded Moons/Tableau were clean. They are — but that
+metric is blind to Blink **style recalculation, layout, paint and compositing**,
+which is where every problem below actually lived. A React Profiler would not
+have caught the map bug either. **When a perf claim is "component X is cheap",
+state which axis was measured** — and if the symptom is "the UI feels bad" rather
+than "this component is slow", the browser-side axes are the ones to check.
+
+**(a) Style invalidation, not render cost, was the sluggishness (B263).** The map
+froze animations with `.genie-pan-dragging *` / `.genie-anim-off *`. A `*`
+descendant selector makes Blink invalidate the **entire subtree** on every toggle
+of the class (`.a .b` invalidates only elements carrying `.b`), and the pan group
+holds ~1057 room groups plus arcs and auras. `inMotion` flips on *every room
+change*, so walking re-ran a full-subtree style recalculation continuously — on
+the main thread React, Virtuoso and the game-text pipeline share. Both rules now
+enumerate the 18 animated classes. **The diagnostic signature is the reusable
+part: a display toggle on one subsystem changing the responsiveness of an
+unrelated one is main-thread contention, not a defect in either.** Full rule:
+CLAUDE.md pitfall #126, and §19's pause section for the map specifics.
+
+**(b) Nothing paused when the window was off screen.** `backgroundThrottling` is
+`false` by design — the room pump and game stream must keep running while
+minimized (pitfall #71) — but that also left every CSS animation in the app doing
+style and paint work nobody could see: the map's ~20, the Experiences' ~24, the
+highlight text effects, times every mounted character. **Architecture:**
+`win.on('minimize'/'restore'/'hide'/'show')` in `createWindow` →
+`window-visibility` IPC → App stamps `data-window-hidden` on `<html>` →
+`global.css` pauses `animation-play-state`. Three constraints, all load-bearing:
+- **It cannot be driven from `document.hidden`.** Electron's own docs state
+  `backgroundThrottling: false` also affects the Page Visibility API, so `hidden`
+  likely never goes true and `visibilitychange` may never fire — which is why
+  pitfall #96 flagged the *existing* `document.hidden` guards as probably inert.
+  The window's lifecycle events are the reliable signal and only main has them.
+- **This channel is per-WINDOW, not per-session** — a deliberate exception to the
+  "every push channel carries `sessionId`" rule (§13). It is the OS window that
+  is off screen, and each `BrowserWindow` has its own document, so each stamps
+  its own root independently.
+- **Not wired to blur/focus.** An unfocused window is usually still fully
+  visible; freezing it because the user clicked another app would be a visible
+  regression, not an optimization. Only minimize/hide qualify.
+The CSS rule uses a wildcard, which is *not* a contradiction of (a): that cost is
+**per toggle**, and this attribute flips only on minimize/restore — rare,
+user-initiated, and landing on a window already vanishing or reappearing.
+Frequency is the thing to check, not the presence of a `*`.
+
+**(c) The Experiences were re-audited and are well built.** Measuring properties
+animated *inside `@keyframes` only* (a whole-file sweep is misleading — it counts
+static declarations): experiences.css is 35 `opacity` + 18 `transform` + 4
+`box-shadow` + 2 `fill-opacity`, map-panel.css is 64 `opacity` + 34 `transform`,
+and there are **zero layout-triggering animations anywhere** — no animated
+`width`/`height`/`top`/`left`. That is §45.4's rule being followed. Particle
+counts are modest (~130 worst case: 70 stars with reveal culling, 34 rain, 26
+snow, 11 leaves, 9 fireflies). The single genuine outlier was `.moons-pill`'s
+`backdrop-filter: blur(9px) saturate(1.25)` — an element up to 96% of the scene
+wide, over a sky whose backdrop is *always* changing, so the compositor
+re-captured and re-blurred that band continuously. Removed; the fill went 60% →
+88% opaque because the blur was doing legibility work as well as decoration.
+**Do not put `backdrop-filter` on anything that sits over an animating scene** —
+cost scales with both radius and blurred area. The modal scrims in launcher.css /
+wizard.css are fine: `blur(2px)` over a *static* backdrop.
+
+**(d) Idle costs.** The character tab bar ran a 500ms interval permanently to
+drive a roundtime glyph, re-rendering an app-level component twice a second
+whether or not a roundtime existed (and ticking while minimized, per
+`backgroundThrottling`); now gated on a pending expiry, self-clearing one tick
+past it. Virtuoso overscan dropped 3000px → 1200px — it existed solely as B152's
+copy-truncation workaround, superseded by the same release's data-model rebuild;
+1200px still clears one viewport so ordinary selections keep exact offsets.
+
+**Platform audit (Electron 43.2 / macOS / Linux) — clean.** No removed or
+deprecated Electron APIs in use; security posture correct (`contextIsolation`
+on, `nodeIntegration` off). macOS has its `appMenu` role, `activate` handler and
+darwin `window-all-closed` guard. Linux: all 571 relative imports audited for
+case-sensitivity, zero mismatches. The one change was the permission allowlist
+(B265 / pitfall #127) — `setPermissionCheckHandler` was `() => true`, which made
+trigger notifications work *by accident* while the request handler denied them;
+both handlers now share one `ALLOWED_PERMISSIONS` set, which is also a tightening.
+
+**Deferred, deliberately.** *Viewport-culling the node layer* — a real win when
+zoomed in, but culling by viewport puts `transform` into the `nodeRects` deps and
+risks re-creating exactly the churn §45.6/B231 fixed; it needs a quantized
+viewport and a profile justifying it, not a guess. *Decomposing GameWindow* —
+5,576 lines / 207 hooks re-rendered per event batch is the real remaining
+ceiling, and the data coupling is narrow (four consumers of `lines`, one already
+a ref), but it drags the whole scroll state machine with it and belongs in its
+own changeset with its own pass against the pitfall #68 scenarios.
 
 ## 46. Prioritised Backlog — features & UX polish (snapshot 2026-07-30)
 

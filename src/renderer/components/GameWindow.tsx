@@ -39,6 +39,7 @@ import ExperienceShelf from './ExperienceShelf'
 import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
+import { showToast } from '../toasts'
 import { nanoid } from 'nanoid'
 import { loadFreeWindows, saveFreeWindows, seedDefaultWindows, newFloatWindow, defaultWindowTitle, isDebugWindow, type FloatWindow, type FloatRect, type WinKind, type LayoutMode } from '../freeLayout'
 import '../styles/free-layout.css'
@@ -567,6 +568,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // Stable identity — safe to use in useEffect dep arrays.
   const saveProfile = useProfileSaver()
   const [lines, setLines] = useState<TextLine[]>([])
+  // Latest-value mirror for the auto-copy handler, which mounts ONCE with empty
+  // deps and so would otherwise close over the first render's empty array.
+  const linesRef = useRef<TextLine[]>([])
+  linesRef.current = lines
+  // Line id the current drag STARTED on, recorded at mousedown while that row
+  // is still mounted — see the copy handler for why that moment is the only
+  // chance to know it.
+  const selAnchorLineRef = useRef<number | null>(null)
   const [streamLines, setStreamLines] = useState<Record<string, TextLine[]>>({})
 
   // ── AI (Catch Me Up — DESIGN §10.3) ──────────────────────────────────────
@@ -1891,6 +1900,35 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   useEffect(() => {
     inputRef.current?.focus()
 
+    // Where the drag STARTED, captured while that row is still mounted.
+    //
+    // This is the whole trick behind fixing B152's ceiling. Virtuoso unmounts
+    // off-screen rows and the browser drops unmounted nodes from a selection,
+    // so by the time you release the mouse after selecting several screenfuls,
+    // `getSelection()` no longer knows where the selection began — it can only
+    // report what is still in the DOM, which is why a big copy silently
+    // returned "only a portion from the end". Recording the id at MOUSEDOWN is
+    // the only moment the start is guaranteed to exist.
+    function rowIdAt(node: Node | null): number | null {
+      const el = node instanceof Element ? node : node?.parentElement
+      const row = el?.closest?.('[data-line-id]') as HTMLElement | null
+      const raw = row?.dataset.lineId
+      return raw == null ? null : Number(raw)
+    }
+
+    function onMouseDown(e: MouseEvent) {
+      if (!isActiveRef.current) return
+      // SCOPED TO THE MAIN WINDOW. Stream panels render the same TextLineRow,
+      // so their rows carry a data-line-id too — but the reconstruction below
+      // reads `linesRef`, which is the MAIN buffer. Without this guard a big
+      // selection inside a stream panel would look its line id up in the wrong
+      // list, miss, and report a truncation that never happened. Stream panels
+      // are not virtualized, so they cannot lose rows and never need this.
+      const t = e.target as Element | null
+      const inMain = t?.closest?.('.text-window') != null
+      selAnchorLineRef.current = inMain ? rowIdAt(e.target as Node | null) : null
+    }
+
     function onMouseUp() {
       // Multi-character: every mounted GameWindow attaches this listener but
       // only the active tab should own the auto-copy. Without this gate, N tabs
@@ -1903,11 +1941,69 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       const anchor = sel.anchorNode
       const el = anchor instanceof Element ? anchor : anchor?.parentElement
       if (el?.closest('input, textarea')) return
-      window.api.writeClipboard(text)
+
+      const startId = selAnchorLineRef.current
+      selAnchorLineRef.current = null
+      const focusId = rowIdAt(sel.focusNode)
+
+      // Ask the question DIRECTLY: is the row the drag began on still in the
+      // DOM? That, and only that, is the condition the DOM selection cannot
+      // survive. Comparing the captured id against `sel.anchorNode`'s id
+      // instead looks equivalent and is not — SHIFT-CLICK to extend a
+      // selection fires a fresh mousedown at the far END, so the two ids
+      // legitimately differ while nothing has been lost, and the slow path
+      // would have rebuilt a single line in place of the whole range.
+      const startMounted = startId != null
+        && document.querySelector(`[data-line-id="${startId}"]`) != null
+
+      // FAST PATH — the DOM selection is complete and exact (character offsets
+      // included). This is every ordinary copy, and it behaves byte-for-byte
+      // as it always has. The reconstruction below only ever runs once the DOM
+      // has already lost the text, where the alternative is not "a worse copy"
+      // but "no copy".
+      if (startId == null || focusId == null || startMounted) {
+        window.api.writeClipboard(text)
+        sel.removeAllRanges()
+        return
+      }
+
+      // SLOW PATH — the start row unmounted mid-drag. Rebuild from `lines`.
+      const all = linesRef.current
+      const iStart = all.findIndex(l => l.id === startId)
+      const iFocus = all.findIndex(l => l.id === focusId)
+      if (iStart < 0 || iFocus < 0) {
+        // One end has been TRIMMED out of the buffer entirely (appendTrimmed
+        // cuts the oldest lines once the cap is reached), so it is genuinely
+        // unrecoverable. Copy what the DOM still holds, but SAY SO — silently
+        // handing over a fraction is the actual defect being fixed here.
+        window.api.writeClipboard(text)
+        sel.removeAllRanges()
+        showToast({
+          kind: 'error',
+          title: 'Copied only part of the selection',
+          message: 'The start of it had already scrolled out of the buffer. Copy in smaller pieces, or use the Session Log for older text.',
+        })
+        return
+      }
+      const [a, b] = iStart <= iFocus ? [iStart, iFocus] : [iFocus, iStart]
+      // WHOLE LINES at both ends, deliberately. An intra-line offset would have
+      // to be measured against the RENDERED row (which includes the timestamp
+      // prefix when that setting is on) and then re-applied to data text that
+      // has no prefix — an off-by-N waiting to happen. This path only runs for
+      // selections spanning hundreds of rows, where including all of the first
+      // and last line is immaterial next to recovering the rest.
+      const rebuilt = all.slice(a, b + 1)
+        .map(l => l.segments.map(sg => sg.text).join(''))
+        .join('\n')
+      window.api.writeClipboard(rebuilt)
       sel.removeAllRanges()
     }
+    document.addEventListener('mousedown', onMouseDown)
     document.addEventListener('mouseup', onMouseUp)
-    return () => document.removeEventListener('mouseup', onMouseUp)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
   }, [])
 
   // ── Keep contact refs in sync with state ─────────────────────────────────
@@ -4913,18 +5009,31 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
                 }}
                 style={{ height: '100%' }}
                 data={lines}
-                // B152 (Binu): keep a generous buffer of rows mounted ABOVE and
-                // BELOW the viewport. Virtuoso unmounts off-screen rows, and the
-                // browser drops unmounted DOM from a text selection — so when you
-                // start selecting up top, scroll down to extend, and release, the
-                // start rows had unmounted and the mouseup copy (getSelection()
-                // .toString()) captured "only a portion from the end." A ~3000px
-                // buffer each way keeps several screenfuls of selection intact
-                // through the auto-scroll. (Rows are memoized + cheap, so the
-                // extra ~150/side is negligible; the cap on `lines` still bounds
-                // total DOM. Doesn't touch scroll math — followOutput /
-                // totalListHeightChanged are unchanged.)
-                increaseViewportBy={{ top: 3000, bottom: 3000 }}
+                // Overscan: rows kept mounted above/below the viewport.
+                //
+                // This was 3000px each way as B152's (Binu) workaround for copy
+                // truncation — Virtuoso unmounts off-screen rows and the browser
+                // drops unmounted nodes from a selection, so a drag that started
+                // several screens up copied "only a portion from the end." The
+                // buffer bought precision by keeping the start row mounted.
+                //
+                // That is no longer what protects the copy: the mouseup handler
+                // now records the drag's start line id at MOUSEDOWN and rebuilds
+                // the selection from `lines` when that row has unmounted, so a
+                // large copy is correct at ANY overscan. The buffer only decides
+                // where the exact-character-offset FAST path gives way to the
+                // whole-line rebuild.
+                //
+                // 1200px ≈ 60 rows/side, comfortably more than one viewport
+                // (~40-50 rows), so an ordinary full-screen drag still takes the
+                // fast path — while cutting mounted rows (and the per-row rule
+                // matching each one runs) by roughly 60%. Multi-screen drags
+                // already used the rebuild path even at 3000px.
+                //
+                // Don't cut below one viewport: that puts ordinary selections on
+                // the whole-line path. Doesn't touch scroll math — followOutput /
+                // totalListHeightChanged are unchanged.
+                increaseViewportBy={{ top: 1200, bottom: 1200 }}
                 // B155 (Sekmeht): followOutput is OFF — we own pinned scrolling.
                 // Virtuoso's `followOutput` auto-scroll lands the last item at the
                 // viewport bottom but UNDER-MEASURES the final row at fractional

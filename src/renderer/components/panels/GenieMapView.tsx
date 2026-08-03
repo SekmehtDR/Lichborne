@@ -945,7 +945,19 @@ export default function GenieMapView({
     lastFitRef.current = key
     // Wait a frame so the SVG has its layout dimensions.
     const t = setTimeout(() => {
-      const playerHere = currentLocation && currentLocation.zone.id === currentZoneId
+      // "Here" means the player is on the DISPLAYED LEVEL, not merely in the
+      // displayed zone. `centerOnCurrent` is the ◆ button's "take me to my
+      // location", and part of its job there is to snap the level to the
+      // player's — correct when you asked to be taken to yourself, wrong when
+      // it is only being borrowed to FRAME a level you deliberately browsed
+      // to. Without the level check, picking z=1 while standing on z=0
+      // rendered z=1 and then yanked it straight back to z=0 a tick later
+      // (Sekmeht, on 69: Shard West Gate — "I can see the z level 1 map for a
+      // second"). Browsing a level the player is not on now fits that level's
+      // own content, which is what the user asked to see.
+      const playerHere = currentLocation
+        && currentLocation.zone.id === currentZoneId
+        && currentLocation.node.z === currentLevel
       if (playerHere) centerOnCurrent()
       else            fitToView()
     }, 0)
@@ -1028,6 +1040,47 @@ export default function GenieMapView({
   // attaches passively by default, which silently ignores preventDefault on
   // most browsers and logs a console warning. Solution: use a callback ref
   // to wire the listener manually with { passive: false }.
+  // ACTIVE ZOOM, treated like an active drag.
+  //
+  // A wheel tick scales by 1.15 (15%) while `snapTransform` only drops the
+  // camera glide above 20%, so ordinary zooming kept the 150ms transition ON
+  // and animated a SCALE change across ~1057 SVG node groups, several times a
+  // second. A scale change re-rasterizes the whole subtree — unlike the Lich
+  // map, which is a bitmap the GPU scales for free, which is exactly why that
+  // one feels smooth and this one did not (Sekmeht). Transitioning a
+  // continuous user input is also pointless lag in its own right: the glide
+  // exists for follow-camera WALK steps, not for the wheel under your finger.
+  const [zooming, setZooming] = useState(false)
+  const zoomQuietRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Wheel deltas COALESCE into one rAF-batched transform update.
+  //
+  // A wheel fires well above 60Hz (free-spin wheels and Precision touchpads
+  // burst far higher), and this handler used to call setTransform once per
+  // EVENT — so a single flick asked for more re-renders, and more full-SVG
+  // re-rasterizations, than there were frames to draw them in. That is the
+  // choppiness: not one slow frame, but many frames' worth of work queued
+  // against one frame's budget.
+  //
+  // Why zoom and not drag: dragging changes only translate, so the CTM SCALE
+  // is constant and the rasterized subtree is reused. Zooming changes scale,
+  // which re-rasterizes ~1057 node groups AND recomputes stroke geometry for
+  // every `vectorEffect="non-scaling-stroke"` element (the node rects, the
+  // arcs) because non-scaling stroke width is defined against the CTM. That
+  // cost is inherent to the drawing; what we control is how OFTEN it is paid.
+  // Coalescing pins it to at most once per frame.
+  //
+  // The accumulator multiplies the zoom factors and keeps the LATEST cursor
+  // position as the anchor — the pointer moves negligibly inside one frame,
+  // and anchoring to the last position is what makes the zoom still track
+  // under the cursor.
+  const wheelAccumRef = useRef<{ factor: number; mx: number; my: number } | null>(null)
+  const wheelRafRef = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (zoomQuietRef.current) clearTimeout(zoomQuietRef.current)
+    if (wheelRafRef.current != null) cancelAnimationFrame(wheelRafRef.current)
+  }, [])
+
   const setSvgRef = useCallback((el: SVGSVGElement | null) => {
     const prev = svgRef.current
     if (prev) {
@@ -1044,14 +1097,39 @@ export default function GenieMapView({
       const rect = el.getBoundingClientRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
-      // Manual zoom disables follow-mode — same reasoning as drag.
+      // Manual zoom disables follow-mode — same reasoning as drag. Both of
+      // these are idempotent: React bails out of a re-render when the value is
+      // unchanged, so re-setting them per event during a burst is free after
+      // the first one.
       setFollowPlayer(false)
-      setTransform(prevT => {
-        const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-        const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prevT.scale * factor))
-        const worldX = (mx - prevT.x) / prevT.scale
-        const worldY = (my - prevT.y) / prevT.scale
-        return { scale: newScale, x: mx - worldX * newScale, y: my - worldY * newScale }
+      setZooming(true)
+      if (zoomQuietRef.current) clearTimeout(zoomQuietRef.current)
+      zoomQuietRef.current = setTimeout(() => setZooming(false), 180)
+
+      // Fold this notch into the pending accumulator (see the ref decls).
+      const step = e.deltaY < 0 ? 1.15 : 1 / 1.15
+      const acc = wheelAccumRef.current
+      wheelAccumRef.current = { factor: (acc ? acc.factor : 1) * step, mx, my }
+
+      // One frame, one transform commit, however many notches arrived.
+      if (wheelRafRef.current != null) return
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null
+        const a = wheelAccumRef.current
+        wheelAccumRef.current = null
+        if (!a) return
+        setTransform(prevT => {
+          // Clamp the RESULT, not the factor, so a burst that overshoots
+          // MAX_SCALE still lands exactly on the limit instead of being
+          // rejected — and so the anchor math below uses the scale actually
+          // applied. Bail on a no-op (already at a limit) to avoid minting a
+          // new transform object that would re-render for nothing.
+          const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, prevT.scale * a.factor))
+          if (newScale === prevT.scale) return prevT
+          const worldX = (a.mx - prevT.x) / prevT.scale
+          const worldY = (a.my - prevT.y) / prevT.scale
+          return { scale: newScale, x: a.mx - worldX * newScale, y: a.my - worldY * newScale }
+        })
       })
     }
     ;(el as any).__wheelHandler = handler
@@ -1468,7 +1546,7 @@ export default function GenieMapView({
   // panning, travelling, or with map animations off — when false the effects
   // are not mounted (no DOM, no compositor layers, no Layerize/Paint/Recalc
   // Style). They re-mount once the player has been still for MOTION_QUIET_MS.
-  const showEffects = mapAnimations && !isDragging && !inMotion
+  const showEffects = mapAnimations && !isDragging && !inMotion && !zooming
 
   // The node set the animated effects iterate. When effects are off it's the
   // stable EMPTY_NODES ref, so the effect memos below skip recomputation
@@ -2180,7 +2258,7 @@ export default function GenieMapView({
   const currentIndicator = currentNode && (
     <g
       pointerEvents="none"
-      className={!isDragging && mapAnimations ? 'genie-pan-smooth' : undefined}
+      className={!isDragging && !zooming && mapAnimations ? 'genie-pan-smooth' : undefined}
       style={{
         // Transitions in lockstep with the pan group (same class) so
         // the halo stays centred instead of bouncing. Snaps when the
@@ -2435,8 +2513,8 @@ export default function GenieMapView({
             className={[
               !mapAnimations
                 ? 'genie-anim-off'
-                : (isDragging || inMotion) ? 'genie-pan-dragging' : '',
-              !isDragging && mapAnimations ? 'genie-pan-smooth' : '',
+                : (isDragging || inMotion || zooming) ? 'genie-pan-dragging' : '',
+              !isDragging && !zooming && mapAnimations ? 'genie-pan-smooth' : '',
             ].filter(Boolean).join(' ') || undefined}
           >
             {/* Aura layer — soft translucent halos behind COLOR_LEGEND

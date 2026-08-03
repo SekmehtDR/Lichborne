@@ -1,44 +1,55 @@
-## v0.18.4 — An accurate sky, and teams on the logon screen 🌙
+## v0.18.5 — A performance pass ⚡
 
-### The sky now matches moonwatch
+This one is mostly about speed. If the client had started feeling sluggish —
+during travel especially — this release is for you.
 
-Both the sun and the moons were drifting against
-[the community moonwatch site](https://moonwatch.dr.elanthia.online/), and for
-different reasons.
+### The map was slowing down the whole client
 
-- **The moons** were moving in one-minute jumps instead of gliding, and were
-  using out-of-date orbital constants. Both fixed — they now track the site.
-- **The sun** was assuming every Elanthian day is the same length. It isn't:
-  daylight swings from two real hours at midwinter to four at midsummer. The
-  sun is now computed from the game's real seasonal tables, so it is accurate
-  all year — and because it is pure maths, it works whether or not you run Lich.
+The headline fix started from a tester noticing something that sounds
+impossible: turning **Genie Map Animations** off made the *game text* flow
+better, not just the map.
 
-### Teams on the logon screen
+It wasn't a coincidence. The map and the story window share one thread, and the
+way map animations were paused while you walked was making the browser
+re-evaluate the entire map — every room, every time you changed rooms. That work
+came straight out of the budget the text window needed.
 
-The old Sets dropdown told you nothing about what it was. Saved line-ups now get
-their own **Teams** section on the logon screen, showing who is on each team.
+- **Walking is smoother**, on the map and in the story window both.
+- **You shouldn't need to turn map animations off any more.** If you turned them
+  off to cope, try turning them back on.
+- If you *did* turn them off, note the setting is **per character** — you'd have
+  had to turn it off on each one.
 
-- One click logs the whole team in, skipping anyone already playing.
-- Pin a team with the ♥ and it joins **Favorites** at the top.
-- Give a team **notes** — what it's for, who tanks, whatever you want.
-- In Team Login, saving is now just a checkbox: leave it unticked and it's
-  simply a quick way to log several characters in.
+### Smoother mouse-wheel zoom
+
+Zooming the Genie map was choppy while dragging was fine. Spinning the wheel was
+asking for more redraws than the screen could actually draw, so they piled up.
+Zoom now redraws once per frame no matter how fast you spin it.
+
+### Lighter when you're not looking at it
+
+Lichborne deliberately keeps running while minimized — it has to, so your map
+position, timers and game text stay current. But it was also still animating
+everything it draws: the map, the Moons sky, the Living Tableau, highlight text
+effects, for every character you had open. All of that now pauses while the
+window is minimized or hidden and resumes exactly where it left off. Nothing
+looks different while you can see it.
 
 ### Fixes
 
-- **Team Login can be stopped part-way.** A long team run no longer has to be
-  sat through — Stop finishes whoever is connecting and skips the rest, which
-  are listed so you can start them later.
-- **Cancel now actually cancels a connection.** Previously it only worked for
-  the first second and a half; after that it hid the dialog while the character
-  logged in anyway.
-- **The Debug window can be moved even when your layout is locked**, and always
-  stays above other windows instead of disappearing behind the game text.
-- **`INV HELP` and similar tables** keep their column alignment.
-- **Text seen through a shadewatch mirror, the arena view or distant gaze** no
-  longer breaks apart mid-sentence.
-- **The Genie map** could get permanently stuck on "waiting for game data" after
-  switching to the Lich map and back.
-- **The Living Tableau** got a polish pass: speech bubbles no longer overlap
-  each other, the combat gauges, or the thought log, and faint text is readable
-  again.
+- **Copying a large selection now copies all of it.** Selecting text, scrolling
+  down to extend the selection, then releasing used to copy only the last part —
+  the rows you had scrolled past were gone by the time the copy happened. The
+  copy is now rebuilt from the text itself, so it survives any amount of
+  scrolling. If part of the selection has already scrolled out of the buffer
+  entirely, you get a notice rather than a silent partial copy.
+- **Browsing map levels stays where you put it.** Picking a z-level you are not
+  standing on no longer snaps back to your own level a moment later.
+- **A smaller download.** Developer debug files were being packaged into the
+  installer by mistake — about 6 MB of them.
+
+### Under the hood
+
+- Updated to Electron 43.2.0 (Chromium 150) and a handful of smaller libraries.
+- The character tab bar no longer redraws twice a second around the clock; it
+  now only does so while a roundtime is actually running.

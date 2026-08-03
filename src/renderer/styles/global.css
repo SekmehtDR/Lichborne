@@ -315,3 +315,33 @@ button:not(:disabled):active {
   font-size: 0.72rem;
   margin-right: 8px;
 }
+
+/* ── Pause decorative animation while the window is off screen ──────────────
+   `data-window-hidden` is stamped on <html> by App.tsx from a main-process
+   signal (win.on('minimize'/'hide')). It is NOT driven by `document.hidden`,
+   which is unreliable here: `backgroundThrottling: false` — required so the
+   room pump and game stream keep running while minimized (pitfall #71) — also
+   affects the Page Visibility API, so `hidden` likely never goes true and
+   `visibilitychange` may never fire (pitfall #96).
+
+   Without this, every CSS animation in the app keeps doing style and paint
+   work nobody can see while the window is minimized: the Genie map's ~20, the
+   Experiences' ~24 (Moons sky, weather, Living Tableau), and the highlight
+   text effects — multiplied by every mounted character.
+
+   YES, THIS IS A WILDCARD, AND YES, PITFALL #126 IS ABOUT A WILDCARD. They are
+   not the same case, and the difference is TOGGLE FREQUENCY. #126's cost was
+   that `genie-pan-dragging` flipped on EVERY ROOM CHANGE, so the full-subtree
+   style recalculation repeated continuously while walking. This attribute flips
+   only when you minimize or restore — a rare, user-initiated event that is
+   already a repaint, and the recalc it costs lands on a window that is either
+   vanishing or reappearing. Enumerating every animated class in the app would
+   buy nothing here and would rot the moment someone adds an animation.
+   Frequency is the thing to check, not the presence of a `*`.
+
+   Only `animation-play-state` is touched, so nothing moves, reflows, or
+   changes appearance — animations resume mid-cycle exactly where they paused.
+   Transitions are deliberately left alone: they are one-shot and already over. */
+:root[data-window-hidden='true'] * {
+  animation-play-state: paused !important;
+}

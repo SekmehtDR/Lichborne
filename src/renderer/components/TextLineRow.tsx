@@ -54,7 +54,13 @@ export const TextLineRow = memo(function TextLineRow({
   const lineRanges = hasExtras ? computeLineMatchRanges(lineText, contacts, templates, nameRegex, matchRules) : []
   let cursor = 0
   return (
-    <div className="text-line" style={monoStyle ?? undefined}>
+    // `data-line-id` maps a DOM row back to its TextLine, which is what lets a
+    // large selection be rebuilt from the DATA rather than the DOM. Virtuoso
+    // unmounts off-screen rows and the browser silently drops them from a
+    // selection, so a copy spanning more rows than are mounted used to lose
+    // everything above the viewport (B152's known ceiling). Cheap: one
+    // attribute, no effect on the memo.
+    <div className="text-line" data-line-id={line.id} style={monoStyle ?? undefined}>
       {showTimestamp && line.timestamp && (
         <span className="ts-prefix">{fmtTimestamp(line.timestamp)}</span>
       )}

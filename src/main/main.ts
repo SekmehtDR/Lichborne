@@ -420,6 +420,34 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
   // character count, so re-evaluate menu state whenever focus changes.
   win.on('focus', () => refreshMenuState())
 
+  // Tell the renderer when its window is genuinely not on screen, so decorative
+  // animation can stop. `backgroundThrottling: false` (see webPreferences) keeps
+  // this renderer fully live when minimized — deliberately, because the room
+  // pump and the game stream must keep running (pitfall #71) — but that also
+  // means every CSS animation in the app keeps burning style/paint work nobody
+  // can see: the map's ~20, the Experiences' ~24, the highlight text effects,
+  // times every mounted character.
+  //
+  // This CANNOT be driven from `document.hidden` in the renderer: Electron's own
+  // docs state `backgroundThrottling: false` also affects the Page Visibility
+  // API, so `hidden` very likely never goes true here and `visibilitychange` may
+  // never fire (pitfall #96 flagged the existing guards as probably inert for
+  // exactly this reason). The window's own lifecycle events are the reliable
+  // signal, and they live in main.
+  //
+  // Deliberately NOT wired to blur/focus: an unfocused window is usually still
+  // fully visible — freezing it because you clicked another app would be a
+  // visible regression, not an optimization. Only minimize/hide qualify.
+  const pushVisibility = (hidden: boolean) => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send('window-visibility', hidden)
+    }
+  }
+  win.on('minimize', () => pushVisibility(true))
+  win.on('restore',  () => pushVisibility(false))
+  win.on('hide',     () => pushVisibility(true))   // macOS Cmd+H / dock hide
+  win.on('show',     () => pushVisibility(false))
+
   win.on('close', (e) => {
     const isPrimary = id === primaryWindowId
     if (!isPrimary) {
@@ -1643,14 +1671,40 @@ function setupMenu() {
 app.setAppUserModelId('com.lichborne.app')
 
 app.whenReady().then(() => {
-  // Electron's permission enum doesn't include 'local-fonts' in current type
-  // definitions, but it is a valid runtime value used by the system font picker.
-  // 'midi' lets the About easter-egg play its MIDI through the OS synth (the
-  // Microsoft GS Wavetable Synth) via the Web MIDI API — sounds like Media Player.
+  // ONE allowlist, shared by BOTH permission handlers. Keeping them in sync is
+  // the point — see below.
+  //   'local-fonts'   — the system font picker (`queryLocalFonts`, SettingsPanel).
+  //                     Not in Electron's permission enum in current type defs,
+  //                     but a valid runtime value, hence the `string` param.
+  //   'midi'          — the About easter-egg plays its MIDI through the OS synth
+  //                     (Web MIDI / Microsoft GS Wavetable Synth).
+  //   'notifications' — the trigger `notify` action (useTriggerEngine).
+  //
+  // Why 'notifications' is listed EXPLICITLY even though notify already worked:
+  // it only worked by ACCIDENT. The check handler used to be `() => true`, which
+  // blanket-granted every permission CHECK, and `Notification.permission` is a
+  // check — so it read 'granted' and the notify action's first branch fired.
+  // Meanwhile the REQUEST handler denied 'notifications', so
+  // `Notification.requestPermission()` resolved 'denied' while
+  // `Notification.permission` read 'granted'. Incoherent, and a landmine: the
+  // obvious security hardening — making the check handler mirror the request
+  // allowlist — silently KILLS trigger notifications unless 'notifications' is
+  // in it. Verified all three states with an Electron harness (v0.18.5):
+  //   handlers as they were        → permission 'granted', notify WORKS
+  //   allowlist incl. notifications → 'granted', and requestPermission agrees
+  //   allowlist WITHOUT it          → 'denied', notify silently does nothing
+  //
+  // The old `() => true` check handler also granted geolocation, media, serial,
+  // HID, USB and the rest to any check. Nothing in the renderer needs those —
+  // only queryLocalFonts and requestMIDIAccess route through a permission check
+  // (clipboard deliberately goes through main via IPC, pitfall #28) — so the
+  // allowlist is both correct and a tightening.
+  const ALLOWED_PERMISSIONS = new Set(['local-fonts', 'midi', 'notifications'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission: string, callback) => {
-    callback(permission === 'local-fonts' || permission === 'midi')
+    callback(ALLOWED_PERMISSIONS.has(permission))
   })
-  session.defaultSession.setPermissionCheckHandler(() => true)
+  session.defaultSession.setPermissionCheckHandler((_wc, permission: string) =>
+    ALLOWED_PERMISSIONS.has(permission))
   createWindow()
   setupMenu()
   if (app.isPackaged) setupAutoUpdater()

@@ -1183,11 +1183,25 @@
   font-size: calc(var(--panel-font-size, var(--game-font-size, 12px)) * 0.74);
   line-height: 1.15;
   color: var(--text-primary);
+  /* NO `backdrop-filter` HERE — it was `blur(9px) saturate(1.25)` and it was the
+     single most expensive thing in the Experiences (v0.18.5).
+     `backdrop-filter` makes the compositor re-capture and re-blur everything
+     behind the element on every frame the backdrop changes — and this pill
+     floats over the sky, whose backdrop is ALWAYS changing (twinkling stars,
+     drifting clouds, weather particles, the moons themselves). So it was a
+     permanent full-time blur of a band up to 96% of the scene wide, for a
+     frosted look. Cost scales with both blur radius and blurred AREA, and this
+     had a lot of both. Don't reintroduce it on anything that sits over the sky.
+
+     The blur was also doing legibility work, not just decoration — it flattened
+     a busy backdrop so the text read cleanly. Removing it alone would have left
+     stars showing through the numbers, so the fill is more opaque to compensate
+     (60% → 88%): same job, done by a paint the compositor gets for free. The
+     gradient sheen, border and inset highlight are untouched, so it still reads
+     as a raised glass pill rather than a flat box. */
   background:
     linear-gradient(180deg, color-mix(in srgb, #eaf4ff 24%, transparent), transparent 42%),
-    color-mix(in srgb, var(--bg-raised) 60%, transparent);
-  backdrop-filter: blur(9px) saturate(1.25);
-  -webkit-backdrop-filter: blur(9px) saturate(1.25);
+    color-mix(in srgb, var(--bg-raised) 88%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   box-shadow:
     0 5px 18px rgba(0, 0, 0, 0.28),

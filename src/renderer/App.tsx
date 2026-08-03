@@ -524,6 +524,21 @@ function AppShell() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  // Stamp `data-window-hidden` on <html> while this window is minimized/hidden
+  // so decorative animation can pause (global.css). Main owns the signal —
+  // `document.hidden` is unreliable under `backgroundThrottling: false`, see
+  // the emitter in main.ts createWindow and pitfall #96.
+  //
+  // Per-WINDOW, not per-character: it is the OS window that is off screen, and
+  // each BrowserWindow has its own document, so each stamps its own root.
+  // Nothing here touches game state — only whether animations advance.
+  useEffect(() => {
+    const off = window.api.onWindowVisibility?.(hidden => {
+      document.documentElement.dataset.windowHidden = hidden ? 'true' : 'false'
+    })
+    return () => off?.()
+  }, [])
+
   // v0.8.6: refocus the active GameWindow's command bar whenever the active
   // character changes — covers tab CLICKS in addition to the Ctrl+Tab /
   // Ctrl+# keyboard paths that already refocus explicitly above. Requested

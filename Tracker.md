@@ -6,6 +6,112 @@
 
 ---
 
+## v0.18.5 — a performance pass, and the map stops stealing the console's frames
+
+Started as "the client feels a little sluggish, and it hasn't always been this
+way." The hardware was never the story (i7-11700F / 32GB / RTX 3060), and
+neither, it turned out, was the text pipeline.
+
+- **The map was starving the text window, and one tester observation cracked
+  it.** Turning Genie Map Animations off made the *console* flow better — which
+  is impossible unless both are competing for the same thread, because they are.
+  `.genie-pan-dragging *` and `.genie-anim-off *` made Blink invalidate the
+  **entire** pan subtree (~1057 room groups) on every toggle of the class, and
+  `inMotion` flips on every room change, so walking re-ran a full-subtree style
+  recalculation continuously — on the main thread React and Virtuoso share. Both
+  rules now enumerate the 18 animated classes; verified behaviour-identical by
+  script rather than by eye, since four `genie-mote-drift-*` classes declare
+  their animation through longhand and a `grep "animation:"` sweep misses them.
+  B263, and CLAUDE.md pitfall #126 for the general rule.
+- **Wheel zoom was doing more work than there were frames.** `setTransform` ran
+  once per wheel *event*, and a wheel fires well above 60Hz; each commit
+  re-rasterizes the SVG **and** recomputes stroke geometry for every
+  `non-scaling-stroke` element, because non-scaling stroke width is defined
+  against the CTM. Deltas now coalesce into one rAF-batched commit. Dragging was
+  always smooth for the same reason zoom wasn't: translate keeps the CTM scale
+  constant and reuses the raster. B264. Removing `non-scaling-stroke` is the
+  bigger win still on the table and was deliberately declined — it's a visual
+  change (borders would scale with the map), not a free one.
+- **Two always-on costs removed.** The character tab bar ran a 500ms interval
+  **forever** to drive a roundtime glyph, re-rendering an app-level component
+  twice a second whether or not any roundtime existed (and `backgroundThrottling`
+  is off, so it ticked while minimized); it's now gated on a pending expiry and
+  self-clears one tick past it. And the story window's Virtuoso overscan dropped
+  3000px → 1200px: it existed solely as B152's copy-truncation workaround, which
+  the same release's data-model rebuild supersedes. 1200px still clears one
+  viewport, so ordinary selections keep exact character offsets.
+- **Production sourcemaps are opt-in** (`LB_SOURCEMAPS=1 npm run build`). They
+  were shipping in the asar — ~4.3MB for the renderer, ~1.7MB for main — against
+  a code comment that said to turn them off before release. esbuild has no
+  `emptyOutDir`, so [build-main.mjs](build-main.mjs) now sweeps stale maps too;
+  without that, toggling maps off once would have left the previous build's
+  now-wrong maps shipping forever.
+- **Within-major dependency bumps.** Electron 43.0.0 → **43.2.0** (Node 24.18 /
+  Chrome 150.0.7871.129 / ABI 148), react-virtuoso 4.18.11, js-yaml 4.3.1,
+  `@electron/rebuild` 4.2.0, `@types/node` patch. Held majors (React 19, Vite 8,
+  TS 7, better-sqlite3 13) untouched. **better-sqlite3 needed no rebuild** — ABI
+  was unchanged, proven by loading it under the new runtime and running a real
+  query rather than reflexively forcing a rebuild of a working native module.
+  The `ELECTRON_RUN_AS_NODE` leak documented in the packaging notes bit again
+  during the smoke test and impersonated an Electron API break exactly as
+  described.
+
+- **Animation now stops when the window is off screen.** `backgroundThrottling`
+  is off by design (the room pump and game stream must keep running while
+  minimized, pitfall #71) — but that also meant every CSS animation in the app
+  kept doing style and paint work nobody could see: the map's ~20, the
+  Experiences' ~24, the highlight text effects, times every mounted character.
+  Main now pushes `minimize`/`restore`/`hide`/`show` to the renderer, which
+  stamps `data-window-hidden` on `<html>`. **This cannot be driven from
+  `document.hidden`** — Electron's own docs say `backgroundThrottling: false`
+  also affects the Page Visibility API, which is why pitfall #96 flagged the
+  existing guards as probably inert. Deliberately NOT wired to blur/focus: an
+  unfocused window is usually still visible. Zero visual change when visible.
+- **The orrery pill's `backdrop-filter` is gone.** `blur(9px) saturate(1.25)` on
+  an element up to 96% of the scene wide, floating over a sky whose backdrop is
+  *always* changing (stars, clouds, weather, the moons), meant the compositor
+  re-captured and re-blurred that whole band continuously. The blur was doing
+  legibility work as well as decoration, so the fill went 60% → 88% opaque to
+  keep the text readable; sheen, border and inset highlight are untouched, so it
+  still reads as a raised glass pill.
+- **Permission handlers now share one allowlist (B265).** Audited as "the trigger
+  `notify` action can never fire" — **which was wrong**, and a throwaway Electron
+  harness caught it before working code got "fixed". `setPermissionCheckHandler`
+  was `() => true`, and `Notification.permission` is a *check*, so it read
+  `granted` and notify worked — while `requestPermission()` resolved `denied`
+  from the request handler. The feature worked by accident, and mirroring the
+  request allowlist into the check handler (the obvious hardening) would have
+  silently killed it. One `ALLOWED_PERMISSIONS` set now feeds both. Also a
+  tightening: `() => true` had been granting geolocation, media, serial, HID and
+  USB to any check. Pitfall #127.
+
+**Platform audit (Electron 43.2 / macOS / Linux) — clean.** No removed or
+deprecated Electron APIs in use (`enableRemoteModule`, `nativeWindowOpen`,
+`worldSafeExecuteJavaScript`, `allowRendererProcessReuse`, `@electron/remote`,
+`registerFileProtocol`, `desktopCapturer`, `systemPreferences` all absent);
+security posture correct. macOS has its `appMenu` role, `activate` handler and
+darwin `window-all-closed` guard. Linux: all **571 relative imports audited for
+case-sensitivity, zero mismatches**. Nothing platform-specific needed fixing.
+
+**The Experiences were audited and found well built** — contrary to the working
+assumption that something in Moons or the Tableau had to be expensive. Measuring
+properties animated *inside `@keyframes` only* (a whole-file sweep is misleading,
+it counts static declarations): 35 `opacity` + 18 `transform` + 4 `box-shadow`,
+and **zero layout-triggering animations** anywhere. Particle counts are modest
+(~130 worst case). The `backdrop-filter` above was the one genuine outlier. Note
+the v0.18.0 profiling that pronounced them clean measured React *render* cost —
+the same metric that would have missed the map bug — so the axes checked here
+were style recalc, paint and compositing.
+
+**Deferred, deliberately:** viewport-culling the node layer (real win when
+zoomed in, but it puts `transform` in the `nodeRects` deps and risks re-creating
+the churn B231 fixed — wants a profile first, not a guess), and decomposing
+GameWindow (5,576 lines / 207 hooks, re-rendered per event batch — the real
+ceiling, but it drags the whole scroll state machine with it and belongs in its
+own changeset with its own pass against the pitfall #68 scenarios).
+
+---
+
 ## v0.18.4 — the sky told the truth, and the logon screen grew teams
 
 Mostly tester-driven, and two of the reports turned out to be the same shape:

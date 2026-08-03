@@ -15,10 +15,16 @@ export default defineConfig({
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
-    // Source maps — lets the DevTools performance profiler resolve minified
-    // names (Lx, Pu, kj…) back to real functions. Temporary debugging aid;
-    // revert to false before release if bundle/.map size is a concern.
-    sourcemap: true,
+    // Source maps let the DevTools performance profiler resolve minified names
+    // (Lx, Pu, kj…) back to real functions. OPT-IN, because `files: ["dist/**/*"]`
+    // sweeps them into the asar: the renderer map alone is ~4.3MB (3x the 1.4MB
+    // bundle it describes), and main.js.map adds ~1.6MB more. They cost nothing
+    // at runtime — nothing reads a map unless DevTools is open — so this is
+    // install-size hygiene, not a speed fix.
+    //
+    // Turn on for a profiling build:  LB_SOURCEMAPS=1 npm run build
+    // (build-main.mjs reads the same flag, so one variable covers both.)
+    sourcemap: !!process.env.LB_SOURCEMAPS,
     rollupOptions: {
       output: {
         // Avoid crossorigin attribute which breaks Electron file:// loading

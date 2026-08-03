@@ -215,6 +215,15 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('menu-action', listener)
   },
 
+  // True when this window is minimized / hidden. Main is the source of truth
+  // because `document.hidden` is not trustworthy under `backgroundThrottling:
+  // false` — see the emitter in main.ts createWindow, and pitfall #96.
+  onWindowVisibility: (cb: (hidden: boolean) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, hidden: boolean) => cb(hidden)
+    ipcRenderer.on('window-visibility', listener)
+    return () => ipcRenderer.removeListener('window-visibility', listener)
+  },
+
   debugPanelToggle: (sessionId: SessionId, open: boolean) =>
     ipcRenderer.send('debug-panel-toggle', sessionId, open),
 

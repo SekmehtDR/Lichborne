@@ -77,6 +77,7 @@ declare global {
       checkForUpdates: () => void
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       onMenuAction: (cb: (payload: { action: string }) => void) => () => void
+      onWindowVisibility: (cb: (hidden: boolean) => void) => () => void
       openUrl: (url: string) => void
       getAppVersion: () => Promise<string>
       writeClipboard: (text: string) => void

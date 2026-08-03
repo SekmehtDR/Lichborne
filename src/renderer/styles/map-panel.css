@@ -2,21 +2,62 @@
    Map Panel — themed via CSS custom properties (--map-*)
    ============================================================ */
 
-/* Pause all category animations while the user is panning the map.
-   Applied as a class on the pan group `<g>` when `isDragging` is true.
-   Without this, frame budget during drag is dominated by animation
-   work (Recalculate Style ~22% + Layerize ~33% in profiling traces)
-   that has nothing to do with the pan transform itself. Pausing means
-   `animation-play-state: paused` cascades to all descendants — each
-   animation freezes at its current frame, no further style recalc or
-   composition layer rebuilds happen until drag ends.
+/* ── Animation freeze: ENUMERATE the animated classes, never `*` ──────
+   Both freeze classes below list every animated class explicitly. That
+   looks verbose next to the `.genie-pan-dragging *` this replaced, and
+   the verbosity IS the optimization — do not "simplify" it back.
 
-   `!important` ensures this overrides any inline animation control on
-   descendant elements (none currently set inline, but defensive). The
-   wildcard `*` selector is acceptable here because it only applies
-   while the dragging class is present (briefly during pan); it's not
-   a global cost. */
-.genie-pan-dragging * {
+   Blink builds a style INVALIDATION SET from each selector. `.a .b`
+   records "when .a toggles, recalc descendants carrying .b". `.a *`
+   records "recalc EVERY descendant". The pan group holds ~1057 room
+   groups (each a <g> + rect + label) plus arcs and auras — on the
+   order of 3-5k elements — so the wildcard turned every toggle of the
+   class into a full-subtree style recalculation.
+
+   The original rule's comment argued the wildcard was safe because the
+   class is only present "briefly during pan". That stopped being true
+   when `inMotion` was added: it flips true on EVERY room change and
+   resets MOTION_QUIET_MS later, so while the player walks the class
+   toggles continuously and the recalc repeats. Style recalc runs on
+   the renderer's main thread — the same one React, Virtuoso and the
+   whole game-text pipeline share — so the map was stealing frames from
+   the text window. That is why turning Genie Map Animations off made
+   the CONSOLE feel faster, which is what put us onto this (Sekmeht).
+   With animations off the class is `genie-anim-off` PERMANENTLY, so it
+   never toggles and never re-invalidates.
+
+   Enumerating cuts the invalidation set to just the elements carrying
+   these classes. During motion `showEffects` is false, so the culled
+   effects are unmounted entirely and this reduces to the handful of
+   fire auras (see below). Behaviour is unchanged in both modes.
+
+   Keeping `!important` is defensive only — the descendant selectors
+   already out-specify the base rules that set the shorthand. */
+
+/* TRANSIENT freeze — drag / walk (`isDragging || inMotion || zooming`).
+   The ping and the healer heartbeat are exempt, so they are simply
+   ABSENT from this list; that replaces the two `running !important`
+   counter-rules the wildcard used to require. Note these two are also
+   the only animated things still MOUNTED during motion besides
+   `genie-aura-fire` (they render outside the `showEffects` gate over
+   the uncapped `visibleNodes`), so in practice this rule now pauses
+   the fire auras and nothing else — which was always its real job. */
+.genie-pan-dragging .genie-aura-fire,
+.genie-pan-dragging .genie-bubble,
+.genie-pan-dragging .genie-caution,
+.genie-pan-dragging .genie-coin-glint,
+.genie-pan-dragging .genie-dirt-fall,
+.genie-pan-dragging .genie-implode,
+.genie-pan-dragging .genie-leaf-fall,
+.genie-pan-dragging .genie-mote-drift-n,
+.genie-pan-dragging .genie-mote-drift-s,
+.genie-pan-dragging .genie-mote-drift-e,
+.genie-pan-dragging .genie-mote-drift-w,
+.genie-pan-dragging .genie-mote-rise-fast,
+.genie-pan-dragging .genie-mote-rise-slow,
+.genie-pan-dragging .genie-mote-vortex,
+.genie-pan-dragging .genie-ripple,
+.genie-pan-dragging .genie-xp-rise {
   animation-play-state: paused !important;
 }
 
@@ -59,33 +100,48 @@
 .genie-here-ping--delayed {
   animation-delay: -1s;
 }
-/* Keep the locator ping alive even while the map pauses every other
-   animation during drag / walk. It's a single cheap element and it's
-   the one thing the user most wants to keep tracking. Higher
-   specificity than `.genie-pan-dragging *` so it wins the !important
-   duel. NOTE: this exemption is for the TRANSIENT drag/walk freeze
-   only — the persistent `genie-anim-off` setting (below) deliberately
-   has no such exemption, so turning off Genie Map Animations stops the
-   ping too. The two freeze classes are mutually exclusive on the pan
-   group, so there is no specificity conflict between them. */
-.genie-pan-dragging .genie-here-ping {
-  animation-play-state: running !important;
-}
+/* The locator ping and the healer heartbeat stay LIVE through the
+   transient drag/walk freeze — the ping because it is the one thing a
+   travelling player most wants to keep tracking, the heartbeat because
+   healers are rare and finding one fast matters. Both used to need a
+   `running !important` counter-rule to win back against the wildcard;
+   now they are simply omitted from the transient list above, which is
+   both cheaper and harder to get wrong. They ARE frozen by the
+   persistent setting below — "off" means off, ping included.
 
-/* Healer heartbeats are a PRIORITY effect — exempt from the transient
-   drag/walk freeze so a healer keeps pulsing while the player travels
-   (finding a healer fast matters; healers are rare, so it's cheap). Like
-   the ping, this exemption is for the transient freeze only — the
-   persistent `genie-anim-off` setting still stops it, and the renderer
-   additionally omits heartbeats entirely when map animations are off. */
-.genie-pan-dragging .genie-heartbeat {
-  animation-play-state: running !important;
-}
+   The two freeze classes are mutually exclusive on the pan group (the
+   className ternary picks one), so they never fight. */
 
-/* Persistent animations-off (Settings → Genie Map Animations). Same
-   cascade as the drag/walk freeze, but applied permanently and with
-   NO ping exemption — "off" means off, locator ping included. */
-.genie-anim-off * {
+/* PERSISTENT animations-off (Settings → Genie Map Animations).
+   Enumerated for the same invalidation reason as the transient freeze,
+   though this one is applied permanently rather than toggled, so its
+   recalc is a one-off. Unlike the transient list this covers EVERY
+   animated class, ping and heartbeat included.
+
+   Kept comprehensive on purpose: when this class is active
+   `showEffects` is false, so most of these are never mounted and the
+   extra selectors are inert today. They are listed anyway so the rule
+   stays correct if an effect later renders outside that gate — which
+   `genie-heartbeat` and `genie-aura-fire` already do. A list pruned to
+   "what is mounted right now" would silently rot. */
+.genie-anim-off .genie-aura-fire,
+.genie-anim-off .genie-bubble,
+.genie-anim-off .genie-caution,
+.genie-anim-off .genie-coin-glint,
+.genie-anim-off .genie-dirt-fall,
+.genie-anim-off .genie-heartbeat,
+.genie-anim-off .genie-here-ping,
+.genie-anim-off .genie-implode,
+.genie-anim-off .genie-leaf-fall,
+.genie-anim-off .genie-mote-drift-n,
+.genie-anim-off .genie-mote-drift-s,
+.genie-anim-off .genie-mote-drift-e,
+.genie-anim-off .genie-mote-drift-w,
+.genie-anim-off .genie-mote-rise-fast,
+.genie-anim-off .genie-mote-rise-slow,
+.genie-anim-off .genie-mote-vortex,
+.genie-anim-off .genie-ripple,
+.genie-anim-off .genie-xp-rise {
   animation-play-state: paused !important;
 }
 

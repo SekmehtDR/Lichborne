@@ -68,28 +68,32 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
-**v0.18.4**
+**v0.18.5** — a performance release.
 
-- **The sky is accurate.** The sun and moons now match the community moonwatch
-  site to the minute. The sun in particular is computed from the game's real
-  seasonal daylight rather than an even day/night split, so it is right whether
-  or not you use Lich.
-- **Teams on the logon screen.** Save a line-up in Team Login and it appears in
-  a Teams section, showing who is on it. One click logs the team in and skips
-  anyone already playing. Pin a team to Favorites, and give it notes so you
-  remember what it is for.
-- **Team Login can be stopped part-way** instead of sitting through the whole run.
-- **Cancel actually cancels.** Stopping a connection part-way no longer logs the
-  character in behind your back.
-- **The Debug window stays put and stays visible** — it can be moved even when
-  your layout is locked, and it no longer hides behind the game window.
-- Fixed: `INV HELP` and other tables no longer lose their column alignment.
-- Fixed: text seen through a shadewatch mirror, the arena view or distant gaze
-  no longer breaks apart mid-sentence.
-- Fixed: the Genie map could get stuck on "waiting for game data" after
-  switching to the Lich map and back.
-- The Living Tableau had a polish pass — speech bubbles no longer overlap each
-  other, the gauges, or the thought log.
+- **The map was slowing down the whole client.** The way map animations were
+  paused while you walked made the browser re-evaluate the entire map on every
+  room change, and that work came out of the same budget the story window needed.
+  Walking is now smoother in both places.
+- **You should no longer need to turn Genie Map Animations off.** If you turned
+  them off to cope with sluggishness, try turning them back on. Note the setting
+  is **per character**, so it would have had to be turned off on each one.
+- **Mouse-wheel zoom on the Genie map is smooth.** Spinning the wheel was asking
+  for more redraws than the screen could draw; zoom now redraws once per frame
+  however fast you spin it.
+- **Lighter when minimized.** Lichborne keeps running while minimized on purpose,
+  so your map position, timers and game text stay current — but it was also
+  still animating the map, the Moons sky, the Living Tableau and highlight text
+  effects for every character you had open. Animation now pauses while the
+  window is minimized or hidden and resumes where it left off. Nothing looks
+  different while you can see it.
+- **Copying a large selection copies all of it.** Selecting text, scrolling down
+  to extend the selection, then releasing used to copy only the last part. If
+  part of the selection has scrolled out of the buffer entirely you now get a
+  notice instead of a silent partial copy.
+- Fixed: browsing a map level you are not standing on no longer snaps back to
+  your own level a moment later.
+- The download is about 6 MB smaller — developer debug files were being packaged
+  into the installer by mistake.
 
 ## On the Horizon (Roadmap)
 

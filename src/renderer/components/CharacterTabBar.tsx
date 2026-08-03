@@ -33,11 +33,28 @@ export default function CharacterTabBar({ onAdd, onClose, onReconnect, reconnect
 
   // Single 500ms tick drives RT visibility (only matters when the icon slot
   // resolves to ⏳) — far cheaper than each tab running its own interval.
+  //
+  // It also only RUNS while some session actually has a roundtime pending.
+  // `now` feeds exactly one comparison (`rtExpires > now` in resolveIcon), so
+  // outside a roundtime the tick was re-rendering the whole tab strip twice a
+  // second to recompute a value that could not change — forever, on an
+  // app-level component, for every character. `backgroundThrottling` is off
+  // (see main.ts), so it kept ticking while minimized too.
+  //
+  // The interval is keyed on the furthest pending expiry: a new roundtime
+  // moves that timestamp, which restarts the tick. It then self-clears one
+  // tick PAST the expiry, and that last tick is what re-renders the ⏳ away —
+  // so stopping early would strand the glyph.
+  const maxRtExpires = sessions.reduce((m, s) => Math.max(m, s.status.rtExpires), 0)
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const i = setInterval(() => setNow(Date.now()), 500)
+    if (maxRtExpires <= Date.now()) return
+    const i = setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= maxRtExpires) clearInterval(i)
+    }, 500)
     return () => clearInterval(i)
-  }, [])
+  }, [maxRtExpires])
 
   // Right-click a tab → a context menu of the actions available for THAT
   // character (v0.11.6 expansion — was decouple-only). We only list options
