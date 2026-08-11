@@ -1,6 +1,6 @@
 ## v0.18.6 — A guard on the quit 🛑
 
-A small, tester-driven release.
+**Patch pre-release**, on top of [v0.18.5](https://github.com/SekmehtDR/Lichborne/releases). Small and tester-driven — two safety fixes and one thing the app already knew but never told you. If you're on v0.18.5 nothing below changes how the client behaves day to day; it's worth taking if you run several characters at once.
 
 ### Closing with several characters up now asks first
 

@@ -8,7 +8,7 @@ import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SET
 import { loadAIConfig, saveAIConfig, DEFAULT_AI_CONFIG } from './aiConfig'
 import { loadCustomColors, saveCustomColors } from './colors'
 import { DEFAULT_RUBY, DEFAULT_LICH } from './lichSettings'
-import { loadSimuCoinConfig, saveSimuCoinConfig, type SimuCoinConfig } from './simucoinConfig'
+import { loadSimuCoinConfig, saveSimuCoinConfig, coerceSimuCoinConfig } from './simucoinConfig'
 
 // ── Default game definitions ──────────────────────────────────────────────────
 // Written once when creating _shared.yaml; user can edit the file to add more.
@@ -285,12 +285,11 @@ export async function importSharedProfile(): Promise<void> {
   // coerce here the same way loadSimuCoinConfig does — a hand-edited YAML must
   // never yield a half-shaped record that reads as consented.
   if (data.simucoin && typeof data.simucoin === 'object' && !Array.isArray(data.simucoin)) {
-    const cfg: SimuCoinConfig = {}
-    for (const [account, v] of Object.entries(data.simucoin)) {
-      const e = (v ?? {}) as Partial<{ consented: boolean; autoClaim: boolean }>
-      cfg[account] = { consented: e.consented === true, autoClaim: e.autoClaim === true }
-    }
-    saveSimuCoinConfig(cfg)
+    // Shares coerceSimuCoinConfig with loadSimuCoinConfig — this used to be an
+    // inline copy, and the copy silently STRIPPED every field added to the
+    // record later. Because it also restated the type inline, tsc couldn't see
+    // the drift. See the note on coerceSimuCoinConfig before touching this.
+    saveSimuCoinConfig(coerceSimuCoinConfig(data.simucoin))
   }
 }
 

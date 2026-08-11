@@ -70,6 +70,37 @@ every command — scheduling a save there means a full profile serialize and dis
 write roughly every 2.5s during active play. That trade wants a decision rather
 than a reflex.
 
+**Two pre-ship checks caught things the build could not**, both worth recording
+because neither would have failed a test that only looked at the happy path:
+
+- **A THIRD simucoin coerce site, and the dangerous one.** `importSharedProfile`
+  had its own inline copy that rebuilt each entry as `{consented, autoClaim}` —
+  and it runs at EVERY LAUNCH, so it would have stripped `lastBalance` on
+  startup and silently defeated the whole persistence half of F100. It restated
+  the type inline too, so `tsc` was blind to it. Fixed structurally: one
+  exported `coerceSimuCoinConfig` now serves both readers. CLAUDE.md's own line
+  saying there were TWO coerce sites is what found it — the docs did their job,
+  the pitfall #121 warning written earlier the same session did not, because I
+  had only grepped the file I was editing. Verified by bundling the real module
+  and asserting the round trip.
+- **`quitAlreadyConfirmed` was latched forever.** The update-install bypass for
+  F99's close confirmation was set and never reset, so a `quitAndInstall()` that
+  didn't take (nothing staged, install refused) left the confirmation silently
+  disabled for the rest of the session. Now self-heals after 10s — restoring a
+  safety feature is the safe direction, and the cost is at most one extra prompt.
+
+**Cross-platform pass on both features — clean.** No platform-specific
+constructs in the new code; `toLocaleString` correct across en/de/fr/hi/ja
+(fr-FR's U+202F is the proper separator, not a defect); Linux without a keyring
+degrades to "no accounts, no coin, no balance line" without throwing; the macOS
+B245 quit chain is intact; and the native fallback's `response` is an INDEX into
+`buttons`, so it is immune to per-platform button ordering. Every close route
+reaches the guard including `{ role: 'close' }` (⌘W) on the primary — correct,
+since closing the primary IS the quit. One accepted behaviour change: on macOS
+the confirm cancels an OS-initiated logout, exactly as any unsaved-work prompt
+does. There is no clean fix — `before-quit` fires identically for ⌘Q and an OS
+logout — so it is documented rather than guessed at.
+
 ---
 
 ## v0.18.5 — a performance pass, and the map stops stealing the console's frames

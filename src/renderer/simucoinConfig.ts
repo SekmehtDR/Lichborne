@@ -59,28 +59,43 @@ export type SimuCoinConfig = Record<string, SimuCoinAccountConfig>
 
 export const DEFAULT_ACCOUNT_CONFIG: SimuCoinAccountConfig = { consented: false, autoClaim: false }
 
+/**
+ * THE ONE coercion for this record. Both readers use it — `loadSimuCoinConfig`
+ * (localStorage) and `importSharedProfile` (`_shared.yaml` at startup).
+ *
+ * It exists as a shared function because it was duplicated, and the duplicate
+ * silently ate a field: `importSharedProfile` had its own inline copy that
+ * rebuilt each entry as `{consented, autoClaim}`, so adding `lastBalance` to
+ * this file persisted it correctly and then had it STRIPPED on the next launch
+ * — defeating the whole point of persisting it. It also restated the type
+ * inline, so `tsc` could not see the mismatch either. That is pitfall #121
+ * (a coerce that REBUILDS destroys what it doesn't copy) compounded by #127
+ * (two code paths answering one question must share a definition, not a
+ * convention). Do not re-inline this.
+ *
+ * Rebuilds rather than spreads on purpose: a hand-edited or older YAML must not
+ * be able to yield a half-shaped record that reads as consented, and numbers
+ * are validated rather than passed through so a string or NaN can't reach a
+ * balance we then render. Add a field to `SimuCoinAccountConfig` ⇒ add it here.
+ */
+export function coerceSimuCoinConfig(raw: unknown): SimuCoinConfig {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out: SimuCoinConfig = {}
+  for (const [account, v] of Object.entries(raw as Record<string, unknown>)) {
+    const e = (v ?? {}) as Partial<SimuCoinAccountConfig>
+    out[account] = {
+      consented: e.consented === true,
+      autoClaim: e.autoClaim === true,
+      ...(Number.isFinite(e.lastBalance)   ? { lastBalance:   e.lastBalance as number }   : {}),
+      ...(Number.isFinite(e.lastCheckedAt) ? { lastCheckedAt: e.lastCheckedAt as number } : {}),
+    }
+  }
+  return out
+}
+
 export function loadSimuCoinConfig(): SimuCoinConfig {
   try {
-    const raw = JSON.parse(localStorage.getItem(SIMUCOIN_KEY) ?? '{}')
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-    // Coerce every entry so a hand-edited / older YAML can't yield a
-    // half-shaped record that reads as consented.
-    const out: SimuCoinConfig = {}
-    for (const [account, v] of Object.entries(raw as Record<string, unknown>)) {
-      const e = (v ?? {}) as Partial<SimuCoinAccountConfig>
-      // THIS COERCE REBUILDS THE ENTRY, so every field has to be copied here or
-      // it is DESTROYED on the next save, not merely ignored — the F97/BulkSet
-      // trap (pitfall #121). If you add a field above, add it here too.
-      // Numbers are validated rather than passed through: a hand-edited YAML
-      // must not be able to put NaN or a string into a balance we then render.
-      out[account] = {
-        consented: e.consented === true,
-        autoClaim: e.autoClaim === true,
-        ...(Number.isFinite(e.lastBalance)   ? { lastBalance:   e.lastBalance as number }   : {}),
-        ...(Number.isFinite(e.lastCheckedAt) ? { lastCheckedAt: e.lastCheckedAt as number } : {}),
-      }
-    }
-    return out
+    return coerceSimuCoinConfig(JSON.parse(localStorage.getItem(SIMUCOIN_KEY) ?? '{}'))
   } catch { return {} }
 }
 

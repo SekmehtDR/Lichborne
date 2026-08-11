@@ -1584,7 +1584,17 @@ ipcMain.on('write-log', (_e, filename: string, content: string) => {
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
 // Installing an update quits the app; the user consented by clicking Install,
 // so the close-confirmation stands down for it (see `quitAlreadyConfirmed`).
-ipcMain.on('install-update',     () => { quitAlreadyConfirmed = true; autoUpdater.quitAndInstall() })
+ipcMain.on('install-update',     () => {
+  quitAlreadyConfirmed = true
+  // SELF-HEALING, because this flag disables a safety feature. quitAndInstall()
+  // normally tears the app down within a second — so if we are still alive well
+  // after it, the install did NOT take (nothing staged, or the OS refused it),
+  // and a latched flag would silently let the rest of the session quit without
+  // ever confirming. Restoring it is the safe direction: the worst case is one
+  // extra prompt on a quit the user meant anyway.
+  setTimeout(() => { quitAlreadyConfirmed = false }, 10_000)
+  autoUpdater.quitAndInstall()
+})
 ipcMain.on('check-for-updates',  () => {
   // macOS: auto-update requires a code-signed app (Squirrel.Mac validates the
   // signature chain) and 0.18.0 Mac builds ship unsigned — deliberately, no
