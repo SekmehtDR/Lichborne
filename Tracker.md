@@ -6,6 +6,72 @@
 
 ---
 
+## v0.18.6 — a guard on the quit, and two settings that weren't reaching disk
+
+Small release, all tester-driven, and two of the three items turned out to be
+the same bug wearing different clothes.
+
+- **Closing with several characters up now asks first (F99).** Closing the
+  primary window quits the app and drains every session — correct, but one
+  reflexive click from losing position and roundtime across several characters.
+  Confirms at **2 or more connected**, naming them, because a count is a warning
+  while the names are what let you spot an alt you had forgotten. Counts
+  connected SESSIONS, not tabs (the report had a disconnected tab, which costs
+  nothing to close), and spans all windows, since closing the primary kills
+  decoupled windows' characters too. It sits in `win.on('close')`, so X, Cmd+Q,
+  File → Quit and taskbar close all inherit it.
+  - The load-bearing detail is the ordering: `appClosing` is set INSIDE the
+    confirm callback. Set before a confirm the user then cancels, it would
+    short-circuit every later close and **the app could never be quit** —
+    pitfall #114's rule extended to the case where the handler decides not to
+    proceed.
+  - Rendered as the canonical themed modal (Sekmeht's ask), which moved the
+    confirmation into the renderer and with it a new failure mode: main blocks
+    on the answer, so a dead renderer means an unquittable app. Guarded by an
+    ack + native fallback. Pitfall #128 has the rest — including the one my own
+    first cut got wrong, where a Ctrl+R reload AFTER the ack left the promise
+    pending forever and reintroduced exactly the hang the fallback existed to
+    prevent.
+- **A picked theme reverted after a restart (B266).** Reported as a shutdown
+  problem; it wasn't. The close flush is fine — it flushes *pending* saves, and
+  nothing was pending. `ThemePicker`'s `onThemeChange` never called
+  `scheduleProfileSave`, so localStorage had the new theme while the YAML kept
+  the old one, and `importCharacterProfile` copies the YAML's theme back into
+  localStorage on the next connect. Intermittent, because any other change that
+  scheduled a save carried the theme along with it.
+- **A one-shot trigger re-armed after a restart (B267).** Found by sweeping all
+  62 persistence writes in GameWindow for the B266 shape. `disableTrigger` wrote
+  localStorage but scheduled no save, so a fired one-shot came back armed.
+  `detectedGuild` looked like a third instance and is a false positive — its
+  save happens inside `handleFocusChange`, which is what B56 added.
+
+- **SimuCoins show your balance now (F100).** It was already being scraped on
+  every check and thrown away, so the popover could only say "nothing to
+  claim". Settings gets a quiet per-account line under the state line; the coin
+  gets ONE aggregated line that never grows with the roster (pitfall #109 is
+  the whole reason that surface exists in its current shape). No new network
+  work. The missing half was persistence — main's status cache is in-memory, so
+  a restart forgot the figure; it now rides `_shared.yaml` per account as
+  optional fields, recorded at the one choke point every check route converges
+  on. Honesty rules carry §42.4's posture onto a number: a failed check keeps
+  the previous figure AND its real age rather than blanking it or re-stamping
+  the time, the age is never optional, unknown renders nothing, and revoking
+  consent drops the cache. Building it hit pitfall #121 twice — the coerce
+  (expected, handled) and a restated inline `Partial<{…}>` at Settings' write
+  path (caught by `tsc`).
+
+**The rule these keep re-teaching:** writing localStorage is HALF a
+per-character change. Principle #1 makes the YAML the truth, so the `scopedKey`
+write and the `scheduleProfileSave` belong in the same handler. This is now the
+third time (B56, B266, B267).
+
+**Left deliberately:** `saveCommandHistory` has the same shape, but it writes on
+every command — scheduling a save there means a full profile serialize and disk
+write roughly every 2.5s during active play. That trade wants a decision rather
+than a reflex.
+
+---
+
 ## v0.18.5 — a performance pass, and the map stops stealing the console's frames
 
 Started as "the client feels a little sluggish, and it hasn't always been this

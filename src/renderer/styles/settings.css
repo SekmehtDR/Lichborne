@@ -667,3 +667,15 @@
   padding-left: 12px;
   border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
+
+/* Last-known balance + its age. Sits under the account's STATE line and is
+   deliberately quieter than it — the state line is what needs doing, this is
+   what you have. Matches .sp-field-hint's size/colour so the SimuCoins section
+   reads as one family rather than inventing its own metrics (pitfall #113).
+   Tabular numerals so a column of balances lines up digit-for-digit. */
+.sp-sc-balance {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 0 6px;
+}

@@ -215,6 +215,18 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('menu-action', listener)
   },
 
+  // Close confirmation. Main asks, then BLOCKS the close on the answer — so the
+  // renderer must ack (`quitConfirmShown`) as soon as it has actually rendered
+  // the modal. If that ack doesn't arrive, main falls back to a native dialog
+  // so a hung renderer can never make the app unquittable.
+  onQuitConfirmRequest: (cb: (req: { id: number; scope: 'app' | 'window'; names: string[] }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, req: { id: number; scope: 'app' | 'window'; names: string[] }) => cb(req)
+    ipcRenderer.on('quit-confirm:request', listener)
+    return () => ipcRenderer.removeListener('quit-confirm:request', listener)
+  },
+  quitConfirmShown: (id: number) => ipcRenderer.send('quit-confirm:shown', { id }),
+  quitConfirmRespond: (id: number, ok: boolean) => ipcRenderer.send('quit-confirm:response', { id, ok }),
+
   // True when this window is minimized / hidden. Main is the source of truth
   // because `document.hidden` is not trustworthy under `backgroundThrottling:
   // false` — see the emitter in main.ts createWindow, and pitfall #96.

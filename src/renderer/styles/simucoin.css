@@ -185,6 +185,19 @@
 }
 .sc-summary { color: var(--text-primary); }
 
+/* Last-known balance, under the summary. Quieter than the summary on purpose:
+   the summary is what needs doing, this is what you have. ONE fixed line
+   whatever the account count — see the aggregation note in SimuCoinButton, and
+   pitfall #109 for why this surface must never grow with the roster.
+   Tabular numerals so the figure doesn't reflow as it ticks between checks. */
+.sc-balance {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px 6px;
+}
+
 /* Every popover action spans the full width — stacked full-width buttons keep
    the surface the same shape no matter which of them apply. */
 .sc-wide {

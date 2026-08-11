@@ -1,0 +1,134 @@
+/* Close confirmation — canonical modal chrome (UX standard #10).
+   Every colour is a --modal-* token or a color-mix over one, so it self-
+   corrects on light themes (Principle #4). App chrome, so rem sizing is
+   deliberate (Principle #9's modal exception) — this must NOT scale with the
+   per-character game font. */
+
+.qc-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above EVERYTHING. The app's transient popovers (app-bar More menu, panel +
+     menu, map menu) sit at 9999, QuickSend at 2000, context menus at 2100 —
+     a quit confirmation must not be paintable-over by any of them, because
+     main is blocked waiting on its answer. */
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--modal-scrim);
+  padding: 1.5rem;
+}
+
+.qc-modal {
+  width: min(420px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--modal-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
+}
+
+/* Accent header band — the About-modal signature. Only the TOP-LEVEL header is
+   an accent band; the section label inside the body stays small/uppercase/muted
+   or the hierarchy flattens (standard #10). */
+.qc-head {
+  padding: 0.85rem 1.15rem;
+  border-bottom: 1px solid var(--modal-head-border);
+  background: var(--modal-head-bg);
+  border-radius: var(--modal-radius) var(--modal-radius) 0 0;
+}
+.qc-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--modal-head-color);
+}
+
+.qc-body { padding: 1.05rem 1.15rem 0.4rem; }
+
+.qc-lead {
+  margin: 0 0 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.qc-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  margin-bottom: 0.3rem;
+}
+
+.qc-names {
+  margin: 0 0 0.9rem;
+  padding: 0.5rem 0.75rem;
+  list-style: none;
+  border-radius: 6px;
+  /* A quiet sunken well rather than another raised surface — --modal-input-bg
+     exists precisely because a bare --bg-input collapses into --modal-bg on
+     light themes (pitfall #55). */
+  background: var(--modal-input-bg);
+  border: 1px solid var(--modal-border);
+}
+.qc-names li {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.qc-names li::before {
+  content: '•';
+  color: var(--text-faint);
+  margin-right: 0.5rem;
+}
+
+.qc-note {
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.qc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.85rem 1.15rem 1.05rem;
+}
+
+.qc-btn {
+  padding: 0.4rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--modal-input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--modal-border);
+}
+.qc-btn:hover { background: var(--modal-ctl-hover); }
+/* Focus is visible because Cancel is focused on mount — losing this ring would
+   hide which button Enter is about to press. */
+.qc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Destructive action. The hue is FIXED (it carries the meaning) but it is mixed
+   into theme vars, so contrast self-corrects light↔dark — the semantic-status
+   recipe from pitfall #55/#63, not a hardcoded red. */
+.qc-btn--danger {
+  background: color-mix(in srgb, #e5484d 18%, var(--modal-bg));
+  border-color: color-mix(in srgb, #e5484d 45%, transparent);
+  color: color-mix(in srgb, #e5484d 65%, var(--text-primary));
+  font-weight: 600;
+}
+.qc-btn--danger:hover {
+  background: color-mix(in srgb, #e5484d 30%, var(--modal-bg));
+  border-color: color-mix(in srgb, #e5484d 65%, transparent);
+}

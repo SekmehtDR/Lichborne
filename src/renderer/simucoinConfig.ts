@@ -35,6 +35,23 @@ export const SIMUCOIN_CHANGED_EVENT = 'lichborne:simucoin-changed'
 export interface SimuCoinAccountConfig {
   consented: boolean
   autoClaim: boolean
+  /**
+   * Last KNOWN store balance and when it was read. Optional — absent means
+   * "never successfully checked", which every surface renders as nothing at
+   * all rather than a placeholder.
+   *
+   * Why this is persisted at all: main's status cache is an in-memory Map, so
+   * a restart forgot the balance and Settings read "Not checked yet" until the
+   * launch check finished. Riding the config puts it in `_shared.yaml`, which
+   * is already per-account, already app-wide, and already excluded from
+   * Profile Transfer as machine-local credential-gated data.
+   *
+   * These are a CACHE living in a config record, so they are dropped when
+   * consent is revoked (see `revokeAccount`) — it is data about an account the
+   * user has just told us to stop touching.
+   */
+  lastBalance?: number
+  lastCheckedAt?: number
 }
 
 /** account name → config. Accounts absent from the map are un-consented. */
@@ -51,7 +68,17 @@ export function loadSimuCoinConfig(): SimuCoinConfig {
     const out: SimuCoinConfig = {}
     for (const [account, v] of Object.entries(raw as Record<string, unknown>)) {
       const e = (v ?? {}) as Partial<SimuCoinAccountConfig>
-      out[account] = { consented: e.consented === true, autoClaim: e.autoClaim === true }
+      // THIS COERCE REBUILDS THE ENTRY, so every field has to be copied here or
+      // it is DESTROYED on the next save, not merely ignored — the F97/BulkSet
+      // trap (pitfall #121). If you add a field above, add it here too.
+      // Numbers are validated rather than passed through: a hand-edited YAML
+      // must not be able to put NaN or a string into a balance we then render.
+      out[account] = {
+        consented: e.consented === true,
+        autoClaim: e.autoClaim === true,
+        ...(Number.isFinite(e.lastBalance)   ? { lastBalance:   e.lastBalance as number }   : {}),
+        ...(Number.isFinite(e.lastCheckedAt) ? { lastCheckedAt: e.lastCheckedAt as number } : {}),
+      }
     }
     return out
   } catch { return {} }
@@ -70,6 +97,69 @@ export function setAccountConfig(
   cfg: SimuCoinConfig, account: string, patch: Partial<SimuCoinAccountConfig>,
 ): SimuCoinConfig {
   return { ...cfg, [account]: { ...accountConfig(cfg, account), ...patch } }
+}
+
+/**
+ * Remember a balance we just read. Called at the single point a status
+ * resolves (App.runSimucoin), so every route into a check — startup pass, the
+ * coin's Check now, `/simucoin` — records it without its own bookkeeping.
+ *
+ * Only records a REAL reading: a failed check (auth-failed / error) leaves the
+ * previous balance and its timestamp alone, so a store outage degrades to
+ * "here's what you had, and how old that is" rather than blanking the number
+ * or — worse — stamping a fresh time onto a stale figure.
+ */
+export function rememberBalance(
+  cfg: SimuCoinConfig, account: string, st: { balance: number | null; checkedAt: number },
+): SimuCoinConfig {
+  if (!Number.isFinite(st.balance as number)) return cfg
+  return setAccountConfig(cfg, account, {
+    lastBalance: st.balance as number,
+    lastCheckedAt: st.checkedAt,
+  })
+}
+
+/** 1234 → "1,234". Balances run to five figures; the separator is the whole
+ *  difference between scanning a column of them and re-reading each one. */
+export function fmtCoins(n: number): string {
+  return n.toLocaleString()
+}
+
+/**
+ * "checked 2 hours ago" — RELATIVE, never a clock time. The question a reader
+ * actually has is "is this current?", which a relative age answers directly
+ * while a timestamp makes them do arithmetic.
+ */
+export function fmtCheckedAgo(ts: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ts) / 1000))
+  if (s < 90)      return 'just now'
+  const m = Math.round(s / 60)
+  if (m < 60)      return `${m} minute${m === 1 ? '' : 's'} ago`
+  const h = Math.round(m / 60)
+  if (h < 24)      return `${h} hour${h === 1 ? '' : 's'} ago`
+  const d = Math.round(h / 24)
+  return `${d} day${d === 1 ? '' : 's'} ago`
+}
+
+/**
+ * The balance line, or null when there is nothing honest to say.
+ *
+ * ONE formatter for both surfaces (Settings row + coin popover) so they cannot
+ * drift — the B234 lesson that produced `simucoinRowText`. The age is NOT
+ * optional: a bare number reads as "now", and this feature's whole posture is
+ * to go quiet rather than imply something it hasn't verified.
+ *
+ * `short` is the popover's compact form ("2h ago"); Settings gets the long one.
+ */
+export function simucoinBalanceText(
+  cfg: SimuCoinAccountConfig, opts?: { short?: boolean }, now = Date.now(),
+): string | null {
+  if (!Number.isFinite(cfg.lastBalance as number) || !Number.isFinite(cfg.lastCheckedAt as number)) return null
+  const ago = fmtCheckedAgo(cfg.lastCheckedAt as number, now)
+  const shortAgo = opts?.short ? ago.replace(' minutes ago', 'm ago').replace(' minute ago', 'm ago')
+    .replace(' hours ago', 'h ago').replace(' hour ago', 'h ago')
+    .replace(' days ago', 'd ago').replace(' day ago', 'd ago') : ago
+  return `Balance ${fmtCoins(cfg.lastBalance as number)} · checked ${shortAgo}`
 }
 
 /**

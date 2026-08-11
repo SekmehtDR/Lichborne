@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useId } from 'react'
 import type { SimuCoinStatus } from '../../shared/types'
 import {
-  loadSimuCoinConfig, accountConfig,
+  loadSimuCoinConfig, accountConfig, fmtCoins, fmtCheckedAgo,
   SIMUCOIN_KEY, SIMUCOIN_CHANGED_EVENT, type SimuCoinConfig,
 } from '../simucoinConfig'
 import { showToast } from '../toasts'
@@ -201,6 +201,29 @@ export default function SimuCoinButton({ accounts, withPassword, statuses, onRun
     .filter((n): n is number => typeof n === 'number' && n > Date.now())
     .sort((a, b) => a - b)[0]
 
+  // Last-known balance, aggregated to ONE fixed line — never a row per account
+  // (pitfall #109: a surface that grows with the roster is what made this
+  // popover unusable and forced the rewrite). Per-account detail is Settings'
+  // job.
+  //
+  // Only accounts with a KNOWN balance are summed, and when that isn't all of
+  // them the line says so ("across 2 of 3 accounts") rather than presenting a
+  // partial total as complete. The age comes from the OLDEST reading in the
+  // sum, because that is the honest bound on how current the total is —
+  // quoting the newest would overstate it.
+  const balances = eligible
+    .map(a => accountConfig(cfg, a))
+    .filter(c => Number.isFinite(c.lastBalance as number) && Number.isFinite(c.lastCheckedAt as number))
+  const balanceTotal = balances.reduce((n, c) => n + (c.lastBalance as number), 0)
+  const oldestCheck = balances.length ? Math.min(...balances.map(c => c.lastCheckedAt as number)) : 0
+  const balanceLine = balances.length === 0
+    ? null
+    : balances.length === 1
+      ? `Balance ${fmtCoins(balanceTotal)} · checked ${fmtCheckedAgo(oldestCheck)}`
+      : `Balance ${fmtCoins(balanceTotal)} across ${balances.length}${
+          balances.length < eligible.length ? ` of ${eligible.length}` : ''
+        } accounts · checked ${fmtCheckedAgo(oldestCheck)}`
+
   // ONE summary line instead of a row per account. The popover has to stay the
   // same size whether you have one account or ten (Sekmeht) — a list that grows
   // with the roster is what made this surface unusable in the first place, and
@@ -256,7 +279,10 @@ export default function SimuCoinButton({ accounts, withPassword, statuses, onRun
               claimed, and they expire if you don't — Lichborne can watch for them.
             </div>
           ) : (
-            <div className="sc-summary">{summary}</div>
+            <>
+              <div className="sc-summary">{summary}</div>
+              {balanceLine && <div className="sc-balance">{balanceLine}</div>}
+            </>
           )}
 
           {/* The one action the coin exists for. */}

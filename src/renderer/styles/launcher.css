@@ -569,7 +569,16 @@
   38%  { transform: scale(1.0); }
   100% { transform: scale(1.0); }   /* rest */
 }
-.launcher-section--favorites .launcher-card-favorite--on {
+/* Characters AND teams — both can be pinned to Favorites (F97), and a pinned
+   team's heart is the same affordance, so it beats the same way. The two use
+   different class prefixes (`launcher-card-*` for character tiles,
+   `launcher-team-*` for team rows), so this rule has to name both: it is ONE
+   rule rather than a parallel block precisely so the next person cannot change
+   the beat for one and silently leave the other behind (pitfall #113).
+   Still scoped to `--favorites`, so the static ♥ a favorited character shows
+   down in its account section stays still. */
+.launcher-section--favorites .launcher-card-favorite--on,
+.launcher-section--favorites .launcher-team-fav--on {
   transform-origin: center;
   animation: launcher-heartbeat 1.2s ease-in-out infinite;
 }

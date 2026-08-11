@@ -68,6 +68,23 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
+**v0.18.6**
+
+- **Closing with several characters up now asks first.** If two or more
+  characters are connected, quitting shows a confirmation that names them, so
+  you can see exactly what you are about to log out. One character (or none)
+  closes straight away, disconnected tabs don't count, and Cancel is the default
+  so a reflexive Enter never ends your session. Closing a separate character
+  window asks the same way, and reminds you that **Window → Move Character to
+  Main Window** keeps that character running.
+- **SimuCoins show your balance.** Settings → SimuCoins lists each account's
+  balance and when it was last checked; the coin popover summarises the total
+  in one line. Balances survive restarts, and every one is shown with its age
+  so a stale figure can never read as current. No extra requests are made to
+  the store — this surfaces a number the existing check already read.
+- Fixed: a theme you picked no longer reverts after restarting.
+- Fixed: a one-shot trigger no longer comes back armed after a restart.
+
 **v0.18.5** — a performance release.
 
 - **The map was slowing down the whole client.** The way map animations were

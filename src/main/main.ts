@@ -456,17 +456,30 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
       // use Window → "Move Character to Main Window" first (re-home), which
       // empties + auto-closes this window without disconnecting.
       if (closingWindows.has(id)) return  // already draining; let destroy() proceed
-      closingWindows.add(id)
+      // preventDefault FIRST — we own the close from here whether or not the
+      // user confirms. The `closingWindows` guard is set only once they have,
+      // for the same reason as `appClosing` below.
       e.preventDefault()
-      runSecondaryWindowClose(win)
+      confirmCloseThenRun(win, 'window', () => {
+        closingWindows.add(id)
+        runSecondaryWindowClose(win)
+      })
       return
     }
     // Primary window close == app shutdown. Run the graceful drain + flush once
     // across ALL windows, then destroy everything.
     if (appClosing) return  // already in shutdown sequence; let destroy() proceed
-    appClosing = true
     e.preventDefault()
-    runAppShutdown()
+    // `appClosing` is set INSIDE the callback, never before the confirm. If it
+    // were set first and the user cancelled, the guard above would short-circuit
+    // every subsequent close and the app could never be quit again. Cancelling
+    // has to leave the state exactly as it was — pitfall #114's rule that a
+    // handler which defers a lifecycle event owns completing it, including the
+    // case where it decides not to.
+    confirmCloseThenRun(win, 'app', () => {
+      appClosing = true
+      runAppShutdown()
+    })
   })
 
   win.on('closed', () => {
@@ -487,6 +500,168 @@ function createWindow(opts?: { secondary?: boolean }): BrowserWindow {
 // Secondary (decoupled) windows mid-close: guards the async graceful-disconnect
 // so a second close event (or the final destroy) doesn't re-enter.
 const closingWindows = new Set<number>()
+
+// Windows currently showing a close-confirmation, so a second close attempt
+// can't stack dialogs. The dialog is parented to `win` (and therefore modal to
+// it) so this is belt-and-braces, but a stray app.quit() can also reach here.
+const confirmingClose = new Set<number>()
+
+// Set when a quit is ALREADY user-consented through another surface, so the
+// confirmation below stands down. Today that is exactly one path: installing an
+// update. `autoUpdater.quitAndInstall()` goes through `app.quit()`, which fires
+// the window close handler — so without this, clicking "Install update" with 2+
+// characters connected would raise a "quit?" dialog the user has effectively
+// already answered, and CANCELLING it would silently abandon the install while
+// leaving the update staged. Set it immediately before any such quit.
+let quitAlreadyConfirmed = false
+
+/**
+ * Ask before a close that would LOG CHARACTERS OUT, then run `proceed`.
+ *
+ * Closing the primary window quits the app and drains every session — including
+ * characters living in decoupled windows — so one reflexive click can cost
+ * several logged-in characters. In DR that is a real loss: position, roundtime,
+ * whatever was in progress, plus the re-login. Sekmeht asked for a guard.
+ *
+ * Rules this encodes:
+ *  - Counts CONNECTED sessions, not tabs. A disconnected tab costs nothing to
+ *    close and must not inflate the number (that was the reporting case).
+ *  - App scope spans ALL windows, because closing the primary kills decoupled
+ *    windows' characters too. Window scope counts only that window's own.
+ *  - Threshold is 2. Prompting at one character would prompt on essentially
+ *    every quit, and a dialog people learn to click through protects nothing.
+ *  - Names the characters rather than just counting them — that is how you
+ *    notice an alt you had forgotten is still logged in.
+ *
+ * ASYNC on purpose. `showMessageBoxSync` would block the main process, and main
+ * owns every session socket — so a confirm left sitting open would stall game
+ * processing for every character. The async dialog keeps the client live while
+ * you decide.
+ *
+ * A native dialog is a deliberate exception to the one-modal-look standard
+ * (UX #10): the close path must not depend on a renderer that may be mid-flood
+ * or already unresponsive.
+ */
+function confirmCloseThenRun(win: BrowserWindow, scope: 'app' | 'window', proceed: () => void) {
+  const id = win.webContents.id
+  const connected = Array.from(sessions.values())
+    .filter(s => s.connected && (scope === 'app' || s.ownerWindowId === id))
+
+  if (quitAlreadyConfirmed) { proceed(); return }
+  if (connected.length < 2) { proceed(); return }
+  if (confirmingClose.has(id)) return
+  confirmingClose.add(id)
+
+  const names = connected
+    .map(s => s.meta?.character?.trim() || '(unnamed)')
+    .sort((a, b) => a.localeCompare(b))
+
+  askThemed(win, scope, names)
+    // The renderer never acked — hung, crashed, or still booting. Fall back to
+    // the native dialog so a bad renderer can NEVER make the app unquittable.
+    .catch(() => askNative(win, scope, names))
+    .then(ok => { confirmingClose.delete(id); if (ok) proceed() })
+    .catch(() => { confirmingClose.delete(id) })
+}
+
+// How long to wait for the renderer to confirm it received the request. This
+// times the ACK, not the user's answer — once acked we wait indefinitely, so a
+// slow decision never trips the fallback and stacks two dialogs.
+const QUIT_CONFIRM_ACK_MS = 2000
+let quitConfirmSeq = 0
+
+/**
+ * Ask via the themed in-app modal (UX #10 chrome). Rejects if the renderer
+ * doesn't acknowledge within QUIT_CONFIRM_ACK_MS, which is the caller's cue to
+ * fall back to native.
+ */
+function askThemed(win: BrowserWindow, scope: 'app' | 'window', names: string[]): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    if (win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) {
+      reject(new Error('renderer unavailable')); return
+    }
+    const reqId = ++quitConfirmSeq
+    let acked = false
+    let settled = false
+
+    const cleanup = () => {
+      clearTimeout(timer)
+      ipcMain.removeListener('quit-confirm:shown', onShown)
+      ipcMain.removeListener('quit-confirm:response', onResponse)
+      if (!win.isDestroyed()) {
+        win.removeListener('closed', onRendererGone)
+        if (!win.webContents.isDestroyed()) {
+          win.webContents.removeListener('did-start-navigation', onNavigate)
+          win.webContents.removeListener('render-process-gone', onRendererGone)
+        }
+      }
+    }
+    const onShown = (_e: Electron.IpcMainEvent, p: { id: number }) => {
+      if (p?.id === reqId) acked = true
+    }
+    const onResponse = (_e: Electron.IpcMainEvent, p: { id: number; ok: boolean }) => {
+      if (p?.id !== reqId || settled) return
+      settled = true; cleanup(); resolve(!!p.ok)
+    }
+    // THE RENDERER CAN VANISH AFTER ACKING, AND THE TIMEOUT WILL NOT SAVE US.
+    // Once `acked` is true the timer deliberately stands down (so a slow human
+    // decision never stacks a second dialog) — which means the promise then
+    // settles ONLY on a response. If the renderer reloads (Ctrl+R is a reserved
+    // accelerator and stays available) or the render process dies, that
+    // response never comes: the promise hangs, `confirmingClose` is never
+    // cleared, and every later close short-circuits on it — the app becomes
+    // UNQUITTABLE, which is the exact failure the native fallback exists to
+    // prevent. Rejecting here routes those cases back to the native dialog.
+    const onRendererGone = () => {
+      if (settled) return
+      settled = true; cleanup(); reject(new Error('renderer gone'))
+    }
+    const onNavigate = (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+      if (details?.isMainFrame && !details?.isSameDocument) onRendererGone()
+    }
+    const timer = setTimeout(() => {
+      if (acked || settled) return
+      settled = true; cleanup(); reject(new Error('no ack'))
+    }, QUIT_CONFIRM_ACK_MS)
+
+    ipcMain.on('quit-confirm:shown', onShown)
+    ipcMain.on('quit-confirm:response', onResponse)
+    win.once('closed', onRendererGone)
+    // Only a real main-frame document swap (a reload) counts. A same-document
+    // navigation would leave the modal standing, and treating it as "gone"
+    // would stack a native dialog on top of a perfectly good themed one.
+    win.webContents.on('did-start-navigation', onNavigate)
+    win.webContents.on('render-process-gone', onRendererGone)
+    try { win.webContents.send('quit-confirm:request', { id: reqId, scope, names }) }
+    catch { settled = true; cleanup(); reject(new Error('send failed')) }
+  })
+}
+
+/** Native fallback — no renderer involved, so it works when nothing else does. */
+function askNative(win: BrowserWindow, scope: 'app' | 'window', names: string[]): Promise<boolean> {
+  // The themed path can reject BECAUSE the window went away, so the fallback
+  // must not try to parent a dialog to a corpse. Nothing left to confirm —
+  // answer "don't proceed" and let the already-running teardown own it.
+  if (win.isDestroyed()) return Promise.resolve(false)
+  const isApp = scope === 'app'
+  return dialog.showMessageBox(win, {
+    type: 'warning',
+    noLink: true,
+    // Cancel is index 0 AND the default, so a reflexive Enter can't end the
+    // session. cancelId also maps Esc / the dialog's own close to Cancel.
+    buttons: ['Cancel', isApp ? 'Disconnect and Quit' : 'Disconnect and Close'],
+    defaultId: 0,
+    cancelId: 0,
+    title: isApp ? 'Quit Lichborne?' : 'Close Window?',
+    message: isApp
+      ? `Disconnect ${names.length} characters and quit Lichborne?`
+      : `Disconnect ${names.length} characters and close this window?`,
+    detail:
+      `Still connected:\n${names.map(n => `    • ${n}`).join('\n')}\n\n`
+      + 'They will be logged out — anything in progress ends here.'
+      + (isApp ? '' : '\n\nTo keep a character running, use Window → "Move Character to Main Window" first.'),
+  }).then(({ response }) => response === 1)
+}
 
 // Closing a secondary window LOGS OUT its character(s): graceful quickClose
 // disconnect + log flush, then destroy the window (whose 'closed' handler tears
@@ -1407,7 +1582,9 @@ ipcMain.on('write-log', (_e, filename: string, content: string) => {
   } catch {}
 })
 ipcMain.on('download-update',    () => autoUpdater.downloadUpdate())
-ipcMain.on('install-update',     () => autoUpdater.quitAndInstall())
+// Installing an update quits the app; the user consented by clicking Install,
+// so the close-confirmation stands down for it (see `quitAlreadyConfirmed`).
+ipcMain.on('install-update',     () => { quitAlreadyConfirmed = true; autoUpdater.quitAndInstall() })
 ipcMain.on('check-for-updates',  () => {
   // macOS: auto-update requires a code-signed app (Squirrel.Mac validates the
   // signature chain) and 0.18.0 Mac builds ship unsigned — deliberately, no

@@ -10,8 +10,8 @@ import { aiSessionUsage } from '../ai/aiClient'
 import { exportSharedProfile, scheduleSharedProfileSave } from '../profile'
 import {
   loadSimuCoinConfig, saveSimuCoinConfig, accountConfig, setAccountConfig,
-  simucoinStateText, SIMUCOIN_DISCLOSURE, SIMUCOIN_CHANGED_EVENT, SIMUCOIN_KEY,
-  type SimuCoinConfig,
+  simucoinStateText, simucoinBalanceText, SIMUCOIN_DISCLOSURE, SIMUCOIN_CHANGED_EVENT, SIMUCOIN_KEY,
+  type SimuCoinConfig, type SimuCoinAccountConfig,
 } from '../simucoinConfig'
 import LichSetupDialog from './LichSetupDialog'
 import '../styles/settings.css'
@@ -258,7 +258,11 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     document.dispatchEvent(new CustomEvent(SIMUCOIN_CHANGED_EVENT))
   }, [scCfg])
 
-  function setSc(account: string, patch: Partial<{ consented: boolean; autoClaim: boolean }>) {
+  // Typed off the interface, NOT a restated inline shape — a hand-copied
+  // `Partial<{ consented; autoClaim }>` silently excludes every field added to
+  // the record later, which is how a new field gets quietly dropped at the
+  // write path (pitfall #121's "the type has to follow" rider).
+  function setSc(account: string, patch: Partial<SimuCoinAccountConfig>) {
     setScCfg(prev => setAccountConfig(prev, account, patch))
   }
 
@@ -1079,6 +1083,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
           {scAccounts.map(account => {
             const ac = accountConfig(scCfg, account)
             const isBusy = simucoin.busy.has(account)
+            const balanceLine = simucoinBalanceText(ac)
             return (
               <div className="sp-sc-account" key={account}>
                 <Toggle
@@ -1089,13 +1094,23 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                   checked={ac.consented}
                   onChange={v => {
                     // Turning OFF also clears auto-claim, so re-enabling later
-                    // can never silently resume claiming unprompted.
-                    setSc(account, v ? { consented: true } : { consented: false, autoClaim: false })
+                    // can never silently resume claiming unprompted — and drops
+                    // the cached balance, which is data about an account the
+                    // user has just told us to stop touching.
+                    setSc(account, v
+                      ? { consented: true }
+                      : { consented: false, autoClaim: false, lastBalance: undefined, lastCheckedAt: undefined })
                     if (v) void simucoin.run(account, false)   // first check right away
                   }}
                 />
                 {ac.consented && (
                   <div className="sp-sc-sub">
+                    {/* Balance sits directly under the STATE line (the Toggle's
+                        description) and is deliberately quieter: the state line
+                        answers "do I need to do something", this answers "what
+                        do I have, and how current is that". Renders nothing at
+                        all when never checked — no placeholder dash. */}
+                    {balanceLine && <div className="sp-sc-balance">{balanceLine}</div>}
                     <Toggle
                       label="Claim automatically"
                       description="Claim as soon as coins are found, instead of waiting for you to click the coin."

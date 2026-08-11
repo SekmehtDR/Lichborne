@@ -5,6 +5,7 @@ import AddCharacterWizard from './components/AddCharacterWizard'
 import LichSetupDialog from './components/LichSetupDialog'
 import ProfileTransferModal from './components/ProfileTransferModal'
 import AboutModal from './components/AboutModal'
+import QuitConfirmModal, { type QuitConfirmRequest } from './components/QuitConfirmModal'
 import GameWindow from './components/GameWindow'
 import AppBar from './components/AppBar'
 import QuickSend from './components/QuickSend'
@@ -22,7 +23,7 @@ import { initTheme } from './themes'
 import type { LoginCredentials, SessionId, RosterEntry, SimuCoinStatus } from '../shared/types'
 import { isSessionAction } from '../shared/menuActions'
 import { simucoinToast } from './components/SimuCoinButton'
-import { loadSimuCoinConfig, accountConfig } from './simucoinConfig'
+import { loadSimuCoinConfig, saveSimuCoinConfig, accountConfig, rememberBalance, SIMUCOIN_CHANGED_EVENT } from './simucoinConfig'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -255,6 +256,7 @@ function AppShell() {
   // `lichborne:open-profile-transfer` custom event the Launcher dispatches.
   const [showProfileTransfer, setShowProfileTransfer] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  const [quitConfirm, setQuitConfirm] = useState<QuitConfirmRequest | null>(null)
   // Per-session remount key suffix. Bumping a character's nonce changes its
   // GameWindow `key`, forcing a full remount that re-reads all per-character
   // state from localStorage — used to commit a live profile import into a
@@ -524,6 +526,18 @@ function AppShell() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  // Close confirmation requested by main (2+ characters would be logged out).
+  // The ack is sent from the SAME effect that receives the request rather than
+  // from the modal, so main learns the renderer is alive even if the modal's
+  // own render were to throw — the ack is about liveness, not about paint.
+  useEffect(() => {
+    const off = window.api.onQuitConfirmRequest?.(req => {
+      setQuitConfirm(req)
+      window.api.quitConfirmShown?.(req.id)
+    })
+    return () => off?.()
+  }, [])
+
   // Stamp `data-window-hidden` on <html> while this window is minimized/hidden
   // so decorative animation can pause (global.css). Main owns the signal —
   // `document.hidden` is unreliable under `backgroundThrottling: false`, see
@@ -622,6 +636,19 @@ function AppShell() {
     try {
       const st = await window.api.simucoinCheck(account, claim)
       setScStatuses(prev => ({ ...prev, [account]: st }))
+      // Remember the balance so it survives a restart — main's status cache is
+      // in-memory only, so without this Settings reads "Not checked yet" every
+      // launch until the startup pass finishes. This is the ONE place every
+      // check route converges (startup pass, the coin's Check now, /simucoin),
+      // so recording it here needs no bookkeeping at the call sites.
+      // `rememberBalance` no-ops on a failed check, so a store outage keeps the
+      // previous figure and its real age rather than blanking it.
+      const withBalance = rememberBalance(loadSimuCoinConfig(), account, st)
+      saveSimuCoinConfig(withBalance)
+      scheduleSharedProfileSave()
+      // A `storage` event never fires in the window that wrote it, so the
+      // surfaces in THIS window need the same nudge Settings uses.
+      window.dispatchEvent(new CustomEvent(SIMUCOIN_CHANGED_EVENT))
       if (!quiet || st.state === 'claimed' || st.state === 'claimable') simucoinToast(st)
       // RETURN the status so a caller can report it the moment it lands.
       // `/simucoin check` needs this: reading it back from `scStatuses` would
@@ -1325,6 +1352,17 @@ function AppShell() {
       {showLichSetup && <LichSetupDialog onClose={() => setShowLichSetup(false)} />}
 
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
+      {quitConfirm && (
+        <QuitConfirmModal
+          req={quitConfirm}
+          onAnswer={ok => {
+            // Clear FIRST: on "quit" the shutdown overlay takes over, and on
+            // cancel the modal must go away even if the IPC send throws.
+            setQuitConfirm(null)
+            window.api.quitConfirmRespond?.(quitConfirm.id, ok)
+          }}
+        />
+      )}
 
       {showProfileTransfer && (
         <ProfileTransferModal

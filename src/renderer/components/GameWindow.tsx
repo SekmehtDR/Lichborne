@@ -1273,6 +1273,12 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     )
   }, [substitutes, globalSubs, activeGroupStates])
   const [triggers, setTriggers] = useState<TriggerRule[]>(() => loadTriggers(session.character))
+  // Latest-value mirror, so `disableTrigger` can compute the next list WITHOUT
+  // doing its persistence side effects inside a setState updater — StrictMode
+  // double-invokes updaters in dev, and this file's own house rule is that
+  // updaters stay pure (the toggleMusic lesson). Same inline shape as linesRef.
+  const triggersRef = useRef<TriggerRule[]>(triggers)
+  triggersRef.current = triggers
   const [aliases,   setAliases]   = useState<AliasRule[]>(() => loadAliases(session.character))
   const [macros,    setMacros]    = useState<MacroRule[]>(() => loadMacros(session.character))
 
@@ -1464,11 +1470,21 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       triggerCtxRef.current.variables[name] = value
       processVariableChangeRef.current(name, value)
     },
-    disableTrigger: (id: string) => setTriggers(prev => {
-      const updated = prev.map(r => r.id === id ? { ...r, enabled: false } : r)
+    disableTrigger: (id: string) => {
+      // Computed from the ref, NOT inside a setState updater: persistence is a
+      // side effect, and StrictMode double-invokes updaters in dev — which
+      // would double-write localStorage (quota pressure with a big imported
+      // ruleset, pitfall #90) and double-schedule the save.
+      const updated = triggersRef.current.map(r => r.id === id ? { ...r, enabled: false } : r)
+      triggersRef.current = updated
+      setTriggers(updated)
       saveTriggers(session.character, updated)
-      return updated
-    }),
+      // Same gap the theme pick had: saving to localStorage is only HALF of a
+      // per-character change, because importCharacterProfile restores `state`
+      // from the YAML on the next connect. Without this, a ONE-SHOT trigger
+      // that fired would come back ARMED next launch and fire a second time.
+      scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+    },
     flashWindow:  () => window.api.flashWindow(),
     writeLog:     (file: string, content: string) => window.api.writeLog(file, content),
     onFire: (name: string, matched: string, detail: string, stream: string, ruleId: string) => {
@@ -5440,7 +5456,26 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         <ThemePicker
           currentThemeId={currentThemeId}
           myThemes={myThemes}
-          onThemeChange={id => setCurrentThemeId(id)}
+          onThemeChange={id => {
+            setCurrentThemeId(id)
+            // MUST schedule a profile save. ThemePicker's applyTheme already
+            // wrote `lichborne.theme` to localStorage, so the theme LOOKS
+            // persistent — but the character YAML still holds the old id, and
+            // `importCharacterProfile` copies YAML.theme BACK INTO localStorage
+            // on the next connect (profile.ts). So without this the pick is
+            // silently reverted on the next launch (Sekmeht, v0.18.6).
+            //
+            // It was intermittent, which is why it survived: any OTHER change
+            // that scheduled a save would rebuild the profile from localStorage
+            // and carry the new theme along with it. Only a session where the
+            // theme was the sole change lost it.
+            //
+            // Same shape as B56 (handleFocusChange missing this call). The rule:
+            // writing localStorage is HALF a per-character setting change —
+            // Principle #1 means the YAML is the truth, so schedule the save in
+            // the same handler.
+            scheduleProfileSave(session.account, session.character, session.game, session.useLich)
+          }}
           onMyThemesChange={themes => { setMyThemes(themes); saveMyThemes(themes); scheduleProfileSave(session.account, session.character, session.game, session.useLich); scheduleSharedProfileSave() }}
           onClose={() => setShowThemePicker(false)}
         />

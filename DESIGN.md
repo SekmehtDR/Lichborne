@@ -2010,6 +2010,16 @@ Triggered by `Ctrl+Shift+Enter`. Dropdown lists all connected characters. Sends 
 
 **Lifecycle.** Closing a decoupled window gracefully **logs out** its character (like closing a tab); re-home is explicit via Window → "Move Character to Main Window" (auto-closes the emptied window). Closing the primary window quits the app (flushing every window's profile saves first).
 
+**Close confirmation (F99, v0.18.6).** A close that would log **2 or more** characters out asks first, naming them. Reported by Sekmeht: closing the primary with several characters up is one reflexive click away from losing position, roundtime and whatever was in progress across all of them.
+- **Counts CONNECTED sessions, not tabs** — a disconnected tab costs nothing to close and must not inflate the number (that was the reporting case). App scope spans **all windows**, because closing the primary kills decoupled windows' characters too; window scope counts only that window's own.
+- **Threshold is 2 on purpose.** Prompting at one character would prompt on essentially every quit, and a dialog people learn to click through protects nothing.
+- Lives in `win.on('close')`, so the X, Cmd+Q, File → Quit and taskbar close all inherit it — guarding only the X would be the version that drifts.
+- **The guard flag is set INSIDE the confirm callback, never before it.** `appClosing` (and `closingWindows` for secondaries) short-circuits re-entrant closes; setting it before a confirm the user then cancels would make every later close return early and **the app could never be quit again**. This is pitfall #114's rule extended: a handler that defers a lifecycle event owns completing it, *including* deciding not to.
+- **Update installs bypass it** (`quitAlreadyConfirmed`). `autoUpdater.quitAndInstall()` routes through `app.quit()` → the close handler, so without the bypass clicking "Install update" would raise a quit dialog the user already answered — and cancelling it would silently abandon the install with the update left staged.
+- **Rendering: themed modal with a native fallback.** The dialog is the canonical About chrome (UX #10) via `--modal-*` tokens, at z 10000 so the app's transient popovers (9999) can't paint over a dialog main is blocked on. Because main **waits on a renderer answer**, a dead renderer would otherwise make the app unquittable — so main requires an **ack** within `QUIT_CONFIRM_ACK_MS` and falls back to a native `dialog.showMessageBox` if it doesn't arrive. The timeout times the ACK, not the decision, so a slow human never stacks two dialogs. The ack is sent from the effect that *receives* the request, not from the modal — it is a liveness signal, not a paint signal. See pitfall #128 for the rest of the failure modes (reload-after-ack, same-document navigation, destroyed-window fallback).
+- The dialog is **async**, not `showMessageBoxSync`: main owns every session socket, so a blocking dialog would stall game processing for every character while it sat open.
+- Cancel is focused on mount, Esc cancels, and backdrop-click resolves to Cancel — every accidental input lands on the safe side.
+
 **Tab right-click menu (v0.11.6).** The character-tab context menu is the per-character action surface. It lists only the **actionable** options (no greyed rows): **Reconnect** (disconnected tab) XOR **Disconnect** (connected tab), **Open in New Window** (when the window holds >1 character), **Move to Main Window** (only in a decoupled/secondary window — `useRoster().isPrimary === false`). Close is intentionally omitted (the tab's × covers it). **Disconnect** calls `window.api.disconnect(sessionId)` directly rather than the `lichborne:session-action` bridge, because the bridge only reaches the *active* GameWindow and the menu must act on the right-clicked (possibly background) tab. **Reconnect** (App `handleReconnectTab`) destroys the dead session then re-runs the connect flow; because a GameWindow is keyed by `characterId` (not `sessionId`), it reconnects **in place** — the window stays mounted (scrollback preserved) and just receives the new `sessionId`. That makes resetting the GameWindow's `dropped`/`disconnecting` flags on the `sessionId` *prop change* (not on the racy `onConnectionStatus` 'Connected' event) load-bearing for the tab to refresh to "connected" — see CLAUDE.md pitfall #69. A per-tab spinning ⟳ ("Reconnecting…", `prefers-reduced-motion`-aware) is driven by an App-owned `reconnectingIds` set, since the launcher's connecting overlay isn't on screen for a tab reconnect.
 
 ### 13.10 Per-Character Memory
@@ -7974,7 +7984,7 @@ Every failure resolves to a status, never an exception: an unrecognized sign-in 
 - **Coin button in the AppBar** ([SimuCoinButton.tsx](src/renderer/components/SimuCoinButton.tsx)) — app-level, because an allotment belongs to an ACCOUNT, not a character (pitfall #57's converse: a per-session component must not own account state). **Quiet by default (UX standard #1): it renders NOTHING when no account is opted in or offerable** — no dead icon for players who don't use this.
 - **The coin is a drawn SVG object, and there is ONE artwork with two states.** A minted gold face (rim → radial face → bevel ring → struck "S" → static glint → a sweeping specular band). Colors are **baked, not theme vars** — it depicts an OBJECT, the same Principle #4 exception as the map tiles and the moons' lore colors. **Nothing to claim ⇒ the SAME artwork under `grayscale + brightness + opacity`**, never a second palette, so the gold and dull states can't drift; a claim then *brightens* the coin (400ms transition) instead of swapping an icon. Claimable adds full colour, a breathing glow, and the sweeping sheen; busy spins it. **Every animation is dropped under `:root[data-epilepsy-safe='true']` while the GOLD is kept** — the colour is the signal, the motion is decoration. Sized in `em` so it tracks the game font (never `rem`, pitfall #45), and its def ids are `useId`-namespaced (pitfall #95).
 - **Consent is per account, shown on the surface that enables it** (the AI-consent precedent): the disclosure names exactly what is sent (the saved account password, over HTTPS, to store.play.net), that nothing goes anywhere else, and that no store data is written to disk. **Nothing touches the network before that opt-in.** An account with no saved password is never offered (there's no other credential source).
-- **Config** ([simucoinConfig.ts](src/renderer/simucoinConfig.ts)): `{ consented, autoClaim }` per account, both default false → `SharedProfile.simucoin` → `_shared.yaml` (Principle #1). Optional field, non-breaking, **no migration**. Deliberately NOT a Transfer category (machine-local + credential-gated — the `ai`/`automationStats` precedent). Both the loader and `importSharedProfile` coerce each entry, so a hand-edited YAML can't yield a half-shaped record that reads as consented.
+- **Config** ([simucoinConfig.ts](src/renderer/simucoinConfig.ts)): `{ consented, autoClaim, lastBalance?, lastCheckedAt? }` per account, the two flags default false → `SharedProfile.simucoin` → `_shared.yaml` (Principle #1). Optional field, non-breaking, **no migration**. Deliberately NOT a Transfer category (machine-local + credential-gated — the `ai`/`automationStats` precedent). Both the loader and `importSharedProfile` coerce each entry, so a hand-edited YAML can't yield a half-shaped record that reads as consented.
 - **Slash surface** (Principle #11): `/simucoin` (bare = status) · `check` · `claim`, aliases `/sc`, `/simucoins`, plus a `NOUN_HELP` line. A **bare+verbs noun** — covered automatically by the registry-derived `NOUNS_WITH_VERBS`; its bare form takes no args, so the palette rule holds. Executors are synchronous while a run is a store round-trip, so they report only whether it **started**; results arrive as a toast + the popover.
 
 ### 42.6 Reporting an async result from a synchronous executor (B234)
@@ -7994,6 +8004,27 @@ The shape now, and the one to copy for any future async slash command:
 - **Only DR is claimed** (`game=DR`) — correct for a DragonRealms client; a GS player with a shared account would need a game selector.
 - **No persisted next-claim date** — main's cache is per-process, so a restart re-checks. Honest and simple ("checked once per launch"); persisting `nextAt` would let us skip launches, at the cost of hiding the icon if the estimate is ever wrong.
 - **Never run against the live store from this codebase** — the flow is verified pattern-level against the reference plugin, not end-to-end. First real-account run is a tester step (test plan).
+
+### 42.9 Last-known balance (F100, v0.18.6)
+
+The store balance was already scraped on every check and already carried on `SimuCoinStatus` (`balance`, `checkedAt`) — used for the claim toast, then discarded. F100 surfaces it. **No new network work**: same once-per-launch check, no polling, no extra sign-in.
+
+**Persistence.** Main's `lastStatus` is an in-memory `Map`, so a restart forgot everything and Settings read "Not checked yet" until the launch check finished. `lastBalance` / `lastCheckedAt` now ride the per-account config into `_shared.yaml` — already per-account, already app-wide, already excluded from Profile Transfer as machine-local credential-gated data. Optional fields, so old `_shared.yaml` loads unchanged and there is no migration. This partly answers §42.7's "no persisted next-claim date": the *balance* persists now, the next-claim date still doesn't.
+
+**Recorded at ONE choke point.** `App.runSimucoin` is where every route converges (startup pass, the coin's Check now, `/simucoin`), so `rememberBalance` is called there and no call site does its own bookkeeping.
+
+**Honesty rules — this is the §42.4 posture applied to a number:**
+- `rememberBalance` **no-ops on a failed check**, so an outage keeps the previous figure *and its real age* rather than blanking it or — worse — stamping a fresh timestamp onto a stale reading.
+- **The age is never optional.** A bare balance reads as "now". Every surface pairs it with a RELATIVE age ("checked 2 hours ago"), which answers "is this current?" directly where a clock time makes the reader do arithmetic. Same reasoning as the Moons footer always showing data age.
+- **Unknown renders nothing**, never a placeholder dash (UX #1).
+- **Revoking consent drops the cached balance** — data about an account the user just said to stop touching.
+
+**Two surfaces, one formatter.** `simucoinBalanceText` / `fmtCoins` / `fmtCheckedAgo` live in simucoinConfig.ts so Settings and the coin cannot drift — the B234 lesson that produced `simucoinRowText`.
+- **Settings** owns the per-account view: a second, quieter line under the state line. The state line is *what needs doing*; this is *what you have*. Two lines rather than one sentence because they answer different questions and a merged sentence is unscannable down a list of accounts.
+- **The coin popover** gets ONE aggregated line that never grows with the roster (pitfall #109 — a roster-sized popover is the B235 defect that forced this surface's rewrite). Only accounts with a KNOWN balance are summed; when that isn't all of them the line says "across 2 of 3 accounts" rather than passing a partial total off as complete. **The age quoted is the OLDEST reading in the sum** — the honest bound on how current a total is; quoting the newest would overstate it.
+- A cross-account total is a convenience, not a wallet — coins are not spendable as one pool. Settings' per-account figures are the unambiguous view.
+
+Both surfaces use `font-variant-numeric: tabular-nums` so a column of balances aligns and the figure doesn't reflow between checks.
 
 ### 42.8 Surface split — Settings owns setup, the coin owns the action (F75, v0.18.1)
 
@@ -8315,6 +8346,25 @@ viewport and a profile justifying it, not a guess. *Decomposing GameWindow* —
 ceiling, and the data coupling is narrow (four consumers of `lines`, one already
 a ref), but it drags the whole scroll state machine with it and belongs in its
 own changeset with its own pass against the pitfall #68 scenarios.
+
+### 45.9 Profile saves are the biggest remaining main-thread block — MEASURED, not acted on (v0.18.6)
+
+Surfaced while bug-checking v0.18.6 (which added two rare-path `scheduleProfileSave` callers, both negligible). The numbers are recorded here so the decision doesn't have to be re-derived; **no change was made** (Sekmeht's call — the save path is the one place a subtle mistake costs a tester their setup).
+
+**One save of a large character blocks MAIN for ~95ms.** Measured against real profiles with the shipped `js-yaml`:
+
+| Profile | Size | `yaml.load` (read) | `yaml.dump` (write) |
+|---|---|---|---|
+| Squabbles.yaml | 1,174 KB | 40.3 ms | 53.5 ms |
+| Agan.yaml | 589 KB | ~20 ms | 22.0 ms |
+
+Both run in MAIN ([profiles.ts](src/main/profiles.ts)), and main owns every session socket — so this is §45.2's highest-severity class: **every connected character stalls for that window**. On top of the parse/serialize, `exportCharacterProfile` read-merge-writes, so a save also ships the profile main→renderer and back — two ~1.2 MB structured clones (unmeasured).
+
+**The shape of the data explains it: 935 KB of Squabbles' 953 KB of state is `highlights` alone.** A settings toggle re-serializes an entire imported ruleset.
+
+**What this settles:** `saveCommandHistory` deliberately has **no** `scheduleProfileSave`, even though it shares the B266/B267 "localStorage is half a change" shape. It writes on every command, so wiring it up would mean a ~95 ms main-thread stall every 2.5 s during active play — a visible stutter on the same thread as the text pipeline. History reaching YAML therefore rides on other saves; that is a conscious trade, not an oversight.
+
+**Options if this is ever picked up, cheapest first:** (1) skip writes whose serialized payload is unchanged — needs to compare the exact payload, since a wrong comparison is silent data loss; (2) move the read-merge into main, dropping both IPC clones (doesn't reduce parse/dump — confirm the clone cost is material first); (3) split large collections into their own files so a settings change stops rewriting a 935 KB ruleset — the real fix, and a profile-shape migration under Principle #8, so its own release.
 
 ## 46. Prioritised Backlog — features & UX polish (snapshot 2026-07-30)
 

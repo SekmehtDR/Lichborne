@@ -1,55 +1,54 @@
-## v0.18.5 — A performance pass ⚡
+## v0.18.6 — A guard on the quit 🛑
 
-This one is mostly about speed. If the client had started feeling sluggish —
-during travel especially — this release is for you.
+A small, tester-driven release.
 
-### The map was slowing down the whole client
+### Closing with several characters up now asks first
 
-The headline fix started from a tester noticing something that sounds
-impossible: turning **Genie Map Animations** off made the *game text* flow
-better, not just the map.
+Closing the main window quits Lichborne and logs out everything — which is what
+it's meant to do, but it's also one stray click away from dropping several
+characters at once, losing position and roundtime along with them.
 
-It wasn't a coincidence. The map and the story window share one thread, and the
-way map animations were paused while you walked was making the browser
-re-evaluate the entire map — every room, every time you changed rooms. That work
-came straight out of the budget the text window needed.
+If **two or more** characters are connected, you now get a confirmation that
+**names them**, so you can see exactly what you're about to log out — including
+the alt you'd forgotten was still on.
 
-- **Walking is smoother**, on the map and in the story window both.
-- **You shouldn't need to turn map animations off any more.** If you turned them
-  off to cope, try turning them back on.
-- If you *did* turn them off, note the setting is **per character** — you'd have
-  had to turn it off on each one.
+- One character (or none) still closes straight away — no extra click for the
+  ordinary case.
+- Disconnected tabs don't count. Only characters actually logged in.
+- It covers every way of quitting: the ✕, Cmd/Ctrl+Q, File → Quit, and the
+  taskbar.
+- Cancel is the default, so a reflexive Enter or Esc never ends your session.
+- Closing a separate character window asks the same way, and reminds you that
+  **Window → Move Character to Main Window** keeps that character running.
 
-### Smoother mouse-wheel zoom
+Installing an update still quits without asking twice — you already said yes.
 
-Zooming the Genie map was choppy while dragging was fine. Spinning the wheel was
-asking for more redraws than the screen could actually draw, so they piled up.
-Zoom now redraws once per frame no matter how fast you spin it.
+### SimuCoins now show your balance
 
-### Lighter when you're not looking at it
+Lichborne already read your balance during every check and then threw it away,
+so the coin could only ever tell you whether something was claimable. Now it
+tells you what you have.
 
-Lichborne deliberately keeps running while minimized — it has to, so your map
-position, timers and game text stay current. But it was also still animating
-everything it draws: the map, the Moons sky, the Living Tableau, highlight text
-effects, for every character you had open. All of that now pauses while the
-window is minimized or hidden and resumes exactly where it left off. Nothing
-looks different while you can see it.
+- **Settings → SimuCoins** shows each account's balance and when it was last
+  checked, under its status.
+- **The coin popover** adds one line summarising the total across your accounts.
+  It stays the same size whether you have two accounts or twelve.
+- **It survives restarts** — previously the balance lived only in memory, so
+  reopening Lichborne showed "Not checked yet" until the next check finished.
+
+Every balance is shown with its age, always, so a figure from three days ago
+says so. If a check fails, the last known balance stays put with its real age
+rather than vanishing or pretending to be fresh. Nothing extra is sent to the
+store — this is the same once-per-launch check, just no longer discarding what
+it already learned.
 
 ### Fixes
 
-- **Copying a large selection now copies all of it.** Selecting text, scrolling
-  down to extend the selection, then releasing used to copy only the last part —
-  the rows you had scrolled past were gone by the time the copy happened. The
-  copy is now rebuilt from the text itself, so it survives any amount of
-  scrolling. If part of the selection has already scrolled out of the buffer
-  entirely, you get a notice rather than a silent partial copy.
-- **Browsing map levels stays where you put it.** Picking a z-level you are not
-  standing on no longer snaps back to your own level a moment later.
-- **A smaller download.** Developer debug files were being packaged into the
-  installer by mistake — about 6 MB of them.
-
-### Under the hood
-
-- Updated to Electron 43.2.0 (Chromium 150) and a handful of smaller libraries.
-- The character tab bar no longer redraws twice a second around the clock; it
-  now only does so while a roundtime is actually running.
+- **A theme you picked no longer reverts after restarting.** Choosing a theme
+  applied it immediately but never wrote it to your character's profile, so the
+  next launch quietly restored the old one. It only happened when the theme was
+  the *only* thing you changed that session, which is why it was so easy to
+  miss.
+- **A one-shot trigger no longer comes back armed.** A trigger set to fire once
+  disabled itself correctly, but the change wasn't saved to your profile — so
+  after a restart it was ready to fire a second time.

@@ -78,6 +78,9 @@ declare global {
       onUpdaterLog: (cb: (msg: string) => void) => () => void
       onMenuAction: (cb: (payload: { action: string }) => void) => () => void
       onWindowVisibility: (cb: (hidden: boolean) => void) => () => void
+      onQuitConfirmRequest: (cb: (req: { id: number; scope: 'app' | 'window'; names: string[] }) => void) => () => void
+      quitConfirmShown: (id: number) => void
+      quitConfirmRespond: (id: number, ok: boolean) => void
       openUrl: (url: string) => void
       getAppVersion: () => Promise<string>
       writeClipboard: (text: string) => void
