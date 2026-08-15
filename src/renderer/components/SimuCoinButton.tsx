@@ -46,11 +46,19 @@ function fmtUntil(at: number): string {
   return `${mins}m`
 }
 
-// A minted gold coin: rim → face → inner bevel → an "S" → a sweeping specular
-// highlight. Colors are BAKED (not theme vars) because this is a depicted
-// OBJECT, not chrome — the Principle #4 exception the map tiles and the moons'
-// lore colors already set. The DULL state is produced in CSS (grayscale +
-// dimming) rather than a second palette, so the two can never drift.
+// A struck COPPER/BRONZE coin: rim → face → inner bevel → an "S" → a sweeping
+// specular highlight. Colors are BAKED (not theme vars) because this is a
+// depicted OBJECT, not chrome — the Principle #4 exception the map tiles and the
+// moons' lore colors already set. The DULL state is produced in CSS (a light
+// desaturation) rather than a second palette, so the two can never drift.
+//
+// Copper rather than the original gold (Sekmeht, v0.19.0): gold's value sits
+// very close to a light theme's background and its desaturated form is close to
+// a dark one's, so it had no reliable separation at either end. Copper is a
+// mid-tone hue with warmth on both. The one thing NOT baked is the outer ring —
+// it is mixed from `--text-primary` in CSS, so the coin keeps a visible edge on
+// any theme. That split is standard #9a's rider: the depicted object keeps its
+// palette, the chrome around it comes from theme vars.
 //
 // Def ids are namespaced per instance via useId (pitfall #95): `url(#id)`
 // resolves against the FIRST match in the document, so a second mounted copy
@@ -62,16 +70,16 @@ function CoinFace({ uid }: { uid: string }) {
       <defs>
         {/* Face: light from the upper-left, deepening to a warm shadow. */}
         <radialGradient id={g('face')} cx="35%" cy="30%" r="78%">
-          <stop offset="0%"   stopColor="#fff3c4" />
-          <stop offset="38%"  stopColor="#f3ce62" />
-          <stop offset="72%"  stopColor="#d9a520" />
-          <stop offset="100%" stopColor="#9c6f10" />
+          <stop offset="0%"   stopColor="#ffe3c6" />
+          <stop offset="38%"  stopColor="#e4a165" />
+          <stop offset="72%"  stopColor="#bd6f38" />
+          <stop offset="100%" stopColor="#7d4318" />
         </radialGradient>
         {/* Rim: a bright top-left arc into a dark bottom-right for thickness. */}
         <linearGradient id={g('rim')} x1="15%" y1="0%" x2="85%" y2="100%">
-          <stop offset="0%"   stopColor="#ffe89a" />
-          <stop offset="45%"  stopColor="#c9920f" />
-          <stop offset="100%" stopColor="#7a5408" />
+          <stop offset="0%"   stopColor="#ffd2a3" />
+          <stop offset="45%"  stopColor="#ad6530" />
+          <stop offset="100%" stopColor="#663312" />
         </linearGradient>
         {/* The travelling sheen (animated in CSS; frozen when epilepsy-safe). */}
         <linearGradient id={g('sheen')} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -83,13 +91,16 @@ function CoinFace({ uid }: { uid: string }) {
       </defs>
 
       <circle cx="12" cy="12" r="11" fill={`url(#${g('rim')})`} />
+      {/* Theme-derived hairline so the coin separates from ANY app-bar
+          background — the one part of this artwork that is not baked. */}
+      <circle className="sc-coin-ring" cx="12" cy="12" r="11.3" />
       <circle cx="12" cy="12" r="9.1" fill={`url(#${g('face')})`} />
       {/* Inner bevel ring — reads as a struck edge. */}
-      <circle cx="12" cy="12" r="7.4" fill="none" stroke="#8a6209" strokeOpacity=".45" strokeWidth=".7" />
+      <circle cx="12" cy="12" r="7.4" fill="none" stroke="#5f3313" strokeOpacity=".45" strokeWidth=".7" />
       {/* Struck "S" for SimuCoin, with a light top edge so it looks embossed. */}
       <text className="sc-coin-mark" x="12" y="12" textAnchor="middle" dominantBaseline="central">S</text>
       {/* Static top-left glint. */}
-      <ellipse cx="8.6" cy="7.9" rx="3.1" ry="2.1" fill="#fffdf0" opacity=".5" transform="rotate(-32 8.6 7.9)" />
+      <ellipse cx="8.6" cy="7.9" rx="3.1" ry="2.1" fill="#fff2e4" opacity=".5" transform="rotate(-32 8.6 7.9)" />
       {/* Sweeping specular band, clipped to the coin. */}
       <g clipPath={`url(#${g('clip')})`}>
         <rect className="sc-coin-sheen" x="-16" y="-4" width="9" height="32" fill={`url(#${g('sheen')})`} transform="rotate(18 12 12)" />

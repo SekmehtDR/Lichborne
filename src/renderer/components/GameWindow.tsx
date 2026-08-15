@@ -62,8 +62,21 @@ import { scopedKey, GLOBAL_RULES_SCOPE, asGlobalRules } from '../characterScope'
 import { loadCommandHistory, saveCommandHistory, COMMAND_HISTORY_MAX } from '../commandHistory'
 import { loadCommandHistorySettings, saveCommandHistorySettings, shouldRememberCommand } from '../commandHistorySettings'
 import { useSessions, makeCharacterId } from '../SessionsContext'
+import { useRoster } from '../RosterContext'
+import { buildCharacterMenu } from '../characterMenu'
 import type { SessionInfo } from './LoginScreen'
 import { useTimers } from '../hooks/useTimers'
+// v0.19.0 Views (DESIGN §47) — this GameWindow renders its own Overview card
+// through a portal into the app-level grid.
+import { createPortal } from 'react-dom'
+import { useSessionStats } from '../hooks/useSessionStats'
+import { MAX_FEED_CAPACITY } from '../overviewLayout'
+import {
+  useOverviewOptions, getOverviewOptions, setOverviewOptions,
+  getViewMode, setViewMode, getDigests, digestFlags, type OverviewOptions,
+} from '../overviewStore'
+import { ATTENTION_DEFS } from '../attention'
+import OverviewCard from './overview/OverviewCard'
 import { useLichBridge } from '../hooks/useLichBridge'
 import { useProfileSaver } from '../hooks/useProfileSaver'
 import '../styles/game.css'
@@ -94,6 +107,23 @@ interface Props {
     // `statuses` instead would race React's state flush.
     run: (account: string, claim: boolean) => Promise<SimuCoinStatus | null>
   }
+  // ── Views (v0.19.0, DESIGN §47) ─────────────────────────────────────────
+  // In Overview mode this GameWindow renders its own dashboard card through a
+  // PORTAL into the app-level grid. A portal moves the child into a different
+  // DOM subtree while KEEPING React context, so the card escapes this
+  // `display:none` session shell (becoming visible) yet still reads this
+  // character's vitals/room/lines and its Highlights/Contacts providers — which
+  // is what makes the whole feature free of new data plumbing (pitfall #57).
+  viewMode?: 'session' | 'overview'
+  /** REF OBJECT, not an element — stable identity, so it never breaks a memo. */
+  overviewHost?: React.MutableRefObject<HTMLDivElement | null>
+  /** Tab position; breaks attention-sort ties so calm cards never reshuffle. */
+  overviewIndex?: number
+  /** Click-through from the card: select this character and return to Session. */
+  onOpenInSession?: () => void
+  /** Card actions, mirroring the character tab's right-click menu. */
+  onCloseCharacter?: (characterId: string) => void
+  onReconnectCharacter?: (characterId: string) => void
 }
 
 // Per-contact word-boundary matchers for the presence tracker. Cached by
@@ -296,6 +326,18 @@ const MAX_LINES       = 2000
 // peak (B152's "cap bounds total DOM" still holds).
 const TRIM_CHUNK      = 400
 const MAX_STREAM_LINES = 500
+// Views (v0.19.0): the Overview's monitored-stream mirror. Far smaller than a
+// stream panel's buffer on purpose — a card shows the last screenful, so anything
+// beyond that is memory held per character for nobody to read. Kept at the card's
+// own ceiling (`MAX_FEED_CAPACITY`): any lower and a stream that reaches the card
+// through this capture would silently show FEWER lines than one that routes
+// normally, on the same size tile.
+const MAX_MONITOR_LINES = MAX_FEED_CAPACITY
+// Stable identity for "this stream has no buffer" — a fresh `[]` per render would
+// invalidate the card's memo on every game line (pitfall #82c).
+const EMPTY_LINES: TextLine[] = []
+// Stable no-op for the card menu when no reconnect handler was supplied.
+const NOOP_CHARACTER_ACTION = () => {}
 // v0.8.2: bumped from 500 → 2000. Debug collection is gated on the panel
 // being open (showDebugRef), so the cost is zero unless the user is
 // actively debugging. 2000 gives ~4× more history for diagnosing trigger
@@ -514,9 +556,19 @@ const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, aimExpir
   </>)
 })
 
-export default function GameWindow({ session, onDisconnect, isActive = true, simucoin }: Props) {
+export default function GameWindow({
+  session, onDisconnect, isActive = true, simucoin,
+  viewMode = 'session', overviewHost, overviewIndex = 0, onOpenInSession,
+  onCloseCharacter, onReconnectCharacter,
+}: Props) {
   const isActiveRef = useRef(isActive)
   useEffect(() => { isActiveRef.current = isActive }, [isActive])
+  // v0.19.0 Views. `isActive` is deliberately NOT touched by the view flip — the
+  // active character must keep owning applySettingsToDOM/applyTheme so a theme
+  // change made from the Overview still lands on the document.
+  const overviewOpen = viewMode === 'overview'
+  const overviewOpenRef = useRef(overviewOpen)
+  useEffect(() => { overviewOpenRef.current = overviewOpen }, [overviewOpen])
   // Latest-closure mirror (the pitfall-#31 pattern) so the SlashContext built
   // inside runSlashLine always sees the current app-level SimuCoin state.
   const simucoinRef = useRef(simucoin)
@@ -541,7 +593,8 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     // — the bug where a reconnected tab stayed greyed (and the Lich bridge,
     // gated on !dropped, stayed off) until a remount. Guard on an actual change
     // so the initial mount (already not dropped) is a no-op.
-    if (sessionIdRef.current !== session.sessionId) {
+    const swapped = sessionIdRef.current !== session.sessionId
+    if (swapped) {
       setDropped(false)
       setDisconnecting(false)
       // Reset transient sky-sync / weather-capture flags on a reconnect-in-place
@@ -551,14 +604,32 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       // The persistent weather/calendar STATE is intentionally kept (same char).
       silentSyncRef.current = { time: false, weather: false, at: 0 }
       awaitingWeatherRef.current = false
+      // Claim the new session's held login text. Main holds live delivery on
+      // every connect until a window asks for it (see the LOGIN handler), and
+      // the usual claim is the MOUNT-time request below — but a reconnect swaps
+      // the sessionId WITHOUT remounting (pitfall #69), so that request never
+      // fires again and the hold would sit until the 5s net expired, blanking
+      // the tab for those seconds. Requesting on the CHANGE closes it — but
+      // AFTER the ref update below, never before: the `onGameEvent` subscriber
+      // filters on `sessionIdRef.current`, so asking first would leave a window
+      // (however small) in which the reply is filtered out against the stale id.
+      // The IPC round trip makes that practically impossible, but ordering it
+      // correctly costs nothing and removes the question.
     }
     sessionIdRef.current = session.sessionId
+    if (swapped) window.api.requestReplay(session.sessionId)
   }, [session.sessionId])
 
   // Push status snapshots into the SessionsContext so the character tab bar
   // can render health %, RT/bleeding/dead glyphs, and the disconnected dim
   // state for this tab. Bails out fast when nothing has actually changed.
-  const { updateStatus, updateCharacterName } = useSessions()
+  // `sessions` and `isPrimary` are APP-level facts (how many characters this
+  // window owns, and whether it is the primary one) — both providers sit above
+  // AppShell, so reading them here is not the pitfall-#57 trap of reaching into
+  // per-session state from app chrome; it is the reverse and perfectly legal.
+  // They gate the card menu's window-move entries exactly as they gate the tab's.
+  const { updateStatus, updateCharacterName, sessions: allSessions } = useSessions()
+  const { isPrimary } = useRoster()
   const characterId = useMemo(
     () => makeCharacterId(session.account, session.character, session.game),
     [session.account, session.character, session.game],
@@ -699,7 +770,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   const handleSearchClose = useCallback(() => {
     setSearchOpen(false)
     setSearchHitId(null)
-    inputRef.current?.focus()
+    focusCommandInput()
   }, [])
   // Slash-command palette (DESIGN §37) — shown while the input holds a '/'
   // line; Esc dismisses it until the input CHANGES (any edit reopens it, the
@@ -1288,6 +1359,18 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   const allHighlights = useMemo(() => [...highlights, ...globalHighlights], [highlights, globalHighlights])
   const { matchRules, lineRules } = useCompiledHighlights(allHighlights, activeGroupStates)
 
+  // Views: the rule bundle the Overview card renders text with — deliberately
+  // the SAME references the main window uses, so a card looks like the game
+  // window and the memoized TextLineRows in it run the ruleset once per new line
+  // rather than per frame. `renderContacts` (not `contacts`) is load-bearing:
+  // the volatile array is rewritten by presence tracking on every room change,
+  // which would re-highlight every visible line, for every character, per move
+  // (pitfall #105).
+  const overviewRules = useMemo(
+    () => ({ matchRules, lineRules, contacts: renderContacts, templates: activeContactTemplates, nameRegex }),
+    [matchRules, lineRules, renderContacts, activeContactTemplates, nameRegex],
+  )
+
   // v0.8.3: One-time seed of Stormfront/Wrayth repeat-command macros so
   // the convention works out of the box on a fresh character. Skipped if
   // an existing macro already binds the key — never silently overrides
@@ -1436,6 +1519,144 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   const [discoveredStreams, setDiscoveredStreams] = useState<string[]>([AI_STREAM])
   const [streamTitles, setStreamTitles]           = useState<Record<string, string>>({})
   const [injuryState, setInjuryState]             = useState<InjuryState>({})
+
+  // ── Views: per-session accumulators (v0.19.0, DESIGN §47) ─────────────────
+  // Placed here so every input above is in scope. The counters run ALWAYS, even
+  // in Session view — one `+=` per event batch is free at main's 16ms coalesced
+  // flush rate, and it means opening the Overview shows real numbers instead of
+  // every counter starting at zero. The RENDER is what's gated, not the counting.
+  const overviewOptions = useOverviewOptions()
+
+  // Which stream this character's Overview card is showing (Sekmeht). PER
+  // CHARACTER, not app-wide: the whole point is that a crafter can sit on `main`
+  // while a character in a social spot watches `conversation`. Rides the
+  // scopedKey → `state:` → YAML pipeline like every other per-character setting
+  // (Principle #1), so it needs no profile-shape change.
+  const [overviewStream, setOverviewStream] = useState<string>(() =>
+    loadStr(scopedKey(session.character, 'overviewStream'), 'main'))
+  useEffect(() => {
+    localStorage.setItem(scopedKey(session.character, 'overviewStream'), overviewStream)
+    saveProfile()
+  }, [session.character, overviewStream, saveProfile])
+
+  // Ref because the capture happens inside the mount-once event effect (`[]`
+  // deps), which would otherwise close over the first value forever (#31).
+  const monitorStreamRef = useRef(overviewStream)
+  monitorStreamRef.current = overviewStream
+  // Same latest-closure mirror for the SlashContext, which is built inside a
+  // memo that would otherwise capture the first value (pitfall #31).
+  const overviewStreamRef = monitorStreamRef
+  const [monitorLines, setMonitorLines] = useState<TextLine[]>([])
+  // Per-character action menu for this character's Overview card — the SAME
+  // items the character tab's right-click menu builds (characterMenu.ts).
+  const [cardMenu, setCardMenu] = useState<{ x: number; y: number } | null>(null)
+  // Leaving the Overview must take the menu with it — otherwise it floats over
+  // Session view, orphaned from the card that opened it. Practically hard to
+  // reach (the menu closes on any outside mousedown) but cheap to make impossible.
+  useEffect(() => { if (!overviewOpen) setCardMenu(null) }, [overviewOpen])
+  // Switching streams must not leave the previous one's text on screen.
+  useEffect(() => { setMonitorLines([]) }, [overviewStream, session.sessionId])
+
+  // The stream's OWN buffer — the same one its panel renders. This is what makes
+  // a card show history instead of starting blank at the moment you select a
+  // stream: `streamLines` already holds everything that routed there this
+  // session, so the card and the panel agree by construction.
+  //
+  // It does not replace the capture above, it complements it: a stream that is
+  // UNWATCHED and has a `STREAM_FALLBACK` entry is redirected into main and
+  // never reaches `streamLines` at all. Neither source is sufficient alone.
+  const overviewStreamLines = useMemo(
+    () => (overviewStream === 'main' ? EMPTY_LINES : (streamLines[overviewStream] ?? EMPTY_LINES)),
+    [overviewStream, streamLines],
+  )
+
+  // What the card's dropdown offers, for THIS character: the game window, every
+  // narrative panel type, and anything this character's scripts have actually
+  // pushed. State readouts (`exp`, `inv`, active spells…) are excluded — those
+  // clear and rewrite themselves wholesale, so a feed of one shows a flickering
+  // half-written table rather than events (the CATCHUP_SKIP_STREAMS reasoning).
+  const overviewStreamChoices = useMemo(() => {
+    // The line is "could this EVER render game text", not "would I choose it".
+    // Sekmeht's rule: this list should match what that character's panel `+`
+    // menu offers, because each character has a different stream setup — so the
+    // only exclusions are entries that are not text streams at all and could
+    // only ever show "nothing yet": `map` is graphical, `lichScripts` is driven
+    // by the `;listall` poll, `injuries` is built from `injury-update` events,
+    // `room` is structured sub-streams, and raw/debug are diagnostics.
+    //
+    // State readouts that ARE streams (`spells`, `inv`) are offered: they clear
+    // and rewrite wholesale, so they read as a live table rather than a feed, but
+    // that renders correctly now (the clear empties the card's capture too) and
+    // whether a glance at your active spells is worth a card is the user's call.
+    //
+    // The authority for which is which is `renderPanel` in PanelFrame: a case
+    // that returns `sp(id, streamLines[id])` is a stream; one that returns a
+    // component fed from state (`ExpPanel skills={expSkills}`, `InjuriesPanel
+    // parts={injuryState}`) is not. `exp` looks like a stream and is NOT one —
+    // it is built from `exp-component` EVENTS, so offering it would have handed
+    // the user a feed that can only ever say "nothing yet".
+    const skip = new Set([
+      'main', 'raw', 'debug', 'room',
+      'map', 'lichscripts', 'injuries', 'exp',
+    ])
+    const ids: string[] = []
+    // Lowercase for the COMPARISON only — the id pushed is the original, because
+    // stream ids preserve case end-to-end (Principle #5). `ALL_PANEL_TYPES`
+    // carries camelCase entries (`lichScripts`), so comparing them raw against a
+    // lowercase set silently matches nothing.
+    for (const t of ALL_PANEL_TYPES) if (!skip.has(t.toLowerCase()) && !t.startsWith('room')) ids.push(t)
+    // Normalize discovered ids through the alias table before listing them, or
+    // an alias arrives as its own entry beside the canonical one — two rows
+    // pointing at the same feed (`whispers` next to `conversation`).
+    for (const raw of discoveredStreams) {
+      const d = normalizeStreamId(raw)
+      if (!skip.has(d.toLowerCase()) && !ids.includes(d)) ids.push(d)
+    }
+    // Whatever is selected must always be listed, even if nothing has arrived on
+    // it this session — otherwise the select silently falls back to its first
+    // option and the user's saved choice is lost the moment they open the view.
+    if (overviewStream !== 'main' && !ids.includes(overviewStream)) ids.push(overviewStream)
+    // Label the SAME way the panel system does, or the two surfaces disagree
+    // about the same stream. `conversation` was the case that surfaced it: DR
+    // declares it with `title='Talk'`, so labelling from the game title showed
+    // "Talk" here while the panel + menu showed "Conversation" — and it read as
+    // a MISSING stream rather than a renamed one (Sekmeht). A builtin panel type
+    // takes PANEL_LABELS; anything discovered keeps the game's own title.
+    const label = (id: string) =>
+      (PANEL_LABELS as Record<string, string | undefined>)[id] ?? streamLabel(id, streamTitles[id])
+    return [
+      { id: 'main', label: 'Game window' },
+      // Sorted by the LABEL that is actually shown. Sorting by id put
+      // "Conversation" between Combat and Deaths — alphabetical by a string the
+      // user cannot see, which just looks broken.
+      ...ids.map(id => ({ id, label: label(id) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    ]
+  }, [discoveredStreams, streamTitles, overviewStream])
+  // `spoken-to` rides sceneSpeech, which the §35.6 gate leaves EMPTY unless an
+  // Experience is open — so it is an explicit opt-in that extends that gate
+  // (see the sceneActiveToggle effect), and reads 0 while it is off.
+  const spokenToAt = useMemo(() => {
+    if (!overviewOptions.watchSpeech) return 0
+    let latest = 0
+    for (const s of sceneSpeech) if (s.toYou && s.ts > latest) latest = s.ts
+    return latest
+  }, [overviewOptions.watchSpeech, sceneSpeech])
+
+  const overviewStats = useSessionStats({
+    characterId, character: session.character, game: session.game,
+    sessionId: session.sessionId, connected: !dropped,
+    vitals, indicators, rtExpires, ctExpires, expSkills,
+    roomTitle: roomState.title, roomId: roomState.roomId,
+    spokenToAt, thresholds: overviewOptions, alertPulse: overviewOptions.alertPulse,
+  })
+  // Latest-closure mirror (the pitfall-#31 pattern). The game-event effect is
+  // mounted ONCE (`[]` deps), so it would capture this render's object forever.
+  // That happens to be safe today because the two taps are stable useCallbacks —
+  // but "safe by coincidence" is how a later edit that reads a COUNTER in there
+  // gets a permanently stale value with nothing to warn it.
+  const overviewStatsRef = useRef(overviewStats)
+  overviewStatsRef.current = overviewStats
 
   // ── Trigger engine ────────────────────────────────────────────────────────
 
@@ -1859,6 +2080,17 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   })
   const newLineCountRef  = useRef(0)
   const inputRef         = useRef<HTMLInputElement>(null)
+  // The ONE way to focus the command bar. Every programmatic focus goes through
+  // it so the Overview guard cannot be forgotten at a new call site: the
+  // overlay leaves this input laid out and focusable underneath it (deliberate
+  // — the scrollback stays measured), so focusing it while the dashboard is up
+  // puts the caret somewhere the user cannot see, and Enter still sends. Reads
+  // the ref rather than `overviewOpen` so mount-time and rAF-deferred callers
+  // see the live value instead of a captured one (pitfall #31).
+  const focusCommandInput = useCallback(() => {
+    if (overviewOpenRef.current) return
+    inputRef.current?.focus()
+  }, [])
   const panelColumnRef   = useRef<HTMLDivElement>(null)
   const panelWidthRef    = useRef(panelWidth)
   const topHeightRef     = useRef(topPanelHeight)
@@ -1914,7 +2146,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // ── On mount: focus command input + wire auto-copy on text selection ───────
 
   useEffect(() => {
-    inputRef.current?.focus()
+    // v0.19.0 Views: NOT while the Overview covers us. A character connecting
+    // (or being moved into this window) while the dashboard is up mounts a
+    // fresh GameWindow, and focusing its command bar would park the caret in a
+    // field the overlay hides — everything typed after that goes into an
+    // invisible input and Enter sends it to the game. Same failure mode as the
+    // Quick Send bug this release fixes, reached from the other end.
+    focusCommandInput()
 
     // Where the drag STARTED, captured while that row is still mounted.
     //
@@ -2236,9 +2474,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // deps re-arms the gate after a reconnect-in-place (pitfall #69 — same
   // GameWindow, fresh session). On activation main backfills the current
   // cast, so the Tableau paints instantly.
+  // v0.19.0: the gate now has TWO owners. The Overview's `spoken-to` attention
+  // flag rides sceneSpeech, so turning that option on extends scene capture the
+  // same way an open Experience does — which is exactly why it defaults OFF and
+  // its `/view set speech=on` hint says what it costs (it applies to every open
+  // character at once, not just this one).
+  const sceneNeeded = expAnyOpen || (overviewOpen && overviewOptions.watchSpeech)
   useEffect(() => {
-    window.api.sceneActiveToggle(session.sessionId, expAnyOpen)
-  }, [expAnyOpen, session.sessionId])
+    window.api.sceneActiveToggle(session.sessionId, sceneNeeded)
+  }, [sceneNeeded, session.sessionId])
   // Seed on mount if the user persisted free mode but has no windows yet.
   useEffect(() => {
     if (layoutMode === 'free' && !freeInitRef.current && freeWindows.length === 0) {
@@ -2289,6 +2533,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       const events: GameEvent[] = batch.events
       const newMain: TextLine[] = []
       const newStream: Record<string, TextLine[]> = {}
+      // Views: parallel capture of the Overview's monitored stream (see the
+      // routing site below for why it cannot be derived from the other two).
+      const newMonitor: TextLine[] = []
+      // Set when this batch carried a clear for that stream, so the commit
+      // REPLACES rather than appends — the same interleaved semantics B175
+      // established for `newStream`.
+      let batchMonitorCleared = false
       const clearedStreams = new Set<string>()
       const roomUpdates: Partial<RoomState> = {}
       const expUpdates: Record<string, string> = {}
@@ -2468,14 +2719,30 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
                 if (ent) assessAccumRef.current.push(ent)
                 batchAssessTouched = true
               }
+              // Views (v0.19.0): mirror the stream this character's card is
+              // showing into its own buffer, IN ADDITION to normal routing
+              // (which is untouched — the main window must behave identically).
+              //
+              // Reading `streamLines` instead would be wrong in both directions:
+              // a WATCHED stream never reaches main, and an UNWATCHED one with a
+              // fallback is redirected INTO main and so never reaches
+              // `streamLines` either. Either way a card would be blind to
+              // exactly the conversation it exists to surface — and blind
+              // precisely for the users with the best panel layouts.
+              // ONE `mkLine()`, shared. It mints a fresh id per call, so calling
+              // it separately for the mirror produced two objects with different
+              // ids for the SAME line — which the card cannot then dedupe when it
+              // merges the stream's own buffer with this capture.
+              const line = mkLine()
+              if (stream === monitorStreamRef.current) newMonitor.push(line)
               const target = !watchedStreamsRef.current.has(stream) && STREAM_FALLBACK[stream]
                 ? STREAM_FALLBACK[stream]
                 : stream
               if (target === 'main') {
-                if (!isExpReadout(segments)) newMain.push(mkLine())
+                if (!isExpReadout(segments)) newMain.push(line)
               } else {
                 if (!newStream[target]) newStream[target] = []
-                newStream[target].push(mkLine())
+                newStream[target].push(line)
               }
               // Use original stream name for trigger matching (not the fallback target)
               processLineRef.current(stream, lineText)
@@ -2574,6 +2841,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
             expUpdates[evt.skill] = evt.text
             if (evt.rankUp) {
               const skill = evt.skill
+              // Views (v0.19.0): `rankUp` is the SERVER'S OWN rank-gain signal
+              // (the <b> wrap), so "ranks this session" is exact and costs one
+              // Map increment — no client-side rank diffing, no log reading.
+              // Gated on replayingRef (pitfall #60a): main's state snapshot keeps
+              // the LATEST exp-component per skill, so if that one happened to
+              // carry rankUp, a window handoff would count the same rank twice.
+              if (!replayingRef.current) overviewStatsRef.current.noteRank(skill)
               const existing = rankUpTimersRef.current.get(skill)
               if (existing) clearTimeout(existing)
               setRankUpSkills(prev => new Set([...prev, skill]))
@@ -2607,6 +2881,15 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
               // Dropping the pre-clear lines preserves the interleaved
               // semantics: only lines after the LAST clear survive the batch.
               if (newStream[evt.stream]) newStream[evt.stream] = []
+              // Views: the Overview's parallel capture needs the SAME treatment.
+              // Without it a card monitoring a clear-and-rewrite stream (assess,
+              // a status readout a Lich script repaints) keeps every old cycle
+              // forever: `streamLines` is emptied by the clear, but the capture
+              // is not — and the card MERGES the two, so the clear is undone.
+              if (evt.stream === monitorStreamRef.current) {
+                newMonitor.length = 0
+                batchMonitorCleared = true
+              }
             }
             break
           case 'injury-update':
@@ -2843,7 +3126,29 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         lastMainLineRef.current = prev
       }
 
+      // Views: commit the monitored-stream mirror. Capped hard — this is a
+      // glance lane on a card, never a scrollback — and skipped entirely during
+      // a replay like every other side effect (pitfall #60a).
+      if ((newMonitor.length > 0 || batchMonitorCleared) && !replayingRef.current) {
+        setMonitorLines(prev => {
+          const base = batchMonitorCleared ? [] : prev
+          const next = base.length > 0 ? [...base, ...newMonitor] : newMonitor
+          return next.length > MAX_MONITOR_LINES ? next.slice(-MAX_MONITOR_LINES) : next
+        })
+      }
+
       if (newMain.length > 0) {
+        // Views (v0.19.0): O(1) activity tap — one timestamp + one increment per
+        // BATCH (already coalesced to ~one per frame by main's 16ms flush), which
+        // is what lets the Overview show a real idle time and lines/min without
+        // any per-line work.
+        //
+        // GATED ON replayingRef like every other side effect (pitfall #60a):
+        // these are COUNTERS, and a replay re-delivers up to 600 buffered events
+        // when a window takes over a session. Ungated, a decouple would reset the
+        // character's idle time to zero and spike its lines/min with history it
+        // had already counted once.
+        if (!replayingRef.current) overviewStatsRef.current.noteInbound(newMain.length)
         if (pinnedRef.current) {
           // Arm suppress BEFORE setLines — Virtuoso's useLayoutEffect (child) fires
           // before ours, so the scroll event from followOutput would un-pin us unless
@@ -3059,7 +3364,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       if (showDebugRef.current) setRawXmlLines([...rawXmlBufRef.current])
     })
 
-    inputRef.current?.focus()
+    focusCommandInput()
 
     // Multi-window (v0.11.0): ask main to replay this session's recent history
     // now that our event listener is live, so a decoupled / re-homed / remounted
@@ -3168,7 +3473,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     // (deps []), when `lines` is still empty — a `lines.length` here is
     // permanently stale and the scroll silently no-ops (why End "did nothing").
     stickToBottom(true)
-    inputRef.current?.focus()
+    focusCommandInput()
   }
 
   // B122/B153: font / line-height / large-print changes reshape every row AND
@@ -3233,6 +3538,14 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       // Multi-character: every mounted GameWindow attaches this listener but
       // only the active tab should respond. Inactive tabs ignore all keyboard.
       if (!isActiveRef.current) return
+
+      // v0.19.0 Views: the Overview is a read-only dashboard covering the game
+      // area. The command bar and main text are still in the DOM underneath, so
+      // WITHOUT this guard a printable key would focus an invisible input (F60
+      // type-anywhere) and a macro key would fire a command at a character
+      // nobody is looking at. One early return rather than a per-chord check,
+      // for the same reason `anyModalOpenRef` is one guard.
+      if (overviewOpenRef.current) return
 
       // F49 (v0.15.2): Ctrl+F opens the in-scrollback search (Electron has no
       // native find, so the chord is free). Works while the command input is
@@ -3351,6 +3664,13 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
               requestAnimationFrame(() => {
                 const inp = inputRef.current
                 if (!inp) return
+                // v0.19.0: an alias carrying a cursor marker can now arrive from
+                // the Overview's bar or Quick Send (both route through
+                // dispatchUserText -> sendCommandSequence). The text is staged in
+                // the bar either way; only the FOCUS is withheld while the
+                // Overview covers it, so we never hand the caret to a field the
+                // user cannot see.
+                if (overviewOpenRef.current) return
                 inp.focus()
                 inp.setSelectionRange(caretPos, caretPos)
               })
@@ -3402,7 +3722,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         const ae = document.activeElement
         const inEditable = ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement ||
           ae instanceof HTMLSelectElement || (ae instanceof HTMLElement && ae.isContentEditable)
-        if (!inEditable) inputRef.current?.focus()
+        if (!inEditable) focusCommandInput()
       }
     }
     document.addEventListener('keydown', onKeyDown)
@@ -4073,6 +4393,47 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
         scheduleSharedProfileSave()
       },
       toggleMainTimestamps: () => toggleStreamTimestamp('main'),
+      // ── Views (v0.19.0, DESIGN §47) ─────────────────────────────────────
+      // Thin delegations to the app-level store, so `/view` and the app-bar
+      // toggle drive exactly the same state. Options are app-wide, so a write
+      // pairs with a shared-profile flush (the F82 shape directly above).
+      getOverviewStream: () => overviewStreamRef.current,
+      // Normalized so `/view stream talk` selects the canonical `conversation`
+      // feed. Without it the stored id would never match what the parser emits,
+      // and the card would sit empty forever with no clue why.
+      setOverviewStream: (id: string) => setOverviewStream(id ? normalizeStreamId(id) : 'main'),
+      getViewMode: () => getViewMode(),
+      setViewMode: (m) => setViewMode(m),
+      getOverviewOptions: () => getOverviewOptions() as unknown as Record<string, unknown>,
+      setOverviewOptions: (patch) => {
+        setOverviewOptions(patch as Partial<OverviewOptions>)
+        scheduleSharedProfileSave()
+      },
+      // Reads the store's digests — the SAME reduction the summary strip and the
+      // app-bar badge use, so the text path can't report something different
+      // from what the grid shows. Worst-first.
+      getOverviewSummary: () => {
+        const now = Date.now()
+        const opts = getOverviewOptions()
+        return [...getDigests()]
+          .sort((a, b) => b.score - a.score)
+          .map(d => {
+            const flags = digestFlags(d)
+            // `idle` is derived, never pushed (an idle character stops
+            // re-rendering), so the text path has to derive it the same way the
+            // cards and the summary strip do — otherwise `/view status` quietly
+            // disagrees with the grid it is meant to mirror.
+            const isIdle = d.connected && d.lastInboundAt > 0
+              && now - d.lastInboundAt > opts.idleSeconds * 1000
+            if (isIdle && !flags.includes('idle')) flags.push('idle')
+            return {
+              character: d.character,
+              connected: d.connected,
+              healthPct: d.healthPct,
+              flags: flags.map(f => ATTENTION_DEFS[f]?.label ?? f),
+            }
+          })
+      },
       // Phase 2 `edit` verbs — open the Automations panel with the rule selected.
       openRuleEditor: (tab, ruleId) => {
         setAutomationsTab(tab)
@@ -4286,8 +4647,16 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
     // runs the full alias/echo/send/log tail independently, so aliases expand
     // per command. History (pushed above) keeps the raw typed line — ↑
     // recalls `n;n;e` whole, and {RepeatLast} replays it through this same
-    // split. QuickSend deliberately does NOT split (it targets OTHER
-    // characters' sessions — same reasoning as its '/' exclusion, §37.4).
+    // split.
+    //
+    // v0.19.0 REVERSAL: Quick Send and the Overview's input bar now arrive HERE
+    // (via the SEND_USER_TEXT → USER_TEXT hop), so they split and intercept `/`
+    // like anything typed. They previously wrote straight to the socket and did
+    // neither — which is why a Quick Send `wave` arrived invisibly and a
+    // `/command` was forwarded to DragonRealms as literal text. Sekmeht's call:
+    // a command sent at a character should look and behave exactly as if typed
+    // in that character's own bar. The old §37.4 note that Quick Send does not
+    // interpret `/` no longer holds.
     const activeAliases = aliasesRef.current.filter(r => isRuleActive(r.groupIds ?? [], activeGroupStatesRef.current, r.allGroups ?? false))
     for (const part of splitTypedCommands(text)) {
       const resolved = resolveAlias(part, activeAliases, buildMacroVars())
@@ -4323,6 +4692,32 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
   // the same alias/echo/log machinery as a fresh user-typed command.
   const dispatchUserTextRef = useRef(dispatchUserText)
   useEffect(() => { dispatchUserTextRef.current = dispatchUserText })
+
+  // Text typed AT this character from elsewhere — the Overview's input bar, or
+  // Quick Send (v0.19.0). Main routes it to the OWNING window, so this fires in
+  // whichever window actually renders the character; the id check then picks the
+  // right GameWindow within it.
+  //
+  // `sessionIdRef`, not a captured `session.sessionId`: a tab Reconnect swaps the
+  // id WITHOUT remounting (pitfall #86), and this listener is mounted once.
+  //
+  // Routed through `dispatchUserText` rather than a raw socket write, which is
+  // the whole point. That gives it everything typing gives: the `>cmd` echo (its
+  // absence is what made a Quick Send "wave" arrive invisibly — you saw only the
+  // game's reply), alias resolution, `;` splitting, command history, the session
+  // log, and — critically — the slash-command intercept, so a `/command` sent
+  // this way is handled by Lichborne instead of being forwarded to DragonRealms
+  // as literal text.
+  //
+  // `clearInput: false`: the sender owns its own field; this must never reach
+  // into this character's command bar and wipe a half-typed line.
+  useEffect(() => {
+    const off = window.api.onUserText(p => {
+      if (p.sessionId !== sessionIdRef.current) return
+      dispatchUserTextRef.current?.(p.text, { pushToHistory: true, clearInput: false })
+    })
+    return () => off?.()
+  }, [])
 
   function handleCommandKey(e: React.KeyboardEvent<HTMLInputElement>) {
     // Slash palette first (DESIGN §37.3): while it's open, ↑/↓ move its
@@ -4955,7 +5350,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
           <div className="text-area">
             <div className="text-window"
               onWheel={e => { if (e.deltaY < 0) { pinnedRef.current = false; unpinAtRef.current = Date.now() } }}
-              onClick={() => inputRef.current?.focus()}
+              onClick={() => focusCommandInput()}
               onContextMenu={e => {
                 e.preventDefault()
                 const word = getWordAtPoint(e.clientX, e.clientY)
@@ -5142,7 +5537,9 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
       >&gt;</button>
       <div className="cmd-input-wrap">
         <TimerDisplay rtExpires={rtExpires} ctExpires={ctExpires} aimExpires={aimExpires} timerStyle={settings.timerStyle} />
-        <input ref={inputRef} type="text" autoFocus value={command}
+        {/* autoFocus is a MOUNT-time DOM attribute, so it cannot go through
+            focusCommandInput — gate it on the same condition instead. */}
+        <input ref={inputRef} type="text" autoFocus={!overviewOpen} value={command}
           onChange={e => { historyIdxRef.current = -1; setSlashDismissed(false); setCommand(e.target.value) }}
           onKeyDown={handleCommandKey} className="command-input" autoComplete="off" spellCheck={false}
           placeholder={showCmdHint ? 'Type a game command — or / for Lichborne client commands' : undefined} />
@@ -5169,7 +5566,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
                     ...(bottomAdded ? bottomTabs : []),
                   ].map(t => t.id),
             }}
-            onComplete={text => { setCommand(text); inputRef.current?.focus() }}
+            onComplete={text => { setCommand(text); focusCommandInput() }}
             onDismiss={() => setSlashDismissed(true)}
           />
         )}
@@ -5349,6 +5746,74 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
           onInstancesChange={setExperiences}
           renderContent={renderExperience}
           locked={layoutMode === 'free' && freeLayoutLocked}
+        />
+      )}
+
+      {/* ── Views: this character's Overview card (v0.19.0, DESIGN §47) ──────
+          Portalled OUT of this `display:none` session shell into the app-level
+          grid, but still inside the Highlights/Contacts providers above, so the
+          card reads this character's live state with no plumbing. Not rendered
+          at all in Session view — the feature's perf gate is its own absence,
+          the §35.6 principle without needing main's help. */}
+      {overviewOpen && overviewHost?.current && createPortal(
+        <OverviewCard
+          characterId={characterId}
+          character={session.character}
+          game={session.game}
+          useLich={session.useLich}
+          connected={!dropped}
+          isActive={isActive}
+          index={overviewIndex}
+          settings={settings}
+          options={overviewOptions}
+          vitals={vitals}
+          vitalLabels={vitalLabels}
+          indicators={indicators}
+          stance={stance}
+          spell={spell}
+          rightHand={rightHand}
+          leftHand={leftHand}
+          roomState={roomState}
+          injuryState={injuryState}
+          lines={lines}
+          streamLines={overviewStreamLines}
+          monitorLines={monitorLines}
+          rules={overviewRules}
+          /* Per-STREAM, matching the setting for whatever the card is showing —
+             so a card reads like that stream's panel, timestamps included. */
+          showTimestamp={!!streamTimestamps[overviewStream]}
+          streamId={overviewStream}
+          streamChoices={overviewStreamChoices}
+          onStreamChange={setOverviewStream}
+          stats={overviewStats}
+          onOpen={() => onOpenInSession?.()}
+          onMenu={(x, y) => setCardMenu({ x, y })}
+        />,
+        overviewHost.current,
+        characterId,
+      )}
+
+      {/* Card action menu. Rendered from GameWindow rather than inside the card
+          because ContextMenu portals to document.body — a card is a container
+          query and therefore its own stacking context, so a menu rendered inside
+          one would be trapped by it (the B179 lesson). */}
+      {cardMenu && (
+        <ContextMenu
+          x={cardMenu.x} y={cardMenu.y}
+          onClose={() => setCardMenu(null)}
+          items={buildCharacterMenu(
+            { characterId, sessionId: session.sessionId, character: session.character, connected: !dropped },
+            {
+              sessionCount: allSessions.length,
+              isPrimary,
+              // Passed THROUGH, not wrapped. `id => onClose?.(id)` is always a
+              // function, so the builder's `if (env.onClose)` would always pass
+              // and Close would render even when nothing can handle it —
+              // an entry that appears and silently does nothing.
+              onReconnect: onReconnectCharacter ?? NOOP_CHARACTER_ACTION,
+              onClose: onCloseCharacter,
+            },
+          )}
         />
       )}
 
@@ -5599,7 +6064,7 @@ export default function GameWindow({ session, onDisconnect, isActive = true, sim
           session={session}
           initialTab={lichDashTab}
           onClose={() => setShowLichDash(false)}
-          onSendCommand={cmd => { setCommand(cmd); inputRef.current?.focus() }}
+          onSendCommand={cmd => { setCommand(cmd); focusCommandInput() }}
           onRunCommand={cmd => window.api.sendCommand(sessionIdRef.current, cmd)}
         />
       )}

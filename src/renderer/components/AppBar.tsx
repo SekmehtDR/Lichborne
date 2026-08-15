@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSessions, type CharacterId } from '../SessionsContext'
 import CharacterTabBar from './CharacterTabBar'
 import SimuCoinButton from './SimuCoinButton'
+import ViewToggle from './overview/ViewToggle'
 import type { SimuCoinStatus } from '../../shared/types'
 import '../styles/app-bar.css'
 
@@ -107,6 +108,13 @@ export default function AppBar({ onAdd, onClose, onLoginActive, onReconnect, rec
               role="status"
               aria-label={dotTitle} />
       </span>
+
+      {/* Views (v0.19.0): sits with the brand, NOT in `.app-bar-actions`, and is
+          deliberately not `.app-bar-collapsible` — a top-level navigation
+          control must never fold into the ⋯ overflow menu (same reasoning as
+          Disconnect/Login). It subscribes to the Overview store itself so a
+          digest re-renders this control alone, never the tab strip beside it. */}
+      <ViewToggle />
 
       <CharacterTabBar onAdd={onAdd} onClose={onClose} onReconnect={onReconnect} reconnectingIds={reconnectingIds} />
 

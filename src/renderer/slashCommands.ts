@@ -51,6 +51,18 @@ export interface SlashContext {
   getCommandHistoryMinLength: () => number
   setCommandHistoryMinLength: (n: number) => void
   toggleMainTimestamps: () => void
+  /** Views (v0.19.0, DESIGN §47). Same rule as the history settings above: the
+   *  registry entry stays a dumb matcher and every read/write goes through the
+   *  ctx, so the command can never diverge from what the toggle does. */
+  getViewMode: () => 'session' | 'overview'
+  setViewMode: (m: 'session' | 'overview') => void
+  getOverviewOptions: () => Record<string, unknown>
+  setOverviewOptions: (patch: Record<string, unknown>) => void
+  /** Which stream THIS character's Overview card shows (per character). */
+  getOverviewStream: () => string
+  setOverviewStream: (id: string) => void
+  /** One row per character, for `/view status` — the keyboard path to the grid. */
+  getOverviewSummary: () => { character: string; connected: boolean; healthPct: number | null; flags: string[] }[]
   // Phase 2 `edit` verbs: open the Automations panel at `tab` with the rule
   // selected in its detail pane (the TriggersPanel openRuleId pattern).
   openRuleEditor: (tab: SlashEditorTab, ruleId: string) => void
@@ -1123,6 +1135,157 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
     },
   },
 
+  // ── /view (Views — DESIGN §47) ────────────────────────────────────────────
+  // A bare+verbs noun like /ai and /colors: the BARE form reports status and
+  // toggles, the verbs switch and configure. Per the palette rule there is
+  // deliberately NO `status` verb — the bare form already covers it, and adding
+  // one would render two identical rows in the palette.
+  {
+    noun: 'view', nounAliases: ['views'], verb: '',
+    args: [{ name: 'session|overview', required: false, kind: 'word', hint: 'omit to toggle' }],
+    options: [], flags: [],
+    description: 'Switch between the Session and Overview views',
+    example: '/view overview',
+    run: (ctx, p) => {
+      const want = p.args[0]?.toLowerCase()
+      if (want && want !== 'session' && want !== 'overview') {
+        return err(`/view takes "session", "overview", or nothing (toggle) — not "${p.args[0]}".`)
+      }
+      const cur = ctx.getViewMode()
+      const next = want ? (want as 'session' | 'overview') : (cur === 'overview' ? 'session' : 'overview')
+      if (next !== cur) ctx.setViewMode(next)
+      const n = ctx.getOverviewSummary().length
+      return ok(next === 'overview'
+        ? `Overview — ${n} character${n === 1 ? '' : 's'} in this window.`
+        : 'Session view.')
+    },
+  },
+  {
+    noun: 'view', nounAliases: ['views'], verb: 'status',
+    args: [], options: [], flags: [],
+    description: 'List every character with whatever needs your attention',
+    example: '/view status',
+    run: (ctx) => {
+      const rows = ctx.getOverviewSummary()
+      if (rows.length === 0) return ok('No characters in this window.')
+      // Worst first — the same severity order the cards sort by, so the text
+      // path and the grid can never disagree about what matters most.
+      return ok(...rows.map(r => {
+        const hp = r.healthPct !== null ? ` ${r.healthPct}%` : ''
+        const flags = r.flags.length > 0 ? ` — ${r.flags.join(', ')}` : ''
+        return `${r.character}${r.connected ? hp : ' (offline)'}${flags}`
+      }))
+    },
+  },
+  {
+    noun: 'view', nounAliases: ['views'], verb: 'stream',
+    args: [{ name: 'stream', required: false, kind: 'word', hint: 'stream id, or "main" for the game window; omit to report' }],
+    options: [], flags: [],
+    description: "Choose which stream THIS character's Overview card shows",
+    example: '/view stream conversation',
+    run: (ctx, p) => {
+      // Per CHARACTER, unlike everything else under /view — it matches the
+      // dropdown on the card, which is deliberately per-card so a crafter can
+      // sit on `main` while a character in a social spot watches conversation.
+      const want = p.args[0]
+      if (!want) return ok(`This card is showing: ${ctx.getOverviewStream()}.`)
+      // Ids preserve case end-to-end (Principle #5), so the RAW argument is
+      // stored — never lowercased.
+      const id = want === 'off' ? 'main' : want.trim()
+      ctx.setOverviewStream(id)
+      return ok(id === 'main'
+        ? 'Overview card showing the game window.'
+        : `Overview card showing "${id}".`)
+    },
+  },
+  {
+    noun: 'view', nounAliases: ['views'], verb: 'sort',
+    args: [{ name: 'attention|tab', required: true, kind: 'word' }],
+    options: [], flags: [],
+    description: 'Order the Overview cards by attention, or by tab position',
+    example: '/view sort tab',
+    run: (ctx, p) => {
+      const want = p.args[0]?.toLowerCase()
+      if (want !== 'attention' && want !== 'tab') return err(`/view sort takes "attention" or "tab" — not "${p.args[0]}".`)
+      ctx.setOverviewOptions({ sort: want })
+      return ok(`Overview sorted by ${want === 'attention' ? 'attention' : 'tab order'}.`)
+    },
+  },
+  {
+    noun: 'view', nounAliases: ['views'], verb: 'set',
+    args: [],
+    options: [
+      { key: 'feed',     hint: 'lines of game text per card, 0–20 (0 = off)' },
+      { key: 'tiles',    values: ['auto', 'small', 'medium', 'large'], hint: 'tile size — auto fills the space, the rest pin a width' },
+      { key: 'density',  values: ['comfortable', 'compact'], hint: 'how tightly a card packs' },
+      { key: 'idle',     hint: 'seconds of silence before a character reads as idle' },
+      { key: 'health',   hint: 'percent below which a character reads as hurt' },
+      { key: 'critical', hint: 'percent below which a character is critical — also what makes a card pulse' },
+      { key: 'pulse',    values: ['on', 'off'], hint: 'alert on a dead or critical character — the card pulses, and the taskbar flashes if you are looking elsewhere' },
+      // The one option with a real runtime cost — the hint has to say so
+      // (UX standard #8): it turns on scene capture for EVERY open character,
+      // not just this one, which is why it defaults off.
+      { key: 'speech',   values: ['on', 'off'], hint: 'flag when somebody speaks to a character — turns on scene capture for every open character' },
+      { key: 'vitals',   values: ['on', 'off'], hint: 'show the vitals bar on each card' },
+      { key: 'room',     values: ['on', 'off'], hint: 'show the room and who is in it' },
+      { key: 'exp',      values: ['on', 'off'], hint: 'show the session stat chips' },
+      { key: 'injuries', values: ['on', 'off'], hint: 'show the wound chip' },
+    ],
+    flags: [],
+    description: 'Configure what the Overview cards show',
+    example: '/view set feed=10 density=compact',
+    run: (ctx, p) => {
+      const patch: Record<string, unknown> = {}
+      const onOff = (v: string): boolean | null => v === 'on' ? true : v === 'off' ? false : null
+      const applied: string[] = []
+      for (const [k, raw] of Object.entries(p.options)) {
+        const v = raw.toLowerCase()
+        switch (k) {
+          case 'feed': {
+            const n = parseInt(v, 10)
+            if (!Number.isFinite(n) || n < 0 || n > 20) return err(`feed= takes 0–20 lines — not "${raw}".`)
+            patch.feedLines = n; applied.push(`feed ${n}`); break
+          }
+          case 'density': {
+            if (v !== 'comfortable' && v !== 'compact') return err(`density= takes "comfortable" or "compact" — not "${raw}".`)
+            patch.density = v; applied.push(`density ${v}`); break
+          }
+          case 'tiles': {
+            if (v !== 'auto' && v !== 'small' && v !== 'medium' && v !== 'large') {
+              return err(`tiles= takes "auto", "small", "medium" or "large" — not "${raw}".`)
+            }
+            patch.tileSize = v; applied.push(`tiles ${v}`); break
+          }
+          case 'idle': {
+            const n = parseInt(v, 10)
+            if (!Number.isFinite(n) || n < 10 || n > 3600) return err(`idle= takes 10–3600 seconds — not "${raw}".`)
+            patch.idleSeconds = n; applied.push(`idle ${n}s`); break
+          }
+          case 'health': {
+            const n = parseInt(v, 10)
+            if (!Number.isFinite(n) || n < 1 || n > 99) return err(`health= takes 1–99 percent — not "${raw}".`)
+            patch.healthLowPct = n; applied.push(`hurt below ${n}%`); break
+          }
+          case 'critical': {
+            const n = parseInt(v, 10)
+            if (!Number.isFinite(n) || n < 1 || n > 99) return err(`critical= takes 1–99 percent — not "${raw}".`)
+            patch.healthCritPct = n; applied.push(`critical below ${n}%`); break
+          }
+          default: {
+            const key = ({ speech: 'watchSpeech', pulse: 'alertPulse', vitals: 'showVitals', room: 'showRoom', exp: 'showExp', injuries: 'showInjuries' } as Record<string, string>)[k]
+            if (!key) return err(`/view set does not know "${k}". Try /help view set.`)
+            const b = onOff(v)
+            if (b === null) return err(`${k}= takes "on" or "off" — not "${raw}".`)
+            patch[key] = b; applied.push(`${k} ${b ? 'on' : 'off'}`); break
+          }
+        }
+      }
+      if (applied.length === 0) return err('/view set needs at least one setting, e.g. /view set feed=10.')
+      ctx.setOverviewOptions(patch)
+      return ok(`Overview: ${applied.join(' · ')}.`)
+    },
+  },
+
   // ── /ai (BYOK — DESIGN §10) ───────────────────────────────────────────────
   // Bare /ai (verb '') reports status; on/off flip the master toggle; catchup
   // fires Catch Me Up; key points at Settings (a key is never typed into the
@@ -1259,6 +1422,7 @@ const NOUN_HELP: Record<string, string> = {
   sub:        'Rewrite matching text into something shorter or clearer',
   alias:      'Typed shortcuts — one word expands into full commands',
   history:    'Control which commands the up-arrow remembers',
+  view:       'Switch between one character (Session) and all of them at once (Overview)',
   trigger:    'React to game text automatically (text matches → command sends)',
   contact:    'Track players — their names get colored everywhere they appear',
   template:   'Reusable name styles (like Friends/Enemies) to file contacts under',

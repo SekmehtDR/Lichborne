@@ -58,6 +58,17 @@ export interface SharedProfile {
   // set-once preference, like the Session Log settings. Optional → older files
   // default to minLength 0, which is exactly the pre-F82 behaviour.
   commandHistory?: { minLength: number }
+  // Overview view display options (v0.19.0 Views, DESIGN §47). App-wide because
+  // the Overview is BY DEFINITION cross-character — a per-character copy has no
+  // answer to "whose wins when three are open", and it would break the moment a
+  // character is decoupled into its own window. The view MODE is deliberately
+  // NOT here: it is per-window ephemeral, so a decoupled window is never forced
+  // into whatever view the main window is in. Optional → older files default to
+  // DEFAULT_OVERVIEW_OPTIONS, which is exactly the pre-v0.19 behaviour.
+  // `unknown` rather than a structural type: `applyOverviewState` rebuilds the
+  // record field by field on the way in, so the validation lives in one place
+  // (the store) instead of being half-asserted by the profile type.
+  overview?: { options: unknown }
   // User-defined named colors (v0.14.6, `/colors add`). App-wide — a color
   // vocabulary is shared like themes. Optional → older files default to [].
   customColors?: { name: string; hex: string }[]

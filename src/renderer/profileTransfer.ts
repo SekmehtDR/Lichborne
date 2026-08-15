@@ -100,10 +100,15 @@ export const TRANSFER_CATEGORIES: TransferCategory[] = [
   },
   {
     id: 'viewPrefs', label: 'Panel View Preferences', kind: 'config',
-    desc: 'Map view mode & zoom, per-stream timestamps, script palette, Exp panel focus/sort options.',
+    desc: 'Map view mode & zoom, per-stream timestamps, script palette, Exp panel focus/sort options, the Overview card’s stream.',
     suffixes: [
       'mapViewMode', 'lichMapScale', 'streamTimestamps', 'scriptPalette',
       'focus', 'expPins', 'expSort', 'expSortDesc', 'expFocusMode', 'rxpCapMin',
+      // v0.19.0 Views: which stream that character's Overview card shows. It is
+      // a panel view preference like the rest, so it belongs here — and Transfer
+      // is opt-in per category, so a user who wants each character on a
+      // different stream simply doesn't tick this box.
+      'overviewStream',
     ],
   },
   {

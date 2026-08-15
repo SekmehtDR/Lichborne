@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSessions, type CharacterId, type SessionRecord } from '../SessionsContext'
 import { useRoster } from '../RosterContext'
 import ContextMenu from './ContextMenu'
+import { buildCharacterMenu } from '../characterMenu'
 import '../styles/character-tabs.css'
 
 interface Props {
@@ -66,29 +67,13 @@ export default function CharacterTabBar({ onAdd, onClose, onReconnect, reconnect
   // disconnecting by accident when it was the top item).
   const [ctx, setCtx] = useState<{ x: number; y: number; characterId: CharacterId; sessionId: string; character: string; connected: boolean } | null>(null)
 
-  // Built per-open from the snapshot captured at right-click time.
-  const menuItems = ctx ? (() => {
-    const items: ({ label: string; onClick: () => void } | { label: null })[] = []
-    // Window-move options first (non-destructive).
-    if (sessions.length > 1) {
-      items.push({ label: `Open ${ctx.character} in new window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'new') })
-    }
-    if (isPrimary === false) {
-      items.push({ label: `Move ${ctx.character} to main window`, onClick: () => window.api.moveSessionToWindow(ctx.sessionId, 'main') })
-    }
-    // Connection toggle LAST, below a divider when any window options precede it,
-    // so Disconnect isn't the first item under the cursor (Binu's request).
-    if (items.length > 0) items.push({ label: null })
-    if (ctx.connected) {
-      // Same end result as File → Disconnect (graceful close); direct IPC so it
-      // works for ANY tab, not just the active one (the session-action bridge
-      // only reaches the active GameWindow). The tab greys via connection-status.
-      items.push({ label: `Disconnect ${ctx.character}`, onClick: () => window.api.disconnect(ctx.sessionId) })
-    } else {
-      items.push({ label: `Reconnect ${ctx.character}`, onClick: () => onReconnect(ctx.characterId) })
-    }
-    return items
-  })() : []
+  // Built per-open from the snapshot captured at right-click time. The item list
+  // is SHARED with the Overview card (characterMenu.ts) so the two surfaces
+  // cannot offer different actions for the same character. Close is omitted
+  // here on purpose: a tab already carries an ✕.
+  const menuItems = ctx
+    ? buildCharacterMenu(ctx, { sessionCount: sessions.length, isPrimary, onReconnect })
+    : []
 
   return (
     <div className="character-tabs" role="tablist">

@@ -77,10 +77,27 @@ export interface SessionRosterPayload {
   roster: RosterEntry[]
 }
 
-// IPC channel names
+// IPC channel names.
+//
+// THE ONE LIST. Main and preload each used to keep a private partial copy, and
+// a channel added here but not there resolved to `undefined` at the far end —
+// so the sender published on a real channel while the listener registered on
+// one literally named "undefined", and the message went nowhere. Silent in both
+// directions, and invisible to the build. It shipped exactly once (v0.19.0's
+// SEND_USER_TEXT, which made every Quick Send a no-op) and both copies were
+// deleted in the same change. Import this; do not re-fork it (pitfall #127).
 export const IPC = {
   LOGIN:             'login',
   SEND_COMMAND:      'send-command',
+  // v0.19.0: a command typed AT a character from somewhere else (the Overview's
+  // input bar, Quick Send). Distinct from SEND_COMMAND, which writes straight to
+  // the socket: this is routed to the owning WINDOW so that character's
+  // GameWindow can run it through its normal input path — alias resolution, `;`
+  // splitting, the `>` echo, history and the session log. Main is the hop
+  // because the target may live in a DECOUPLED window, which a renderer-side
+  // DOM event could never reach.
+  SEND_USER_TEXT:    'send-user-text',
+  USER_TEXT:         'user-text',
   DISCONNECT:        'disconnect',
   GAME_EVENT:        'game-event',
   CONNECTION_STATUS: 'connection-status',
@@ -90,11 +107,20 @@ export const IPC = {
   UPDATE_DOWNLOADED: 'update-downloaded',
   DOWNLOAD_UPDATE:   'download-update',
   INSTALL_UPDATE:    'install-update',
+  // These two lived ONLY in main's and preload's private copies of this map
+  // until v0.19.0. Hoisted here so there is one list: see the header note.
+  SESSION_DESTROY:   'session:destroy',
+  SESSION_ROSTER:    'session-roster',
 } as const
 
 // --- Per-session IPC payloads ---
 // All push channels that report session state carry the originating sessionId.
 // The renderer fans these out to the correct GameWindow instance by id.
+
+/** Renderer → main: run `text` as if typed in `sessionId`'s command bar. */
+export interface SendUserTextPayload { sessionId: SessionId; text: string }
+/** Main → the OWNING window: the same, delivered for that GameWindow to run. */
+export type UserTextPayload = SendUserTextPayload
 
 export type LoginResult =
   | { ok: true; sessionId: SessionId }

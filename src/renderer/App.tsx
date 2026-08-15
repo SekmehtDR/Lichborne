@@ -24,6 +24,8 @@ import type { LoginCredentials, SessionId, RosterEntry, SimuCoinStatus } from '.
 import { isSessionAction } from '../shared/menuActions'
 import { simucoinToast } from './components/SimuCoinButton'
 import { loadSimuCoinConfig, saveSimuCoinConfig, accountConfig, rememberBalance, SIMUCOIN_CHANGED_EVENT } from './simucoinConfig'
+import OverviewShell from './components/overview/OverviewShell'
+import { useViewMode, setViewMode, toggleViewMode, loadOverviewState, OVERVIEW_KEY } from './overviewStore'
 
 // Exposed to main via mainWindow.webContents.executeJavaScript on shutdown so
 // every debounced profile save fires before the window destroys. Returns a
@@ -66,6 +68,53 @@ function ConnectStep({ character }: { character: string }) {
 function AppShell() {
   const { sessions, activeId, addSession, removeSession, setActive, updateStatus } = useSessions()
   const { isPrimary, roster } = useRoster()
+
+  // ── Views (v0.19.0, DESIGN §47) ───────────────────────────────────────────
+  // The mode is PER-WINDOW and ephemeral: each BrowserWindow has its own store
+  // instance, which is what a decoupled window showing one character wants —
+  // it has no business being forced into the main window's view. Only the
+  // display OPTIONS persist (app-wide, `_shared.yaml`).
+  const view = useViewMode()
+  const viewRef = useRef(view)
+  viewRef.current = view
+  // Portal target every GameWindow renders its Overview card into.
+  const overviewHostRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => { loadOverviewState() }, [])
+
+  // Entering the Overview must take focus OUT of whatever the overlay is about
+  // to cover. The overlay leaves the session shell laid out on purpose (so its
+  // scrollback stays measured), so a focused command bar stays focusable
+  // underneath it — and the most common way to switch is typing `/view overview`
+  // IN that bar, which leaves the caret sitting right there. Without this,
+  // everything typed next lands in an invisible input and Enter sends it.
+  // Leaving it must put focus BACK, or the first thing you type after returning
+  // goes nowhere and you have to click the bar first — the same papercut the
+  // Ctrl+# refocus below exists to prevent, reached by a different route.
+  useEffect(() => {
+    if (view === 'overview') {
+      const el = document.activeElement as HTMLElement | null
+      if (el && el.closest('.session-shell')) el.blur()
+      return
+    }
+    // A frame, so the shell's visibility has committed before we query: an
+    // input inside a display:none subtree is not focusable and focus() no-ops.
+    const id = requestAnimationFrame(() => {
+      if (viewRef.current === 'overview') return
+      const el = document.querySelector(
+        '.session-shell:not(.session-shell--hidden) .command-input'
+      ) as HTMLInputElement | null
+      el?.focus()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [view])
+
+  // A window that empties drops back to Session view. The mode is per-window
+  // state that outlives the characters in it, so closing your last character
+  // while in the Overview would otherwise land the NEXT one you connect in a
+  // dashboard showing a single card, rather than in the game.
+  useEffect(() => {
+    if (sessions.length === 0 && view === 'overview') setViewMode('session')
+  }, [sessions.length, view])
 
   // Characters mid-reconnect via the tab-menu "Reconnect" — drives a "connecting"
   // indicator on the tab (the launcher's connecting overlay isn't visible for a
@@ -372,6 +421,13 @@ function AppShell() {
     // anyway. (Bug: Ctrl+# used to leave focus wherever it was — usually
     // nowhere — so testers had to click the bar before they could type.)
     function refocusActiveCommandBar() {
+      // v0.19.0 Views: NEVER refocus into a command bar the Overview is
+      // covering. The overlay deliberately leaves the active session shell
+      // laid out (so its virtualised scrollback stays measured), which means
+      // the shell is not `--hidden` and this selector still finds its input —
+      // focusing it would put the caret in an invisible field where typing goes
+      // nowhere visible and Enter still sends to the game.
+      if (viewRef.current === 'overview') return
       requestAnimationFrame(() => {
         const el = document.querySelector(
           '.session-shell:not(.session-shell--hidden) .command-input'
@@ -483,6 +539,9 @@ function AppShell() {
         }
         case 'check-updates':   handleCheckForUpdates(); break
         case 'about':           setShowAbout(true); break
+        // An APP action, not a session one: it acts on the window and must work
+        // with no active character.
+        case 'toggle-view':     toggleViewMode(); break
       }
     }
   })
@@ -521,6 +580,18 @@ function AppShell() {
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key === 'lichborne.theme' || e.key === 'lichborne.myThemes') initTheme()
+      // v0.19.0 Overview options. Every OTHER field of SharedProfile is read
+      // FRESH from localStorage inside `buildSharedProfile` (`loadMyThemes()`,
+      // `loadAIConfig()`, `getItem(...)`, …), and localStorage is shared across
+      // windows — so a flush from any window is automatically current. The
+      // overview block is the ONE that reads MODULE MEMORY
+      // (`getOverviewPersisted()`, deliberately, so an unflushed working copy
+      // cannot overwrite a live change). That makes it the one shared setting a
+      // second window could silently revert: window B holds the options it had
+      // at launch, and any shared save it happens to make writes them back over
+      // window A's change in `_shared.yaml`. Re-seeding memory here keeps the
+      // two in step, which fixes the stale-display half as well.
+      if (e.key === OVERVIEW_KEY) loadOverviewState()
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -1209,7 +1280,11 @@ function AppShell() {
         />
       )}
 
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      {/* v0.19.0 Views: `position: relative` makes this the containing block for
+          the Overview overlay. Verified safe — every absolutely-positioned
+          game-area element already resolves against a LOCAL positioned ancestor
+          (.text-area / .cmd-input-wrap), so nothing was relying on the viewport. */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative' }}>
         {showFullLogin ? (
           <Launcher
             refreshKey={launcherRefreshKey}
@@ -1248,7 +1323,14 @@ function AppShell() {
             No character in this window.
           </div>
         ) : (
-          sessions.map(s => (
+          <>
+          {/* The Overview is an OVERLAY, not a third branch: the session shells
+              keep their existing visibility, so the active character's Virtuoso
+              stays measured and coming back needs no scroll re-snap. The grid
+              host is always mounted (hidden by CSS) so every card's portal
+              target has a stable identity. */}
+          <OverviewShell open={view === 'overview'} characterCount={sessions.length} hostRef={overviewHostRef} />
+          {sessions.map((s, si) => (
             <div
               // Reload nonce suffix: bumping it (via reloadSession) forces this
               // GameWindow to remount and re-read per-character state from
@@ -1267,6 +1349,20 @@ function AppShell() {
                       useLich: s.useLich,
                     }}
                     isActive={s.characterId === activeId}
+                    // v0.19.0 Views. `overviewHostRef` is a REF OBJECT, not an
+                    // element — referentially stable forever, so it can never
+                    // invalidate a memoized child (pitfall #82c). `overviewIndex`
+                    // is the tab position, which breaks attention-sort ties so
+                    // equally-calm cards never reshuffle between renders.
+                    viewMode={view}
+                    overviewHost={overviewHostRef}
+                    overviewIndex={si}
+                    onOpenInSession={() => { setActive(s.characterId); setViewMode('session') }}
+                    /* Views: the Overview card offers the same per-character
+                       actions the tab's right-click menu does (Sekmeht), built
+                       from one shared definition so they cannot drift. */
+                    onCloseCharacter={handleCloseTab}
+                    onReconnectCharacter={handleReconnectTab}
                     onDisconnect={() => {
                       window.api.destroySession(s.sessionId)
                       removeSession(s.characterId)
@@ -1286,7 +1382,8 @@ function AppShell() {
                 </GroupsProvider>
               </CharacterProvider>
             </div>
-          ))
+          ))}
+          </>
         )}
       </div>
 

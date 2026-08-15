@@ -4,6 +4,7 @@ import { scopedKey, normalizeCharacter, GLOBAL_RULES_SCOPE } from './characterSc
 import { sharedMigrations, characterMigrations, runMigrations } from './profile-migrations'
 import { loadBulkSets, saveBulkSets } from './bulkSets'
 import { loadCommandHistorySettings, saveCommandHistorySettings } from './commandHistorySettings'
+import { getOverviewPersisted, applyOverviewState } from './overviewStore'
 import { loadSessionLogSettings, saveSessionLogSettings, DEFAULT_SESSION_LOG_SETTINGS } from './sessionLogSettings'
 import { loadAIConfig, saveAIConfig, DEFAULT_AI_CONFIG } from './aiConfig'
 import { loadCustomColors, saveCustomColors } from './colors'
@@ -99,6 +100,7 @@ export function buildSharedProfile(): SharedProfile {
     bulkConnectSeparateWindows: localStorage.getItem('lichborne.bulkConnectSeparateWindows') === 'true',
     automationAnalytics: localStorage.getItem('lichborne.automationAnalytics') === 'true',
     commandHistory: loadCommandHistorySettings(),
+    overview:   getOverviewPersisted(),
     bulkSets:   loadBulkSets(),
     customColors: loadCustomColors(),
     simucoin:   loadSimuCoinConfig(),
@@ -276,6 +278,11 @@ export async function importSharedProfile(): Promise<void> {
   if (data.commandHistory && typeof data.commandHistory === 'object') {
     saveCommandHistorySettings(data.commandHistory as { minLength: number })
   }
+
+  // Overview options (v0.19.0 Views). applyOverviewState REBUILDS the record
+  // field by field, so a hand-edited or future-version block can never introduce
+  // an option the app does not expect.
+  if (data.overview && typeof data.overview === 'object') applyOverviewState(data.overview)
 
   if (Array.isArray(data.customColors)) {
     saveCustomColors(data.customColors.filter(c => c && typeof c.name === 'string' && typeof c.hex === 'string'))

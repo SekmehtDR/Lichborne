@@ -22,6 +22,7 @@ Welcome! Lichborne is a modern DragonRealms client for Windows, Linux, and macOS
   - [4. One-time in-game setup](#4-one-time-in-game-setup)
 - [Connecting & Playing Your Whole Team](#connecting--playing-your-whole-team)
 - [Feature Tour](#feature-tour)
+  - [Views: Session and Overview](#views-session-and-overview)
   - [Your layout: Static vs Windowed Panels](#your-layout-static-vs-windowed-panels)
   - [Themes & accessibility](#themes--accessibility)
   - [Automations: highlights, triggers, macros, aliases](#automations-highlights-triggers-macros-aliases)
@@ -67,6 +68,50 @@ A few ideas shape everything:
 ---
 
 ## What's New in the Latest Version
+
+**v0.19.0**
+
+- **Views — see every character at once.** A new switch in the top bar, next to
+  the Lichborne wordmark, chooses between **Session** (what you have today — one
+  character at a time, switched by the tabs) and **Overview** (a grid of live
+  cards, one per character in that window). Each card shows vitals, what's wrong,
+  stance, hands, prepared spell, roundtime, the room and who's in it, the worst
+  wound, how the session has gone, and a short live feed of that character's game
+  text. Click a card to drop into that character.
+- **It tells you who needs you.** Cards carry the reasons they want attention —
+  Dead, Offline, Critical, Bleeding, Stunned, Poisoned, Diseased, Hurt, Webbed,
+  Spoken to, Idle, Mind locked — worst first on the card, with the border
+  colouring to match. The Overview button shows a count while you're in Session
+  view, so you learn something went wrong without watching the dashboard. A
+  character with nothing wrong reads a quiet **✓ calm**. Cards sit in **tab
+  order** by default so they stay where you put them; `/view sort attention`
+  makes whoever needs you rise to the top instead.
+- **The cards size themselves.** One character fills the screen, two split it,
+  four go 2×2. Thirty stay readable — tiles grow to fill the space but never
+  shrink past legibility, and past that the grid scrolls. As tiles shrink each
+  card sheds what it cannot honestly show, stats first. **Tile size** in Settings
+  overrides all of it.
+- **Each card picks its own stream.** A **showing** dropdown on every card: the
+  game window by default, or switch it to `conversation` to see somebody talking
+  to that character without opening it. Per character, and remembered.
+- **Configure it** in Settings → Overview or with `/view` — `/view status` lists
+  every character as text, `/view sort attention` reorders by who needs you,
+  `/view stream conversation` changes what the current character shows, and
+  `/view set tiles=small feed=10` tunes the rest. The text feed setting is a
+  MINIMUM — cards show more when there is room; 0 turns it off.
+- **An input bar along the bottom.** Pick a character and type at it, or leave it
+  on **All characters** to send to everybody. What you send behaves exactly as if
+  typed in that character's own bar — aliases expand, `;` splits, it echoes as
+  `>command`, and it reaches that character's history and log. Slash commands work
+  too and run on the character you targeted.
+- Cards themselves stay read-only; the input lives in one place so there is only
+  ever one field that can send text. Macro keys still do nothing in the Overview.
+- **Fixed:** Quick Send used to arrive *invisibly* — the command ran but the
+  receiving character showed only the game's reply, and a slash command typed
+  there was sent to the game as literal text. Both now behave like typing.
+- The Overview shows the characters **in that window**; a character you've moved
+  into its own window has its own switch there. Lichborne always starts in
+  Session view.
 
 **v0.18.6**
 
@@ -191,6 +236,88 @@ This tells DragonRealms to include your full status (hidden, stunned, roundtime,
 ## Feature Tour
 
 High-level tours of what each feature does and where to configure it. Most things live behind the buttons along the top **app bar** (Panels · Maps · Automations · Lich · Settings, with more under the **⋯** menu) or the **Experiences** shelf.
+
+### Views: Session and Overview
+
+A **view** is the biggest switch in Lichborne — it decides what the whole window
+shows. There are two, and you swap between them with the control in the top bar
+next to the Lichborne wordmark (or `/view`, or **View → Session / Overview View**).
+
+**Session** is the normal way to play, and the default: one character filling the
+window, with the tabs along the top to move between them. Everything else in this
+guide — panels, maps, automations, Experiences — lives here.
+
+**Overview** replaces that with a grid of cards, one per character. It's built for
+playing several characters at once, which in DragonRealms means several accounts.
+Each card shows:
+
+- **vitals** and a health percentage
+- **what's wrong** — bleeding, stunned, poisoned, dead, webbed and so on
+- **stance, hands and prepared spell**
+- **roundtime and cast time**, ticking
+- **the room** and who's in it with them
+- **the worst active wound** (scars are healed history, so they aren't counted)
+- **how the session has gone** — uptime, how long since anything happened, lines
+  per minute, ranks gained, rooms visited, deaths, skills at mind lock
+- **a live feed** of that character's game text — with your highlights, contacts
+  and timestamps applied, exactly as the game window renders it
+
+Every card also has a **showing** dropdown that changes which stream its feed
+displays — the game window by default, or `conversation` to watch for somebody
+talking to that character. It is per character, so a crafter can sit on the game
+window while another watches conversation.
+
+The grid sizes itself to how many characters you have: one fills the screen, two
+split it, four go 2×2, and thirty stay readable (scrolling rather than shrinking
+into illegibility). **Tile size** in Settings overrides that if you would rather
+force them small or large.
+
+Cards sit in **tab order** by default, matching the character tabs above them, so
+they stay where you put them. `/view sort attention` reorders them instead so
+whoever is worst off rises to the top — useful when things are busy, at the cost
+of cards moving while you watch. Either way the Overview button carries a
+**count** while you're in Session view, so you find out a character is in trouble
+without having to be watching.
+
+That number is **how many characters have something wrong** — not how many things
+are wrong. A character who is both bleeding and stunned counts once. It counts
+anything actually asking for you: Dead, Offline, Critical, Bleeding, Stunned,
+Poisoned, Diseased, Hurt, Webbed, or Spoken to. **Idle** and **Mind locked** are
+deliberately not counted — they are the normal states of a character you parked
+and of one grinding a skill, and a number that is always lit is one you stop
+reading. Both still show on the cards. It appears only while
+you're in Session view — there is no point badging the view you are already
+looking at — and only when the count is above zero, so a healthy roster shows no
+badge at all. A character with nothing wrong reads a quiet **✓ calm** on its card
+rather than a row of zeroes.
+
+Clicking a card takes you straight to that character. Cards are read-only on
+purpose: to send a command to someone else, use **Quick Send**
+(Ctrl/Cmd+Shift+Enter), which already does exactly that. While the Overview is up,
+typing and macro keys do nothing, so there's no invisible command line underneath
+quietly collecting your keystrokes.
+
+**Tuning it** — Settings → Overview, or `/view set`:
+
+| Command | Does |
+|---|---|
+| `/view` | Switch back and forth |
+| `/view status` | Every character and what's wrong with them, as text |
+| `/view sort tab` | Stop the cards moving; keep them in tab order |
+| `/view set feed=0` | Turn the text feed off (makes cards much shorter) |
+| `/view set tiles=small` | Force small tiles (auto fills the space by default) |
+| `/view stream conversation` | What THIS character's card shows |
+| `/view set density=compact` | Tighter cards, more of them on screen |
+| `/view set idle=120` | Seconds of quiet before a character reads as idle |
+
+You can also hide any part of a card you don't want. One option is off by default
+on purpose — **"flag when someone speaks to a character"** does a little extra
+work for every connected character, so you opt into it rather than paying for it
+unasked.
+
+A couple of things worth knowing: the Overview shows the characters **in that
+window**, so a character you've moved into its own window has its own switch over
+there; and Lichborne always starts in Session view.
 
 ### Your layout: Static vs Windowed Panels
 

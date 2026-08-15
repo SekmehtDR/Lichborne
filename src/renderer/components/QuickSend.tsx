@@ -101,8 +101,24 @@ export default function QuickSend({ onClose, initialCommand = '' }: Props) {
     const cmd = command.trim()
     if (!cmd || targets.length === 0) return
     // Fire-and-forget per target; routing is by sessionId through main, which
-    // owns every socket regardless of which window renders the character.
-    for (const s of targets) window.api.sendCommand(s.sessionId, cmd)
+    // reaches a character regardless of which window renders it.
+    //
+    // v0.19.0: `sendUserText`, NOT the raw `sendCommand` this used to call. Main
+    // now forwards to the OWNING window, whose GameWindow runs the text through
+    // its normal input path. Two bugs die with that change:
+    //
+    //  • The command ARRIVED INVISIBLY (Sekmeht: a Quick Send `wave` showed only
+    //    the game's reply on the receiving character — no `>wave`). A raw socket
+    //    write skips the renderer-side echo entirely; this is B199's signature.
+    //  • A `/command` typed here was forwarded to DRAGONREALMS AS LITERAL TEXT,
+    //    because the raw path never reaches the slash intercept at the top of
+    //    `dispatchUserText`. Slash commands are client commands and must never
+    //    leave the client.
+    //
+    // It also gains alias resolution, `;` splitting, command history and the
+    // session log — so a Quick Send is now indistinguishable from having typed
+    // it in that character's own bar, which is the whole point.
+    for (const s of targets) window.api.sendUserText(s.sessionId, cmd)
     onClose()
   }
 

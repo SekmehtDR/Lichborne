@@ -14,6 +14,9 @@ declare global {
       // ── Session lifecycle ─────────────────────────────────────────────────────
       login: (creds: LoginCredentials) => Promise<LoginResult>
       sendCommand: (sessionId: SessionId, command: string) => void
+      /** Run `text` as if typed in that character's own command bar (echo + log). */
+      sendUserText: (sessionId: SessionId, text: string) => void
+      onUserText: (cb: (p: import('../shared/types').UserTextPayload) => void) => () => void
       disconnect: (sessionId: SessionId) => void
       disconnectAwait: (sessionId: SessionId) => Promise<void>
       destroySession: (sessionId: SessionId) => void

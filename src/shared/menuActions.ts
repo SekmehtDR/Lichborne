@@ -47,6 +47,9 @@ export const APP_ACTIONS = [
   'prev-character',
   'check-updates',
   'about',
+  // v0.19.0 Views — Session ⇄ Overview. An APP action, not a session one: it
+  // switches what the WINDOW shows and must work with no active character.
+  'toggle-view',
 ] as const
 
 export type SessionMenuAction = typeof SESSION_ACTIONS[number]

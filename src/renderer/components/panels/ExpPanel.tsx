@@ -1,6 +1,9 @@
 import { memo, useState, useRef, useEffect } from 'react'
 import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type SkillBadge } from '../../focusTemplates'
 import { scopedKey } from '../../characterScope'
+// v0.19.0: the mindstate ladder + line parser moved to a shared module so the
+// Overview card reads a skill line the same way this panel does.
+import { MINDSTATES, parseExp, dotBucket } from '../../expParse'
 import { useCharacter } from '../../CharacterContext'
 import { useProfileSaver } from '../../hooks/useProfileSaver'
 
@@ -24,45 +27,6 @@ interface Props {
   // instead of the full panel (bars/pickers/groups). A pure alternate render —
   // reuses every parsing helper below.
   compactExp?: boolean
-}
-
-const MINDSTATES = [
-  'clear', 'dabbling', 'perusing', 'learning', 'thoughtful',
-  'thinking', 'considering', 'pondering', 'ruminating', 'concentrating',
-  'attentive', 'deliberative', 'interested', 'examining', 'understanding',
-  'absorbing', 'intrigued', 'scrutinizing', 'analyzing', 'studious',
-  'focused', 'very focused', 'engaged', 'very engaged', 'cogitating',
-  'fascinated', 'captivated', 'engrossed', 'riveted', 'very riveted',
-  'rapt', 'very rapt', 'enthralled', 'nearly locked', 'mind lock',
-]
-
-interface ParsedExp {
-  rank: string
-  pctStr: string
-  mindstateIdx: number
-}
-
-function parseExp(text: string): ParsedExp {
-  const m = text.match(/:\s*(\d+)\s+(\d+)%/)
-  const rank   = m?.[1] ?? '—'
-  const pctStr = m?.[2] ? `${m[2]}%` : '—'
-  const lower  = text.toLowerCase()
-  let mindstateIdx = 0
-  for (let i = MINDSTATES.length - 1; i >= 0; i--) {
-    if (lower.includes(MINDSTATES[i])) { mindstateIdx = i; break }
-  }
-  if (mindstateIdx === 0) {
-    const bm = text.match(/[\[(]\s*(\d+)\/34[\])]/)
-    if (bm) mindstateIdx = Math.min(34, parseInt(bm[1], 10))
-  }
-  return { rank, pctStr, mindstateIdx }
-}
-
-function dotBucket(idx: number): 'low' | 'mid' | 'high' | 'locked' {
-  if (idx <= 8)  return 'low'
-  if (idx <= 20) return 'mid'
-  if (idx < 34)  return 'high'
-  return 'locked'
 }
 
 function SkillRow({

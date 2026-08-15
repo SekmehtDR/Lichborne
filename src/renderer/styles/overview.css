@@ -1,0 +1,813 @@
+/* Views — the Overview dashboard (v0.19.0, DESIGN §47).
+ *
+ * Prefix `ov-`, audited unique before use (pitfall #55: two components sharing a
+ * prefix are compatible only by luck, and only until someone restyles one).
+ *
+ * SIZING: every card anchors `--game-font-size` INLINE to its own character's
+ * setting (see OverviewCard's style prop and correction C1), so everything here
+ * sizes in `em` off that anchor. There is deliberately not one `rem` in this
+ * file — `rem` is pinned to the 16px html root and would ignore the per-character
+ * font setting entirely (Principle #9, pitfall #45).
+ *
+ * COLOUR: theme vars and `color-mix` only. Severity hues are mixed TOWARD a
+ * theme var so the hue stays meaningful while contrast self-corrects on light
+ * themes — the one place a fixed hue is allowed (polish standard #6). The only
+ * literal is the drop shadow, which is a sanctioned exception (Principle #4).
+ */
+
+/* ── The overlay ──────────────────────────────────────────────────────────────
+ * Absolute over the content region rather than a branch that replaces the
+ * session shells: the active GameWindow stays laid out underneath, so its
+ * virtualised scrollback keeps measuring and returning to Session view needs no
+ * re-snap (correction C3). z-index clears the WindowLayer (60) and stays under
+ * the app bar's own stacking context (70).
+ */
+.ov-shell {
+  position: absolute;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-app);
+}
+
+.ov-shell--hidden { display: none; }
+
+/* ── Summary strip ────────────────────────────────────────────────────────────
+ * A strip is text-height plus minimal padding (polish standard #7): line-height
+ * pinned to 1 so it cannot inherit the game line-height and balloon.
+ */
+.ov-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  flex-wrap: wrap;
+  padding: 4px 10px;
+  font-size: var(--game-font-size);
+  line-height: 1;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-base));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  flex: 0 0 auto;
+}
+
+.ov-summary-counts { color: var(--text-secondary); }
+.ov-summary-counts strong { color: var(--text-primary); font-weight: 600; }
+.ov-summary-sep { margin: 0 0.4em; color: var(--text-faint); }
+.ov-summary-flags { display: flex; align-items: center; gap: 0.35em; flex-wrap: wrap; }
+.ov-summary-mode { margin-left: auto; color: var(--text-muted); font-size: 0.85em; }
+
+.ov-summary-calm {
+  color: color-mix(in srgb, #34a853 70%, var(--text-primary));
+  font-weight: 600;
+}
+
+/* ── Grid ─────────────────────────────────────────────────────────────────────
+ * Columns come from `planGrid` (overviewLayout.ts) via `--ov-cols`; the row rule
+ * is the whole scaling story in one expression:
+ *
+ *   grid-auto-rows: minmax(<floor>, 1fr)
+ *
+ * When there is room, `1fr` wins and the rows share the full height — so ONE
+ * character is genuinely full-screen, two split it, four go 2×2. When there
+ * isn't, the floor wins, the grid overflows, and it scrolls. That single line is
+ * why 30 characters all fit on a 4K but stay readable (and scroll) on a laptop,
+ * with no count-buckets to get wrong.
+ *
+ * `align-content: start` is deliberately GONE — it would collapse the rows to
+ * their content height and defeat the `1fr`. */
+.ov-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(var(--ov-cols, 1), minmax(0, var(--ov-tile-max, 1fr)));
+  grid-auto-rows: minmax(var(--ov-row-min, 9em), 1fr);
+  /* Only bites when `--ov-tile-max` is a px cap (a manual tile size); with the
+     `1fr` default the columns already fill the row and this is inert. */
+  justify-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.ov-hint {
+  padding: 0 12px 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--game-font-size);
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────────────
+ * `--bg-raised` over the shell's `--bg-app` gives a real edge on every theme
+ * (dark: #1e1e1e on #1a1a1a; Classic Light: #efefef on #ffffff), which is what
+ * stops the grid dissolving into one flat sheet on a white theme.
+ */
+.ov-card {
+  display: flex;
+  flex-direction: column;
+  /* Breathing room between sections. A card stacks up to eight bands (head,
+     flags, vitals, icons, room, wounds, stats, feed); at 0.35em they read as one
+     dense block. Hierarchy here comes from SPACE and muting, not from borders —
+     adding rules between every band would make it busier, not calmer. */
+  gap: 0.55em;
+  padding: 0.7em 0.8em;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  /* The anchor every child sizes against; the inline style supplies the value. */
+  font-size: var(--game-font-size);
+  line-height: 1.25;
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.ov-card:hover {
+  border-color: var(--accent-dim);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-raised));
+}
+
+.ov-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+/* Severity as a left edge — hierarchy from muting and a rule, not from size
+ * (polish standard #5), so cards stay a uniform grid however bad things get. */
+.ov-card--calm    { opacity: 0.94; }
+.ov-card--alert   { border-color: color-mix(in srgb, #e6a23c 45%, var(--border)); }
+.ov-card--urgent  { border-color: color-mix(in srgb, #d93025 55%, var(--border)); }
+.ov-card--offline { opacity: 0.7; }
+.ov-card--offline .ov-card-name { font-style: italic; }
+
+/* The character Session view is currently showing. Accent hairline, matching
+ * the chip treatment the character tabs wear. */
+.ov-card--active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-raised));
+}
+
+.ov-card--compact { gap: 0.32em; padding: 0.5em 0.6em; }
+
+/* ── Density tiers — each tile styles itself by ITS OWN width ─────────────────
+ * The app bar's degradation ladder (B178) is the precedent, and the reason is
+ * the same: a container query is automatically right for any character count ×
+ * window size × font size, where a table of count → layout is wrong the moment
+ * somebody resizes. Nothing here is decided in JS, so nothing can gate what
+ * MOUNTS on a measurement (pitfall #83) — a tile always renders everything and
+ * CSS decides what is shown.
+ *
+ * Thresholds are `em`, resolved against the card's own game-font anchor, so they
+ * track Settings → Font Size (Principle #9) — do NOT convert them to px.
+ *
+ * NOTE: `container-type: inline-size` applies layout containment, which makes
+ * each card a STACKING CONTEXT (the B179 lesson from the app bar). Nothing in a
+ * card escapes it today; a popover added inside one later would be trapped and
+ * must portal out.
+ */
+.ov-card { container-type: inline-size; container-name: ovcard; }
+
+/* COMPACT — shed the incidental context, KEEP the feed.
+ *
+ * The tier order changed when the feed became a per-card CHOICE (a dropdown)
+ * rather than a generic activity dump. It is now the most deliberate thing on
+ * the card — if you set a character to `conversation`, that is precisely what
+ * you must not lose as tiles shrink (Rakkor: "conversation window at the minimum
+ * would still be necessary"). So stats, occupancy and conditions go first.
+ */
+@container ovcard (max-width: 21em) {
+  .ov-card-stats { display: none; }
+  .ov-card-here { display: none; }
+  .ov-card-cond { display: none; }
+}
+
+/* MICRO — a wall of alts. Name, health and the attention colour, nothing else:
+ * at this size anything more is unreadable, and pretending otherwise is worse
+ * than admitting the tile is a status light. Only here does the feed finally go.
+ */
+@container ovcard (max-width: 15em) {
+  .ov-card-feed { display: none; }
+  .ov-card-streampick { display: none; }
+  .ov-card-room { display: none; }
+  .ov-card-game { display: none; }
+  .ov-card-mode { display: none; }
+  .ov-card-current { display: none; }
+  /* One line of chips at most — the worst one is the one that matters. */
+  .ov-card-flags { flex-wrap: nowrap; overflow: hidden; }
+}
+
+/* HERO — one or two characters filling the screen. More air, and the feed grows
+ * into whatever height is left rather than stopping at its line budget. */
+@container ovcard (min-width: 34em) {
+  .ov-card-feed { font-size: 0.92em; }
+}
+
+/* Critical / dead — the card announces itself instead of waiting to be looked at
+ * (Binu). A slow 1.6s breath on the border and a faint wash, NOT a hard blink:
+ * it has to be catchable in peripheral vision without being painful to sit
+ * beside for the length of a fight. */
+@keyframes ov-pulse {
+  0%, 100% {
+    border-color: color-mix(in srgb, #d93025 55%, var(--border));
+    background: var(--bg-raised);
+  }
+  50% {
+    border-color: color-mix(in srgb, #d93025 95%, var(--border));
+    background: color-mix(in srgb, #d93025 12%, var(--bg-raised));
+  }
+}
+
+.ov-card--pulse { animation: ov-pulse 1.6s ease-in-out infinite; }
+
+/* Motion is decoration, colour is signal (polish standard #9b): both opt-outs
+ * drop the animation but KEEP the red, so the accessible path loses nothing the
+ * effect was carrying. */
+:root[data-epilepsy-safe='true'] .ov-card--pulse {
+  animation: none;
+  border-color: color-mix(in srgb, #d93025 75%, var(--border));
+  background: color-mix(in srgb, #d93025 10%, var(--bg-raised));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov-card--pulse {
+    animation: none;
+    border-color: color-mix(in srgb, #d93025 75%, var(--border));
+    background: color-mix(in srgb, #d93025 10%, var(--bg-raised));
+  }
+}
+
+/* ── Card head ────────────────────────────────────────────────────────────── */
+.ov-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  line-height: 1;
+}
+
+.ov-card-name {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-card-mode {
+  font-size: 0.7em;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2em 0.4em;
+  border-radius: 0.8em;
+  border: 1px solid transparent;
+}
+.ov-card-mode--lich {
+  color: color-mix(in srgb, #34a853 65%, var(--text-primary));
+  background: color-mix(in srgb, #34a853 15%, transparent);
+  border-color: color-mix(in srgb, #34a853 40%, transparent);
+}
+.ov-card-mode--direct {
+  color: color-mix(in srgb, #4285f4 65%, var(--text-primary));
+  background: color-mix(in srgb, #4285f4 15%, transparent);
+  border-color: color-mix(in srgb, #4285f4 40%, transparent);
+}
+
+.ov-card-game { font-size: 0.75em; color: var(--text-muted); letter-spacing: 0.05em; }
+.ov-card-head-spacer { flex: 1 1 auto; }
+
+.ov-card-current {
+  font-size: 0.7em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 0.8em;
+  padding: 0.15em 0.45em;
+  line-height: 1;
+}
+
+.ov-card-hp { font-size: 0.85em; font-weight: 600; line-height: 1; }
+.ov-hp--ok   { color: color-mix(in srgb, #34a853 60%, var(--text-primary)); }
+.ov-hp--warn { color: color-mix(in srgb, #e6a23c 70%, var(--text-primary)); }
+.ov-hp--bad  { color: color-mix(in srgb, #e8710a 75%, var(--text-primary)); }
+.ov-hp--crit { color: color-mix(in srgb, #d93025 75%, var(--text-primary)); }
+
+.ov-card-dot {
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: color-mix(in srgb, #34a853 75%, var(--bg-raised));
+  flex: 0 0 auto;
+}
+/* Hollow = off, filled = on. A muted FILL had to win a contrast fight against
+   the card on every theme (it measured 2.3 on Classic Light); a ring states the
+   same thing structurally and reads on any background. */
+.ov-card-dot--off {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 40%, transparent);
+}
+
+/* Per-character actions — the same menu the character tab's right-click opens.
+ *
+ * ALWAYS VISIBLE, and styled as a real control rather than a bare glyph
+ * (Sekmeht). It used to sit at `opacity: 0` until card hover, in `--text-faint`
+ * — which is 2.33 contrast on Classic Light and 3.27 on the dark base, both
+ * under the 4.5 AA floor, so even when revealed it was barely there. A
+ * hover-only control is also one most people never find, the same lesson the
+ * stream selector taught. `--text-secondary` measures 8.74 / 7.69 on those two
+ * backgrounds, so it is legible on both families rather than trading one for
+ * the other (pitfall #63 — the ramp is NOT monotonic across families, so pick
+ * by measurement, not by feel).
+ *
+ * The chip is mixed toward `--text-primary`, so it self-corrects per theme
+ * instead of pinning a grey that reads as a hole on light backgrounds. */
+.ov-card-menu {
+  font-family: inherit;
+  font-size: 1.05em;
+  font-weight: 700;
+  line-height: 1;
+  /* A comfortable hit target without making the header taller: the padding is
+     horizontal-dominant and the header pins `line-height: 1`. */
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  flex: 0 0 auto;
+}
+
+/* Hovering the CARD advertises it; hovering the BUTTON commits to accent, so
+   the two steps stay distinguishable. */
+.ov-card:hover .ov-card-menu {
+  border-color: color-mix(in srgb, var(--text-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.ov-card-menu:hover,
+.ov-card-menu:focus-visible {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+
+/* ── Attention chips ──────────────────────────────────────────────────────── */
+/* `min-height` of one chip so a card does not jump a few pixels every time it
+ * goes calm → alert. Same reasoning as the feed's fixed height: the grid should
+ * only move when a card is REORDERED, never because its contents changed. */
+.ov-card-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  line-height: 1;
+  min-height: 1.45em;
+  align-items: center;
+}
+
+.ov-flag {
+  font-size: 0.72em;
+  line-height: 1;
+  padding: 0.22em 0.45em;
+  border-radius: 0.8em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+/* Each severity keeps its hue but mixes toward the surface, so the same chip is
+ * legible on Classic Light and on the default dark theme. */
+.ov-flag--calm {
+  color: color-mix(in srgb, #34a853 65%, var(--text-primary));
+  background: color-mix(in srgb, #34a853 12%, transparent);
+  border-color: color-mix(in srgb, #34a853 30%, transparent);
+}
+.ov-flag--dead,
+.ov-flag--crit,
+.ov-flag--bleeding {
+  color: color-mix(in srgb, #d93025 60%, var(--text-primary));
+  background: color-mix(in srgb, #d93025 14%, transparent);
+  border-color: color-mix(in srgb, #d93025 38%, transparent);
+}
+.ov-flag--stunned,
+.ov-flag--poisoned,
+.ov-flag--diseased,
+.ov-flag--low,
+.ov-flag--webbed {
+  color: color-mix(in srgb, #e6a23c 70%, var(--text-primary));
+  background: color-mix(in srgb, #e6a23c 14%, transparent);
+  border-color: color-mix(in srgb, #e6a23c 38%, transparent);
+}
+.ov-flag--spoken {
+  color: color-mix(in srgb, var(--accent) 75%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.ov-flag--offline,
+/* The INFORMATIONAL band — below `ATTENTION_ALERT_FLOOR`. These say something
+ * about a character without claiming it needs you, so they are deliberately the
+ * quietest chips on the card. (`.ov-flag--free` was dropped with the
+ * free-to-act flag in v0.19.0 — B274.) */
+.ov-flag--idle,
+.ov-flag--lock {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  border-color: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+/* ── Body sections ────────────────────────────────────────────────────────── */
+.ov-card-vitals, .ov-card-icons { pointer-events: none; }
+
+/* VitalsBar and IconBar are built to span the FULL game area as chrome strips —
+ * gradient fill, a bottom hairline, generous side padding, and bars with a
+ * 48–60px floor. Dropped into a ~300px card unchanged they read as two foreign
+ * strips wedged inside a tile, and the vitals overflow. Strip the chrome and let
+ * the bars shrink; the bars themselves are untouched. */
+.ov-card-vitals .vitals-strip,
+.ov-card-icons .status-bar {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.ov-card-vitals .vitals-row { gap: 0.3em; }
+
+/* min-width 48px × 5 + gaps overflows a card at small fonts; 0 lets flex do the
+ * work. `overflow: hidden` on the overlay text is what stops a long guild-renamed
+ * vital ("Inner Fire") spilling across its neighbour instead of truncating. */
+.ov-card-vitals .vital-bar { min-width: 0; height: 1.15em; }
+.ov-card-vitals .vital-text { overflow: hidden; padding: 0 0.15em; }
+
+/* ── Conditions — only what is NOT normal ─────────────────────────────────────
+ * Height-reserved and quiet: this is CONTEXT, so it must not compete with the
+ * attention chips above it (hierarchy from muting, polish standard #5). Empty
+ * whenever a character is upright, empty-handed and casting nothing — which is
+ * the honest answer and the common case.
+ */
+.ov-card-cond {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  align-items: center;
+  min-height: 1.3em;
+  line-height: 1;
+  min-width: 0;
+}
+
+.ov-cond {
+  font-size: 0.74em;
+  line-height: 1;
+  padding: 0.2em 0.4em;
+  border-radius: 0.7em;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 14%, transparent);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A posture that isn't upright is a liability, not neutral context. */
+.ov-cond--warn {
+  color: color-mix(in srgb, #e6a23c 70%, var(--text-primary));
+  background: color-mix(in srgb, #e6a23c 12%, transparent);
+  border-color: color-mix(in srgb, #e6a23c 34%, transparent);
+}
+.ov-cond--held  { color: var(--text-secondary); }
+.ov-cond--spell {
+  color: color-mix(in srgb, var(--accent) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.ov-card-room { display: flex; flex-direction: column; gap: 0.1em; min-width: 0; }
+
+.ov-card-roomname {
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Height-reserved: rendered even when the room is empty, so somebody walking in
+ * or out never resizes the card. An empty room honestly shows nothing. */
+.ov-card-here {
+  font-size: 0.82em;
+  line-height: 1.25;
+  min-height: 1.25em;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-card-here--hostile { color: color-mix(in srgb, #e6a23c 55%, var(--text-muted)); }
+
+.ov-card-dim { color: var(--text-muted); font-size: 0.82em; }
+
+/* Wound severity, worn by a chip in the flag row. */
+.ov-flag--wound-1 {
+  color: color-mix(in srgb, #e6a23c 70%, var(--text-primary));
+  background: color-mix(in srgb, #e6a23c 14%, transparent);
+  border-color: color-mix(in srgb, #e6a23c 38%, transparent);
+}
+.ov-flag--wound-2 {
+  color: color-mix(in srgb, #e8710a 72%, var(--text-primary));
+  background: color-mix(in srgb, #e8710a 15%, transparent);
+  border-color: color-mix(in srgb, #e8710a 40%, transparent);
+}
+.ov-flag--wound-3 {
+  color: color-mix(in srgb, #d93025 65%, var(--text-primary));
+  background: color-mix(in srgb, #d93025 16%, transparent);
+  border-color: color-mix(in srgb, #d93025 42%, transparent);
+}
+
+/* ── Stat chips ───────────────────────────────────────────────────────────── */
+/* `column-gap` is nearly double the row-gap so pairs read as pairs: at an even
+ * 0.5em the label of one chip sat as close to the value of the previous one as
+ * to its own, and the row scanned as one run-on string (Sekmeht's screenshot:
+ * "UP 47m IDLE 21s LPM 2 RANKS 6 ROOMS 564 LOCKED 1"). */
+.ov-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.9em;
+  row-gap: 0.3em;
+  line-height: 1;
+  padding-top: 0.4em;
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+.ov-stat { display: inline-flex; align-items: baseline; gap: 0.3em; font-size: 0.75em; line-height: 1; }
+.ov-stat-label { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.ov-stat-value { color: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ── Feed ─────────────────────────────────────────────────────────────────────
+ * FIXED height, computed from the configured line count — this is the rule that
+ * keeps a card a stable rectangle. Content-sized, the feed grew and shrank with
+ * every batch of game text (and with how many rows a long line wrapped to), so
+ * the card resized and the whole grid re-flowed underneath it: the "quiver".
+ *
+ * `justify-content: flex-end` pins the NEWEST line to the bottom and lets older
+ * content overflow off the top, where `overflow: hidden` clips it — so the box
+ * is constant whether a line wrapped to one row or three.
+ *
+ * `1.3em` matches the `line-height` below, so N lines is exactly N rows tall.
+ */
+.ov-card-feed {
+  margin-top: 0.1em;
+  padding-top: 0.4em;
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
+  font-size: 0.85em;
+  line-height: 1.3;
+  color: var(--text-primary);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* ABSORBS the leftover height rather than owning a fixed one. The tile's
+     height is now set by the grid row, so the tile is the stable rectangle and
+     the feed simply takes what is left — which makes the anti-quiver guarantee
+     STRONGER than the fixed-height version it replaces, and lets a full-screen
+     single-character tile show a genuinely long feed.
+     The `feedLines` setting is NOT a cap here — capping would leave a
+     full-screen single-character tile showing six lines above a lot of empty
+     space. It instead raises the grid's ROW FLOOR (see `planGrid`), so it means
+     "guarantee me at least this many lines per card", and the feed grows past it
+     whenever the tile is bigger. `min-height: 0` is what lets a flex child
+     actually shrink inside a bounded parent. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* `flex-shrink: 0` is LOAD-BEARING, and its absence is what made the feed
+ * unreadable in the first fixed-height build. `TextLineRow` renders `.text-line`
+ * as a DIRECT flex child, and flex children shrink by default — so once content
+ * exceeded the fixed height, every line was compressed toward its
+ * `min-height: 1.4em`. A line that wrapped to three rows still PAINTED three
+ * rows, inside a one-row box, on top of its neighbours. Lines must keep their
+ * natural height and simply overflow, where the container clips them.
+ *
+ * `max-height` caps each line at 3 rows so one runaway line (a long combat
+ * exchange, an event banner) cannot swallow the whole feed and leave you looking
+ * at a single event. A plain height cap rather than `-webkit-line-clamp`, which
+ * would mean changing every line's `display` to `-webkit-box` — not a change to
+ * make to shared text rendering without being able to look at it. */
+.ov-card-feed > * {
+  flex: 0 0 auto;
+  max-height: calc(3 * 1.3em);
+  overflow: hidden;
+  /* `.text-line` ships `min-height: 1.4em` (so a blank game line still holds a
+   * row). Against this feed's 1.3 line-height that leaves 6 lines needing 8.4em
+   * in an 7.8em box — the top row would always render as a half-clipped sliver.
+   * Matching the two makes N lines exactly N rows, and a blank line still holds
+   * its row. */
+  min-height: 1.3em;
+}
+
+.ov-card-feed .text-line { white-space: pre-wrap; word-break: break-word; }
+.ov-card-feed-empty { font-style: italic; }
+
+/* ── Stream selector ──────────────────────────────────────────────────────────
+ * It must READ AS A CONTROL at rest. The first version was styled almost
+ * invisibly — faint, uppercase, transparent-bordered, lighting up only on hover
+ * — on a "quiet by default" reading of UX #1. Sekmeht could not find it at all,
+ * and it was sitting in plain sight under the stats row looking like another
+ * stat label. Quiet-by-default governs NOISE; it does not license hiding a
+ * control (UX #8: the UI must explain itself). So: a real bordered pill with a
+ * caret and a "showing" prefix, muted but unmistakably interactive.
+ */
+.ov-card-streampick { display: flex; align-items: center; line-height: 1; }
+
+.ov-card-streampick::before {
+  content: 'showing';
+  font-size: 0.66em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 0.4em;
+  flex: 0 0 auto;
+}
+
+.ov-card-streamsel {
+  font-family: inherit;
+  font-size: 0.74em;
+  line-height: 1;
+  padding: 0.25em 0.4em;
+  max-width: 100%;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.ov-card-streamsel:hover,
+.ov-card-streamsel:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* The dropdown is an OS popup and does not inherit the card's theme — without
+ * this the options render as system default (readable, but visibly foreign). */
+.ov-card-streamsel option {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+/* A non-default selection is a real state, so it stays accent-tinted without
+ * hover — you can tell at a glance which cards are showing something other than
+ * the game window. */
+.ov-card-streamsel[data-main='false'] {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+/* ── Universal input bar ──────────────────────────────────────────────────────
+ * Sits under the grid, where the command bar sits in the game window — and it
+ * IS that bar, visually. The strip, the input wrapper, the input and its
+ * placeholder are styled by the SHARED rules in game.css (`.command-bar`,
+ * `.cmd-input-wrap`, `.command-input`), which name the `.ov-inputbar*`
+ * selectors alongside their own. Only the parts the game bar does not have live
+ * here: the target picker, Send, and the offline warning.
+ *
+ * Do NOT restate a shared value below — an equal-specificity rule in this file
+ * would win or lose on bundle order (pitfall #111), and the two bars would drift
+ * apart the first time either is retuned. Retune the game bar; both follow.
+ *
+ * The picker is a FIXED-WIDTH select: it does not grow with the roster, where a
+ * chip per character would (pitfall #109 — the SimuCoin popover that ran past
+ * the viewport for a user with seven accounts).
+ */
+.ov-inputbar-to { display: flex; align-items: center; gap: 0.4em; flex: 0 0 auto; }
+
+.ov-inputbar-label {
+  font-size: 0.72em;
+  /* Pinned: the shared `.command-bar` rule sets no line-height, so without this
+     the label inherits the PROSE line-height and balloons the strip (pitfall
+     #77). Every child of this bar must pin its own. */
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.ov-inputbar-single { font-size: 0.85em; line-height: 1; color: var(--text-secondary); font-weight: 600; }
+
+.ov-inputbar-target {
+  font-family: inherit;
+  font-size: 0.8em;
+  line-height: 1;
+  padding: 0.3em 0.4em;
+  max-width: 12em;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.ov-inputbar-target option { background: var(--bg-raised); color: var(--text-primary); }
+
+/* Broadcast is the loud state — it deserves to look different from "one
+ * character", because the cost of not noticing is sending to everybody. */
+.ov-inputbar-target--all {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-input));
+}
+
+/* The wrapper carries the border/background/focus ring (game.css). Only the
+ * flex behaviour is ours: the input has to absorb the row's leftover width, and
+ * `min-width: 0` is what lets a flex item actually shrink below its content. */
+.ov-inputbar-wrap { flex: 1 1 auto; min-width: 0; }
+
+/* No connected characters — the field states why rather than sitting inert. */
+.ov-inputbar-input:disabled { color: var(--text-faint); cursor: not-allowed; }
+.ov-inputbar-wrap:has(.ov-inputbar-input:disabled) { opacity: 0.6; }
+
+.ov-inputbar-send {
+  font-family: inherit;
+  font-size: 0.82em;
+  line-height: 1;
+  padding: 0.45em 0.9em;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+.ov-inputbar-send:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.ov-inputbar-send:disabled { opacity: 0.45; cursor: default; }
+
+.ov-inputbar-warn {
+  font-size: 0.75em;
+  line-height: 1;
+  color: color-mix(in srgb, #e6a23c 70%, var(--text-primary));
+  flex: 0 0 auto;
+}
+
+/* ── App-bar view toggle ──────────────────────────────────────────────────────
+ * Chip treatment matching the character tabs: accent tint plus an accent
+ * hairline when active, neutral INACTIVE-ONLY hover. The `:not(--active)` is
+ * load-bearing — a bare `:hover` is specificity (0,2,0) and would outrank the
+ * (0,1,0) active class, silently replacing the selected state on hover
+ * (pitfall #107).
+ */
+.ov-viewtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-right: 0.5em;
+}
+
+.ov-viewtoggle-btn {
+  position: relative;
+  font-family: inherit;
+  font-size: 0.85em;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.ov-viewtoggle-btn:not(.ov-viewtoggle-btn--active):hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-secondary);
+}
+
+.ov-viewtoggle-btn--active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--accent);
+}
+
+.ov-viewtoggle-badge {
+  margin-left: 0.4em;
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.15em 0.35em;
+  border-radius: 0.8em;
+  color: color-mix(in srgb, #d93025 55%, var(--text-primary));
+  background: color-mix(in srgb, #d93025 18%, transparent);
+  border: 1px solid color-mix(in srgb, #d93025 40%, transparent);
+}
+
+/* Motion is decoration, colour is signal: under epilepsy-safe the transitions
+ * go but every severity colour stays (polish standard #9b). */
+:root[data-epilepsy-safe='true'] .ov-card,
+:root[data-epilepsy-safe='true'] .ov-viewtoggle-btn {
+  transition: none;
+}

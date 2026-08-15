@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { IPC } from '../shared/types'
 import type {
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
@@ -6,20 +7,11 @@ import type {
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
   CatchupDigest, CatchupProgress,
   AICapability, AIKeyStatus, AITestResult, AIChatRequest, AIChatChunk, AIChatDone, AIChatError,
-  SimuCoinStatus,
+  SimuCoinStatus, UserTextPayload,
 } from '../shared/types'
 
-const CH = {
-  LOGIN:             'login',
-  SEND_COMMAND:      'send-command',
-  DISCONNECT:        'disconnect',
-  SESSION_DESTROY:   'session:destroy',
-  GAME_EVENT:        'game-event',
-  RAW_XML:           'raw-xml',
-  CONNECTION_STATUS: 'connection-status',
-  ERROR:             'error',
-  SESSION_ROSTER:    'session-roster',
-} as const
+// One shared list — see the note on IPC in shared/types.ts.
+const CH = IPC
 
 contextBridge.exposeInMainWorld('api', {
   // ── Session lifecycle ────────────────────────────────────────────────────────
@@ -30,6 +22,13 @@ contextBridge.exposeInMainWorld('api', {
 
   sendCommand: (sessionId: SessionId, command: string) =>
     ipcRenderer.send(CH.SEND_COMMAND, sessionId, command),
+
+  // v0.19.0: run `text` as if it had been typed in that character's own command
+  // bar. Main routes it to the OWNING window (the target may be in a decoupled
+  // one), whose GameWindow puts it through `dispatchUserText` — so it echoes and
+  // logs, unlike `sendCommand`, which writes straight to the socket.
+  sendUserText: (sessionId: SessionId, text: string) =>
+    ipcRenderer.send(CH.SEND_USER_TEXT, sessionId, text),
 
   disconnect: (sessionId: SessionId) =>
     ipcRenderer.send(CH.DISCONNECT, sessionId),
@@ -99,6 +98,12 @@ contextBridge.exposeInMainWorld('api', {
   // ── Per-session push channels ───────────────────────────────────────────────
   // All four carry sessionId in their payload. The renderer's SessionsContext
   // routes each event to the matching tab.
+  onUserText: (cb: (p: UserTextPayload) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, p: UserTextPayload) => cb(p)
+    ipcRenderer.on(CH.USER_TEXT, listener)
+    return () => ipcRenderer.removeListener(CH.USER_TEXT, listener)
+  },
+
   onGameEvent: (cb: (batch: GameEventBatch) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, batch: GameEventBatch) => cb(batch)
     ipcRenderer.on(CH.GAME_EVENT, listener)

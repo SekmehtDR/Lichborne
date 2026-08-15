@@ -17,24 +17,19 @@ import { readSharedProfile, writeSharedProfile, readCharacterProfile, writeChara
 import { savePassword, loadPassword, deletePassword } from './passwords'
 import { registerAIHandlers } from './ai'
 import { registerSimuCoinHandlers } from './simucoin'
+import { IPC } from '../shared/types'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
   RosterEntry, SessionRosterPayload,
+  UserTextPayload,
 } from '../shared/types'
 import type { MenuAction } from '../shared/menuActions'
 
-const CH = {
-  LOGIN:             'login',
-  SEND_COMMAND:      'send-command',
-  DISCONNECT:        'disconnect',
-  SESSION_DESTROY:   'session:destroy',
-  GAME_EVENT:        'game-event',
-  RAW_XML:           'raw-xml',
-  CONNECTION_STATUS: 'connection-status',
-  ERROR:             'error',
-  SESSION_ROSTER:    'session-roster',
-} as const
+// Channel names come from the ONE shared list (pitfall #127). A private copy
+// here is how SEND_USER_TEXT reached `undefined` and silently ate every Quick
+// Send in v0.19.0 — see the note on IPC in shared/types.ts.
+const CH = IPC
 
 // ── Session model ─────────────────────────────────────────────────────────────
 // A Session encapsulates all per-character I/O state: TCP/Lich socket, XML
@@ -752,6 +747,26 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
   // the session appears in the roster broadcast. event.sender.id is the calling
   // window's webContents id — stable for the window's lifetime.
   s.ownerWindowId = event.sender.id
+  // HOLD live delivery until this session has a GameWindow to deliver TO.
+  //
+  // The pipeline is wired the moment the session exists (`wireSession` in
+  // `createSession`), but this handler is an invoke that resolves at the END of
+  // login — so the renderer does not learn the sessionId, and therefore cannot
+  // mount a GameWindow, until after the socket has already produced text. The
+  // game's FIRST data is "Please wait for connection to game server."; it was
+  // being flushed to a window whose only `onGameEvent` subscriber (GameWindow)
+  // did not exist yet, and every listener filters by sessionId, so it went on
+  // the floor. Result: a freshly-connected tab sat blank until the game next
+  // said something (Sekmeht, noticed on the SECOND character of a Team Login —
+  // the first loses the same lines but fills in before you look at it).
+  //
+  // Holding buffers it instead, and the GameWindow's existing mount-time
+  // `session:request-replay` delivers it once and resumes live. This CANNOT
+  // double (the reason a fresh connect skipped replay before): the hold means
+  // there was no live delivery to double. The release timer is armed AFTER
+  // connect resolves — see below.
+  s.replayTarget = s.ownerWindowId
+  s.holdingForReplay = true
   s.meta = {
     characterId: makeCharacterId(creds.account, creds.character, creds.game),
     account: creds.account,
@@ -784,6 +799,13 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
     }
     s.connected = true
     sendStatus(s, true, 'Connected')
+    // Arm the safety net HERE, not where the hold was set: it both releases the
+    // hold and DELIVERS the buffer, and its window has to measure "how long
+    // until the renderer mounts the GameWindow", not "how long login takes".
+    // Armed at the top it would fire mid-login — into the same void this hold
+    // exists to avoid — on any connect that takes longer than 5s, which a Lich
+    // launch routinely does.
+    scheduleReplayHoldRelease(s)
     return { ok: true, sessionId: s.id }
   } catch (err) {
     destroySession(s.id)
@@ -933,14 +955,22 @@ ipcMain.on('session:reload', (_e, characterId: string) => {
 // decoupled / re-homed / remounted window paints scrollback + room/map/vitals
 // instead of starting blank. Delivered as a normal game-event batch flagged
 // replay:true to the requesting window only — the renderer rebuilds display +
-// state but runs no side effects (no triggers, no logging). Fresh sessions have
-// an empty buffer, so this is a harmless no-op on a first connect.
+// state but runs no side effects (no triggers, no logging).
+//
+// v0.19.0: this is ALSO how a FIRST connect gets its opening text. It used to
+// say "fresh sessions have an empty buffer, so this is a harmless no-op on a
+// first connect" — which was true of the buffer and wrong about the outcome:
+// the login text had already been flushed to a window with no GameWindow
+// mounted, so it was lost rather than buffered. Login now holds delivery, so
+// the buffer is populated and this is the claim.
 ipcMain.on('session:request-replay', (event, sessionId: SessionId) => {
   const s = getSession(sessionId)
   if (!s) return
-  // Only replay to a window the session was MOVED into (replayTarget). A fresh
-  // connect never set it, so its first window gets NO replay — preventing the
-  // login stream from being doubled (live + replay). One-shot: clear on deliver.
+  // Only replay to the window the session is FOR (replayTarget) — set by a move
+  // (decouple / re-home / reload) and, since v0.19.0, by LOGIN itself. Doubling
+  // is prevented by the HOLD rather than by withholding the replay: while
+  // `holdingForReplay` is set nothing is delivered live, so there is no live
+  // copy for this to duplicate. One-shot: cleared on deliver.
   if (s.replayTarget !== event.sender.id) return
   s.replayTarget = undefined
   s.holdingForReplay = false  // replay delivered — resume live delivery
@@ -960,6 +990,27 @@ ipcMain.on(CH.SEND_COMMAND, (_event, sessionId: SessionId, command: string) => {
   const trimmed = command.trim().toLowerCase()
   if (trimmed === 'quit' || trimmed === 'exit') s.cleanDisconnect = true
   s.connection.send(command)
+})
+
+// v0.19.0: text typed AT a character from somewhere else — the Overview's input
+// bar, or Quick Send. Unlike SEND_COMMAND above, this does NOT write to the
+// socket: it is forwarded to the window that OWNS the session, whose GameWindow
+// runs it through its normal input path, so it resolves aliases, splits on `;`,
+// echoes `>cmd`, and reaches command history and the session log.
+//
+// Main is the hop because the target may live in a DECOUPLED window. A
+// renderer-side DOM event only reaches the window that fired it, so Quick Send
+// to a character in another window would silently deliver nothing — which is
+// exactly the case the previous raw-send path got right by accident (it went
+// through main) and a naive fix would have broken.
+//
+// Silently returns on a dead sessionId, matching SEND_COMMAND: a stale target is
+// a no-op, never a crash.
+ipcMain.on(CH.SEND_USER_TEXT, (_event, sessionId: SessionId, text: string) => {
+  const s = getSession(sessionId)
+  if (!s) return
+  const payload: UserTextPayload = { sessionId, text }
+  ownerWindow(s)?.webContents.send(CH.USER_TEXT, payload)
 })
 
 ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
@@ -1751,6 +1802,9 @@ function setupMenu() {
           { label: 'Decrease Font Size', click: () => sendMenuAction('font-decrease') },
           { label: 'Reset Font Size',    click: () => sendMenuAction('font-reset') },
         ] },
+        { type: 'separator' },
+        // v0.19.0 Views. Click-only like every other Lichborne menu item.
+        { label: 'Session / Overview View', click: () => sendMenuAction('toggle-view') },
         { type: 'separator' },
         { label: 'Layout Manager', click: () => sendMenuAction('toggle-panels') },
         { label: 'Show Map',      click: () => sendMenuAction('toggle-maps') },

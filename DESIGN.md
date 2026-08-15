@@ -7601,7 +7601,7 @@ Feedback for executed commands is a client-styled line in the main window (`pres
 - **Registry, not if-chain** — [slashCommands.ts](src/renderer/slashCommands.ts) holds a declarative `SLASH_COMMANDS` registry (noun, aliases, verb, positional arg schema, options, flags, description, examples, executor). ONE registry drives the parser, the palette's list + signatures + validation, and `/help` — the §35 capturer-registry philosophy. Adding a command = one entry.
 - **Executors mutate through the existing rails** — GameWindow builds a `SlashContext` whose setters do exactly what a panel save does: `saveHighlights(character, next)` (quota-safe via `safeSetItem`) + `setHighlights(next)` (recompiles via the existing memos) + `saveProfile()` (debounced YAML). No new persistence, no profile-shape change, `allGroups: true` defaults preserved.
 - **Per-session by construction** — the palette + context live in GameWindow (the command bar's home), so per-character state and contexts are all in reach (pitfall #57).
-- **Scope: the main command bar only.** QuickSend deliberately does NOT interpret `/` (it targets OTHER characters' sessions; a client command there is ambiguous about which character it configures).
+- **Scope (v0.19.0): the main command bar, Quick Send, and the Overview's input bar** — anything routed through `dispatchUserText`. **This REVERSES the original exclusion**, which read: *QuickSend deliberately does NOT interpret `/` (it targets OTHER characters' sessions; a client command there is ambiguous about which character it configures)*. The ambiguity argument was real but the alternative was worse — the raw path sent `/highlight add …` to DragonRealms **as literal text**, and a client command must never leave the client (B268). Every send path that can carry user-typed text therefore has to reach the intercept. A command runs in the TARGET character's context, so a broadcast runs it once per character — which is useful for `/highlight add` and carries one known wart: a toggle like `/view` flips once per target. The PALETTE remains the main command bar only; the other surfaces get no completion.
 
 ### 37.5 Phasing
 
@@ -7688,9 +7688,11 @@ split** (Lich commands can legally contain `;` — `;e Vars['x'] = 'a;b'` must n
 `\;` escapes a literal `;`; parts are trimmed, empties dropped, and each part runs the full
 alias/echo/send/log tail independently (aliases expand per command). History keeps the RAW typed
 line — ↑ recalls `n;n;e` whole and `{RepeatLast}` replays it through the same split. The separator
-is hardcoded `;` (Genie's default `separatorchar`; the import layer assumes the same). QuickSend
-deliberately does NOT split — it targets other characters' sessions, the same reasoning as its `/`
-exclusion (§37.4). A `//`-escaped line (literal `/text`) DOES split like any game line.
+is hardcoded `;` (Genie's default `separatorchar`; the import layer assumes the same). **As of v0.19.0
+Quick Send and the Overview's input bar DO split**, because both now arrive through `dispatchUserText`
+(§47.5e) — this supersedes the earlier note that Quick Send deliberately did not, which rested on the
+`/` exclusion §37.4 has since reversed. A `//`-escaped line (literal `/text`) DOES split like any game
+line.
 
 ### 38.7 Type-anywhere focuses the bar (F60, v0.15.2)
 
@@ -7982,7 +7984,8 @@ Every failure resolves to a status, never an exception: an unrecognized sign-in 
 ### 42.5 UI & consent
 
 - **Coin button in the AppBar** ([SimuCoinButton.tsx](src/renderer/components/SimuCoinButton.tsx)) — app-level, because an allotment belongs to an ACCOUNT, not a character (pitfall #57's converse: a per-session component must not own account state). **Quiet by default (UX standard #1): it renders NOTHING when no account is opted in or offerable** — no dead icon for players who don't use this.
-- **The coin is a drawn SVG object, and there is ONE artwork with two states.** A minted gold face (rim → radial face → bevel ring → struck "S" → static glint → a sweeping specular band). Colors are **baked, not theme vars** — it depicts an OBJECT, the same Principle #4 exception as the map tiles and the moons' lore colors. **Nothing to claim ⇒ the SAME artwork under `grayscale + brightness + opacity`**, never a second palette, so the gold and dull states can't drift; a claim then *brightens* the coin (400ms transition) instead of swapping an icon. Claimable adds full colour, a breathing glow, and the sweeping sheen; busy spins it. **Every animation is dropped under `:root[data-epilepsy-safe='true']` while the GOLD is kept** — the colour is the signal, the motion is decoration. Sized in `em` so it tracks the game font (never `rem`, pitfall #45), and its def ids are `useId`-namespaced (pitfall #95).
+- **The coin is a drawn SVG object, and there is ONE artwork with two states.** A struck **copper/bronze** face (rim → radial face → bevel ring → struck "S" → static glint → a sweeping specular band). Colors are **baked, not theme vars** — it depicts an OBJECT, the same Principle #4 exception as the map tiles and the moons' lore colors — with ONE exception: an outer `.sc-coin-ring` mixed from `--text-primary`, so a fixed-palette object still keeps a visible edge on any theme. **Nothing to claim ⇒ the SAME artwork under a light `grayscale`**, never a second palette, so the two states can't drift; a claim then *brightens* the coin (400ms transition) instead of swapping an icon. Claimable adds full colour, a breathing glow, and the sweeping sheen; busy spins it. **Every animation is dropped under `:root[data-epilepsy-safe='true']` while the COLOUR is kept** — the colour is the signal, the motion is decoration. Sized in `em` so it tracks the game font (never `rem`, pitfall #45), and its def ids are `useId`-namespaced (pitfall #95).
+- **Retuned in v0.19.0 (B272), and the reasoning generalises.** It shipped as minted GOLD dulled to `grayscale(.85) brightness(.78)` at `opacity: .55`, which measures **2.36** contrast against a dark app bar and **1.34** against Classic Light — and that is the state it wears nearly all the time, since the button renders whenever an account is eligible, not only when coins wait. Two things were wrong. **The hue:** gold's value sits close to a light theme's background and its desaturated form close to a dark one's, so it had no reliable separation at either end; copper (`#bd6f38`) is a mid-tone that stays warm against both families, and the accent used by the ready border, tint, glow and badge moved with it so the button reads as one object. **The dulling:** the loud/quiet distinction is already carried by that chrome, so the coin only ever needed to read as *dormant* — UX standard #1 removes NOISE, it does not hide controls. Now `grayscale(.4)` at `opacity: .9` with brightness untouched, since lowering brightness is precisely what killed it on dark themes. Measured **3.58 / 3.04** after, both clear of the 3:1 non-text floor.
 - **Consent is per account, shown on the surface that enables it** (the AI-consent precedent): the disclosure names exactly what is sent (the saved account password, over HTTPS, to store.play.net), that nothing goes anywhere else, and that no store data is written to disk. **Nothing touches the network before that opt-in.** An account with no saved password is never offered (there's no other credential source).
 - **Config** ([simucoinConfig.ts](src/renderer/simucoinConfig.ts)): `{ consented, autoClaim, lastBalance?, lastCheckedAt? }` per account, the two flags default false → `SharedProfile.simucoin` → `_shared.yaml` (Principle #1). Optional field, non-breaking, **no migration**. Deliberately NOT a Transfer category (machine-local + credential-gated — the `ai`/`automationStats` precedent). Both the loader and `importSharedProfile` coerce each entry, so a hand-edited YAML can't yield a half-shaped record that reads as consented.
 - **Slash surface** (Principle #11): `/simucoin` (bare = status) · `check` · `claim`, aliases `/sc`, `/simucoins`, plus a `NOUN_HELP` line. A **bare+verbs noun** — covered automatically by the registry-derived `NOUNS_WITH_VERBS`; its bare form takes no args, so the palette rule holds. Executors are synchronous while a run is a store round-trip, so they report only whether it **started**; results arrive as a toast + the popover.
@@ -8448,3 +8451,509 @@ multi-character, cross-platform are all done and hardened. Two things are thin:
 A **"first ten minutes" release**: the README screenshot, F86, F87 and F88.
 All Tier 1, all small, and together they close the exact failure mode that cost
 a tester two days. Then ONE Experience (G2) to keep the joy layer moving.
+
+---
+
+## 47. Views — Session & Overview (v0.19.0)
+
+**Status:** Phase 1 built. Phases 2–3 specified here, not scheduled.
+
+### 47.1 Why
+
+DR allows one character per account, so multi-boxing means several accounts at
+once. Lichborne already supported that mechanically (multi-session, tabs,
+decoupled windows, Quick Send) but could only ever *show* one character at a
+time — so "is anyone dying, idle, or being spoken to?" meant tabbing through
+everyone, and the answer was stale before you finished.
+
+A **view** is a top-level, app-level mode, orthogonal to layout mode, panels and
+Experiences:
+
+- **Session** — today's behaviour, unchanged and still the default.
+- **Overview** — a live card per character: condition, situation, session
+  progress, a short game-text feed, and an *attention* model that flags whoever
+  needs you. Cards are ordered by **tab position by default** (Sekmeht,
+  v0.19.0): attention-sorting is real, but it MOVES cards while you are watching
+  them, and a dashboard whose tiles rearrange under the cursor defeats the
+  muscle memory that makes a dashboard fast — you learn "Agan is top-left" and
+  then he isn't. Tab order matches the character strip directly above it, so a
+  position means the same thing in both. `/view sort attention` opts in, and the
+  attention model still drives the flags, the colours and the summary strip.
+
+**Known gap in the attention model (B274, open).** `free-to-act` is specified as
+"out of roundtime and idle for `freeToActSeconds`" but is computed inside a memo
+whose dependencies are all push-driven, so it only evaluates when text has just
+arrived — when idle time is ~0 — and the branch is effectively unreachable.
+`idle` has the same structural problem and is solved by consumers re-deriving it
+against the shared 1 Hz clock; nothing re-derives `free-to-act`. The resolution
+is a decision rather than a patch: re-derive it on the clock, or drop it as
+redundant with `idle` at a 10s threshold. **The transferable rule: any attention
+flag whose condition is ELAPSED TIME cannot be computed at publish time** — the
+digest is push-driven by construction, and a character that has gone quiet has by
+definition stopped publishing. Such a flag must be derived by the consumer, and
+`idle` is the pattern to copy.
+
+**Persistence, and the invariant it exposed.** Options are app-wide
+(`SharedProfile.overview`, an optional field, so no version bump and no
+migration); the per-card stream choice is per-character (`overviewStream`, a
+scopedKey riding `state:` into the character YAML, registered in Transfer's
+existing `viewPrefs` category); the view MODE is per-window ephemeral and
+deliberately not persisted, so a decoupled window is never dragged into the main
+window's view.
+
+Building it surfaced a rule that was never written down: **every other field of
+`SharedProfile` is read FRESH from localStorage inside `buildSharedProfile`**,
+and localStorage is shared across windows, so a flush from any window is current
+by construction. The overview block was the only one reading module memory,
+which made it the only shared setting a second window could silently revert
+(B271) - fixed with a `storage` listener, and recorded because the next
+module-state-backed shared setting will need the same.
+
+**Decided with Sekmeht before building:** cards are **read-only** (click → open
+that character in Session view; Quick Send already covers cross-character
+commands); v1 is scoped to **this window's** characters; statistics are
+**condition + attention + session progress** (log-backed history deferred); the
+feed is a **short styled tail**, 0–20 lines, default 6.
+
+### 47.2 Architecture — the portal, and why it matters
+
+```
+AppShell
+├── AppBar → ViewToggle          (leaf subscriber; its badge works while CLOSED)
+└── content region  (position: relative)
+    ├── OverviewShell            (absolute overlay; owns the grid host + 1 Hz clock)
+    │     └── div.ov-grid        ← PORTAL HOST, always mounted
+    └── sessions.map(...)        ← visibility UNCHANGED
+          └── GameWindow
+                └── overviewOpen && createPortal(<OverviewCard/>, host, characterId)
+```
+
+**The card is rendered by its own GameWindow.** `createPortal` moves a child into
+a different DOM subtree while **keeping React context**, so the card escapes the
+`display:none` session shell (becoming visible) yet still reads that character's
+`vitals` / `roomState` / `lines` and its per-session `HighlightsContext` /
+`ContactsContext`. This *dissolves* pitfall #57 rather than working around it —
+no new IPC, no serialisation, no duplicated render path, and the game's own
+colours come through because the feed reuses `TextLineRow`.
+
+Three consequences worth stating:
+
+1. **Card order is CSS `order`, not DOM order.** Portal children append in commit
+   order, which drifts from session order after add/remove/remount. Each card
+   computes `attentionOrder(score, tabIndex)` itself — it can call
+   `useSessions()` because context survives the portal — which buys
+   attention-sorting for free.
+2. **The grid host is always mounted** (CSS-hidden in Session view), so the
+   portal target has a stable identity and there is never a null-target frame.
+3. **It is an overlay, not a third render branch.** The session shells keep their
+   existing visibility, so the active character's virtualised scrollback stays
+   measured and returning needs **no re-snap**. Hiding all shells would
+   reintroduce the pitfall #24/#68 0×0 class — and `stickToBottom`'s re-snap keys
+   on `isActive`, which does *not* change on a view flip.
+
+### 47.3 The store, and what is deliberately NOT in SessionStatus
+
+`SessionStatus` is untouched. Its `updateStatus` path is guarded by a
+hand-written 16-term equality chain whose entire purpose is to stop the character
+tab strip re-rendering on vital ticks; dashboard fields there would defeat that
+and add a term every future field must remember (pitfall #130).
+
+The cross-character reduction lives in `overviewStore.ts` — view mode, options,
+and one thin scalar `CharacterDigest` per character. Three invariants:
+
+- **Cached snapshot.** `getSnapshot` returns a `let` reassigned only in the
+  flush; a getter that rebuilds an array is an infinite render loop (pitfall
+  #129). This is the codebase's first `useSyncExternalStore`.
+- **Key-loop equality gate** over a frozen `DIGEST_KEYS`, so adding a field to
+  the type without adding it to the list is a compile error, not a silent
+  omission.
+- **Leading-edge coalescing** at 500ms, mirroring main's `scheduleFlush`. Not a
+  frame — nothing here animates; card timers tick off their own expiry stamps
+  through the existing `useTimers`.
+
+Consumers are LEAF components only, so a publish never reaches the tab strip.
+
+### 47.4 Attention
+
+`attention.ts` is pure, React-free and harnessed (`tmp-rules-harness` §H).
+Severity order **is** chip order, reading order and sort order (UX standard #3):
+dead 100 · offline 95 · critical 90 · bleeding 80 · stunned 70 · poisoned 62 ·
+diseased 60 · hurt 50 · webbed 45 · spoken-to 40 · idle 30 · mind-locked 20 ·
+free-to-act 10.
+
+Four rules the table encodes:
+
+- **A disconnected character reports ONLY offline.** Its vitals and indicators
+  are the last values before the drop; surfacing "bleeding" on a dead socket
+  reports a stale fact as a live one.
+- **`healthPct === null` means "no vital yet" and must read CALM** — a
+  just-connected character must not flash Critical, which a naive `< 25` against
+  0 would do.
+- **`free-to-act` is an invitation, not an alarm** — suppressed whenever anything
+  real is wrong, so the chip row can never contradict itself.
+- **`idle` is DERIVED by the consumer, never pushed.** An idle character stops
+  receiving events, so it stops re-rendering, so a pushed idle flag would never
+  arrive. The digest carries `lastInboundAt` quantised to 5s
+  (`IDLE_QUANTUM_MS`) — ample for a 180s threshold, and it caps publish churn at
+  one per character per 5s. The card and summary strip derive idle against the
+  shell's shared 1 Hz clock; the app-bar badge deliberately counts push-driven
+  problems only, because a badge that lights for a deliberately-parked character
+  is one you learn to ignore.
+
+### 47.5 Statistics
+
+**Live and free** (already parsed): vitals + guild-renamed labels, the indicator
+set, stance, hands, prepared spell, RT/CT/aim, room title, room occupants,
+injuries, skill ranks and mindstate.
+
+**Derived accumulators** (`useSessionStats.ts`, in refs so they never trigger a
+render): uptime, ranks gained this session, deaths, unique rooms visited, last
+inbound, lines/min (12 × 5s ring, advanced lazily), mind-lock count.
+
+Two design calls:
+
+- **The counters run ALWAYS, including in Session view.** One `+=` and one
+  `Date.now()` per *batch* — already coalesced to ~one per frame by main's 16ms
+  flush — is free at that scale, and it means opening the Overview shows real
+  numbers instead of every counter starting at zero. **The render is what's
+  gated, not the counting.**
+- **Everything resets on a reconnect-in-place.** A GameWindow is keyed by
+  `characterId`, so a tab Reconnect swaps in a new `sessionId` without
+  remounting (pitfall #69); the reset effect keys on `sessionId`, or a six-hour
+  uptime survives a drop and lies.
+
+`ranksThisSession` rides `ExpComponentEvent.rankUp` — the **server's own**
+rank-gain signal — so it is exact and costs one Map increment. No client-side
+rank diffing, no log reading.
+
+**Occupancy comes from `roomState`, NOT `sceneCast`.** The scene capturers are
+gated off unless an Experience is open (§35.6), so `sceneCast` and `sceneSpeech`
+are empty for most users, whereas the `<component id='room players'>` path is
+ungated. That is also why the "spoken to" flag is an explicit opt-in
+(`watchSpeech`, default **off**) which extends the §35.6 gate — the one option
+here with a real per-line cost, multiplied by every open character.
+
+### 47.5a Card contents — quiet by default (Binu, v0.19.0 review)
+
+Two rules from the first review, both instances of UX polish standard #1.
+
+**Only what is NOT normal.** The card originally reused `IconBar`, which renders
+every slot unconditionally — hands read "Empty", spell reads "None", stance
+always shows "Standing". That is exactly right for a game-area strip, where a
+fixed position you can glance at without reading is the point; in a tile it
+spends a whole band saying nothing happened. `IconBar` also **duplicated the flag
+row** (bleeding / stunned / dead / poisoned / diseased / webbed are attention
+chips already). The card now uses a purpose-built `ConditionLine` showing only a
+non-upright posture, the indicators that are *not* attention flags
+(hidden / invisible / joined), what is actually held, and a prepared spell.
+Reusing a component is right in principle; reusing one whose contract is
+"always show every slot" was the wrong component for a tile.
+
+**A card announces itself when a character is in real trouble.** `alertPulse`
+(default on) pulses the card when a character is dead or below the **critical**
+threshold — deliberately not the merely-hurt one, because a pulse that fires
+often is a pulse you stop seeing. If Lichborne does not have focus it also
+flashes the OS window via the existing `flashWindow()` → `flashFrame` path, so
+you find out from another application. Three constraints:
+
+- It fires on the **edge** (not-critical → critical), tracked with a
+  `boolean | null` ref where `null` means "not evaluated for this session yet" —
+  starting at `false` would read the first sample as an edge, so an
+  already-hurt character connecting, or a window handoff replaying state
+  (pitfall #60a), would flash spuriously.
+- The flash is **suppressed while the window has focus**: the card pulse is
+  already saying it there, and a flashing taskbar you can see is noise.
+- It lives in `useSessionStats`, **not the card** — the card only exists while
+  the Overview is open, and the entire point is to be told when you are not
+  looking. Main routes `flash-window` to the sender, so with decoupled windows
+  the window that actually owns the character in trouble is the one that asks
+  for attention.
+
+Motion is dropped under epilepsy-safe and `prefers-reduced-motion`; the red
+stays, so the accessible path loses nothing the effect was carrying
+(polish standard #9b).
+
+### 47.5b Grid scaling — from one character to thirty (Sekmeht, v0.19.0)
+
+A count-blind grid is wrong at both ends: one character sat alone in a 300px card
+in a sea of empty space, and thirty produced thirty identical cards regardless of
+how much room there actually was. The fix separates two questions that were
+being answered by one rule — **how big does each tile get** (the grid's job) and
+**what can a tile honestly show at that size** (the tile's job).
+
+**The grid fills, floors, then scrolls.** One expression carries it:
+
+```css
+grid-auto-rows: minmax(var(--ov-row-min), 1fr);
+```
+
+With room, `1fr` wins and rows share the full height — one character is
+full-screen, two split it, four go 2×2. Without, the floor wins and the grid
+scrolls. So thirty characters all fit on a 4K and stay readable (scrolling) on a
+laptop, with no count-buckets to get wrong. `align-content: start` must stay OFF
+— it collapses rows to content height and defeats the `1fr`.
+
+**Column count is chosen by `planGrid` ([overviewLayout.ts](src/renderer/overviewLayout.ts)), which is PURE and harnessed** (`tmp-rules-harness` §I). It
+evaluates every candidate 1..count and keeps the best-scoring shape. Three things
+it must do, each of which was a real bug the harness caught before the feature
+was ever run:
+
+- **Score the EFFECTIVE tile height,** `max(rowFloor, height / rows)`. Once rows
+  stop fitting the grid scrolls and every tile is exactly the floor tall —
+  scoring against the container height compares shapes that will never exist,
+  and picked visibly wrong layouts for large counts on small screens.
+- **Penalise a ragged last row.** Untouched, the scorer picks 3 columns for 4
+  cards and 4 for 9, because those tiles are marginally closer to the ideal
+  shape. Mathematically true, visibly wrong: a grid that fills evenly reads as
+  deliberate, one with a gap reads as broken.
+- **Score on the LOG of the aspect ratio,** so half-as-wide-as-ideal is penalised
+  the same as twice-as-wide. A plain difference is lopsided and biases toward
+  over-wide tiles.
+
+An exhaustive search is right here precisely because the count is small; a
+closed-form `ceil(sqrt(n))` ignores the container's own aspect and so gives the
+same answer on an ultrawide as on a portrait monitor.
+
+**Each tile then tiers itself with a `@container` query**, the app bar's
+degradation ladder (B178) applied to a card. That is automatically correct for
+any count × window size × font size, where a table of count → layout is wrong the
+moment somebody resizes — and crucially nothing in JS decides what MOUNTS, which
+is the pitfall #83 trap. Compact drops the feed, stats and occupancy; micro
+drops everything but name, health and the attention colour, because at that size
+anything more is unreadable and pretending otherwise is worse than admitting the
+tile is a status light. Thresholds are `em` against the card's own game-font
+anchor — do not convert them to px. Note `container-type` makes each card a
+stacking context (the B179 lesson); nothing escapes a card today, but a popover
+added inside one later must portal out.
+
+**The feed absorbs leftover height** (`flex: 1 1 auto; min-height: 0`) instead of
+owning a fixed one. The tile is now the stable rectangle, so this is a *stronger*
+anti-quiver guarantee than the fixed height it replaces. `feedLines` therefore
+stops being a cap — capping would leave a full-screen tile showing six lines
+above a lot of empty space — and instead **raises the row floor**, meaning
+"guarantee me at least this many lines per card", which is also what decides how
+soon the grid starts scrolling.
+
+**The manual override needs a width cap or it is inert.** Columns are `1fr`, so
+asking for "small" with four characters on a wide screen would still hand you
+four 480px tiles. `tileMaxPx` (null for auto, a px target otherwise) plus
+`justify-content: start` is what makes the setting mean what it says. It rides
+`OverviewOptions`, so it persists app-wide in `_shared.yaml` like every other
+Overview preference, with a Settings control and `/view set tiles=`.
+
+### 47.5c The card's stream selector (Rakkor's need, Sekmeht's design)
+
+> Rakkor: *"Conversation window at the minimum would still be necessary… being
+> able to see that from the dashboard = important."*
+
+A dashboard showing condition but not **what somebody just said to you** fails the
+responsiveness test: you would see a character was fine and still miss the GM or
+player waiting on an answer.
+
+**Each card carries a dropdown that changes which stream its feed shows.**
+Default `main` (the game window); switch it to `conversation` and that card shows
+only conversation. It **replaces** the feed rather than adding a second lane — a
+card is a glance, and two competing text areas is not one.
+
+**Per CHARACTER, not app-wide.** That is the whole point: a crafter sits on
+`main` while a character in a social spot watches `conversation`. It rides the
+`scopedKey` → `state:` → YAML pipeline like every other per-character setting
+(Principle #1), so it needs no profile-shape change, and it is reachable as
+`/view stream <id>` (which acts on the ACTIVE character, unlike the rest of
+`/view`).
+
+**The tier order changed because of it.** When the feed was a generic activity
+dump it was the first thing dropped as tiles shrank. Now it is the most
+deliberate thing on the card, so stats, occupancy and conditions go first and the
+feed survives to the smallest tier but one — which is what actually delivers
+Rakkor's "at the minimum".
+
+**It is a PARALLEL CAPTURE, and it has to be.** Reading `lines` or `streamLines`
+is wrong in both directions, because of the routing decision at
+[GameWindow.tsx:2541](src/renderer/components/GameWindow.tsx#L2541):
+
+- a **watched** stream routes to `streamLines` and never reaches main — so a
+  card reading `lines` is blind, and blind **worse the better the user's panel
+  layout is** (the same inversion that exposed the Catch Me Up gathering bug);
+- an **unwatched** stream with a `STREAM_FALLBACK` entry is redirected *into*
+  main and so never reaches `streamLines` either.
+
+So the capture sits beside the routing decision, pushes into its own buffer, and
+leaves routing completely untouched — the main window behaves exactly as before.
+One string compare per stream line, replay-gated like every other side effect
+(pitfall #60a), cleared when the selection changes, and capped at
+`MAX_MONITOR_LINES` because this is a glance lane held per character, not a
+second scrollback.
+
+**Two interaction details.** The card root is a button, so every control inside
+it must stop propagation on `click`, `mousedown` AND `keydown` — a native select
+emits all three and using it would otherwise also drop you into Session view. And
+the choice list always includes the current selection even when nothing has
+arrived on it this session, or the select silently falls back to its first option
+and the saved choice is lost the moment the view opens.
+
+**The choice list matches that character's panel `+` menu**, because each
+character has a different stream setup and two surfaces disagreeing about the
+same character is the kind of inconsistency nobody reports — they just stop
+trusting one. That means labelling from `PANEL_LABELS`, not from the game's own
+title: DR declares `conversation` with `title='Talk'`, and labelling from the
+title made it read as a MISSING stream rather than a renamed one. Discovered ids
+are normalized through `STREAM_ID_ALIASES` first, or `whispers` appears as its
+own row beside `conversation`; the stored selection is normalized on write too,
+so `/view stream talk` selects the canonical feed rather than an id the parser
+never emits.
+
+The only exclusions are entries that are **not text streams at all** and could
+only ever render "nothing yet". The authority for which is which is
+`renderPanel` in PanelFrame: a case returning `sp(id, streamLines[id])` is a
+stream; one returning a component fed from state is not. So `map` (graphical),
+`lichScripts` (`;listall` poll), `injuries` (`injury-update` events), `room`
+(structured sub-streams) and — the one that looks like a stream and isn't —
+**`exp`** (built from `exp-component` events) are out. State readouts that ARE
+streams (`spells`, `inv`) stay in: they clear and rewrite wholesale so they read
+as a live table rather than a feed, but that renders correctly, and whether a
+glance at your active spells is worth a card is the user's call rather than a
+silent omission.
+
+### 47.5d Card actions (Sekmeht, v0.19.0)
+
+A card offers the same per-character actions the character TAB does — open in a
+new window, move to the main window, disconnect, reconnect — plus **Close**,
+which the tab omits because it already carries an ✕.
+
+**One definition, two surfaces.** `buildCharacterMenu`
+([characterMenu.ts](src/renderer/characterMenu.ts)) is shared by the tab bar and
+the card. A right-click that offers different options depending on which
+representation of a character you happened to hit is an inconsistency nobody
+reports as a bug — they just learn to distrust one of them. The order it encodes
+is the tab menu's existing convention: non-destructive window moves first, a
+divider, then the connection toggle (Disconnect must never be the first item
+under the cursor — Binu kept fat-fingering it), then Close below even that. Only
+actionable entries are listed; there are no greyed rows.
+
+Three implementation constraints:
+
+- **Both a right-click AND a `⋯` button.** Right-click alone matches the tab, but
+  a right-click-only action is one most people never find — the same lesson the
+  stream selector taught when it was styled so quietly it read as a label. Both
+  open the identical menu.
+- **The menu renders from GameWindow, not inside the card.** A card is a
+  `@container`, therefore its own stacking context (the B179 lesson), so a menu
+  rendered within one would be trapped by it. `ContextMenu` portals to
+  `document.body` and clears the card entirely.
+- **Handlers are passed THROUGH, never wrapped.** `onClose: id => onClose?.(id)`
+  is always a function, so the builder's `if (env.onClose)` would always pass and
+  Close would render even where nothing can handle it — an entry that appears and
+  silently does nothing.
+
+### 47.5e The universal input bar — and the QuickSend fix (Sekmeht, v0.19.0)
+
+The Overview gained a persistent input bar under the grid: type at one character,
+or broadcast to all of them. It reverses "cards are read-only" but not the reason
+behind it — the input lives in ONE place, so a card is still a thing you read,
+and there is exactly one field on screen that can send text. Thirty cards with
+thirty inputs would be thirty places to mistype into the wrong character.
+
+**It exposed a real bug in Quick Send**, which this shares a fix with. Quick Send
+wrote straight to the socket via `sendCommand`, which meant:
+
+- the command **arrived invisibly** — a Quick Send `wave` showed only the game's
+  reply on the receiving character, with no `>wave`. That is B199's signature: the
+  renderer-side echo is separate from the send, and a raw write skips it.
+- a `/command` typed there was **forwarded to DragonRealms as literal text**,
+  because the raw path never reaches the slash intercept at the top of
+  `dispatchUserText`. A client command must never leave the client.
+
+**The fix is one bridge, used by both.** A send addressed to a `sessionId` is
+delivered to the GameWindow that owns it, which runs it through
+`dispatchUserText` — so it is indistinguishable from typing, because it *is* that
+path: alias resolution, `;` splitting, the `>` echo, command history, the session
+log, and the slash intercept.
+
+```
+renderer  window.api.sendUserText(sessionId, text)
+   main   SEND_USER_TEXT → ownerWindow(s).webContents.send(USER_TEXT, …)
+renderer  GameWindow (matching sessionIdRef) → dispatchUserText(…, { clearInput: false })
+```
+
+**Main is the hop, and that is load-bearing.** Quick Send targets the
+cross-window roster; a renderer DOM event only reaches the window that fired it,
+so a character in a DECOUPLED window would have silently received nothing. The
+first draft of this used a DOM event and would have broken exactly that case —
+the raw path had it right by accident, since it already went through main.
+
+Details worth keeping:
+
+- **`clearInput: false`.** The sender owns its own field; this must never reach
+  into the target's command bar and wipe a half-typed line.
+- **`sessionIdRef`, not a captured id** — a tab Reconnect swaps the id without
+  remounting (pitfall #86), and the listener is mounted once.
+- **A disconnected target is named, never silently promoted.** If the picked
+  character drops while you are typing, the bar says "target offline" and Send
+  does nothing. Falling back to the broadcast would turn a one-character command
+  into an everybody command — the worst failure available here, and the reason
+  Quick Send's own `lostTargets` exists.
+- **The target picker is a `select`, not chips** — it must not grow with the
+  roster (pitfall #109).
+- **Slash on a broadcast runs per character** (Sekmeht's call): `/highlight add`
+  fanning out to everybody is the best reason to have a broadcast. Accepted wart:
+  a toggle like `/view` flips once per target. Documented rather than
+  special-cased.
+- **Type-anywhere** mirrors F60, mounted only while the view is open so it cannot
+  steal keystrokes in Session view. The slash PALETTE is still the command bar
+  only — these surfaces get no completion.
+
+### 47.6 Cost
+
+**Closed:** two instructions per event batch and nothing else. The portal is not
+rendered, so §35.6's "free until used" applies without needing main's help.
+
+**Open:** the card renders inside its GameWindow's existing pass, so it adds a
+fixed per-render increment rather than per-line work. Three things are mandatory:
+`summarizeExp` / `summarizeInjuries` are `useMemo`'d on their raw inputs (~40
+regexes otherwise, per character, per render); the feed passes module-level
+`EMPTY` arrays and `nameRegex={null}` so `TextLineRow`'s `hasExtras`
+short-circuit skips the highlight/contact pass; and the 1 Hz clock is ONE
+interval in the shell published via context, not one per card (the
+`CharacterTabBar` shared-tick precedent).
+
+The global keydown handler early-returns while the Overview is open: the command
+bar and main text are still in the DOM underneath, so otherwise a printable key
+would focus an invisible input (F60) and a macro would fire at an unseen
+character.
+
+### 47.7 Persistence and surfaces
+
+Options are **app-wide** (`SharedProfile.overview`, optional → non-breaking, no
+version bump): the Overview is cross-character by definition, so a per-character
+copy has no answer to "whose wins when three are open" and breaks the moment a
+character is decoupled. **The view MODE is per-window ephemeral** — each
+BrowserWindow has its own store instance, so a decoupled window showing one
+character is never dragged into the main window's view.
+
+Surfaces: the app-bar toggle (with the attention badge), Settings → Overview, the
+View menu (click-only, no accelerator), and `/view` — bare toggle plus `status`,
+`sort`, `set`. `/view status` reports the same reduction the grid renders, so the
+two cannot disagree.
+
+### 47.8 Phase 2 — cross-window (specified, not built)
+
+Decoupled windows own a subset of sessions, so v1 is honestly "characters in this
+window". Remote tiles would come from main's per-session `stateSnapshot`
+(`main.ts:77`) — already maintained free for the handoff replay — broadcast
+throttled behind an `overview-active-toggle` mirroring `scene-active-toggle`.
+
+A remote tile is necessarily **reduced**: condition and situation, but **no text
+feed**. Main's `historyBuffer` holds raw `GameEvent`s, pre-mute/substitute and
+pre-`TextLine` assembly, so rendering it elsewhere means reimplementing the
+display pipeline. Click a remote tile → main focuses that OS window.
+
+### 47.9 Phase 3 — log-backed history (specified, not built)
+
+`buildCatchupDigest` (`sessionLog.ts`) already carries **verified** extractors for
+ranks gained, deaths, damage taken (the confirmed 22-level ladder), coin flow
+(real ratios from Lich's `drbanking.rb`) and work orders. It walks day files with
+`setImmediate` yields and is **not** a per-tick source. Lift the extractors into
+`runLogExtractors(rows)`, add a cached on-demand handler, and surface it as a
+collapsed per-card "today" section fetched on expand — which also delivers
+backlog item **F93** (session summary card) nearly for free.

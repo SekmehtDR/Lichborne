@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { loadCommandHistorySettings, saveCommandHistorySettings, CMD_HISTORY_MIN_MAX } from '../commandHistorySettings'
+import { useOverviewOptions, setOverviewOptions, MAX_FEED_LINES, type OverviewOptions } from '../overviewStore'
 import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'
 import type { SessionLogDiskUsage, SimuCoinStatus } from '../../shared/types'
@@ -129,7 +130,7 @@ function RadioGroup<T extends string>({ label, value, options, onChange, disable
 // ── F61: settings search + section nav ─────────────────────────────────
 // Section names in render order — drives the nav rail. Keep in sync with the
 // `sec*` section wrappers in the JSX below.
-const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Behavior', 'Session Log', 'AI', 'SimuCoins', 'Lich Setup'] as const
+const SECTION_NAMES = ['Display', 'Accessibility', 'Layout', 'Overview', 'Behavior', 'Session Log', 'AI', 'SimuCoins', 'Lich Setup'] as const
 
 // Row-visibility helper for the global settings filter: empty query shows
 // everything; otherwise a row stays visible when the (lowercased, trimmed)
@@ -174,6 +175,15 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     const next = { minLength: Math.max(0, Math.min(CMD_HISTORY_MIN_MAX, n)) }
     setCmdHist(next)
     saveCommandHistorySettings(next)
+    scheduleSharedProfileSave()
+  }
+
+  // Views (v0.19.0). Also APP-WIDE, so it follows the same shape: read the
+  // store, write through it, flush _shared.yaml. `useOverviewOptions` keeps this
+  // in step if `/view set` changes something while Settings is open.
+  const ovOptions = useOverviewOptions()
+  function setOv(patch: Partial<OverviewOptions>) {
+    setOverviewOptions(patch)
     scheduleSharedProfileSave()
   }
 
@@ -430,6 +440,18 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
   const vTimerStyle    = vis('Layout', 'RT / CT Timer Style', 'roundtime')
   const secLayout      = vVitalsPos || vCompactVitals || vCompactExp || vIconBarPos || vTimerStyle
 
+  // Views (v0.19.0). App-wide, like Session Log / AI / SimuCoins — the Overview
+  // is cross-character by definition, so these can't be per-character settings.
+  const vOvFeed        = vis('Overview', 'Text feed', 'overview', 'dashboard', 'views', 'card')
+  const vOvTiles       = vis('Overview', 'Tile size', 'overview', 'tiles', 'grid', 'columns', 'scale', 'views')
+  const vOvDensity     = vis('Overview', 'Card density', 'overview', 'compact', 'views')
+  const vOvSort        = vis('Overview', 'Card order', 'overview', 'attention', 'sort', 'views')
+  const vOvSections    = vis('Overview', 'Card sections', 'overview', 'vitals', 'room', 'injuries', 'views')
+  const vOvIdle        = vis('Overview', 'Idle after', 'overview', 'attention', 'views')
+  const vOvSpeech      = vis('Overview', 'Flag when someone speaks', 'overview', 'attention', 'speech', 'views')
+  const vOvPulse       = vis('Overview', 'Flash a card when a character is critical', 'overview', 'pulse', 'alert', 'flash', 'health', 'views')
+  const secOverview    = vOvFeed || vOvDensity || vOvSort || vOvSections || vOvIdle || vOvSpeech || vOvPulse || vOvTiles
+
   const vAutoLink      = vis('Behavior', 'Auto-link URLs')
   const vWebSafety     = vis('Behavior', 'Web Link Safety', 'bounce')
   const vMapAnim       = vis('Behavior', 'Genie Map Animations')
@@ -479,6 +501,7 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
     Display: secDisplay,
     Accessibility: secAccess,
     Layout: secLayout,
+    Overview: secOverview,
     Behavior: secBehavior,
     'Session Log': secSessionLog,
     AI: secAI,
@@ -776,6 +799,110 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
               { value: 'bar',   label: 'Bar',   description: 'Classic draining strip that shrinks with remaining time' },
             ]}
           />}
+          </section>}
+
+          {/* ── Overview (v0.19.0 Views, DESIGN §47) ─────────────── */}
+          {secOverview && <section className="sp-sec" ref={el => { sectionRefs.current['Overview'] = el }}>
+          <div className="sp-divider" />
+          <div className="sp-section-label">Overview</div>
+
+          {vOvSort && <RadioGroup
+            label="Card order"
+            value={ovOptions.sort}
+            onChange={v => setOv({ sort: v })}
+            options={[
+              /* Default first. Tab order is the default because attention-sorting
+                 MOVES cards while you are watching them. */
+              { value: 'tab',       label: 'By tab order',  description: 'Cards stay put, in the order of the character tabs (default)' },
+              { value: 'attention', label: 'By attention', description: 'Whoever needs you most sorts to the top — cards move as things change' },
+            ]}
+          />}
+
+          {vOvTiles && <RadioGroup
+            label="Tile size"
+            value={ovOptions.tileSize}
+            onChange={v => setOv({ tileSize: v })}
+            options={[
+              { value: 'auto',   label: 'Automatic', description: 'Fill the space: one character is full-screen, two split it. Never shrinks below readable — past that the grid scrolls.' },
+              { value: 'large',  label: 'Large',     description: 'Few, detailed tiles. Everything on a card, long text feed.' },
+              { value: 'medium', label: 'Medium',    description: 'A fixed middling size regardless of how many characters are up.' },
+              { value: 'small',  label: 'Small',     description: 'Many dense tiles — for running a lot of characters at once.' },
+            ]}
+          />}
+
+          {vOvDensity && <RadioGroup
+            label="Card density"
+            value={ovOptions.density}
+            onChange={v => setOv({ density: v })}
+            options={[
+              { value: 'comfortable', label: 'Comfortable', description: 'Full-height vitals bars and roomier cards' },
+              { value: 'compact',     label: 'Compact',      description: 'Short labels and tighter spacing — fits more characters on screen' },
+            ]}
+          />}
+
+          {vOvFeed && <div className="sp-toggle-row">
+            <div className="sp-toggle-text">
+              <div className="sp-toggle-label">Text feed</div>
+              <div className="sp-toggle-desc">
+                Lines of live game text on each card. 0 turns the feed off, which
+                makes the cards much shorter.
+              </div>
+            </div>
+            <input
+              type="number" min={0} max={MAX_FEED_LINES}
+              className="sp-number-input"
+              value={ovOptions.feedLines}
+              onChange={e => {
+                const n = parseInt(e.target.value, 10)
+                if (Number.isFinite(n)) setOv({ feedLines: n })
+              }}
+            />
+          </div>}
+
+          {vOvIdle && <div className="sp-toggle-row">
+            <div className="sp-toggle-text">
+              <div className="sp-toggle-label">Idle after</div>
+              <div className="sp-toggle-desc">
+                Seconds of silence before a character is flagged as idle on its card.
+              </div>
+            </div>
+            <input
+              type="number" min={10} max={3600}
+              className="sp-number-input"
+              value={ovOptions.idleSeconds}
+              onChange={e => {
+                const n = parseInt(e.target.value, 10)
+                if (Number.isFinite(n)) setOv({ idleSeconds: n })
+              }}
+            />
+          </div>}
+
+          {vOvPulse && <Toggle
+            label="Alert me when a character is critical"
+            description="The character's card pulses, and if Lichborne isn't the window you're looking at, its taskbar entry flashes too. Only fires when a character dies or drops below the critical health threshold — not for ordinary damage. Under epilepsy-safe or reduced-motion the movement stops but the red stays."
+            checked={ovOptions.alertPulse}
+            onChange={v => setOv({ alertPulse: v })}
+          />}
+
+          {vOvSpeech && <Toggle
+            label="Flag when someone speaks to a character"
+            description="Shows a 'Spoken to' chip when a character is addressed. Costs a little: it turns on scene capture for EVERY connected character, not just one — which is why it is off by default."
+            checked={ovOptions.watchSpeech}
+            onChange={v => setOv({ watchSpeech: v })}
+          />}
+
+          {vOvSections && <>
+            <Toggle label="Show vitals on cards" description="The health/mana/stamina bars."
+                    checked={ovOptions.showVitals} onChange={v => setOv({ showVitals: v })} />
+            <Toggle label="Show conditions on cards" description="Stance, hands, prepared spell and the status icons."
+                    checked={ovOptions.showConditions} onChange={v => setOv({ showConditions: v })} />
+            <Toggle label="Show room on cards" description="Room name, plus who and what is in it."
+                    checked={ovOptions.showRoom} onChange={v => setOv({ showRoom: v })} />
+            <Toggle label="Show session stats on cards" description="Uptime, idle, lines per minute, ranks gained, rooms visited."
+                    checked={ovOptions.showExp} onChange={v => setOv({ showExp: v })} />
+            <Toggle label="Show wounds on cards" description="The worst active wound. Scars are healed history and are never counted here."
+                    checked={ovOptions.showInjuries} onChange={v => setOv({ showInjuries: v })} />
+          </>}
           </section>}
 
           {/* ── Behavior ─────────────────────────────────────────── */}

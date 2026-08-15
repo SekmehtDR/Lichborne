@@ -6,6 +6,185 @@
 
 ---
 
+## v0.19.0 — Views: Session and Overview
+
+One substantial feature, and the shape of it is the interesting part.
+
+- **Universal input bar in the Overview, and a Quick Send fix that fell out of
+  it.** Both surfaces now deliver text through main to the OWNING window's
+  `dispatchUserText` (`sendUserText` → `SEND_USER_TEXT` → `USER_TEXT`), so a
+  command sent at a character is indistinguishable from one typed in its own
+  bar. That closes two pre-existing Quick Send bugs Sekmeht found: a `wave` sent
+  to several characters **arrived invisibly** (raw socket writes skip the
+  renderer echo — B199's signature), and a `/command` typed there was
+  **forwarded to DragonRealms as literal text** because the raw path never
+  reached the slash intercept. The hop goes through MAIN rather than a DOM
+  event because Quick Send targets the cross-window roster, and a DOM event
+  cannot reach a decoupled window.
+- **Quick Send reached nobody at all (Sekmeht, found during bug check #4).** The
+  channel map existed in three copies — the shared `IPC` and private `CH`
+  objects in `main.ts` and `preload.ts` — and `SEND_USER_TEXT` was added to two.
+  `CH.SEND_USER_TEXT` in main was `undefined`, so the handler registered on a
+  channel named "undefined" while the renderer published on the real one: every
+  send silently vanished, including `;script`. Both private copies are deleted;
+  main and preload now use the shared list. **`src/main` was also never
+  typechecked** — the default tsconfig includes only `src/renderer` and
+  `src/shared`, so Check zero had never looked at the main process. Adding
+  `tsc -p tsconfig.main.json` reports the bug on the exact line, and it is now
+  part of Check zero.
+- **A fresh connect no longer loses its opening game text** (B275). The login
+  handler is an invoke that resolves at the END of login, but the event pipeline
+  is live from `createSession` — so the game's first output was flushed to a
+  window whose only `onGameEvent` subscriber (GameWindow) did not exist yet, and
+  every listener filters by sessionId. Login now HOLDS delivery and marks the
+  window as the replay target, so the existing mount-time replay request claims
+  it; the hold is also what makes doubling impossible. The 5s release net is
+  armed after connect resolves rather than with the hold (it delivers as well as
+  releases, so its window must measure the mount gap, not the login), and the
+  sessionId-change effect requests a replay too, since a reconnect-in-place never
+  remounts.
+- **The status chips earn their place now** (B274/B276). An
+  `ATTENTION_ALERT_FLOOR` separates flags that ASK for you from flags that merely
+  describe: `mind-lock` (the normal state of anything grinding) and `idle` (the
+  normal state of a parked character) no longer drive the app-bar badge, the
+  summary count or the card's border, though both still chip on the card. One
+  `needsAttention()` serves all three surfaces. The header health percentage now
+  uses the same configurable thresholds as the Critical/Hurt chips, which had
+  been hardcoded 80/50/30 against a configurable 25/50 and disagreed at defaults.
+  `free-to-act` was removed as unreachable and redundant. The harness caught the
+  contract change (110/1), its cases were inverted rather than deleted, and six
+  floor cases were added - 117 total.
+- **Card chip review** (B273/B274). Three condition chips passed
+  `title={label}`, so hovering "Joined" explained "Joined"; each now says
+  something, and the Joined wording surfaces the tester-corrected meaning that
+  had been sitting in an IconBar comment (it marks the FOLLOWER, so a group
+  leader shows nothing). `lpm` renamed `lines` - the only initialism among
+  otherwise plain-word stat labels. The review also found that the `free-to-act`
+  chip is effectively unreachable, logged OPEN as B274 because it needs a
+  decision (re-derive on the clock, or drop as redundant with `idle`) rather
+  than a patch.
+- **The SimuCoin coin is copper, and visible** (B272). It shipped as gold dulled
+  to `grayscale(.85) brightness(.78)` at `opacity: .55` - 2.36 contrast on a dark
+  app bar, 1.34 on Classic Light - in the state it wears nearly all the time.
+  Recoloured to a mid-tone copper that stays warm against both theme families,
+  dulled far more gently, and given a theme-derived outer ring so a baked-palette
+  object keeps an edge on any background. 3.58 / 3.04 measured after.
+- **Bug check #5 - persistence and integration.** One real bug (B271): every
+  other field of `SharedProfile` is read FRESH from localStorage inside
+  `buildSharedProfile`, and localStorage is shared across windows, so a flush
+  from any window is current by construction. The overview block was the ONE
+  reading module memory, which made it the one shared setting a second window
+  could silently revert. Fixed with a `storage` listener. The rest of the axis
+  was verified rather than assumed and came back clean - coerce coverage
+  (type-enforced), the equality gate, the single correct Transfer registration,
+  the optional-field schema needing no bump, digest cleanup on unmount, and
+  epilepsy-safe honouring colour while dropping motion.
+- **Card order now defaults to TAB ORDER** (Sekmeht). Attention-sorting is real
+  and still drives the flags, colours and summary strip, but as a default it
+  MOVES cards while you are watching them, and a dashboard whose tiles rearrange
+  under the cursor defeats the muscle memory that makes a dashboard fast.
+  `/view sort attention` opts in. Changing it exposed a latent bug: the coercer
+  RESTATED its enum fallbacks, so changing the default would have had no effect
+  on a missing or invalid stored value; both branches now reference the defaults
+  object (pitfall #121).
+- **The Overview's input bar now shares the game command bar's actual CSS
+  rules** rather than a copy of its recipe (Sekmeht: *"the themeing and design
+  is off"*). It had been built from the same tokens and still read wrong beside
+  it - flat instead of the `--bg-sunken -> --bg-base` gradient, 6px padding
+  instead of 3px, a 1em input instead of 1.2em, and the border on the input
+  rather than a wrapper with `:focus-within`. `.ov-inputbar*` is now named on
+  `.command-bar` / `.cmd-input-wrap` / `.command-input` / `::placeholder` in
+  game.css with the copies deleted, so retuning one moves both. Rider: the
+  borrowing bar must pin its own `line-height`, since `.command-bar`
+  deliberately sets none (pitfall #77, #113).
+- **Contrast pass over the card header, measured rather than eyeballed.** The
+  per-card actions menu sat at `opacity: 0` until hover in `--text-faint`, which
+  measures 2.33 on Classic Light and 3.27 on the dark base - both under the AA
+  floor, so even when revealed it was barely there, and a hover-only control is
+  one most people never find. It is now always visible as a real chip in
+  `--text-secondary` (8.74 / 7.69), with two distinct hover steps. Every other
+  `--text-faint` use in the view was audited the same way: the ones carrying
+  information moved to `--text-muted` (5.39 / 6.15), and faint was kept only for
+  the summary separator and the disabled input. The disconnected status dot is
+  now a hollow ring - hollow reads as "off" structurally and needs no fill
+  contrast on any theme.
+- **Bug check #4 — focus containment (pitfall #131).** The Overview leaves the
+  session shell laid out on purpose, which also leaves its command bar
+  *focusable* underneath the overlay. Three routes put the caret back in it:
+  a GameWindow mounting while the view was open (`autoFocus` + two mount
+  effects), the cursor-marker `@` path now reachable from the new bar, and no
+  focus-restore on leaving the view. Every programmatic focus now goes through
+  one guarded `focusCommandInput`; the type-anywhere listener guards on the
+  LOCATION of focus rather than a tag denylist, so a modal opened over the
+  dashboard keeps its keystrokes; and the bar's placeholder is themed like
+  every other input in the app.
+- **Views (DESIGN §47).** A top-level mode, orthogonal to layout mode, panels
+  and Experiences: **Session** (unchanged, still the default) and **Overview**,
+  a live card per character in the window — vitals, conditions, timers, room and
+  occupants, hands, spell, worst wound, session stats, and a short styled text
+  feed. Read-only; a click opens that character in Session view. Multi-boxing is
+  the whole reason: DR is one character per account, so "who needs me?" meant
+  tabbing through everyone for an answer that was stale on arrival.
+
+- **The card is rendered BY its own GameWindow, through a portal.** This is what
+  made it cheap. A portal keeps the React tree while moving the DOM node, so a
+  card escapes the `display:none` session shell yet is written inside
+  GameWindow's scope and reads that character's state as ordinary locals. No new
+  IPC, no serialisation, no second render path — pitfall #57 dissolved rather
+  than worked around. **The converse bit once:** the shared 1 Hz clock was a
+  context on the app-level shell, which a portaled card can never see, so every
+  card read the default forever (negative uptime, never idle). It moved to the
+  store.
+
+- **`SessionStatus` was deliberately left alone.** Its 16-term equality chain
+  exists to keep the character tab strip from re-rendering on vital ticks;
+  dashboard fields there would have defeated it. The cross-character reduction
+  lives in a new `overviewStore` of thin scalar digests, coalesced at 500ms and
+  consumed by leaf subscribers only. It is the codebase's first
+  `useSyncExternalStore` — hence **pitfall #129** (a getter that rebuilds a
+  derived array is an infinite loop) and **#130** (gate a payload with a key
+  loop over a frozen list, so a forgotten field is a compile error rather than a
+  silent staleness bug months later).
+
+- **An overlay, not a third render branch.** The session shells keep their
+  existing visibility, so the active character's Virtuoso stays measured and
+  returning needs no re-snap. Hiding them instead would reintroduce the
+  #24/#68 0×0 class — and `stickToBottom` keys on `isActive`, which does not
+  change on a view flip.
+
+- **Attention model** (`attention.ts`, pure and harnessed): severity order is
+  chip order, reading order and sort order. Four rules it encodes — a
+  disconnected character reports only *offline* (its indicators are stale), a
+  null `healthPct` means "no vital yet" and must read calm, *free-to-act* is
+  suppressed whenever anything real is wrong, and **`idle` is derived by the
+  consumer, never pushed** (an idle character stops re-rendering, so a pushed
+  flag would never arrive; the digest carries a 5s-quantised `lastInboundAt`).
+
+- **Two corrections found after the plan was approved, both verified in-code.**
+  `--game-font-size` is a document-root var written only by the *active* tab
+  while font size is per-character, so every card would have rendered at the
+  active character's size (each card now re-maps it inline, the PanelFrame
+  mechanism). And `sceneCast`/`sceneSpeech` sit behind the §35.6 gate and are
+  empty for most users, so occupancy comes from the ungated `roomState` and the
+  "spoken to" flag is an opt-in that extends the gate.
+
+- **Cost when closed is two instructions per event batch.** The accumulators run
+  always on purpose — free at main's coalesced flush rate, and it means opening
+  the view shows real numbers rather than zeros. The render is what's gated.
+
+- **Extractions:** `expParse.ts` and `injuryParse.ts` out of ExpPanel and
+  InjuriesPanel, so a skill line and a wound cannot be read two ways in two
+  places. The B224 scar-vs-wound reasoning travelled with the code.
+
+- Surfaces: app-bar toggle with an attention badge, Settings → Overview, View
+  menu (click-only), and `/view` (bare · status · sort · set). Options are
+  app-wide (`SharedProfile.overview`, optional → non-breaking); the view **mode**
+  is per-window ephemeral so a decoupled window is never dragged along.
+
+- Harness grew 42 → 85 cases (`tmp-rules-harness` §H).
+
+---
+
 ## v0.18.6 — a guard on the quit, and two settings that weren't reaching disk
 
 Small release, all tester-driven, and two of the three items turned out to be

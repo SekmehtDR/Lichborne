@@ -36,22 +36,39 @@
   width: 1.25em;
   height: 1.25em;
   line-height: 1;
-  /* Default (nothing to claim) = a DULL, spent coin: desaturated and dimmed
-     from the same artwork, so the gold and grey states can never drift apart.
-     Transitions so a claim "brightens" the coin rather than swapping it. */
-  filter: grayscale(0.85) brightness(0.78) contrast(0.92);
-  opacity: 0.55;
+  /* Default (nothing to claim) = a RESTING coin, not an invisible one.
+     This was grayscale(.85) brightness(.78) at opacity .55 — which on a dark
+     theme left a near-black disc on a near-black bar (Sekmeht: "pretty hard to
+     see"), and the idle state is the one it wears nearly all the time, since the
+     button renders whenever an account is eligible. A light desaturation still
+     reads as dormant while staying legible; brightness is untouched because
+     lowering it is precisely what killed it on dark themes.
+
+     The loud/quiet distinction is carried by the things AROUND the coin — the
+     border tint, the glow, the sheen and the count badge — not by making the
+     coin itself disappear (UX standard #1 is about noise, not about hiding a
+     control). Transitioned so a claim "brightens" rather than swaps. */
+  filter: grayscale(0.4);
+  opacity: 0.9;
   transition: filter 400ms ease, opacity 400ms ease;
+}
+
+/* Not baked: mixed from the theme's text colour so the coin always has an edge,
+   whatever the app bar is painted. */
+.sc-coin-ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-primary) 45%, transparent);
+  stroke-width: 0.7;
 }
 
 .sc-coin-mark {
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 9px;          /* SVG user units — scales with the viewBox, not text */
   font-weight: 700;
-  fill: #7d5806;
+  fill: #4f2a0e;
   fill-opacity: 0.75;
   paint-order: stroke;
-  stroke: #ffe9a8;
+  stroke: #ffd9b0;
   stroke-opacity: 0.5;
   stroke-width: 0.6px;
 }
@@ -62,14 +79,14 @@
 /* ── Coins waiting: the one state that should catch the eye (UX standard #1) ── */
 
 .sc-btn--ready {
-  border-color: color-mix(in srgb, #d9a520 55%, var(--border-faint));
-  background: color-mix(in srgb, #d9a520 14%, transparent);
+  border-color: color-mix(in srgb, #bd6f38 55%, var(--border-faint));
+  background: color-mix(in srgb, #bd6f38 14%, transparent);
 }
-.sc-btn--ready:hover { background: color-mix(in srgb, #d9a520 26%, transparent); }
+.sc-btn--ready:hover { background: color-mix(in srgb, #bd6f38 26%, transparent); }
 
 /* Full-colour gold + a soft outward glow, and the sheen sweeps across. */
 .sc-btn--ready .sc-coin {
-  filter: drop-shadow(0 0 3px rgba(217, 165, 32, .75));
+  filter: drop-shadow(0 0 3px rgba(214, 130, 68, .85));
   opacity: 1;
 }
 .sc-btn--ready .sc-coin-sheen {
@@ -94,7 +111,7 @@
    still reads as available via full colour + a steady glow. */
 :root[data-epilepsy-safe='true'] .sc-btn--ready .sc-coin-sheen {
   animation: none;
-  opacity: .55;   /* static highlight instead of a sweep — gold still reads */
+  opacity: .55;   /* static highlight instead of a sweep — the copper still reads */
 }
 
 /* Something went wrong (sign-in / store unreachable): stay dull, but let the
@@ -114,11 +131,11 @@
   font-size: 0.8em;
   line-height: 1;
   font-weight: 600;
-  /* The count is the feature's payload — it must READ. A bare #d9a520 sits at
+  /* The count is the feature's payload — it must READ. A bare #bd6f38 sits at
      ~1.9:1 on the near-white app-bar of every light theme (unreadable at this
      size). Blending toward --text-primary keeps the gold identity while
      contrast self-corrects per theme (the --syntax-* idiom, pitfall #63). */
-  color: color-mix(in srgb, #d9a520 70%, var(--text-primary));
+  color: color-mix(in srgb, #bd6f38 70%, var(--text-primary));
 }
 
 /* ── Popover ─────────────────────────────────────────────────────────────── */
