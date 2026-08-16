@@ -585,8 +585,14 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
           className="launcher-card-connect"
           onClick={() => onConnect(c)}
           disabled={busy}
+          title={c.attach
+            ? `Attach to the running Lich session at ${c.attach.host}:${c.attach.port} (falls back to a normal login if nothing is listening)`
+            : undefined}
         >
-          {busy ? 'Connecting…' : 'Connect →'}
+          {/* A tile with a saved attach target says what the click DOES —
+              App's handleCardConnect attaches first for these (falling back
+              to a normal login only when nothing is listening). */}
+          {busy ? 'Connecting…' : c.attach ? '⇋ Attach' : 'Connect →'}
         </button>
       </div>
     </div>

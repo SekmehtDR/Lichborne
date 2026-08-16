@@ -958,6 +958,32 @@ function AppShell() {
     if (pendingConnect) return  // already connecting; ignore double-clicks
     if (pendingConflict) return // resolution modal already open
 
+    // ATTACH TILES ATTACH (draft). A tile with a saved target treats Connect
+    // as "put me in that running session" — not as "start a login", which for
+    // a stub tile can only dead-end in the Add Account wizard asking for a
+    // password that doesn't exist. This branch also BYPASSES the same-account
+    // conflict modal below: that guard protects a NEW login against DR's
+    // one-per-account law, but an attach joins a session that is already on
+    // — and stub tiles all share the 'attach' placeholder account, so the
+    // guard would cross-flag unrelated characters. The per-CHARACTER cases
+    // are handled in prepareTileAttach (focus a live tab, revive a dead one),
+    // and the target-is-down case falls back inside attachFromCard.
+    if (c.attach) {
+      if (prepareTileAttach(c) === 'focused') return
+      setConnectError('')
+      pendingCancelledRef.current = false
+      setPendingConnect(c)
+      pendingTimerRef.current = setTimeout(() => {
+        pendingTimerRef.current = null
+        if (pendingCancelledRef.current) return
+        attachFromCard(c).catch(err => {
+          setConnectError(String(err))
+          setPendingConnect(null)
+        })
+      }, 1500)
+      return
+    }
+
     // Same-account guard. DR allows only one active character per account at
     // a time — pre-v0.8.0 this was a flat refusal (`setConnectError(...)`).
     // Now we surface a confirmation modal: the user can either disconnect the
@@ -1193,6 +1219,13 @@ function AppShell() {
     host: string,
     port: number,
     fixed?: { account: string; game: string },
+    // Card-path cancellation (the pendingConnect overlay's Cancel). Checked
+    // after the attach lands: the session is destroyed instead of becoming a
+    // tab. Destroy = detach for attach mode, so the running Lich session is
+    // untouched — unlike a cancelled LOGIN, nothing needs to run to
+    // completion first. Only the Connect-button path passes this; the modal
+    // and menu paths have no Cancel racing them.
+    cancelled?: { current: boolean },
   ): Promise<string | null> {
     let account = fixed?.account ?? 'attach'
     let game = fixed?.game ?? 'DR'
@@ -1207,6 +1240,11 @@ function AppShell() {
 
     const result = await window.api.loginAttach({ account, character, game, host, port })
     if (!result.ok) return result.error ?? 'Attach failed'
+
+    if (cancelled?.current) {
+      window.api.destroySession(result.sessionId)
+      return null
+    }
 
     // Same per-character profile load as runConnect, so an attached tab gets
     // the character's saved layout, highlights, macros and theme.
@@ -1257,11 +1295,56 @@ function AppShell() {
     setShowAttach(true)
   }
 
+  // Shared pre-flight for every attach that starts from a tile. A character
+  // with a CONNECTED tab just gets focused — a second attach would work at
+  // the protocol level (Lich takes multiple front-ends) but the new record
+  // replaces the old one on characterId, orphaning a live session in main.
+  // A disconnected tab is torn down so the revived session replaces it
+  // cleanly instead of leaking the dead socket's session entry.
+  function prepareTileAttach(c: LauncherCharacter): 'focused' | 'ready' {
+    const existing = sessions.find(s => s.character.toLowerCase() === c.name.toLowerCase())
+    if (existing?.status.connected) {
+      setActive(existing.characterId)
+      return 'focused'
+    }
+    if (existing) window.api.destroySession(existing.sessionId)
+    return 'ready'
+  }
+
+  // The Connect-button attach (see handleCardConnect's attach branch). Try
+  // the saved target first; when NOTHING IS LISTENING there, do what the
+  // click meant — get the player into the game: a real account falls through
+  // to the normal launch-and-login flow, while a stub tile (no real account)
+  // surfaces the banner, because there is no login to fall back to.
+  async function attachFromCard(c: LauncherCharacter) {
+    const target = c.attach
+    if (!target) return
+    const err = await runAttach(
+      c.name, target.host, target.port,
+      { account: c.account, game: c.game },
+      pendingCancelledRef,
+    )
+    if (err === null) { setPendingConnect(null); return }
+    const nothingListening = /Nothing accepted the connection/i.test(err)
+    const canLogin = !!c.account && c.account.toLowerCase() !== 'attach'
+    if (nothingListening && canLogin) {
+      await runConnect(c)
+      return
+    }
+    setConnectError(nothingListening && !canLogin
+      ? `${err} This tile has no saved account, so there is no normal login to fall back to.`
+      : err)
+    setPendingConnect(null)
+  }
+
   // One-click re-attach from a tile's ⋯ menu (target saved on the profile).
   // Errors surface on the launcher's existing error banner — the tile flow
-  // has no modal to carry an inline message.
+  // has no modal to carry an inline message. No fallback-to-login here: the
+  // menu item names the target explicitly, so failing loudly is the honest
+  // response (the Connect button is the entry point that falls back).
   function attachFromTile(c: LauncherCharacter) {
     if (!c.attach) return
+    if (prepareTileAttach(c) === 'focused') return
     runAttach(c.name, c.attach.host, c.attach.port, { account: c.account, game: c.game })
       .then(err => { if (err) setConnectError(err) })
       .catch(err => setConnectError(String(err)))
