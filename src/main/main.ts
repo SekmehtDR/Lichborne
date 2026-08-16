@@ -121,7 +121,7 @@ interface Session {
   // login. Both feed the roster broadcast (buildRoster). `meta` is null until
   // the LOGIN handler attaches credentials.
   ownerWindowId: number
-  meta: { characterId: string; account: string; character: string; game: string; useLich: boolean } | null
+  meta: { characterId: string; account: string; character: string; game: string; useLich: boolean; attach?: { host: string; port: number } } | null
   // Replay state for a window that takes over rendering this session (decouple /
   // re-home / remount): the LATEST value of each sticky state (vitals, RT/CT,
   // indicators, stance, spell, hands, room title/id, exp, injuries, exits, …),
@@ -251,6 +251,7 @@ function rosterEntryFor(s: Session): RosterEntry | null {
     useLich: s.meta.useLich,
     connected: s.connected,
     ownerWindowId: s.ownerWindowId,
+    attach: s.meta.attach,
   }
 }
 
@@ -902,6 +903,9 @@ ipcMain.handle(CH.LOGIN_ATTACH, async (event, creds: AttachCredentials): Promise
     character: creds.character,
     game: creds.game,
     useLich: true,
+    // Remembered on the session (and thus the roster) so Reconnect re-attaches
+    // to the same listener instead of relaunching a login — in any window.
+    attach: { host: creds.host, port: creds.port },
   }
   broadcastRoster()
 

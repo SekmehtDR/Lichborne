@@ -39,6 +39,9 @@ export interface SessionInfo {
   character: string
   game: string
   useLich: boolean
+  // Attach mode (draft): the detachable listener this session came from.
+  // Presence flips the tab's Reconnect from relaunch-login to re-attach.
+  attach?: { host: string; port: number }
 }
 
 interface Props {

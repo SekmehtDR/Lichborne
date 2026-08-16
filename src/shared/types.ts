@@ -59,6 +59,15 @@ export interface LoginCredentials {
 // no spawn: headless Lich authenticated itself from its own saved entries.
 // A Lich mid-session with a normal front-end is NOT attachable — its listener
 // accepted one client and closed (that constraint lives in Lich, not here).
+// Where a detachable Lich listener lives. Persisted per character (the
+// renderer's CharacterProfile mirrors this shape) so an attach can be
+// repeated without retyping, and carried on the roster so a re-homed window
+// can re-attach a session it inherited.
+export interface AttachTarget {
+  host: string
+  port: number
+}
+
 export interface AttachCredentials {
   // Account is resolved by the RENDERER (from the character's existing profile
   // YAML when one exists, else the 'attach' placeholder) so the roster, the
@@ -95,6 +104,11 @@ export interface RosterEntry {
   useLich: boolean
   connected: boolean
   ownerWindowId: number
+  // Set for attach-mode sessions: the detachable listener this session is
+  // (or was) connected to. Rides the roster so the owning window's Reconnect
+  // re-ATTACHES instead of relaunching a login — including after a decouple /
+  // re-home, where the new window rebuilds its session records from here.
+  attach?: AttachTarget
 }
 
 export interface SessionRosterPayload {

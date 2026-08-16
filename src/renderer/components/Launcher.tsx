@@ -44,6 +44,9 @@ export interface LauncherCharacter {
   guild?:  string     // v0.8.0: optional guild key (lowercase canonical, see GUILDS in CharacterNotesEditor)
   circle?: number     // v0.8.0: optional character circle / level
   notes?:  string     // v0.8.0: optional free-text notes; tile shows a ✎ indicator when set
+  // Attach mode (draft): last detachable listener this character attached to.
+  // Presence lights up the tile ⋯ menu's "⇋ Attach" action.
+  attach?: { host: string; port: number }
 }
 
 interface Props {
@@ -55,6 +58,10 @@ interface Props {
   // opens App's AttachModal. Optional so the compact Add-modal variant can
   // omit it without a dead button.
   onAttach?: () => void
+  // One-click re-attach from a tile's ⋯ menu, using the target saved on the
+  // character's profile (LauncherCharacter.attach). Only offered on tiles
+  // that have one.
+  onAttachCharacter?: (character: LauncherCharacter) => void
   // Triggered when the user clicks "↺ Refresh" on an account header — pre-fills
   // the Add Account flow with the chosen account so EAccess can pull any
   // characters that aren't already present as tiles. v0.8.0 (F18).
@@ -339,6 +346,7 @@ export async function loadCharacterCards(): Promise<LauncherCharacter[]> {
       guild:    p.guild,
       circle:   p.circle,
       notes:    p.notes,
+      attach:   p.attach,
     } as LauncherCharacter
   }))
   return profiles
@@ -369,6 +377,40 @@ async function setCharacterUseLich(characterName: string, nextUseLich: boolean):
   const profile = raw as CharacterProfile
   if (profile.useLich === nextUseLich) return
   await window.api.writeCharacterProfile(characterName, { ...profile, useLich: nextUseLich })
+}
+
+// Attach mode (draft): remember the detachable listener a character attached
+// to, so the next attach is one click (tile ⋯ menu) or pre-filled (modal).
+// Same read-modify-write shape as setCharacterGame above — and for the same
+// reason: buildCharacterProfile would wipe a non-active character's state.
+// UNLIKE its siblings, this CREATES a minimal profile when none exists: an
+// attach-only character (never added through the wizard) still needs a YAML
+// home for its target, and the resulting tile is exactly the reconnect
+// surface the feature promises. The stub carries no localStorage state, so a
+// later wizard add / normal session fills it in rather than fighting it.
+export async function saveCharacterAttach(
+  characterName: string,
+  account: string,
+  game: string,
+  attach: { host: string; port: number },
+): Promise<void> {
+  const raw = await window.api.readCharacterProfile(characterName).catch(() => null)
+  if (raw && typeof raw === 'object') {
+    const profile = raw as CharacterProfile
+    if (profile.attach?.host === attach.host && profile.attach?.port === attach.port) return
+    await window.api.writeCharacterProfile(characterName, { ...profile, attach })
+    return
+  }
+  await window.api.writeCharacterProfile(characterName, {
+    profileVersion: 2,
+    account,
+    character: characterName,
+    game,
+    useLich: true,
+    attach,
+    theme: localStorage.getItem('lichborne.theme') ?? 'classic',
+    state: {},
+  } satisfies CharacterProfile)
 }
 
 // Soft-delete toggle (v0.8.0). Hiding a tile preserves the full character
@@ -551,7 +593,7 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onAttach, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
+export default function Launcher({ onConnect, onAddNew, onAttach, onAttachCharacter, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   // F85 — saved sets, re-read on refresh so a set created in the picker shows
@@ -1270,6 +1312,15 @@ export default function Launcher({ onConnect, onAddNew, onAttach, onRefreshAccou
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            // Attach (draft): shown only when this character has a saved
+            // target AND App wired the action — the label carries the target
+            // so the player knows where the click goes before committing.
+            ...(onAttachCharacter && menu.character.attach
+              ? [{
+                  label: `⇋ Attach (${menu.character.attach.host}:${menu.character.attach.port})`,
+                  onClick: () => onAttachCharacter(menu.character),
+                }]
+              : []),
             { label: 'Edit Profile…', onClick: () => setEditingNotes(menu.character) },
             menu.character.hidden
               ? { label: 'Unhide Profile', onClick: () => handleToggleHidden(menu.character, false) }

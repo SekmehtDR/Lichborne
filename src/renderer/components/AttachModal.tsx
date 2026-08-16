@@ -20,14 +20,37 @@ interface Props {
   // Resolves to null on success (App closes the modal) or an error sentence
   // to show inline (modal stays open, values intact, for a fix-and-retry).
   onAttach: (character: string, host: string, port: number) => Promise<string | null>
+  // The modal's memory (both loaded by App.openAttachModal, both optional):
+  // `initial` prefills the form with the last successful attach; `known` maps
+  // lowercased character names to their profile-saved targets, so typing a
+  // name that has attached before autofills its host/port.
+  initial?: { character: string; host: string; port: number } | null
+  known?: Record<string, { host: string; port: number }>
 }
 
-export default function AttachModal({ onCancel, onAttach }: Props) {
-  const [character, setCharacter] = useState('')
-  const [host, setHost] = useState('127.0.0.1')
-  const [port, setPort] = useState('8001')
+export default function AttachModal({ onCancel, onAttach, initial = null, known = {} }: Props) {
+  const [character, setCharacter] = useState(initial?.character ?? '')
+  const [host, setHost] = useState(initial?.host ?? '127.0.0.1')
+  const [port, setPort] = useState(initial ? String(initial.port) : '8001')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // True while host/port reflect a saved target rather than hand-typed values
+  // — drives the "saved target" hint under the fields.
+  const [autofilled, setAutofilled] = useState(initial !== null)
+
+  // Name → saved-target autofill. Deliberately overwrite-on-match: the name
+  // is typed first in practice, and a match means "this character has a known
+  // listener" — the strongest signal available. Hand-edits AFTER the match
+  // stick (editing host/port doesn't re-trigger this; only the name does).
+  useEffect(() => {
+    const t = known[character.trim().toLowerCase()]
+    if (t) {
+      setHost(t.host)
+      setPort(String(t.port))
+      setAutofilled(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- known is load-once per open
+  }, [character])
 
   // Esc to cancel — same convention as QuickSend and the other modals.
   useEffect(() => {
@@ -92,7 +115,7 @@ export default function AttachModal({ onCancel, onAttach }: Props) {
               Host
               <input
                 value={host}
-                onChange={e => setHost(e.target.value)}
+                onChange={e => { setHost(e.target.value); setAutofilled(false) }}
                 disabled={busy}
                 className="cne-input"
                 placeholder="127.0.0.1"
@@ -103,7 +126,7 @@ export default function AttachModal({ onCancel, onAttach }: Props) {
               <input
                 type="number"
                 value={port}
-                onChange={e => setPort(e.target.value)}
+                onChange={e => { setPort(e.target.value); setAutofilled(false) }}
                 min={1}
                 max={65535}
                 disabled={busy}
@@ -112,6 +135,12 @@ export default function AttachModal({ onCancel, onAttach }: Props) {
               />
             </label>
           </div>
+
+          {autofilled && (
+            <p style={{ margin: '6px 0 0', color: 'var(--text-muted)', fontSize: '0.8em' }}>
+              Using a saved target — edit freely, it updates on the next successful attach.
+            </p>
+          )}
 
           {error && (
             <p style={{ margin: '10px 0 0', color: 'var(--accent-danger, #d66)', fontSize: '0.85em', lineHeight: 1.45 }}>
