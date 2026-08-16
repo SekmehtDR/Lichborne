@@ -902,6 +902,8 @@ export default function SettingsPanel({ settings, character, onChange, layoutMod
                     checked={ovOptions.showExp} onChange={v => setOv({ showExp: v })} />
             <Toggle label="Show wounds on cards" description="The worst active wound. Scars are healed history and are never counted here."
                     checked={ovOptions.showInjuries} onChange={v => setOv({ showInjuries: v })} />
+            <Toggle label="Show roundtime on cards" description="A thin RT / Cast / Aim strip, so you can see who is free to act."
+                    checked={ovOptions.showTimers} onChange={v => setOv({ showTimers: v })} />
           </>}
           </section>}
 

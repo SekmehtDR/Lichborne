@@ -15,6 +15,11 @@ export interface ContactTemplate {
   // glow/gradient/neon. Both optional so existing templates load unchanged.
   effect?: import('./highlights').HighlightEffect
   glowColor?: string
+  // Optional text effect on the TAG, independent of the name's (Sekmeht:
+  // "I could see someone just wanting text effects on the tag, but not the
+  // name"). Undefined === none, so existing templates load unchanged.
+  tagEffect?: import('./highlights').HighlightEffect
+  tagGlowColor?: string
 }
 
 export interface Contact {
@@ -69,10 +74,28 @@ export function saveContacts(character: string, contacts: Contact[]): void {
   safeSetItem(storageContacts(character), JSON.stringify(contacts))
 }
 
+/**
+ * REBUILDS the record field by field — so **any field missing here is DESTROYED**,
+ * not merely ignored (pitfall #121). This runs on every load, and the panel saves
+ * whatever it was handed, so a dropped field survives exactly until the next save.
+ *
+ * That is what happened to `effect` / `glowColor`: they were added to the type
+ * (and to the editor, which offers the same effect menu as highlights) but never
+ * added here, so a contact template kept its COLOUR and silently lost its rainbow
+ * on the next load. `tsc` cannot catch it because both are optional — the very
+ * thing that makes them safe to add is what makes omitting them invisible.
+ *
+ * **Adding an optional field to `ContactTemplate` means adding it here too**, and
+ * the round trip is covered in tmp-rules-harness so the next one cannot slip.
+ */
 function normalizeTemplate(t: Partial<ContactTemplate> & { id: string; name: string }): ContactTemplate {
   return {
     id: t.id,
     name: t.name,
+    effect:     t.effect,
+    glowColor:  t.glowColor,
+    tagEffect:    t.tagEffect,
+    tagGlowColor: t.tagGlowColor,
     textColor:  t.textColor  || '#C8C8C8',
     bgColor:    t.bgColor    || 'transparent',
     bold:       t.bold       ?? false,

@@ -64,6 +64,7 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
   const [imageIndex, setImageIndex] = useState<Map<string, LichRoom[]>>(new Map())
   // Title index is only used for lookups — ref avoids prop drilling
   const titleIndex     = useRef<Map<string, LichRoom[]>>(new Map())
+  const uidIndex       = useRef<Map<number, LichRoom>>(new Map())
   // Secondary index keyed by normalizeMatchKey(title). Used as a forgiving
   // fallback when the exact-case lookup misses — fixes case/bracket/whitespace
   // drift between Lich titles and Genie node names. Same value lists; just a
@@ -115,12 +116,30 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
       if (!raw) throw new Error('Could not read map file')
       const rooms: LichRoom[] = JSON.parse(raw)
       const db = new Map<number, LichRoom>()
+      // SECOND index, keyed by the GAME uid (Lich 5.20 review).
+      //
+      // `r.id` is LICH's own room id; `r.uid` is the game's. They are different
+      // number spaces — in a real DR map, ids run 1–52274 while uids run up to
+      // 9.8 million, and only 471 of 15,521 uids collide with any id. The
+      // `roomId` we look up with comes from `<nav rm>` and the subtitle marker,
+      // which Lich's own code calls "the authoritative room UID" — i.e. the GAME
+      // id. So an id-only index missed ~97% of lookups and fell through to the
+      // fragile title+desc match every time, which is the "map lost me" symptom.
+      //
+      // This is not a 5.20 regression; 5.20 is what makes it FIXABLE. DR now
+      // emits `<nav rm>` on EVERY arrival, so the uid is reliably present rather
+      // than only when the player had the game's ShowRoomID flag on.
+      const byUid = new Map<number, LichRoom>()
       const ti = new Map<string, LichRoom[]>()
       const tn = new Map<string, LichRoom[]>()
       const ii = new Map<string, LichRoom[]>()
       for (const r of rooms) {
         if (typeof r?.id !== 'number') continue
         db.set(r.id, r)
+        // A room can carry several uids (merged/aliased rooms), so index each.
+        if (Array.isArray(r.uid)) {
+          for (const u of r.uid) if (typeof u === 'number' && u > 0) byUid.set(u, r)
+        }
         const t = lichTitle(r)
         if (t) {
           if (!ti.has(t)) ti.set(t, []); ti.get(t)!.push(r)
@@ -131,12 +150,14 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
       }
       titleIndex.current     = ti
       normTitleIndex.current = tn
+      uidIndex.current       = byUid
       setLichDb(db)
       setImageIndex(ii)
       setDbStatus('ready')
       setCurrentRoom(
         roomIdRef.current !== undefined
-          ? (db.get(roomIdRef.current) ?? findRoom(ti, roomTitleRef.current, roomDescRef.current, tn))
+          ? (byUid.get(roomIdRef.current) ?? db.get(roomIdRef.current)
+             ?? findRoom(ti, roomTitleRef.current, roomDescRef.current, tn))
           : findRoom(ti, roomTitleRef.current, roomDescRef.current, tn)
       )
     } catch (e) {
@@ -179,8 +200,14 @@ export default memo(function MapPanel({ roomTitle = '', roomDesc = '', roomExits
   // diagnostic appears.
   useEffect(() => {
     if (dbStatus !== 'ready') return
+    // uid FIRST, then Lich's own id, then title+desc. Both id spaces are tried
+    // because the subtitle's " - NNNN" slot is genuinely ambiguous: it holds the
+    // GAME's room number natively, but Lich's `display_lichid` puts its OWN id
+    // in the same place, and nothing in the text distinguishes them. Trying both
+    // maps makes the lookup correct either way instead of guessing.
     const found = roomId !== undefined
-      ? (lichDb.get(roomId) ?? findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current))
+      ? (uidIndex.current.get(roomId) ?? lichDb.get(roomId)
+         ?? findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current))
       : findRoom(titleIndex.current, roomTitle, roomDesc, normTitleIndex.current)
     if (found) {
       setCurrentRoom(found)

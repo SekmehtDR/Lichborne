@@ -36,6 +36,7 @@ import PanelManager from './PanelManager'
 import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
+import { SORT_MODES, type SortMode } from '../expParse'
 import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
@@ -73,6 +74,7 @@ import { useSessionStats } from '../hooks/useSessionStats'
 import { MAX_FEED_CAPACITY } from '../overviewLayout'
 import {
   useOverviewOptions, getOverviewOptions, setOverviewOptions,
+  useOverviewTarget, setOverviewTarget,
   getViewMode, setViewMode, getDigests, digestFlags, type OverviewOptions,
 } from '../overviewStore'
 import { ATTENTION_DEFS } from '../attention'
@@ -121,6 +123,13 @@ interface Props {
   overviewIndex?: number
   /** Click-through from the card: select this character and return to Session. */
   onOpenInSession?: () => void
+  /**
+   * Whether THIS window writes the theme + settings to the document. Normally
+   * the active character, but FROZEN while the Overview is open so clicking a
+   * tab there does not re-theme the dashboard (see App). Defaults to `isActive`
+   * so nothing outside App has to care.
+   */
+  ownsTheme?: boolean
   /** Card actions, mirroring the character tab's right-click menu. */
   onCloseCharacter?: (characterId: string) => void
   onReconnectCharacter?: (characterId: string) => void
@@ -559,6 +568,7 @@ const TimerDisplay = memo(function TimerDisplay({ rtExpires, ctExpires, aimExpir
 export default function GameWindow({
   session, onDisconnect, isActive = true, simucoin,
   viewMode = 'session', overviewHost, overviewIndex = 0, onOpenInSession,
+  ownsTheme,
   onCloseCharacter, onReconnectCharacter,
 }: Props) {
   const isActiveRef = useRef(isActive)
@@ -566,6 +576,7 @@ export default function GameWindow({
   // v0.19.0 Views. `isActive` is deliberately NOT touched by the view flip — the
   // active character must keep owning applySettingsToDOM/applyTheme so a theme
   // change made from the Overview still lands on the document.
+  const overviewTarget = useOverviewTarget()
   const overviewOpen = viewMode === 'overview'
   const overviewOpenRef = useRef(overviewOpen)
   useEffect(() => { overviewOpenRef.current = overviewOpen }, [overviewOpen])
@@ -672,6 +683,25 @@ export default function GameWindow({
   const [lichMapVersion, setLichMapVersion] = useState(0)
   const [expSkills, setExpSkills]       = useState<Record<string, string>>({})
   const [rankUpSkills, setRankUpSkills] = useState<Set<string>>(new Set())
+  // The card's compact exp view orders skills with the character's OWN saved
+  // preference, read once at mount. ExpPanel owns this state and persists it to
+  // the same scopedKeys, but it emits no change event — so a sort changed in the
+  // panel reaches the card on the next mount rather than instantly. Cheap,
+  // honest, and the alternative (reading localStorage every render, on a
+  // component that re-renders per game line) is not worth instant sync here.
+  // `useState` with a LAZY initializer, not `useRef(...)`: useRef evaluates its
+  // argument on EVERY render and throws the result away after the first, so the
+  // ref form ran three synchronous localStorage reads per render — which on this
+  // component is per game line, per character. useState's function form is the
+  // only one that actually runs once (and it is the house pattern here — see
+  // pinnedSkills below). Never setState'd; this is a read-once snapshot.
+  const [expSort] = useState<{ mode: SortMode; desc: boolean }>(() => {
+    const stored = loadStr(scopedKey(session.character, 'expSort'), 'alpha')
+    return {
+      mode: (SORT_MODES.includes(stored as SortMode) ? stored : 'alpha') as SortMode,
+      desc: loadStr(scopedKey(session.character, 'expSortDesc'), 'desc') !== 'asc',
+    }
+  })
   const rankUpTimersRef                 = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   // Badging default = the character's GUILD when we know it (Sekmeht): an
@@ -792,7 +822,13 @@ export default function GameWindow({
   // hooks below tally per-rule usage via recordFire. Seeded on mount + kept fresh
   // by a cross-window `storage` listener AND a same-window custom event the
   // toggle dispatches (a `storage` event never fires in the window that wrote it).
-  const analyticsEnabledRef           = useRef(loadAnalyticsEnabled())
+  // Seeded from LAZY state, not `useRef(loadAnalyticsEnabled())`: useRef
+  // evaluates its argument every render and discards it after the first, so
+  // the bare form ran a localStorage read per game line. Same fix, and same
+  // reason, as the command-history load above. (Pre-existing; found sweeping
+  // for the shape after introducing it again in v0.19.1.)
+  const [initialAnalyticsEnabled]     = useState(loadAnalyticsEnabled)
+  const analyticsEnabledRef           = useRef(initialAnalyticsEnabled)
   useEffect(() => {
     const refresh = () => { analyticsEnabledRef.current = loadAnalyticsEnabled() }
     const onStorage = (e: StorageEvent) => { if (e.key === 'lichborne.automationAnalytics') refresh() }
@@ -983,7 +1019,12 @@ export default function GameWindow({
   // untouched until Phase 2). `freeWindows` undefined-vs-[] distinguishes
   // "never converted → seed" from "intentionally emptied → respect" (§33.3).
   const freeWindowsKey = scopedKey(session.character, 'freeWindows')
-  const freeInitRef = useRef(loadFreeWindows(freeWindowsKey) !== undefined)
+  // Lazy state -> ref, for the same reason. This one was the expensive
+  // instance: the bare form ran localStorage.getItem PLUS a JSON.parse and a
+  // filter over the whole floating-window array on every render of the
+  // busiest component in the app.
+  const [initialFreeSeeded] = useState(() => loadFreeWindows(freeWindowsKey) !== undefined)
+  const freeInitRef = useRef(initialFreeSeeded)
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() =>
     loadStr(scopedKey(session.character, 'layoutMode'), 'panels') === 'free' ? 'free' : 'panels')
   const [freeWindows, setFreeWindows] = useState<FloatWindow[]>(() => loadFreeWindows(freeWindowsKey) ?? [])
@@ -1595,9 +1636,18 @@ export default function GameWindow({
     // parts={injuryState}`) is not. `exp` looks like a stream and is NOT one —
     // it is built from `exp-component` EVENTS, so offering it would have handed
     // the user a feed that can only ever say "nothing yet".
+    // `exp` IS offered (v0.19.1, Sekmeht) even though it is not a text stream:
+    // picking it renders the COMPACT EXPERIENCE VIEW on the card rather than a
+    // feed. That is the whole reason it was missing — it was excluded on the
+    // correct observation that a feed of it could only ever say "nothing yet",
+    // which was true right up until the card learned to render the state instead.
+    // The others stay out because nothing renders them: `map` is graphical,
+    // `injuries` already surfaces as the wound chip, `room` is structured
+    // sub-streams, `lichScripts` is the `;listall` poll, raw/debug are
+    // diagnostics.
     const skip = new Set([
       'main', 'raw', 'debug', 'room',
-      'map', 'lichscripts', 'injuries', 'exp',
+      'map', 'lichscripts', 'injuries',
     ])
     const ids: string[] = []
     // Lowercase for the COMPARISON only — the id pushed is the original, because
@@ -2399,8 +2449,12 @@ export default function GameWindow({
   // globally, so without the isActive dependency, switching from char A (with a
   // dark theme) to char B (saved with a light theme) would leave char A's CSS
   // visible until B changed a setting.
+  // Ownership, not activeness: while the Overview is open App freezes this to
+  // whoever owned the document on entry, so a tab click there cannot re-theme
+  // the dashboard. Falls back to `isActive` when App does not supply it.
+  const ownsDom = ownsTheme ?? isActive
   useEffect(() => {
-    if (!isActive) return  // inactive tabs don't own the DOM
+    if (!ownsDom) return  // only one window writes the document
     // B114: register a post-apply hook that re-runs the accessibility
     // overlays (high contrast + color blind) whenever applyTheme /
     // applyCustomTheme is called from anywhere — ThemePicker preview,
@@ -2418,7 +2472,7 @@ export default function GameWindow({
     }
     applySettingsToDOM(settings)
     return () => registerThemeAppliedHook(null)
-  }, [isActive, currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ownsDom, currentThemeId, settings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist panel layout ─────────────────────────────────────────────────
 
@@ -5767,6 +5821,9 @@ export default function GameWindow({
           settings={settings}
           options={overviewOptions}
           vitals={vitals}
+          rtExpires={rtExpires} ctExpires={ctExpires} aimExpires={aimExpires}
+          expSkills={expSkills} pinnedSkills={pinnedSkills} rankUpSkills={rankUpSkills}
+          expSort={expSort.mode} expSortDesc={expSort.desc}
           vitalLabels={vitalLabels}
           indicators={indicators}
           stance={stance}
@@ -5786,6 +5843,8 @@ export default function GameWindow({
           streamChoices={overviewStreamChoices}
           onStreamChange={setOverviewStream}
           stats={overviewStats}
+          onSelect={() => setOverviewTarget(characterId)}
+          selected={overviewTarget === characterId}
           onOpen={() => onOpenInSession?.()}
           onMenu={(x, y) => setCardMenu({ x, y })}
         />,
@@ -5811,6 +5870,9 @@ export default function GameWindow({
               // and Close would render even when nothing can handle it —
               // an entry that appears and silently does nothing.
               onReconnect: onReconnectCharacter ?? NOOP_CHARACTER_ACTION,
+              // Same pass-THROUGH rule as onClose: wrapping it would make the
+              // entry always render, even where nothing handles it.
+              onGotoSession: onOpenInSession ? () => onOpenInSession() : undefined,
               onClose: onCloseCharacter,
             },
           )}

@@ -11,7 +11,8 @@
 // answer to "yes" is to click it and land in Session view. Quick Send already
 // covers sending a command to another character.
 
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
+import { useTimers } from '../../hooks/useTimers'
 import type { TextLine, RoomState, InjuryState, TextSegment } from '../../../shared/types'
 import type { CompiledRule } from '../../HighlightsContext'
 import type { Contact, ContactTemplate } from '../../contacts'
@@ -20,6 +21,7 @@ import type { OverviewOptions } from '../../overviewStore'
 import type { SessionStats } from '../../hooks/useSessionStats'
 import { ATTENTION_DEFS, attentionOrder, needsAttention, type AttentionThresholds } from '../../attention'
 import { summarizeInjuries, WOUND_LABEL, type InjurySummary } from '../../injuryParse'
+import { compactExpRows, type SortMode } from '../../expParse'
 // From the STORE, not a context: this card is PORTALED, so its React context
 // comes from its GameWindow — a provider on OverviewShell would never reach it.
 import { useOverviewNow, useFeedCapacity } from '../../overviewStore'
@@ -72,6 +74,17 @@ interface Props {
   leftHand: string
   roomState: RoomState
   injuryState: InjuryState
+  /** Absolute expiry stamps (0 = not running) for the RT / Cast / Aim strip. */
+  rtExpires: number
+  ctExpires: number
+  aimExpires: number
+  /** Raw skill map — rendered as the compact experience view when `exp` is the
+   *  selected stream. Not a text stream, which is exactly why it needs this. */
+  expSkills: Record<string, string>
+  pinnedSkills: Set<string>
+  rankUpSkills: Set<string>
+  expSort: SortMode
+  expSortDesc: boolean
   lines: TextLine[]
   /** The selected stream's OWN buffer (what its panel renders) — history included. */
   streamLines: TextLine[]
@@ -87,7 +100,12 @@ interface Props {
   streamChoices: { id: string; label: string }[]
   onStreamChange: (id: string) => void
   stats: SessionStats
+  /** Single click — SELECT this card as the input bar's target. */
+  onSelect: () => void
+  /** Double click — leave the Overview for this character's session. */
   onOpen: () => void
+  /** True when this card is the input bar's current target. */
+  selected: boolean
   /** Opens the per-character action menu at a point. Absent → no menu. */
   onMenu?: (x: number, y: number) => void
 }
@@ -176,6 +194,7 @@ function OverviewCardImpl(p: Props) {
         `ov-card--${tone}`,
         pulsing ? 'ov-card--pulse' : '',
         p.isActive ? 'ov-card--active' : '',
+        p.selected ? 'ov-card--selected' : '',
         o.density === 'compact' ? 'ov-card--compact' : '',
       ].filter(Boolean).join(' ')}
       style={{
@@ -195,8 +214,19 @@ function OverviewCardImpl(p: Props) {
       role="button"
       tabIndex={0}
       title={`Open ${p.character} in Session view`}
-      onClick={p.onOpen}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); p.onOpen() } }}
+      // A single click SELECTS rather than navigates (Sekmeht): the Overview
+      // should not bounce you into a session by accident. Double-click and the
+      // card menu are the deliberate ways out. The stray single click a
+      // double-click also fires is harmless — it just aims the input bar at the
+      // character you are about to open anyway.
+      onClick={p.onSelect}
+      onDoubleClick={p.onOpen}
+      onKeyDown={e => {
+        // Space selects, Enter opens — the keyboard equivalents of the two
+        // mouse gestures, so neither is reachable only by pointer.
+        if (e.key === ' ') { e.preventDefault(); p.onSelect() }
+        else if (e.key === 'Enter') { e.preventDefault(); p.onOpen() }
+      }}
       /* Right-click anywhere on the card, exactly like the character tab. */
       onContextMenu={e => { if (p.onMenu) { e.preventDefault(); p.onMenu(e.clientX, e.clientY) } }}
     >
@@ -214,6 +244,10 @@ function OverviewCardImpl(p: Props) {
         flags={stats.flags} idle={idle} connected={p.connected}
         wound={o.showInjuries && injuries.woundCount > 0 ? injuries : null}
       />
+
+      {o.showTimers && (
+        <CardTimers rtExpires={p.rtExpires} ctExpires={p.ctExpires} aimExpires={p.aimExpires} />
+      )}
 
       {o.showVitals && (
         <div className="ov-card-vitals">
@@ -265,7 +299,12 @@ function OverviewCardImpl(p: Props) {
         </div>
       )}
 
-      {o.feedLines > 0 && (
+      {o.feedLines > 0 && p.streamId === 'exp' && (
+        <CardExp skills={p.expSkills} pinned={p.pinnedSkills} rankUp={p.rankUpSkills}
+                 mode={p.expSort} desc={p.expSortDesc} />
+      )}
+
+      {o.feedLines > 0 && p.streamId !== 'exp' && (
         <div className="ov-card-feed" aria-label={`${p.streamId} for ${p.character}`}>
           {feed.length === 0
             /* Names the stream: on a non-main selection "No text yet" alone
@@ -303,6 +342,112 @@ function OverviewCardImpl(p: Props) {
 // type every render, so React remounts it and any state it owns is lost. This
 // card re-renders on every game line, which is exactly the condition that turns
 // that mistake into a visible bug.
+
+/**
+ * RT / Cast / Aim, as three thin lanes (Binu: "a little RT/Cast/Aim time bar
+ * somewhere on each pane"). On a dashboard the question this answers is "who can
+ * act right now", which is exactly what you cannot get by tabbing around.
+ *
+ * MEMO'd, and that is the whole design. `useTimers` runs a 100ms interval while
+ * anything is counting, and the card around it is deliberately NOT memo'd (see
+ * the note on the default export) — so calling `useTimers` at card level would
+ * re-render the entire card, feed included, ten times a second per character in
+ * combat. Confined to this leaf, the tick repaints three divs. Its props are
+ * three primitives, so a card re-render caused by anything else does not reach
+ * it either.
+ *
+ * The interval only exists while a timer is live (`useTimers` returns early at
+ * all-zero), so a calm dashboard pays nothing — the §35.6 "free until used"
+ * rule the rest of the view follows.
+ *
+ * The strip's HEIGHT is always reserved, even with nothing running: cards must
+ * not resize when a roundtime starts, which is the quiver this view has already
+ * been bitten by once.
+ *
+ * Same colour vars as the game command bar (`--rt-end` / `--ct-end` /
+ * `--aim-end`), so a lane means the same thing in both places, and the same
+ * precedence — aim renders BEHIND cast, because cast is the PvP-critical one.
+ */
+const CardTimers = memo(function CardTimers({ rtExpires, ctExpires, aimExpires }: {
+  rtExpires: number; ctExpires: number; aimExpires: number
+}) {
+  const { rt, ct, aim, rtPct, ctPct, ctMax, aimMax } = useTimers(rtExpires, ctExpires, aimExpires)
+  // Aim is scaled against CAST's max when cast is running, so the two widths are
+  // comparable in absolute seconds rather than each as a share of its own max —
+  // the same reasoning as the command bar's TimerDisplay.
+  const aimScaleMax = ctMax > 0 ? ctMax : aimMax
+  const aimPct = aimScaleMax > 0 ? Math.min(100, (aim / aimScaleMax) * 100) : 0
+  return (
+    <div className="ov-card-timers" aria-hidden>
+      <div className="ov-timer-lane">
+        {rt > 0 && <div className="ov-timer-fill ov-timer-fill--rt" style={{ width: `${rtPct}%` }} />}
+      </div>
+      <div className="ov-timer-lane">
+        {aim > 0 && <div className="ov-timer-fill ov-timer-fill--aim" style={{ width: `${aimPct}%` }} />}
+        {ct  > 0 && <div className="ov-timer-fill ov-timer-fill--ct"  style={{ width: `${ctPct}%` }} />}
+      </div>
+    </div>
+  )
+})
+
+/**
+ * The compact experience view, on a card (Sekmeht, v0.19.1).
+ *
+ * Experience is NOT a text stream — it is a state map rebuilt from
+ * `exp-component` events — which is why picking it in the card's stream dropdown
+ * renders THIS instead of a feed. It was previously excluded from that dropdown
+ * for the correct reason that a feed of it could only ever say "nothing yet";
+ * that stopped being true the moment the card could render the state.
+ *
+ * The FILTER and the ORDER come from `expParse` (`compactExpRows`), shared with
+ * ExpPanel so the two surfaces can never disagree about which skills are
+ * training or how they sort. The MARKUP is deliberately not shared: the panel's
+ * rows carry pin buttons and an RXP footer, and a card is a read-only glance.
+ * Pins are still honoured for ORDERING — the skills you pinned are the ones you
+ * want at the top of a small tile — there is simply no button to toggle them.
+ *
+ * MEMO'd on the skills map: `compactExpRows` parses every entry (and the sort
+ * comparator parses again), while a card re-renders on every game line. That
+ * memo is the difference between free and forty regexes per line per character.
+ *
+ * Top-anchored, unlike the text feed. A feed clips its OLDEST line off the top
+ * because the newest matters most; a table's first row is its most important, so
+ * this one clips the tail and says how many it dropped rather than pretending
+ * the list is complete.
+ */
+const CardExp = memo(function CardExp({ skills, pinned, rankUp, mode, desc }: {
+  skills: Record<string, string>; pinned: Set<string>; rankUp: Set<string>
+  mode: SortMode; desc: boolean
+}) {
+  const rows = useMemo(() => compactExpRows(skills, pinned, mode, desc), [skills, pinned, mode, desc])
+  const tdp = (skills['tdp'] ?? '').match(/(\d+)/)?.[1]
+
+  return (
+    <div className="ov-card-exp">
+      <div className="ov-exp-top">
+        <span className="ov-exp-title">EXP</span>
+        <span className="ov-exp-stat"><span className="ov-exp-lbl">Learning</span>{rows.length}</span>
+        {tdp && <span className="ov-exp-stat"><span className="ov-exp-lbl">TDP</span>{tdp}</span>}
+      </div>
+      {rows.length === 0
+        ? <div className="ov-card-dim">No skills actively training.</div>
+        : (
+          <div className="ov-exp-rows">
+            {rows.map(r => (
+              <div key={r.skill}
+                   className={`ov-exp-row ov-exp-row--${r.bucket}${rankUp.has(r.skill) ? ' ov-exp-row--rankup' : ''}${pinned.has(r.skill) ? ' ov-exp-row--pinned' : ''}`}
+                   title={`${r.skill} — rank ${r.rank}, ${r.pctStr}, mindstate ${r.mindstateIdx}/34`}>
+                <span className="ov-exp-name">{r.skill}</span>
+                <span className="ov-exp-rank">{r.rank}</span>
+                <span className="ov-exp-pct">{r.pctStr}</span>
+                <span className="ov-exp-rate">{r.mindstateIdx}/34</span>
+              </div>
+            ))}
+          </div>
+        )}
+    </div>
+  )
+})
 
 function CardHead({ character, game, useLich, connected, healthPct, isActive, thresholds, onMenu }: {
   character: string; game: string; useLich: boolean

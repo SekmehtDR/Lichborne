@@ -8903,6 +8903,158 @@ Details worth keeping:
   steal keystrokes in Session view. The slash PALETTE is still the command bar
   only — these surfaces get no completion.
 
+### 47.5f Two rendering contracts the cards depend on (v0.19.1, Binu)
+
+**The feed clips the OLDEST content, never the newest.** Lines are not capped.
+The feed is bottom-anchored (`justify-content: flex-end`) with the overflow
+hidden, so when a card holds more text than it has room for, the top scrolls away
+and the newest line is always whole. This is the game window's behaviour, and the
+card's governing rule is that it should read like one.
+
+It shipped the other way round in v0.19.0 — each line capped at three rows — and
+that failed twice over (B277). It truncated the **tail** of a long room
+description, which is the half you are reading; and it never cut on a row
+boundary, because `.text-line` re-declares `line-height: var(--game-line-height)`
+(the user's PROSE setting, 1.4–1.6) while the cap was written in `1.3em`. A 3.9em
+box against ~1.5em rows is 2.6 rows: two whole rows and a sliver. **The rule that
+generalises: before doing arithmetic in rows, check what the CHILD declares** — a
+child re-declaring `font-size` or `line-height` invalidates any `em` maths done in
+the parent's terms. Not counting rows at all is what makes this correct without
+arithmetic (pitfall #116).
+
+Two riders on the same rule. The feed's line rule is scoped
+`.ov-card-feed > .text-line` (0,2,0) so it beats `game.css`'s `.text-line`
+deterministically rather than tying at equal specificity and losing on bundle
+order (pitfall #111). And the `min-height` that keeps a blank game line holding a
+row is expressed in the row's own metric,
+`calc(1em * var(--game-line-height, 1.4))`, so it cannot drift from the
+line-height that renders it.
+
+**The card's dropdown selects WHAT IT SHOWS, not which stream (F103).** Picking
+**Experience** renders the compact experience view instead of a text feed. That
+supersedes v0.19.0's exclusion of `exp` from the list, and the supersession is
+worth stating because the original reasoning was CORRECT: experience is assembled
+from `exp-component` events into a state map, there are no `TextLine`s behind it,
+and a feed of it could only ever say "nothing yet". What changed is not the
+diagnosis but the card — once it can render state, the entry earns its place. The
+remaining exclusions are the ones nothing renders: `map` is graphical, `injuries`
+already surfaces as the wound chip, `room` is structured sub-streams,
+`lichScripts` is the `;listall` poll, raw/debug are diagnostics.
+
+**Shared filter and order; separate markup.** `compactExpRows` (expParse.ts)
+filters to actively-training skills and sorts them, and BOTH ExpPanel and the
+card call it — so the two can never disagree about which skills appear or how
+they are ordered. The markup is deliberately not shared: the panel's rows carry
+pin buttons and an RXP footer, a card is read-only. Pins are still honoured for
+ORDERING, since the skills you pinned are the ones you want at the top of a small
+tile; there is simply no toggle on a card. This is the same split the injury and
+exp parsers already use — share the rule, not the copy.
+
+Three details that are easy to get wrong. It is **memoized on the skills map**:
+`compactExpRows` parses every entry and the comparator parses again, while a card
+re-renders on every game line. It is **TOP-anchored**, unlike the text feed —
+a feed clips its oldest line because the newest matters most, whereas a table's
+first row is its most important, so this clips the tail. And sort follows the
+character's saved preference **read once at mount**, because ExpPanel owns that
+state and emits no change event; reading localStorage every render on a
+per-game-line component was not worth instant sync, and the staleness window is
+one remount.
+
+**A quirk pinned rather than fixed:** `sortDesc` multiplies the comparator, so
+for `alpha` it is FALSE that yields Z→A and TRUE that yields A→Z. The name says
+the opposite of what it does for that mode, the panel's stored default relies on
+it, and renaming it would change behaviour for everyone — so the harness pins
+both directions instead (section K). It caught an inverted assumption about that
+flag during this very build, which is the argument for the case existing.
+
+**The RT/Cast/Aim strip is a MEMO'd leaf, and that is load-bearing (F102).**
+`useTimers` runs a 100ms interval while anything is counting. The Overview card
+is deliberately NOT memoized — its `stats` object comes back fresh from
+`useSessionStats` on every render, so a shallow compare could never bail — which
+means calling `useTimers` at card level would re-render each card, feed included,
+ten times a second for every character in combat. Inside `CardTimers`, whose
+props are three primitives, the tick repaints three divs and an unrelated card
+re-render does not reach it. `useTimers` returns early at all-zero, so a calm
+dashboard runs no interval: the §35.6 "free until used" rule again.
+
+**The strip's height is always reserved.** A card that grew when a roundtime
+started and shrank when it ended would twitch through every fight — the quiver
+class this view has already been bitten by. The empty lane paints as a faint
+groove so a running timer reads as filling a track that was already there.
+
+Colours and precedence come from the game command bar (`--rt-end` / `--ct-end` /
+`--aim-end`, cast over aim because cast is the PvP-critical one), so a lane means
+the same thing wherever it is read, and aim is scaled against cast's max while
+cast runs so the two widths are comparable in absolute seconds.
+
+**The Overview is STICKY (F106).** Nothing in it moves you between views by
+accident; leaving is a deliberate act. Three mechanisms:
+
+**Theme OWNERSHIP freezes on entry — not theme application.** Exactly one
+GameWindow writes theme + per-character settings to the document, and it was
+always the ACTIVE character, so a tab click from the Overview transferred
+ownership and re-themed the dashboard underneath you. Freezing WHO owns it fixes
+that without breaking the documented behaviour that a theme picked from the
+Overview still lands: the owner's effect still re-runs on `currentThemeId` /
+`settings`, it just no longer changes hands on a tab click. Leaving releases
+ownership to whoever is active, so the character you land on applies its own
+theme and ordinary Session tab-switching is unchanged. Known and ACCEPTED
+(Sekmeht): settings edited in the Overview belong to the active character, which
+may not be the owner, so they appear on leaving — the same behaviour as editing a
+background character's settings in Session view, and cards already re-map their
+own font inline, so only the summary strip and input bar are affected.
+
+**A card click SELECTS rather than navigates**, aiming the input bar at that
+character (accent ring); clicking empty grid space widens back to All. That is
+why the target lives in `overviewStore` rather than the bar — three surfaces now
+read and write it. **Selected is deliberately distinct from `--active`**: in this
+view they are different facts, since you can be typing at one character while
+another is the one you would land on.
+
+**Leaving takes intent:** double-click a card, or "Go to <name>'s game session"
+from its menu — an OPTIONAL entry in the shared builder, so the character tab's
+menu does not grow one (a tab already navigates when clicked). Keyboard parity:
+Space selects, Enter opens, so neither gesture is pointer-only.
+
+**The target resets on EVERY view change** (`setViewMode`), not on the bar's
+unmount. It used to reset for free because it was component state; moving it to
+module scope silently removed that, and re-entry began restoring the last target
+(B284). The reset lives in the store so it holds however the view is changed —
+toggle, menu action, or `/view`.
+
+**The bar's target FOLLOWS the active character (F101).** Ctrl+1..9, Ctrl+Tab and
+clicking a tab all route through the same `setActive`, so the bar watches
+`activeId` and needs one mechanism rather than three. It moves only on a CHANGE:
+the tracking ref is seeded at mount so the first render is not read as a switch,
+which is what keeps **All characters** as the opening state on every visit. That
+deliberate seeding is the inverse of pitfall #12 — there, seeding hides a real
+first change; here hiding it is the requirement. A null previous value is the
+roster resolving, not a choice, and is ignored too.
+
+This depends on two things worth stating because a future change could break
+either silently: the app bar is NOT view-gated and paints above the overlay, so
+its tabs are genuinely clickable while the dashboard is up; and
+`refocusActiveCommandBar` early-returns in Overview (added with B270), so a tab
+switch cannot pull focus into the covered game command bar mid-sentence.
+`Ctrl+0` is deliberately absent — an Electron-reserved zoom accelerator the
+operational guardrails forbid rebinding.
+
+**The input bar's command history belongs to the BAR, not to the target.**
+↑/↓ mirror the game bar exactly — newest first, the live line's draft stashed on
+entering history and restored on the way back down, Enter always returning to the
+live line, the same app-wide `commandHistory.minLength` gate, a consecutive-repeat
+check, and ↓ clamped at −1 (B120, which was Binu's own report against the game
+bar; there was no reason to ship it twice).
+
+Whose history it is was the only real decision. This one control can be aimed at
+any character or broadcast to all of them, so *"recall the last thing I sent"* is
+the only phrasing with an unambiguous answer: a per-character history would change
+what ↑ gives you depending on a dropdown, and mean nothing at all while targeting
+All. It is in-memory and per-window — a scratch surface, not a character's record,
+so it deliberately does not ride `state:` into a profile. Each character's own
+persisted history is untouched, because a command sent from the bar still reaches
+that character through its own `dispatchUserText`.
+
 ### 47.6 Cost
 
 **Closed:** two instructions per event batch and nothing else. The portal is not

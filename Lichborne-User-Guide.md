@@ -91,9 +91,16 @@ A few ideas shape everything:
   shrink past legibility, and past that the grid scrolls. As tiles shrink each
   card sheds what it cannot honestly show, stats first. **Tile size** in Settings
   overrides all of it.
-- **Each card picks its own stream.** A **showing** dropdown on every card: the
+- **Roundtime at a glance.** A thin **RT / Cast / Aim** strip on each card, in
+  the same colours as the bar under your command input — so you can see who is
+  free to act without switching to them. Off via Settings → Overview if you would
+  rather have the space.
+- **Each card picks what it shows.** A **showing** dropdown on every card: the
   game window by default, or switch it to `conversation` to see somebody talking
-  to that character without opening it. Per character, and remembered.
+  to that character without opening it. Per character, and remembered. Pick
+  **Experience** and the card shows the compact experience view instead of text —
+  the same skills, in the same order, as the Experience panel's compact mode,
+  with your pinned skills at the top.
 - **Configure it** in Settings → Overview or with `/view` — `/view status` lists
   every character as text, `/view sort attention` reorders by who needs you,
   `/view stream conversation` changes what the current character shows, and
@@ -103,8 +110,22 @@ A few ideas shape everything:
   on **All characters** to send to everybody. What you send behaves exactly as if
   typed in that character's own bar — aliases expand, `;` splits, it echoes as
   `>command`, and it reaches that character's history and log. Slash commands work
-  too and run on the character you targeted.
-- Cards themselves stay read-only; the input lives in one place so there is only
+  too and run on the character you targeted. **↑ and ↓ walk back through what
+  you've sent from the bar**, the same way they do in the game's command bar; that
+  history belongs to the bar rather than to whichever character is selected, since
+  the bar can send to all of them at once. Switching tabs while the Overview is
+  open — `Ctrl+1`…`Ctrl+9`, `Ctrl+Tab`, or clicking a tab — points the bar at that
+  character; it opens on **All characters** and only moves once you pick one.
+  Clicking **Overview** while you're already in it aims the bar back at everyone.
+- **Clicking a card aims the input bar at that character** rather than opening it
+  — the card picks up an accent ring, and clicking empty space goes back to all
+  characters. To open one full-screen, **double-click its card** or choose
+  **Go to … 's game session** from its ⋯ or right-click menu. Nothing in the
+  Overview moves you between views by accident.
+- **The theme stays put.** Switching tabs while the Overview is open no longer
+  re-themes the dashboard; when you leave, the character you land on applies its
+  own theme as usual.
+- Cards stay read-only otherwise; the input lives in one place so there is only
   ever one field that can send text. Macro keys still do nothing in the Overview.
 - **Fixed:** Quick Send used to arrive *invisibly* — the command ran but the
   receiving character showed only the game's reply, and a slash command typed
@@ -291,7 +312,9 @@ looking at — and only when the count is above zero, so a healthy roster shows 
 badge at all. A character with nothing wrong reads a quiet **✓ calm** on its card
 rather than a row of zeroes.
 
-Clicking a card takes you straight to that character. Cards are read-only on
+Clicking a card aims the input bar at that character; **double-clicking** it (or
+**Go to … 's game session** in its menu) opens that character full-screen. Cards
+are read-only on
 purpose: to send a command to someone else, use **Quick Send**
 (Ctrl/Cmd+Shift+Enter), which already does exactly that. While the Overview is up,
 typing and macro keys do nothing, so there's no invisible command line underneath
@@ -336,7 +359,7 @@ Open the **Theme** picker for a gallery of built-in light and dark themes, or cr
 
 The **Automations** window (the **Automations** button on the app bar) is home base for the client's native automation — **all of it works with or without Lich.** It's tabbed by rule type:
 
-- **Highlights** — color words, names, or patterns wherever they appear in game text. Match a plain word, a phrase, or a full regex; choose whether it paints just the match or the whole line; give it a text color, background, bold, or a **text effect** — Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost, and more (animated effects hold still when epilepsy-safe mode is on). Overlapping highlights are resolved automatically (the most specific one wins per color property), so you never manage a priority list. Contact templates support the same effects.
+- **Highlights** — color words, names, or patterns wherever they appear in game text. Match a plain word, a phrase, or a full regex; choose whether it paints just the match or the whole line; give it a text color, background, bold, or a **text effect** — Glow, Shimmer, Rainbow, Pulse, Gold, Gradient, Fire, Frost, and more (animated effects hold still when epilepsy-safe mode is on). Overlapping highlights are resolved automatically (the most specific one wins per color property), so you never manage a priority list. Contact templates support the same effects — on the name, on the **tag**, or each with its own — and the template editor previews them live as you pick.
 - **Triggers** — "when I see X, do Y." The action can send a command, play a sound, echo a note to a stream, and more. Add **gates** (only while a Group/Mode is active) and a **cooldown** so a trigger can't spam. There's a quick form (`"pattern" do "command"`) for the common case and the full editor for multi-step triggers.
 - **Macros** — bind a key (F1–F12, Ctrl/Alt/Shift combos, the numpad) to a command or a whole sequence (with optional delays between steps). Put an **`@`** anywhere in the command to drop your cursor there — perfect for fill-in-the-blank macros like `get @ from my pack`.
 - **Aliases** — typed shortcuts that expand as you send them: `hh` → `health;heal`. Use `$1`, `$2`, `$rest` to pass along whatever you typed after the alias.

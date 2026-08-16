@@ -10,6 +10,7 @@ import {
   DR_GUILDS,
   formatLastSeen, formatDuration,
 } from '../contacts'
+import { paintContactText } from '../utils/contactStyle'
 import { useCharacter } from '../CharacterContext'
 import { scopedKey } from '../characterScope'
 import { type HighlightEffect, HIGHLIGHT_EFFECTS, FX_USES_COLOR } from '../highlights'
@@ -29,6 +30,41 @@ interface Props {
   onClose: () => void
   onSaved?: () => void
   openContactId?: string | null
+}
+
+/**
+ * Template previews that render EXACTLY as game text does.
+ *
+ * They used to build a plain `style={{ color }}`, so a rainbow template previewed
+ * as flat colour and you only found the effect by spotting that contact in play
+ * (Sekmeht). Both now go through `paintContactText`, the same builder
+ * `renderSegmentFull` uses — the point is not that they look similar, it is that
+ * there is ONE definition and no second place to forget.
+ */
+function TagPreviewText({ tpl }: { tpl: ContactTemplate }) {
+  const p = paintContactText(tpl.tagText, {
+    color: tpl.tagColor,
+    bgColor: tpl.tagBgColor,
+    effect: tpl.tagEffect,
+    glowColor: tpl.tagGlowColor ?? tpl.tagColor,
+  })
+  return <span className={p.className || undefined} style={p.style}>{p.content}</span>
+}
+
+function TplPreviewText({ tpl, name }: { tpl: ContactTemplate; name: string }) {
+  const p = paintContactText(name, {
+    color: tpl.textColor,
+    bgColor: tpl.bgColor,
+    effect: tpl.effect,
+    glowColor: tpl.glowColor,
+  })
+  const Tag = tpl.bold ? 'strong' : 'span'
+  return (
+    <>
+      {tpl.tagText && <><TagPreviewText tpl={tpl} />{' '}</>}
+      <Tag className={p.className || undefined} style={p.style}>{p.content}</Tag>
+    </>
+  )
 }
 
 export default function ContactsPanel({ onClose, onSaved, openContactId }: Props) {
@@ -232,8 +268,7 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                       return tpl ? (
                         <span className="cp-tpl-preview">
                           <span className="cp-tpl-preview-swatch" style={{ background: tpl.textColor }} />
-                          {tpl.tagText && <span style={{ color: tpl.tagColor }}>{tpl.tagText} </span>}
-                          <span style={{ color: tpl.textColor }}>{draft.name || 'Name'}</span>
+                          <TplPreviewText tpl={tpl} name={draft.name || 'Name'} />
                         </span>
                       ) : null
                     })()}
@@ -348,13 +383,15 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                     {!isExpanded ? (
                       <div className="cp-tpl-summary" onClick={() => startEditTemplate(t)}>
                         <span className="cp-tpl-dot" style={{ background: t.textColor }} />
-                        <span className="cp-tpl-name-label" style={{ color: t.textColor }}>{t.name}</span>
+                        <span className="cp-tpl-name-label"><TplPreviewText tpl={t} name={t.name} /></span>
                         <span className="cp-tpl-meta">
                           <span className="cp-tpl-swatch" style={{ background: t.textColor }} title={`Text: ${t.textColor}`} />
                           <span className="cp-tpl-swatch cp-tpl-swatch--bg"
                             style={{ background: t.bgColor === 'transparent' ? undefined : t.bgColor }}
                             title={`BG: ${t.bgColor}`} />
-                          <span className="cp-tpl-tag-preview">{t.tagText || <em>no tag</em>}</span>
+                          <span className="cp-tpl-tag-preview">
+                            {t.tagText ? <TagPreviewText tpl={t} /> : <em>no tag</em>}
+                          </span>
                         </span>
                       </div>
                     ) : (
@@ -434,6 +471,37 @@ export default function ContactsPanel({ onClose, onSaved, openContactId }: Props
                             onChange={e => setTplDraft({ ...tplDraft!, tagBgColor: e.target.value })}
                             onBlur={e => setTplDraft({ ...tplDraft!, tagBgColor: normalizeColorInput(e.target.value) })}
                             placeholder="none" />
+                        </div>
+                        {/* Tag effect — INDEPENDENT of the name's, and offered only
+                            when there is a tag to apply it to (UX #1: a control for
+                            something that does not exist is noise). Someone may want
+                            the tag to shimmer while the name stays plain, or the
+                            reverse. */}
+                        {tplDraft!.tagText.trim() !== '' && (
+                          <div className="cp-tpl-edit-row">
+                            <label className="cp-label">Tag effect</label>
+                            <select className="cp-input" value={tplDraft!.tagEffect ?? 'none'}
+                              onChange={e => setTplDraft({ ...tplDraft!, tagEffect: e.target.value as HighlightEffect })}>
+                              {HIGHLIGHT_EFFECTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                          </div>
+                        )}
+                        {tplDraft!.tagText.trim() !== '' && FX_USES_COLOR.has(tplDraft!.tagEffect ?? 'none') && (
+                          <div className="cp-tpl-edit-row">
+                            <label className="cp-label">Tag effect color</label>
+                            <input type="color" className="cp-color-picker" value={colorPickerValue(tplDraft!.tagGlowColor ?? '#ffd060')}
+                              onChange={e => setTplDraft({ ...tplDraft!, tagGlowColor: e.target.value })} />
+                            <input className="cp-input cp-input--hex" value={tplDraft!.tagGlowColor ?? ''}
+                              title={COLOR_INPUT_TITLE} placeholder="#ffd060"
+                              onChange={e => setTplDraft({ ...tplDraft!, tagGlowColor: e.target.value })}
+                              onBlur={e => setTplDraft({ ...tplDraft!, tagGlowColor: normalizeColorInput(e.target.value) })} />
+                          </div>
+                        )}
+                        {/* Live preview, so the effect is visible while you pick it
+                            rather than only once that contact appears in play. */}
+                        <div className="cp-tpl-edit-row">
+                          <label className="cp-label">Preview</label>
+                          <span className="cp-tpl-preview"><TplPreviewText tpl={tplDraft!} name={tplDraft!.name || 'Name'} /></span>
                         </div>
                         <div className="cp-tpl-edit-row">
                           <label className="cp-label">Groups</label>

@@ -108,6 +108,37 @@ function AppShell() {
     return () => cancelAnimationFrame(id)
   }, [view])
 
+  // THEME OWNERSHIP while the Overview is open (Sekmeht, v0.19.1).
+  //
+  // Exactly one GameWindow writes the theme + per-character settings to the
+  // document, and it was always the ACTIVE character — so clicking a tab from
+  // the Overview handed ownership over and re-themed the whole dashboard under
+  // you. Freezing WHO owns it (rather than freezing the apply itself) is what
+  // fixes that without breaking anything: the owner's effect still re-runs when
+  // the theme or its settings change, so a theme picked from the Overview still
+  // lands; it just no longer moves house every time you click a tab.
+  //
+  // On LEAVING, ownership returns to whoever is active — so the character you
+  // land on applies its own theme, and ordinary tab switching in Session view
+  // behaves exactly as it always has.
+  //
+  // Known and accepted (Sekmeht): settings edited in the Overview belong to the
+  // ACTIVE character, which may not be the owner, so they show up when you
+  // leave. That matches Session view, where editing a background character's
+  // settings does not touch the document either — and each card already re-maps
+  // its own font inline, so only the summary strip and input bar are affected.
+  const [frozenThemeOwner, setFrozenThemeOwner] = useState<string | null>(null)
+  useEffect(() => {
+    if (view === 'overview') setFrozenThemeOwner(prev => prev ?? activeId ?? null)
+    else setFrozenThemeOwner(null)
+  }, [view, activeId])
+  // Fall back to the active character if the frozen owner has since been closed,
+  // or nothing would own the document at all.
+  const themeOwnerId = view === 'overview' && frozenThemeOwner
+    && sessions.some(s => s.characterId === frozenThemeOwner)
+    ? frozenThemeOwner
+    : activeId
+
   // A window that empties drops back to Session view. The mode is per-window
   // state that outlives the characters in it, so closing your last character
   // while in the Overview would otherwise land the NEXT one you connect in a
@@ -1329,7 +1360,8 @@ function AppShell() {
               stays measured and coming back needs no scroll re-snap. The grid
               host is always mounted (hidden by CSS) so every card's portal
               target has a stable identity. */}
-          <OverviewShell open={view === 'overview'} characterCount={sessions.length} hostRef={overviewHostRef} />
+          <OverviewShell open={view === 'overview'} characterCount={sessions.length}
+                         activeCharacterId={activeId} hostRef={overviewHostRef} />
           {sessions.map((s, si) => (
             <div
               // Reload nonce suffix: bumping it (via reloadSession) forces this
@@ -1349,6 +1381,7 @@ function AppShell() {
                       useLich: s.useLich,
                     }}
                     isActive={s.characterId === activeId}
+                    ownsTheme={s.characterId === themeOwnerId}
                     // v0.19.0 Views. `overviewHostRef` is a REF OBJECT, not an
                     // element — referentially stable forever, so it can never
                     // invalidate a memoized child (pitfall #82c). `overviewIndex`

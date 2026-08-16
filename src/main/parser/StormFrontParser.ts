@@ -607,14 +607,37 @@ export class StormFrontParser {
               // id so the lichDb lookup is identical (Lich 5.18 review, pitfall
               // #65). Non-numeric parens (`(**)`, `(unknown)`) still miss →
               // roomId stays undefined, preserving the id-absence no-op.
-              const trailMatch = inner.match(/\s*-\s*(\d+)\s*$/)
+              // Lich 5.20 (#1491/#1500) added an OPT-IN placement that puts the
+              // uid INSIDE the brackets: "[Town Square - 1234 - (u230008)]",
+              // where 1234 is Lich's own id and 230008 the game's. Neither of
+              // the two older patterns matches it — the dash form needs digits
+              // at the very end (this ends with ')') and the parens form needs
+              // them AFTER the ']' — so the id was lost AND the decorations
+              // stayed in the title, which would also break the Genie map's
+              // title matching. Strip it first, then fall through as before.
+              //
+              // Default users see none of this: Lich embeds nothing in the title
+              // unless the player opts in, and `<nav rm>` (now sent on every DR
+              // arrival) is the primary id source regardless.
+              const innerUid = inner.match(/\s*-\s*\(u(\d+)\)\s*$/)
+              const afterUid = innerUid ? inner.slice(0, innerUid.index) : inner
+              const trailMatch = afterUid.match(/\s*-\s*(\d+)\s*$/)
               const cleanTitle = trailMatch
-                ? inner.slice(0, trailMatch.index).trim()
-                : inner.trim()
-              const parenMatch = trailMatch ? null : attrs.subtitle.match(/\]\s*\(u?(\d+)\)/)
-              const roomId = trailMatch
-                ? parseInt(trailMatch[1], 10)
-                : parenMatch ? parseInt(parenMatch[1], 10) : undefined
+                ? afterUid.slice(0, trailMatch.index).trim()
+                : afterUid.trim()
+              const parenMatch = (innerUid || trailMatch)
+                ? null : attrs.subtitle.match(/\]\s*\(u?(\d+)\)/)
+              // The in-bracket `(uNNNN)` is UNAMBIGUOUSLY the game uid, so it
+              // wins over the " - NNNN" slot, which is ambiguous: it holds the
+              // game's room number natively but Lich's `display_lichid` puts its
+              // OWN id there and nothing in the text tells them apart. The map
+              // indexes BOTH number spaces (MapPanel), so the ambiguous case
+              // resolves either way.
+              const roomId = innerUid
+                ? parseInt(innerUid[1], 10)
+                : trailMatch
+                  ? parseInt(trailMatch[1], 10)
+                  : parenMatch ? parseInt(parenMatch[1], 10) : undefined
               // B121 (Rakkor, v0.8.7): emit clear-streams for room
               // sub-components BEFORE the room-title event whenever the
               // subtitle CHANGES (new room). DR sends streamWindow

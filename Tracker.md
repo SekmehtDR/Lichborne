@@ -6,6 +6,87 @@
 
 ---
 
+## v0.19.1 — Binu's first pass over Views
+
+Both reported against the Overview specifically, on the released v0.19.0 build.
+
+- **Lich 5.20.0 review** (B282/B283). No break — assess parsing, the
+  `--stormfront` flag and the map JSON all verified unchanged. But DR now emits
+  `<nav rm>` on every arrival, which exposed that **the Lich Map indexed by
+  Lich's own room id while looking up with the game's uid** — different number
+  spaces, ~3% overlap, so the fast path resolved 3% of rooms and silently fell
+  back to title matching. Indexing both takes it to 100%, measured against a real
+  18,779-room map. 5.20's new opt-in title placement also emits a uid INSIDE the
+  brackets, which neither pattern matched; all 8 shapes now covered. The id/uid
+  distinction is recorded in Knowledge.md §17.
+- **The Overview is sticky** (F106). Theme OWNERSHIP freezes on entry rather than
+  theme application, so tab clicks no longer re-theme the dashboard while a theme
+  picked from the Overview still lands, and leaving hands the document to the
+  character you land on. Cards select the input-bar target instead of navigating;
+  empty space widens back to All; leaving is deliberate (double-click, or a new
+  shared-menu entry the character tab deliberately does not get). Moving the
+  target into the store to make that possible caused B284.
+- **Contact effects now preview, and tags can carry their own** (B281/F105).
+  Both previews built a plain colour style while the game applied the effect, so
+  a rainbow template previewed flat — fixed by extracting `paintContactText` and
+  having the game renderer and both previews call it, rather than writing a
+  second correct copy. The editor gained a live Preview row, and the tag gained
+  `tagEffect`/`tagGlowColor` independent of the name's, with the rebuild and
+  harness cases updated in the same edit (the B279 lesson, applied immediately).
+- **Bug check:** a tiny Overview tile set to Experience kept rendering the skill
+  table (B280) — the 15em tier hides the feed and the picker, but `.ov-card-exp`
+  occupies that slot and was not named in the rule.
+- **Contact templates lost their text effect** (B279). `normalizeTemplate`
+  rebuilds each record field by field and never copied `effect`/`glowColor`, so a
+  rainbow template loaded back as plain colour — and the panel then saved the
+  stripped version, destroying it on disk. Pitfall #121 for the third time, and
+  invisible to `tsc` because both fields are optional. Guarded now by a
+  save/load round-trip case in the harness (section J, 117 → 124 cases).
+- **Credits:** Qij promoted to CONTRIBUTORS (logged item: F82, the command-history
+  minimum length); Wilhellm and Cirostar added to TESTERS.
+
+- **Clicking Overview while in it resets the input bar to All characters**
+  (F104). Tabs narrow the target, the view button widens it again. A store
+  nonce rather than moving the target into the store — it is the bar's own
+  state and this is a one-way poke.
+- **The compact experience view on a card** (F103). Picking **Experience** in a
+  card's stream dropdown renders the compact view rather than a feed — which
+  supersedes v0.19.0's exclusion of `exp` from that list. That exclusion was
+  correct for its stated reason (exp is a state map, so a feed of it could only
+  say "nothing yet") and stopped being correct once the card could render state.
+  The filter and ordering moved to `compactExpRows` in expParse.ts and ExpPanel
+  uses it too, so the two surfaces cannot disagree; the markup stays separate
+  because the panel is interactive and a card is a glance. Harness section K
+  pins the shared ordering (124 → 134) and caught an inverted assumption about
+  `sortDesc` before it shipped.
+- **RT / Cast / Aim strip on each card** (F102, Binu). Two thin lanes above the
+  vitals bar, same colour vars and same cast-over-aim precedence as the game
+  command bar. Built as a MEMO'd leaf because `useTimers` ticks at 100ms and the
+  card is deliberately un-memoized — at card level that would have re-rendered
+  every card, feed included, ten times a second per character in combat. The
+  interval only exists while something is counting, the strip's height is always
+  reserved so cards cannot twitch when a roundtime starts, and it sits behind a
+  Settings toggle like every other card section.
+- **The input bar's target follows the active character** (F101). Ctrl+1..9,
+  Ctrl+Tab and clicking a tab all run through one `setActive`, so the bar follows
+  `activeId` rather than three separate paths. Only on a change — the ref is
+  seeded at mount so the view still opens on **All characters**, which is the
+  inverse of pitfall #12 and deliberate. Ctrl+0 stays unbound (Electron-reserved
+  zoom).
+- **The end of a room description was being cut off** (B277). The feed capped
+  each line at three rows — so a busy room lost the tail of "You also see…",
+  which is the half you were reading — and it did not even cut cleanly, because
+  the cap was written as `3 * 1.3em` while `.text-line` renders at
+  `var(--game-line-height)` (1.4–1.6). 3.9em against ~1.5em rows is 2.6 rows: two
+  rows and a sliver, and the count moved with a prose setting. The cap is gone
+  rather than corrected; the feed was already bottom-anchored, so overflow now
+  clips the OLDEST lines off the top and the newest line is always whole — the
+  game-window behaviour the card is supposed to imitate.
+- **Command history in the Overview input bar** (B278). Mirrors the game bar
+  including the draft stash and the `-1` clamp from B120 — which was Binu's own
+  report against the game bar, and not worth shipping twice. The history belongs
+  to the BAR rather than the target character, because the bar can broadcast.
+
 ## v0.19.0 — Views: Session and Overview
 
 One substantial feature, and the shape of it is the interesting part.

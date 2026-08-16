@@ -1,187 +1,123 @@
-## v0.19.0 — Views: see every character at once 👁️
+## v0.19.1 — Overview and Contacts 🔭
 
-**Minor release**, on top of [v0.18.6](https://github.com/SekmehtDR/Lichborne/releases). One
-substantial new feature and nothing removed — if you play one character at a time, Lichborne
-behaves exactly as it did before.
+**Patch release**, on top of [v0.19.0](https://github.com/SekmehtDR/Lichborne/releases). Mostly
+the Overview, plus a couple of long-standing fixes in Contacts — all of it from
+what people reported after playing with v0.19.0.
 
-### The Overview
+### The end of a room description is no longer cut off
 
-DragonRealms gives you one character per account, so playing several means several accounts —
-and until now Lichborne could only ever show you one of them at a time. Answering "is anyone
-dying, idle, or being talked to?" meant tabbing through everybody, and the answer was already
-stale by the time you finished.
+On a card, a long "You also see…" line — a room with several creatures, or a lot
+on the ground — lost its tail. The feed capped every line at three rows, and the
+part it threw away was the end, which is the part you were reading. It did not
+cut cleanly either: the cap was computed against a different line height than the
+one the text is actually drawn with, so the third row came out as a half-visible
+sliver, and how much you saw shifted with your line-height setting.
 
-There is now a **view switch** in the top bar, next to the Lichborne wordmark:
+Lines are no longer capped. When a card has more text than it has room for, the
+oldest lines scroll off the top and the newest line is always shown whole — the
+way the game window itself behaves.
 
-- **Session** — exactly what you have today. Still the default, still where you play.
-- **Overview** — every character in the window at once, as a grid of live cards.
+### Command history in the Overview's input bar
 
-Each card shows that character's vitals, whatever's wrong with them, stance, hands, prepared
-spell, roundtime, the room they're in and who's in it with them, their worst wound, how the
-session is going, and a short live feed of their game text in its normal colours.
+↑ and ↓ walk back through what you have sent from the bar, exactly as they do in
+the game's command bar: half-typed text is put back when you come forward again,
+and Enter returns you to the live line.
 
-Click any card to drop straight into that character.
+The history belongs to the bar rather than to whichever character is selected —
+the bar can broadcast to everybody, so "the last thing I sent" is the only
+version of that question with a clear answer. Each character's own history is
+untouched; a command sent from here still lands in that character's history.
 
-### It tells you who needs you
+### The input bar follows the character you switch to
 
-The point of leaving a dashboard open is not the numbers — it's not having to look. Every card
-carries the reasons it might want your attention, worst first: **Dead · Offline · Critical ·
-Bleeding · Stunned · Poisoned · Diseased · Hurt · Webbed · Spoken to · Idle · Mind locked**.
+Switch tabs while the Overview is open — `Ctrl+1`…`Ctrl+9`, `Ctrl+Tab`, or just
+clicking a tab — and the bar's **to** selector moves to that character. The card
+marked *current* and the character you are about to type at are now always the
+same one.
 
-- Cards sit in **tab order** by default so they stay where you put them, matching the character tabs
-  above. (`/view sort attention` reorders them by whoever is worst off instead.)
-- A character with nothing wrong reads **✓ calm** — one quiet mark, not a wall of zeroes.
-- The **Overview button carries a count** while you're in Session view, so you find out something
-  went wrong without having to be looking at the dashboard.
-- That count deliberately ignores *idle* — a character sitting quiet is usually one you parked on
-  purpose, and a badge that lights up for that is a badge you learn to ignore.
+It still opens on **All characters** every time; it only moves once you pick a
+tab. And switching does not take focus out of the bar, so you can be halfway
+through typing, change character, and carry on.
 
-### What each card tracks for the session
+### Roundtime on every card
 
-Uptime, how long since anything happened, lines per minute, **ranks gained**, rooms visited,
-deaths, and how many skills have hit mind lock. Counters that are still at zero simply aren't
-shown — every chip on screen means something.
+Each card now carries a thin **RT / Cast / Aim** strip, in the same colours as the
+bar under your command input. Across a screen of characters it answers the
+question the dashboard exists for — who is free to act right now — without
+tabbing through them to find out.
 
-Ranks come from the game's own rank-gain message, so the number is exact.
+Turn it off in **Settings → Overview → Show roundtime on cards**.
 
-### Making it yours
+### Fixed: contact text effects were being thrown away
 
-**Settings → Overview**, or the `/view` command:
+A contact template set to rainbow (or shimmer, gold, glow…) kept its colour and
+lost the effect. The effect really was saved — it was being discarded again the
+next time templates were loaded, and then written back over your setting. If you
+had set one and given up on it, set it again; it will stick now.
 
-- `/view` — switch back and forth
-- `/view status` — every character and what's wrong with them, as text
-- `/view sort attention` / `tab`
-- `/view stream conversation` — what THIS character's card shows
-- `/view set tiles=small feed=10 idle=120`
+### Experience on your Overview cards
 
-You can turn off any part of a card (vitals, conditions, room, stats, wounds) and tune when a
-character counts as idle or hurt. The text feed setting is a **minimum** — cards guarantee at
-least that many lines and show more when there's room, so a single full-screen character gets a
-long feed rather than six lines floating in space. Setting it to 0 turns the feed off and makes
-the cards much shorter.
+Pick **Experience** from a card's stream dropdown and it shows the compact
+experience view — skill, ranks, percent and mindstate — instead of game text. Per
+character, so you can watch one alt's training while the rest show their rooms or
+conversations.
 
-### The cards size themselves
+It reads the same skills, in the same order, as the compact view in the
+Experience panel, and your pinned skills sort to the top. (Experience previously
+wasn't offered in that dropdown at all: it isn't a text stream, so selecting it
+would only ever have shown an empty feed.)
 
-One character fills the screen. Two split it. Four go 2×2. Thirty stay readable — tiles grow to
-fill the space but never shrink past the point of legibility, and past that the grid scrolls
-instead. As tiles get smaller each card sheds what it cannot honestly show, in order: session
-stats first, then the room, then conditions, and the text feed survives nearly to the end.
+### Getting back to "All characters"
 
-**Tile size** in Settings → Overview overrides all of that if the automatic choice isn't what you
-want — force them small on a big monitor when you're running a lot of characters, or large when
-you're running two.
+Clicking a character tab while the Overview is open points the input bar at that
+character. Clicking **Overview** — the view you are already on — points it back at
+everyone. Tabs narrow it, the view button widens it, and neither makes you go
+hunting in the dropdown.
 
-### Each card picks its own stream
+### Contacts: effects show in the preview, and tags can have their own
 
-Every card has a **showing** dropdown. By default it's the game window; switch it to
-`conversation` and that card shows only conversation — so you can see somebody talking to a
-character without opening it. It's **per character**, so a crafter can sit on the game window
-while another watches conversation, and it remembers your choice.
+Setting a text effect on a contact template — rainbow, shimmer, glow — showed
+nothing in the preview. The effect was working; the preview just wasn't drawing
+it, so the only way to see what you had chosen was to run into that contact in
+game. Previews now render exactly as game text does, and the template editor has
+a live **Preview** row so you can see an effect while you pick it.
 
-Cards render text the way the game window does: your highlights, contacts and timestamps all
-apply.
+**Tags can now carry their own effect**, separate from the name's. Shimmer the
+`[Enemy]` tag and leave the name plain, or the reverse — the tag controls appear
+once you have given the template some tag text.
 
-One option is off by default on purpose: **"flag when someone speaks to a character"** does a
-little extra work for every connected character, so it's opt-in rather than something you pay for
-without asking.
+(If you set an effect before this release and it seemed not to stick, that was a
+separate bug, also fixed here — set it once more and it will hold.)
 
-### Type at a character without leaving the dashboard
+### The Overview stays put now
 
-The Overview has an input bar along the bottom. Pick a character and type at it,
-or leave it on **All characters** and send to everybody at once. What you send
-behaves exactly as if you had typed it in that character's own command bar —
-aliases expand, `;` splits into separate commands, it echoes as `>command`, and it
-lands in that character's history and session log.
+Clicking a character tab while the Overview is open no longer re-themes the whole
+dashboard — the look you came in with stays until you leave, and then the
+character you land on applies its own theme as usual.
 
-Slash commands work there too, and run on the character you targeted. Sent to
-All, `/highlight add …` adds the rule to every character at once. (One wrinkle
-worth knowing: `/view` is a toggle, so sending it to All flips the view once per
-character.)
+Clicking a card no longer jumps you into that character's session. It **aims the
+input bar** at them instead (the card picks up an accent ring); clicking empty
+space goes back to all characters. To actually leave, **double-click a card** or
+use **Go to … 's game session** from its ⋯ or right-click menu.
 
-### Fixed: Quick Send arrived invisibly
+The point is that nothing in the Overview moves you by accident — leaving is
+something you do on purpose.
 
-Quick Send wrote straight to the game socket, which had two consequences nobody
-should have had to live with:
+### The map follows you far more reliably
 
-- **The command never showed up.** Sending `wave` to several characters ran the
-  emote on all of them, but the receiving characters showed only the *response* —
-  no `>wave` input line. It looked like the game had done something on its own.
-- **Slash commands leaked to DragonRealms.** Typing `/highlight add …` into Quick
-  Send sent that text to the game as if you had typed it in-game, because the
-  client never got a chance to intercept it.
+The Lich Map looks a room up by its id before falling back to matching on the
+room's name and description. That id lookup was almost never succeeding, because
+Lich's map is keyed by *its* room ids while the game sends *its own* — two
+different sets of numbers that rarely coincide. It now checks both, which takes
+the exact-match path from about 3% of rooms to all of them.
 
-Quick Send now goes through the same path as typing. Commands echo properly on
-every character that receives them, slash commands stay in Lichborne where they
-belong, and aliases and `;` separators work there as well. This also covers
-characters you have moved into their own window.
+If the map has ever seemed to lose you in an area full of similarly-named rooms,
+this is the fix. It pairs with a Lich 5.20 change that makes the game send its
+room id on every move.
 
-### Smaller things in this release
+### Notes### Notes
 
-- **Cards sit in tab order by default.** Sorting by attention moved cards around
-  while you were looking at them, which makes it hard to learn where anyone is.
-  They now stay where you put them, matching the character tabs above.
-  `/view sort attention` turns the old behaviour back on - the attention model
-  still drives the flags, the card colours and the summary strip either way.
-- **The per-card actions menu is visible.** The `...` on each card no longer
-  waits for you to hover before appearing, and it reads as a button.
-- **A legibility pass over the cards.** Several labels were below a readable
-  contrast on both light and dark themes; they have been lifted. A disconnected
-  character's status dot is now a hollow ring rather than a faint filled one.
-- **The Overview's input bar matches the game's command bar** - same strip, same
-  field, same focus treatment, rather than something that merely resembled it.
-- **Card labels explain themselves.** The Hidden, Invisible and Joined chips had
-  tooltips that just repeated the word; they now say something useful - including
-  that **Joined** marks the character *following*, so a group leader correctly
-  shows nothing. The `lpm` stat is now labelled `lines`.
-
-### The SimuCoin icon is copper now, and you can actually see it
-
-It was gold, and heavily dimmed whenever there was nothing to claim - which is
-most of the time, since the button is there whenever you have an account set up.
-On dark themes it was a dark smudge; on light themes it was very nearly invisible.
-
-It is now copper, dimmed far more gently when it is resting, and it carries a
-thin outline drawn from your theme so it keeps a clean edge whatever you are
-using. Coins waiting still lights it up the same way - full colour, a glow, and
-the count badge.
-
-### Fixed: a new character's window started blank
-
-Connecting a character showed nothing at all until the game next said something —
-you never saw the "Please wait for connection to game server." line. It was most
-obvious on the second character of a Team Login, because that is the tab you are
-watching while it happens, but every connect lost the same opening text.
-
-### The attention badge means something now
-
-The count beside **Overview** used to include characters that were mind locked or
-simply idle — which, if you grind or park alts, is most of them most of the time.
-A number that is always lit is a number you stop reading. It now counts only what
-is actually asking for you: dead, offline, critical, bleeding, stunned, poisoned,
-diseased, hurt, webbed, or someone spoke to you. Mind lock and idle still show on
-the cards; they just no longer claim attention, and a mind-locked character no
-longer wears a permanent amber border.
-
-The health percentage on each card also agrees with the Critical / Hurt chips now
-— they were computed from different numbers, so a character could show a red
-percentage beside a chip that only said "Hurt".
-
-### Notes### Notes### Notes### Notes### Notes
-
-- The Overview shows the characters **in that window**. If you've moved a character into its own
-  window, that window has its own view switch — showing all of them everywhere is planned, not
-  built.
-- Cards are read-only. Clicking one takes you to that character; **Quick Send**
-  (Ctrl/Cmd+Shift+Enter) still handles sending a command to somebody else.
-- While the Overview is up, typing and macro keys do nothing — there's no hidden command line
-  underneath collecting your keystrokes.
-- Each card renders at **its own character's** font size, so a character you've set larger stays
-  larger here.
-- Your Overview settings are shared across characters and stored with the rest of your profile.
-  Lichborne always starts in Session view.
-
-### Under the hood
-
-The Experience and Injuries panels now share their parsing with the new cards rather than each
-keeping a private copy, so a skill line or a wound can't be read two different ways in two
-places. No change to how either panel looks or behaves.
+- Every fix here came from someone playing the release and saying something —
+  thank you to everyone who reported, tested, and argued the design out. This one
+  is genuinely a collaboration, and the client is better for it.
+- Nothing here changes how existing characters or settings behave.

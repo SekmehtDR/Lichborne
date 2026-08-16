@@ -29,7 +29,6 @@ export type ViewMode = 'session' | 'overview'
 
 export const OVERVIEW_KEY = 'lichborne.view'
 
-
 export type OverviewSort = 'attention' | 'tab'
 export type OverviewDensity = 'comfortable' | 'compact'
 
@@ -43,6 +42,8 @@ export interface OverviewOptions extends AttentionThresholds {
   showRoom: boolean
   showExp: boolean
   showInjuries: boolean
+  /** RT / Cast / Aim strip on each card (Binu). */
+  showTimers: boolean
   /**
    * Watch for speech addressed to a character ("spoken to" attention).
    *
@@ -85,6 +86,7 @@ export const DEFAULT_OVERVIEW_OPTIONS: OverviewOptions = {
   showRoom: true,
   showExp: true,
   showInjuries: true,
+  showTimers: true,
   watchSpeech: false,
   alertPulse: true,
   tileSize: 'auto',
@@ -216,6 +218,13 @@ export function getViewMode(): ViewMode { return viewMode }
 export function setViewMode(next: ViewMode): void {
   if (next === viewMode) return
   viewMode = next
+  // Every VISIT to the Overview starts aimed at all characters. The target used
+  // to live in the input bar, which unmounts on leave, so this reset came free;
+  // moving it into the store (so cards can select) made it persist, which would
+  // have quietly restored the last target on re-entry — the opposite of the
+  // documented "opens on All" behaviour. Reset here rather than in a component,
+  // so it holds however the view is changed: toggle, menu action, or /view.
+  overviewTarget = null
   notify()
 }
 
@@ -270,6 +279,7 @@ function coerceOptions(raw: unknown): OverviewOptions {
     showRoom:       bool(o.showRoom,       DEFAULT_OVERVIEW_OPTIONS.showRoom),
     showExp:        bool(o.showExp,        DEFAULT_OVERVIEW_OPTIONS.showExp),
     showInjuries:   bool(o.showInjuries,   DEFAULT_OVERVIEW_OPTIONS.showInjuries),
+    showTimers:     bool(o.showTimers,     DEFAULT_OVERVIEW_OPTIONS.showTimers),
     watchSpeech:    bool(o.watchSpeech,    DEFAULT_OVERVIEW_OPTIONS.watchSpeech),
     alertPulse:     bool(o.alertPulse,     DEFAULT_OVERVIEW_OPTIONS.alertPulse),
     tileSize: (['auto', 'small', 'medium', 'large'] as const).includes(o.tileSize as TileSize)
@@ -351,6 +361,39 @@ export function useOverviewOptions(): OverviewOptions {
 
 /** Exported for `/view status`, which reads the same reduction the UI renders. */
 export function getDigests(): readonly CharacterDigest[] { return digestSnapshot }
+
+// ── The input bar's TARGET ───────────────────────────────────────────────────
+// Lives here rather than in the bar because THREE surfaces now read or write it:
+// the bar itself, the cards (clicking one aims at that character), and the view
+// toggle (clicking Overview widens it back to everyone). `null` === all
+// characters — the state where no individual is picked, which keeps "All" from
+// being a sentinel that has to be kept in sync with a selection.
+let overviewTarget: string | null = null
+
+export function setOverviewTarget(characterId: string | null): void {
+  if (overviewTarget === characterId) return
+  overviewTarget = characterId
+  notify()
+}
+
+function getOverviewTarget(): string | null { return overviewTarget }
+
+export function useOverviewTarget(): string | null {
+  return useSyncExternalStore(subscribe, getOverviewTarget, getOverviewTarget)
+}
+
+// ── "Send to everyone again" ─────────────────────────────────────────────────
+// Clicking OVERVIEW while already in the Overview widens the input bar's target
+// back to all characters. It is the counterpart to the two gestures that NARROW
+// it — clicking a character tab, or clicking a card — so there is always a way
+// back to a broadcast without leaving the view or opening the dropdown.
+//
+// It used to be a nonce, because the target lived privately in the bar. Now that
+// cards select and empty space clears, the target is shared state here and this
+// is simply "aim at everyone".
+export function resetOverviewTarget(): void {
+  setOverviewTarget(null)
+}
 
 export function useDigests(): readonly CharacterDigest[] {
   return useSyncExternalStore(subscribe, getDigests, getDigests)

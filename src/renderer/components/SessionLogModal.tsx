@@ -97,7 +97,10 @@ export default function SessionLogModal({ character, initialSearch, onClose }: P
 
   // App-wide Session Log settings snapshot taken at modal open — seeds the
   // Recent-tail filter and the Export-builder format checkboxes.
-  const initialLog = useRef(loadSessionLogSettings()).current
+  // Lazy state, not `useRef(load()).current` — useRef evaluates its argument
+  // every render. Low impact in a modal, but it is the same shape that cost a
+  // localStorage read per game line in GameWindow.
+  const [initialLog] = useState(loadSessionLogSettings)
   const [hidden, setHidden] = useState<Set<string>>(() => new Set(initialLog.filterHidden))
   const [dedup, setDedup]   = useState(initialLog.filterDedup)
 

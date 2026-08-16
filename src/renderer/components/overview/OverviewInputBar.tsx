@@ -12,20 +12,55 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRoster } from '../../RosterContext'
+import { useOverviewTarget, setOverviewTarget } from '../../overviewStore'
+import { loadCommandHistorySettings, shouldRememberCommand } from '../../commandHistorySettings'
 
 /** Sentinel for "every connected character". */
 const ALL = '__all__'
 
-export default function OverviewInputBar() {
+/** Matches the game bar's cap. Ephemeral, so this only bounds memory. */
+const HISTORY_MAX = 200
+
+interface Props {
+  /** The character Session view is on. See the follow effect below. */
+  activeCharacterId: string | null
+}
+
+export default function OverviewInputBar({ activeCharacterId }: Props) {
   // `myRoster`, not a hand-rolled `roster.filter(r => r.ownerWindowId ===
   // windowId)`: `windowId` is null until the window-info round-trip lands, and
   // that filter yields NOTHING against null — the bar would render as nothing at
   // all rather than degrade. RosterContext already answers this question, and
   // falls back to the whole roster while the id is unknown.
   const { myRoster } = useRoster()
-  const [target, setTarget] = useState<string>(ALL)
+  // The target is SHARED state now (overviewStore): a card click aims at that
+  // character, clicking empty space widens back to everyone, and the view button
+  // does the same — so the bar can no longer own it privately. `null` === all.
+  const targetId = useOverviewTarget()
+  const target = targetId ?? ALL
+  const setTarget = (v: string) => setOverviewTarget(v === ALL ? null : v)
   const [text, setText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Command history for THIS bar (Binu: "there is no command history to go
+  // through in overview mode").
+  //
+  // Deliberately the BAR's own history, not the target character's. This one
+  // control can be aimed at any character or broadcast to all of them, so
+  // "recall the last thing sent" is the only question with an unambiguous
+  // answer — walking a per-character history would change what ↑ gives you
+  // depending on a dropdown, and mean nothing at all while targeting All.
+  //
+  // In-memory and per window: it is a scratch surface, not a character's record,
+  // so it deliberately does not ride `state:` into any profile. Each character's
+  // own persisted history is untouched — a command sent from here still lands in
+  // the TARGET's history, because it goes through that character's
+  // `dispatchUserText`.
+  //
+  // Newest first, matching the game bar, so index 0 is the last thing sent.
+  const historyRef = useRef<string[]>([])
+  const idxRef = useRef(-1)
+  const draftRef = useRef('')
 
   // Only characters THIS window owns. The Overview shows this window's cards, so
   // offering to type at a character whose card isn't here would be a surprise —
@@ -69,6 +104,31 @@ export default function OverviewInputBar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
+  // FOLLOW the active character (Sekmeht). Switching tabs from the Overview —
+  // Ctrl+1..9, Ctrl+Tab, or clicking a tab in the app bar, all of which run
+  // through the same `setActive` — retargets this bar at that character, so the
+  // card highlighted as "current" and the character you are about to type at are
+  // never two different people.
+  //
+  // Only on a CHANGE, never on mount: the ref is seeded with the value it has at
+  // mount precisely so the first render is NOT treated as a switch. That keeps
+  // "All characters" as the opening state (Sekmeht: "by default All characters is
+  // perfect") — the bar is remounted each time the view opens, so every visit
+  // starts on All until you actually pick a tab. This is the INVERSE of pitfall
+  // #12, where seeding a ref with a real value hides the first change; here
+  // hiding it is the whole point, so the seeding is deliberate rather than the
+  // footgun that pitfall warns about.
+  //
+  // A null previous value is not a switch either — that is the roster resolving,
+  // not a choice.
+  const lastActiveRef = useRef(activeCharacterId)
+  useEffect(() => {
+    const prev = lastActiveRef.current
+    lastActiveRef.current = activeCharacterId
+    if (prev == null || activeCharacterId == null || prev === activeCharacterId) return
+    setTarget(activeCharacterId)
+  }, [activeCharacterId])
+
   function send(e: React.FormEvent) {
     e.preventDefault()
     const cmd = text.trim()
@@ -78,7 +138,47 @@ export default function OverviewInputBar() {
     // resolves aliases, and a `/command` is handled by Lichborne rather than sent
     // to the game.
     for (const t of targets) window.api.sendUserText(t.sessionId, cmd)
+    // Same gate as the game bar, so the app-wide minimum length means the same
+    // thing on both, and a consecutive repeat does not stack.
+    if (shouldRememberCommand(cmd, loadCommandHistorySettings().minLength)
+        && historyRef.current[0] !== cmd) {
+      historyRef.current = [cmd, ...historyRef.current].slice(0, HISTORY_MAX)
+    }
+    // Enter always returns you to the live line, stored or not.
+    idxRef.current = -1
+    draftRef.current = ''
     setText('')
+  }
+
+  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setText('')
+      idxRef.current = -1
+      draftRef.current = ''
+      inputRef.current?.blur()
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const h = historyRef.current
+      // Empty history is a NO-OP, never a wipe of what is typed.
+      if (h.length === 0) return
+      // Entering from the live line stashes the draft, so ↓ back to the bottom
+      // restores it (the shell model the game bar follows).
+      if (idxRef.current === -1) draftRef.current = text
+      const next = Math.min(idxRef.current + 1, h.length - 1)
+      idxRef.current = next
+      setText(h[next] ?? '')
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      // Clamped at -1. Without it, presses past the bottom accumulate negative
+      // counts and you have to press ↑ that many times to climb back — B120,
+      // which Binu reported against the game bar; no reason to ship it twice.
+      const next = Math.max(-1, idxRef.current - 1)
+      idxRef.current = next
+      setText(next === -1 ? draftRef.current : (historyRef.current[next] ?? ''))
+    }
   }
 
   if (mine.length === 0) return null
@@ -126,7 +226,7 @@ export default function OverviewInputBar() {
           className="ov-inputbar-input"
           value={text}
           onChange={e => setText(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setText(''); inputRef.current?.blur() } }}
+          onKeyDown={onKey}
           placeholder={noneConnected ? 'No connected characters' : 'Type a command…'}
           disabled={noneConnected}
           spellCheck={false}

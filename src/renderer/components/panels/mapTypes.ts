@@ -11,6 +11,15 @@ export interface LichRoom {
   image?:        string
   image_coords?: [number, number, number, number]
   tags?:         string[]
+  /**
+   * The GAME's room ids for this room — a different number space from `id`,
+   * which is LICH's own. A room can carry several (merged or aliased rooms).
+   *
+   * Present in Lich's map JSON all along but never modelled here, which is
+   * why the map indexed only by `id` and the `<nav rm>` / subtitle lookup —
+   * which supplies the GAME id — missed almost every time (Lich 5.20 review).
+   */
+  uid?:          number[]
 }
 
 // ── Genie XML types ───────────────────────────────────────────────────────────

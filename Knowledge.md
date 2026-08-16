@@ -3,7 +3,7 @@
 > Internal reference document. Captures what we've learned about **Lich5 internals, the DragonRealms protocol, and the live installation** — the verified facts we mirror or depend on, so they aren't re-derived. Each fact cites its source `file:line`.
 > Sources: Lich5 source tree (`C:\temp\lich-dev\lich-5`, live install `C:\Ruby4Lich5`), the DR `drinfomon` scripts, and captured game XML.
 > This is the LICH/DR *fact* layer — how Lich and DR actually behave. Lichborne's own implementation (how we consume these facts) lives in CLAUDE.md and DESIGN.md; each Lichborne pitfall that came from a Lich/DR fact points back here.
-> Updated: 2026-07-23 (added §5 Marshal object-table rules, §15 hooks, §16 DR/`drinfomon` parse reference, §17 Lich version log; verified against Lich 5.19.1).
+> Updated: 2026-08-16 (added the Lich 5.20.0 entry and the **Lich `id` vs game `uid`** number-space reference in §17; verified against Lich 5.20.0).
 
 ---
 
@@ -754,6 +754,39 @@ A running record of Lich releases we've reviewed: **what changed, whether it aff
 - **#1449** — lowers the GAME socket's TCP keepalive idle 120s→30s (`lib/games.rb`); the commit states "No effect on the [FE] socket."
 - **#1437** — bind-host keywords for `--detachable-client`/`--headless` (Lichborne uses neither; the FE listener still defaults to `127.0.0.1`).
 - **GS-only / Lich-internal (never reaches a DR front-end):** GS creature XML/templates (#1425/#1427), GS climate/terrain (#1388), a `reserve` pushStream id (#1379), and the **REXML→Ox** parser migration (#1396 — Lich's own state parse; the FE still gets the raw XML passthrough). *If DR ever exposes `<roommeta weather>` (#1450 added GS-only weather codes), that'd be a STRUCTURED weather signal worth revisiting Lichborne's "no passive weather feed" conclusion — GS-only today.*
+
+### Lich 5.20.0 — verified 2026-08-16 (no break; surfaced a Lichborne bug)
+
+- **Integration surface holds.** `parse_assess_line` unchanged (#1485 only *additionally* feeds entries to Lich's own `Creature` tracker — the rule Lichborne mirrors verbatim is intact); `--stormfront` still `a =~ /^--stormfront$/i` → `$frontend='stormfront'` (the 5.19.0 `==` bug stays fixed); the map JSON keeps its shape and `map-*.json` is still written (#1495 dropped OTHER legacy mapdb formats, not JSON).
+- **⚠️ DR now emits `<nav rm='NNNN'/>` on EVERY arrival** (#1491), matching GemStone — a bare `<nav/>` for a room with no UID. Lich adopted it as the authoritative DR room-UID source **instead of scraping the `streamWindow` subtitle**, and **stopped forcing the game's `ShowRoomID` flag**. Net effect for a front-end: the room UID is now reliably present on every move, where before it depended on the player having that flag on.
+- **NEW opt-in title placements** (#1491 + #1500). Defaults are unchanged — nothing is embedded in the title unless the player opts in — but `;display roomid title` can now produce shapes no earlier Lich emitted:
+  - `[Town Square - 1234] (230008)` — Lich's own id in the dash slot, the game's RealID in parens.
+  - `[Town Square - 1234 - (u230008)]` — **the UID INSIDE the brackets**, which is the one that broke Lichborne's subtitle parser (the dash pattern needs digits at the end; this ends with `)`, and the parens pattern needs them after the `]`). Fixed in v0.19.1; all 8 shapes are covered.
+
+### ⚠️ Lich room `id` and game `uid` are DIFFERENT NUMBER SPACES
+
+The single most useful fact from the 5.20 review, and the one most likely to be re-derived painfully.
+
+A room in Lich's `map-*.json` carries **both**:
+
+```
+{ "id": 1, "uid": [1040049], "title": ["[[Muspar'i, Street of Metalsmiths]]"], … }
+```
+
+- **`id`** is **LICH's own** room id — the key its map, `;go2`, and `display_lichid` use.
+- **`uid`** is the **GAME's** room id — what `<nav rm>` carries, what the `[Title] (230008)` subtitle marker shows, and what `display_uid` renders as `(u230008)`. A room may have several (merged/aliased rooms), so it is an ARRAY.
+
+Measured on a real DR map (18,779 rooms, 2026-08-16):
+
+| | range | count |
+|---|---|---|
+| `id` | 1 – 52,274 | 18,779 rooms |
+| `uid` | 0 – 9,798,920 | 15,520 rooms have one |
+| **overlap** | — | **471 of 15,521 (~3%)** |
+
+**They are not interchangeable, and a lookup keyed by one will silently miss ~97% of the other.** That is exactly what Lichborne did: it indexed the map by `id` and looked up with the value from `<nav rm>` (a game uid), so the fast path resolved 3% of rooms and fell through to fragile title+desc matching for the rest. Fixed in v0.19.1 by indexing **both** and trying uid → id.
+
+**The `- NNNN` dash slot is genuinely ambiguous** and cannot be disambiguated from the text: DR's native room-number display puts the GAME number there, while Lich's `display_lichid` puts its OWN id in the same position. Any consumer must be prepared for either — which is why trying both indexes is the correct design rather than a workaround.
 
 ### The `--saga` frontend — DECISION: do NOT adopt
 

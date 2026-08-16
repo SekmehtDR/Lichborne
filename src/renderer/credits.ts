@@ -18,10 +18,16 @@ export const CONTRIBUTORS = [
   // "ohbeanz" mentions toward Zithri (same convention as JadedSoul→Illiahanna).
   // Newest logged report, so last in the volume ordering.
   'Zithri',
+  // Promoted from TESTERS in v0.19.1 (Sekmeht). Logged item: F82, the app-wide
+  // command-history minimum length (v0.18.3). One logged report, so the tail of
+  // the volume ordering.
+  'Qij',
 ]
 
+// All still at zero logged reports, so alphabetical is the stable order here —
+// there is no volume to sort by until someone files something.
 export const TESTERS = [
-  'Crobin', 'Damiza', 'Qij', 'Tirost',
+  'Cirostar', 'Crobin', 'Damiza', 'Tirost', 'Wilhellm',
 ]
 
 export const REPO_URL = 'https://github.com/SekmehtDR/Lichborne'

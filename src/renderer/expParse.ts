@@ -95,3 +95,84 @@ export function summarizeExp(skills: Record<string, string>): ExpSummary {
   }
   return { tracked, locked, nearLocked, topSkill }
 }
+
+// ── Compact-view data layer (v0.19.1) ────────────────────────────────────────
+// The Overview card can show the SAME compact experience view the panel does, so
+// the filter and the ordering live here rather than in either surface. What is
+// deliberately NOT shared is the markup: the panel's rows carry pin buttons and
+// an RXP footer, and a card is read-only. Share the rule, not the copy.
+
+export type SortMode = 'alpha' | 'rate' | 'rank' | 'next'
+export const SORT_MODES: SortMode[] = ['alpha', 'rate', 'rank', 'next']
+
+/** Meta keys that are not skills — they ride the same map as pseudo-entries. */
+const META_KEYS = new Set(['rexp', 'tdp', 'favor', 'sleep'])
+
+/**
+ * Skills ACTIVELY training — a mindstate above 0. This is what makes the view
+ * self-bounding: it is "what you are working on", not the full skill list.
+ */
+export function activeSkillEntries(skills: Record<string, string>): [string, string][] {
+  return Object.entries(skills).filter(([k, text]) =>
+    !META_KEYS.has(k) && parseExp(text).mindstateIdx > 0)
+}
+
+/** Pinned first, then the chosen mode. Ties always fall to name, so the order is
+ *  stable and a card never reshuffles rows that compare equal. */
+export function sortSkillEntries(
+  entries: [string, string][],
+  pinnedSkills: Set<string>,
+  mode: SortMode,
+  desc: boolean,
+): [string, string][] {
+  const dir = desc ? 1 : -1
+  return [...entries].sort(([skillA, textA], [skillB, textB]) => {
+    const aPin = pinnedSkills.has(skillA)
+    const bPin = pinnedSkills.has(skillB)
+    if (aPin !== bPin) return aPin ? -1 : 1
+
+    if (mode === 'alpha') return skillA.localeCompare(skillB) * dir
+    if (mode === 'rate') {
+      const diff = parseExp(textB).mindstateIdx - parseExp(textA).mindstateIdx
+      return diff !== 0 ? diff * dir : skillA.localeCompare(skillB)
+    }
+    if (mode === 'rank') {
+      const rA = parseInt(parseExp(textA).rank, 10) || 0
+      const rB = parseInt(parseExp(textB).rank, 10) || 0
+      return rB !== rA ? (rB - rA) * dir : skillA.localeCompare(skillB)
+    }
+    const pA = parseExp(textA)
+    const pB = parseExp(textB)
+    const nA = pA.pctStr !== '—' ? parseInt(pA.pctStr, 10) || 0 : Math.round((pA.mindstateIdx / MIND_LOCK_IDX) * 100)
+    const nB = pB.pctStr !== '—' ? parseInt(pB.pctStr, 10) || 0 : Math.round((pB.mindstateIdx / MIND_LOCK_IDX) * 100)
+    return nB !== nA ? (nB - nA) * dir : skillA.localeCompare(skillB)
+  })
+}
+
+export interface CompactExpRow {
+  skill: string
+  rank: string
+  pctStr: string
+  mindstateIdx: number
+  bucket: MindBucket
+}
+
+/**
+ * One pass: filter to actively-training skills, sort, parse each row.
+ *
+ * Callers MUST memoize on `skills` — this runs `parseExp` several times per
+ * entry (the sort comparator parses too) and a card re-renders on every game
+ * line.
+ */
+export function compactExpRows(
+  skills: Record<string, string>,
+  pinnedSkills: Set<string>,
+  mode: SortMode,
+  desc: boolean,
+): CompactExpRow[] {
+  return sortSkillEntries(activeSkillEntries(skills), pinnedSkills, mode, desc)
+    .map(([skill, text]) => {
+      const { rank, pctStr, mindstateIdx } = parseExp(text)
+      return { skill, rank, pctStr, mindstateIdx, bucket: dotBucket(mindstateIdx) }
+    })
+}

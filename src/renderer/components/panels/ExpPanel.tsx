@@ -3,7 +3,7 @@ import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type Sk
 import { scopedKey } from '../../characterScope'
 // v0.19.0: the mindstate ladder + line parser moved to a shared module so the
 // Overview card reads a skill line the same way this panel does.
-import { MINDSTATES, parseExp, dotBucket } from '../../expParse'
+import { MINDSTATES, parseExp, dotBucket, sortSkillEntries, SORT_MODES, type SortMode } from '../../expParse'
 import { useCharacter } from '../../CharacterContext'
 import { useProfileSaver } from '../../hooks/useProfileSaver'
 
@@ -285,8 +285,8 @@ function FocusModePicker({ mode, onModeChange }: { mode: FocusMode; onModeChange
   )
 }
 
-type SortMode = 'alpha' | 'rate' | 'rank' | 'next'
-const SORT_MODES: SortMode[] = ['alpha', 'rate', 'rank', 'next']
+// SortMode + the sort itself moved to expParse.ts in v0.19.1 so the Overview
+// card's compact view orders skills EXACTLY as this panel does.
 const SORT_LABEL: Record<SortMode, string> = { alpha: 'Alpha', rate: 'Rate', rank: 'Rank', next: 'Next' }
 const SORT_DESC_TEXT: Record<SortMode, string> = {
   alpha: 'Alphabetical by skill name',
@@ -345,36 +345,6 @@ function SortPicker({ mode, desc, onModeChange, onDescChange }: {
   )
 }
 
-function sortEntries(
-  entries: [string, string][],
-  pinnedSkills: Set<string>,
-  mode: SortMode,
-  desc: boolean,
-): [string, string][] {
-  const dir = desc ? 1 : -1
-  return [...entries].sort(([skillA, textA], [skillB, textB]) => {
-    const aPin = pinnedSkills.has(skillA)
-    const bPin = pinnedSkills.has(skillB)
-    if (aPin !== bPin) return aPin ? -1 : 1
-
-    if (mode === 'alpha') return skillA.localeCompare(skillB) * dir
-    if (mode === 'rate') {
-      const diff = parseExp(textB).mindstateIdx - parseExp(textA).mindstateIdx
-      return diff !== 0 ? diff * dir : skillA.localeCompare(skillB)
-    }
-    if (mode === 'rank') {
-      const rA = parseInt(parseExp(textA).rank, 10) || 0
-      const rB = parseInt(parseExp(textB).rank, 10) || 0
-      return rB !== rA ? (rB - rA) * dir : skillA.localeCompare(skillB)
-    }
-    // next — closest to ranking up first
-    const pA = parseExp(textA)
-    const pB = parseExp(textB)
-    const nA = pA.pctStr !== '—' ? parseInt(pA.pctStr, 10) || 0 : Math.round((pA.mindstateIdx / 34) * 100)
-    const nB = pB.pctStr !== '—' ? parseInt(pB.pctStr, 10) || 0 : Math.round((pB.mindstateIdx / 34) * 100)
-    return nB !== nA ? (nB - nA) * dir : skillA.localeCompare(skillB)
-  })
-}
 
 // Compact, text-forward exp view (Rakkor/Morress; settings.compactExp). A pure
 // alternate render of the SAME data the full panel uses — reuses parseExp,
@@ -391,7 +361,7 @@ function CompactExpView({ skills, rankUpSkills, pinnedSkills, sortMode, sortDesc
     k !== 'rexp' && k !== 'tdp' && k !== 'favor' && k !== 'sleep' &&
     parseExp(text).mindstateIdx > 0
   )
-  const rows = sortEntries(active, pinnedSkills, sortMode, sortDesc)
+  const rows = sortSkillEntries(active, pinnedSkills, sortMode, sortDesc)
 
   const tdp   = (skills['tdp']   ?? '').match(/(\d+)/)?.[1]
   const favor = (skills['favor'] ?? '').match(/(\d+)/)?.[1]
@@ -507,7 +477,7 @@ export default memo(function ExpPanel({ skills, rankUpSkills, focus, pinnedSkill
   const filteredTraining = (targetPriority === null || !focusActive)
     ? training
     : training.filter(([skill]) => getSkillSortPriority(focus, skill) === targetPriority)
-  const learning = sortEntries(filteredTraining, pinnedSkills, sortMode, sortDesc)
+  const learning = sortSkillEntries(filteredTraining, pinnedSkills, sortMode, sortDesc)
 
   function skillRow(skill: string, text: string) {
     return (

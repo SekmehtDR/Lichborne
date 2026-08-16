@@ -31,6 +31,12 @@ export interface CharacterMenuEnv {
    * has no ✕, so it passes this and gets the entry.
    */
   onClose?: (characterId: string) => void
+  /**
+   * Leave the Overview and open this character full-screen. OPTIONAL because
+   * only the CARD offers it — a character tab already navigates when clicked,
+   * so the entry would be noise there.
+   */
+  onGotoSession?: (characterId: string) => void
 }
 
 /**
@@ -67,6 +73,15 @@ export function buildCharacterMenu(t: CharacterMenuTarget, env: CharacterMenuEnv
     items.push({ label: `Disconnect ${t.character}`, onClick: () => window.api.disconnect(t.sessionId) })
   } else {
     items.push({ label: `Reconnect ${t.character}`, onClick: () => env.onReconnect(t.characterId) })
+  }
+
+  // Leaving the Overview is DELIBERATE by design: a card click only selects it
+  // as the input bar's target, so this (and a double-click) are the ways out.
+  // First in its own group, because it is the common intent — Close is the
+  // destructive one and stays last.
+  if (env.onGotoSession) {
+    items.push({ label: null })
+    items.push({ label: `Go to ${t.character}'s game session`, onClick: () => env.onGotoSession?.(t.characterId) })
   }
 
   if (env.onClose) {

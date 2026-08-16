@@ -9,7 +9,7 @@
 // NOT `.app-bar-collapsible`: a top-level navigation control must never fold
 // into the ⋯ overflow menu, for the same reason Disconnect/Login doesn't.
 
-import { useViewMode, setViewMode, useDigests } from '../../overviewStore'
+import { useViewMode, setViewMode, useDigests, resetOverviewTarget } from '../../overviewStore'
 import { needsAttention } from '../../attention'
 import '../../styles/overview.css'
 
@@ -43,8 +43,20 @@ export default function ViewToggle() {
             role="tab"
             aria-selected={active}
             className={`ov-viewtoggle-btn${active ? ' ov-viewtoggle-btn--active' : ''}`}
-            title={m.title}
-            onClick={() => setViewMode(m.id)}
+            title={active && m.id === 'overview'
+              ? 'Already in Overview — click to aim the input bar at all characters again'
+              : m.title}
+            onClick={() => {
+              // Clicking the view you are ALREADY on is otherwise a no-op, so
+              // Overview reuses it to widen the input bar's target back to All.
+              // Tabs narrow it (the bar follows a tab switch); this is the way
+              // back, without leaving the view or opening the dropdown.
+              if (active) {
+                if (m.id === 'overview') resetOverviewTarget()
+                return
+              }
+              setViewMode(m.id)
+            }}
           >
             {m.label}
             {/* Quiet by default (UX #1): the count appears only when something

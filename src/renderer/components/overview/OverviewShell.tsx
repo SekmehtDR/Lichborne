@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   useDigests, useOverviewOptions, digestFlags, useOverviewNow,
-  startOverviewClock, stopOverviewClock, setFeedCapacity,
+  startOverviewClock, stopOverviewClock, setFeedCapacity, setOverviewTarget,
 } from '../../overviewStore'
 import { planGrid } from '../../overviewLayout'
 import OverviewInputBar from './OverviewInputBar'
@@ -32,6 +32,12 @@ interface Props {
   /** How many characters this window owns — for the empty/one-character copy. */
   characterCount: number
   /**
+   * The character Session view is currently on. The input bar FOLLOWS this, so
+   * a tab switch made from the Overview retargets it (see OverviewInputBar).
+   * `null` before any character is active.
+   */
+  activeCharacterId: string | null
+  /**
    * Receives the portal host node. `MutableRefObject`, not `RefObject` — that is
    * what `useRef<HTMLDivElement | null>(null)` produces and what the `ref=`
    * attribute accepts under the React 18 types.
@@ -39,7 +45,7 @@ interface Props {
   hostRef: React.MutableRefObject<HTMLDivElement | null>
 }
 
-export default function OverviewShell({ open, characterCount, hostRef }: Props) {
+export default function OverviewShell({ open, characterCount, activeCharacterId, hostRef }: Props) {
   const options = useOverviewOptions()
   // Measured grid box. 0×0 means "not measured yet" and is IGNORED rather than
   // stored — a hidden character tab measures 0×0 (pitfall #24), and letting that
@@ -107,6 +113,10 @@ export default function OverviewShell({ open, characterCount, hostRef }: Props) 
       <div
         className="ov-grid"
         ref={hostRef}
+        // Clicking the EMPTY grid (not a card — cards stop propagation by
+        // handling their own click) widens the input bar back to all
+        // characters. The gesture reads as "deselect", which is what it is.
+        onClick={e => { if (e.target === e.currentTarget) setOverviewTarget(null) }}
         style={{
           ['--ov-cols' as string]: String(plan.columns),
           ['--ov-row-min' as string]: `${plan.rowMinPx}px`,
@@ -119,7 +129,7 @@ export default function OverviewShell({ open, characterCount, hostRef }: Props) 
       {/* Below the grid, where a command bar lives in the game window. Rendered
           only while the view is open so its type-anywhere listener cannot steal
           keystrokes in Session view. */}
-      {open && <OverviewInputBar />}
+      {open && <OverviewInputBar activeCharacterId={activeCharacterId} />}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import type { CompiledRule } from '../HighlightsContext'
 import type { HighlightStyle, HighlightEffect } from '../highlights'
 import { effectiveEffect } from '../highlights'
 import { resolveEffect, effectContent } from './highlightEffects'
+import { paintContactText } from './contactStyle'
 import { renderSegment } from './renderSegment'
 
 export type MatchRange =
@@ -215,25 +216,32 @@ export function renderSegmentFull(
 
     if (s.kind === 'contact') {
       const { contact, template } = s
+      // Tag and name are painted by the SAME builder the Contacts previews use
+      // (`paintContactText`), so what you configure is what you see in both
+      // places. They carry INDEPENDENT effects: a tag can shimmer while the name
+      // stays plain, or the reverse.
       if (template?.tagText) {
-        const tagStyle: React.CSSProperties = {
+        const tp = paintContactText(template.tagText, {
           color: template.tagColor,
-          ...(template.tagBgColor && template.tagBgColor !== 'transparent'
-            ? { backgroundColor: template.tagBgColor } : {}),
-        }
-        parts.push(<span key={k()} className="contact-tag" style={tagStyle}>{template.tagText}{' '}</span>)
+          bgColor: template.tagBgColor,
+          effect: template.tagEffect,
+          glowColor: template.tagGlowColor ?? template.tagColor,
+        })
+        parts.push(
+          <span key={k()} className={`contact-tag${tp.className ? ' ' + tp.className : ''}`} style={tp.style}>
+            {tp.content}{' '}
+          </span>,
+        )
       }
-      const trfx = resolveEffect(template?.effect, template?.textColor ?? null, template?.glowColor ?? null)
-      const nameStyle: React.CSSProperties = {
-        ...(trfx.colorReplacing ? {} : { color: template?.textColor ?? 'var(--text-secondary)' }),
-        ...(template?.bgColor && template.bgColor !== 'transparent'
-          ? { backgroundColor: template.bgColor } : {}),
-        ...(trfx.glowShadow ? { textShadow: trfx.glowShadow } : {}),
-        ...trfx.vars,
-      }
+      const np = paintContactText(matchText, {
+        color: template?.textColor ?? 'var(--text-secondary)',
+        bgColor: template?.bgColor,
+        effect: template?.effect,
+        glowColor: template?.glowColor,
+      })
       const NameTag = template?.bold ? 'strong' : 'span'
       const nameContent = (
-        <NameTag className={trfx.className || undefined} style={nameStyle}>{effectContent(matchText, trfx.perLetter)}</NameTag>
+        <NameTag className={np.className || undefined} style={np.style}>{np.content}</NameTag>
       )
       parts.push(
         <span
