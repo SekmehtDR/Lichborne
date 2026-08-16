@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('api', {
   login: (creds: unknown): Promise<LoginResult> =>
     ipcRenderer.invoke(CH.LOGIN, creds),
 
+  // Attach to an already-running detachable Lich session (no SGE, no spawn —
+  // AttachCredentials, not LoginCredentials).
+  loginAttach: (creds: unknown): Promise<LoginResult> =>
+    ipcRenderer.invoke(CH.LOGIN_ATTACH, creds),
+
   sendCommand: (sessionId: SessionId, command: string) =>
     ipcRenderer.send(CH.SEND_COMMAND, sessionId, command),
 

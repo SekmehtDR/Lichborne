@@ -51,6 +51,10 @@ interface Props {
   onConnect: (character: LauncherCharacter) => void
   // Triggered when the user clicks the "+ Add account" card.
   onAddNew:  () => void
+  // Attach to an already-running detachable Lich session (draft feature) —
+  // opens App's AttachModal. Optional so the compact Add-modal variant can
+  // omit it without a dead button.
+  onAttach?: () => void
   // Triggered when the user clicks "↺ Refresh" on an account header — pre-fills
   // the Add Account flow with the chosen account so EAccess can pull any
   // characters that aren't already present as tiles. v0.8.0 (F18).
@@ -111,6 +115,7 @@ const LOGO_SRC = 'lichborne_logo_green.png'
 function LauncherTopBar({
   onOpenLichSetup,
   onAddNew,
+  onAttach,
   onBulkConnect,
   bulkConnectEnabled,
   onReconnectLast,
@@ -118,6 +123,7 @@ function LauncherTopBar({
 }: {
   onOpenLichSetup: () => void
   onAddNew?: () => void
+  onAttach?: () => void
   onBulkConnect?: () => void
   bulkConnectEnabled: boolean
   onReconnectLast?: () => void
@@ -160,6 +166,15 @@ function LauncherTopBar({
       {onAddNew && (
         <button className="launcher-topbar-btn launcher-topbar-btn--add" onClick={onAddNew} title="Add account">
           + Add account
+        </button>
+      )}
+      {onAttach && (
+        <button
+          className="launcher-topbar-btn"
+          onClick={onAttach}
+          title="Attach to a Lich session that is already running and logged in (started with --headless / --detachable-client)"
+        >
+          ⇋ Attach
         </button>
       )}
       <button
@@ -536,7 +551,7 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
+export default function Launcher({ onConnect, onAddNew, onAttach, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   // F85 — saved sets, re-read on refresh so a set created in the picker shows
@@ -884,6 +899,7 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           <LauncherTopBar
             onOpenLichSetup={onOpenLichSetup}
             onAddNew={onAddNew}
+            onAttach={onAttach}
             onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
             bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
             onReconnectLast={handleReconnectLastClick}
@@ -961,6 +977,7 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
         <LauncherTopBar
           onOpenLichSetup={onOpenLichSetup}
           onAddNew={onAddNew}
+          onAttach={onAttach}
           onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
           bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
           onReconnectLast={handleReconnectLastClick}

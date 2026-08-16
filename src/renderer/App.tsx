@@ -61,6 +61,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
 import Launcher, { loadCharacterCards, type LauncherCharacter } from './components/Launcher'
 import AddCharacterWizard from './components/AddCharacterWizard'
+import AttachModal from './components/AttachModal'
 import LichSetupDialog from './components/LichSetupDialog'
 import ProfileTransferModal from './components/ProfileTransferModal'
 import AboutModal from './components/AboutModal'
@@ -421,6 +422,8 @@ function AppShell() {
   // backed out before any network traffic.
   const [pendingConnect, setPendingConnect] = useState<LauncherCharacter | null>(null)
   const [connectError,    setConnectError]    = useState<string>('')
+  // Attach-to-running-Lich modal (draft feature; see runAttach).
+  const [showAttach, setShowAttach] = useState(false)
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCancelledRef = useRef(false)
 
@@ -1151,6 +1154,52 @@ function AppShell() {
     })
   }
 
+  // Attach to an already-running detachable Lich session (draft feature).
+  // Returns null on success, or the error sentence for the modal to show
+  // inline (it stays open for a fix-and-retry — a closed modal plus the
+  // launcher error banner would throw away the typed host/port).
+  //
+  // No password, no SGE, no pendingConnect grace window: there's no network
+  // side effect worth backing out of — a failed attach touches nothing.
+  //
+  // Account and game resolve from the character's existing profile YAML when
+  // one exists, else placeholders ('attach' / 'DR'). Resolving the REAL
+  // account when known is what keeps the roster and the one-per-account
+  // conflict planner truthful — an attached character genuinely holds its
+  // account's slot in game — and keeps the ambient profile export
+  // (exportCharacterProfile's read-merge-write, where `built` wins on
+  // account) writing the same account back instead of clobbering it.
+  async function runAttach(character: string, host: string, port: number): Promise<string | null> {
+    let account = 'attach'
+    let game = 'DR'
+    try {
+      const existing = await window.api.readCharacterProfile(character)
+        .catch(() => null) as { account?: string; game?: string } | null
+      if (existing?.account) account = existing.account
+      if (existing?.game) game = existing.game
+    } catch { /* no profile — placeholders stand */ }
+
+    const result = await window.api.loginAttach({ account, character, game, host, port })
+    if (!result.ok) return result.error ?? 'Attach failed'
+
+    // Same per-character profile load as runConnect, so an attached tab gets
+    // the character's saved layout, highlights, macros and theme.
+    try {
+      const loaded = await importCharacterProfile(character)
+      if (!loaded) clearCharacterLocalStorage(character)
+    } catch (err) { console.error(err) }
+
+    setShowAttach(false)
+    handleConnected({
+      sessionId: result.sessionId,
+      account,
+      character,
+      game,
+      useLich: true,
+    })
+    return null
+  }
+
   // Bulk Connect: walks the user-confirmed picks sequentially. Each char
   // gets the same connect flow as a single-tile click (login IPC, profile
   // import/export, session.add). Per-character errors don't abort the
@@ -1394,6 +1443,7 @@ function AppShell() {
             onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
+            onAttach={() => setShowAttach(true)}
             onRefreshAccount={(account) => {
               setWizardPrefillAccount(account)
               setShowWizard(true)
@@ -1479,6 +1529,13 @@ function AppShell() {
         )}
       </div>
 
+      {showAttach && (
+        <AttachModal
+          onCancel={() => setShowAttach(false)}
+          onAttach={runAttach}
+        />
+      )}
+
       {showModalLogin && (
         <div className="add-character-modal" onClick={e => { if (e.target === e.currentTarget) setShowAdd(false) }}>
           <button
@@ -1505,6 +1562,7 @@ function AppShell() {
             onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
+            onAttach={() => setShowAttach(true)}
             onRefreshAccount={(account) => {
               setShowAdd(false)
               setWizardPrefillAccount(account)

@@ -80,7 +80,7 @@ import { registerSimuCoinHandlers } from './simucoin'
 import { IPC } from '../shared/types'
 import { makeCharacterId } from '../shared/characterId'
 import type {
-  GameEvent, GameEventBatch, LoginCredentials, LoginResult,
+  AttachCredentials, GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
   RosterEntry, SessionRosterPayload,
   UserTextPayload,
@@ -872,6 +872,54 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
   } finally {
     // Stop mirroring once login settles — from here the session is real and
     // its status flows through the normal connection-status channel.
+    s.connection.off('status', onProgress)
+  }
+})
+
+// Attach to an already-running detachable Lich session. The same session
+// lifecycle as CH.LOGIN — mint, hold-for-replay, roster, progress mirroring —
+// with connectAttach in place of the SGE + spawn pipeline. useLich is true by
+// definition (the whole point is that Lich is on the other end), which is what
+// keeps the Lich Scripts panel polling and the rest of the Lich-only surface
+// alive for attached tabs. The B169 inv-boxes `_flag` one-shot keys off the
+// player-info event, which an attach never re-emits (Lich sent <app> to its
+// FIRST front-end at login) — so it simply never fires here; if the running
+// session's original front-end was Wrayth-shaped it was already sent, and if
+// not, the greedy-strip exposure is no worse than that session already had.
+ipcMain.handle(CH.LOGIN_ATTACH, async (event, creds: AttachCredentials): Promise<LoginResult> => {
+  const s = createSession()
+  s.ownerWindowId = event.sender.id
+  // Same hold as CH.LOGIN and for the same reason: the renderer can't mount a
+  // GameWindow until this invoke resolves, and Lich pushes its state resync
+  // the moment we attach — without the hold, that resync (the exact vitals /
+  // indicators an attached tab needs most) is flushed into a window with no
+  // subscriber and dropped on the floor.
+  s.replayTarget = s.ownerWindowId
+  s.holdingForReplay = true
+  s.meta = {
+    characterId: makeCharacterId(creds.account, creds.character, creds.game),
+    account: creds.account,
+    character: creds.character,
+    game: creds.game,
+    useLich: true,
+  }
+  broadcastRoster()
+
+  const onProgress = (message: string) => {
+    if (event.sender.isDestroyed()) return
+    event.sender.send('connect-progress', { character: creds.character, message })
+  }
+  s.connection.on('status', onProgress)
+  try {
+    await s.connection.connectAttach(creds)
+    s.connected = true
+    sendStatus(s, true, 'Attached')
+    scheduleReplayHoldRelease(s)
+    return { ok: true, sessionId: s.id }
+  } catch (err) {
+    destroySession(s.id)
+    return { ok: false, error: String(err) }
+  } finally {
     s.connection.off('status', onProgress)
   }
 })

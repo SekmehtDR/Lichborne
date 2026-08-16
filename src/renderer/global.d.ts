@@ -16,7 +16,7 @@
 // `__APP_VERSION__` is a build-time constant.
 
 import type {
-  LoginCredentials, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
+  AttachCredentials, LoginCredentials, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,
   LichScriptsUpdatePayload, SessionLogAppendPayload, SessionLogDay, SessionLogSearchHit,
   SessionLogExportSpec, SessionLogExportResult, SessionLogDiskUsage, SessionLogWindowRow,
@@ -30,6 +30,8 @@ declare global {
     api: {
       // ── Session lifecycle ─────────────────────────────────────────────────────
       login: (creds: LoginCredentials) => Promise<LoginResult>
+      /** Attach to an already-running detachable Lich (`--headless PORT`). */
+      loginAttach: (creds: AttachCredentials) => Promise<LoginResult>
       sendCommand: (sessionId: SessionId, command: string) => void
       /** Run `text` as if typed in that character's own command bar (echo + log). */
       sendUserText: (sessionId: SessionId, text: string) => void
