@@ -1226,6 +1226,11 @@ function AppShell() {
     // completion first. Only the Connect-button path passes this; the modal
     // and menu paths have no Cancel racing them.
     cancelled?: { current: boolean },
+    // Out-param filled with the new sessionId on success. An out-param rather
+    // than a richer return type because the modal's onAttach contract is
+    // "error sentence or null", and only the bulk path needs the id (to
+    // honour "open each in its own window").
+    out?: { sessionId?: SessionId },
   ): Promise<string | null> {
     let account = fixed?.account ?? 'attach'
     let game = fixed?.game ?? 'DR'
@@ -1276,6 +1281,7 @@ function AppShell() {
       useLich: true,
       attach: { host, port },
     })
+    if (out) out.sessionId = result.sessionId
     return null
   }
 
@@ -1301,6 +1307,9 @@ function AppShell() {
   // replaces the old one on characterId, orphaning a live session in main.
   // A disconnected tab is torn down so the revived session replaces it
   // cleanly instead of leaking the dead socket's session entry.
+  // Idempotent — handleCardConnect calls it early (to skip the connecting
+  // overlay for a no-op) and tryAttachPick calls it again for the callers
+  // that don't pre-check; main's destroySession no-ops on an unknown id.
   function prepareTileAttach(c: LauncherCharacter): 'focused' | 'ready' {
     const existing = sessions.find(s => s.character.toLowerCase() === c.name.toLowerCase())
     if (existing?.status.connected) {
@@ -1311,29 +1320,51 @@ function AppShell() {
     return 'ready'
   }
 
-  // The Connect-button attach (see handleCardConnect's attach branch). Try
-  // the saved target first; when NOTHING IS LISTENING there, do what the
-  // click meant — get the player into the game: a real account falls through
-  // to the normal launch-and-login flow, while a stub tile (no real account)
-  // surfaces the banner, because there is no login to fall back to.
-  async function attachFromCard(c: LauncherCharacter) {
+  // Attach one saved-target character, and decide what a failure MEANS.
+  // Shared by every entry point that starts from a tile — the Connect button
+  // and the bulk paths (Reconnect Last / Team Login) — so they can't drift on
+  // the one judgement call in the feature: when nothing is listening at the
+  // target, was the click "join that session" or "get me into the game"?
+  // Answer: the latter, whenever a real login is possible. A stub tile has no
+  // account to log in with, so its failure is terminal and says why.
+  //
+  //   { ok: true }       attached; the tab exists. `sessionId` is set for a
+  //                      NEW session and absent when an existing tab was
+  //                      focused — the bulk path uses that to decide whether
+  //                      there is anything to move to its own window.
+  //   { fallback: true } nothing listening, but this tile CAN log in normally
+  //   { error }          surface it
+  async function tryAttachPick(
+    c: LauncherCharacter,
+    cancelled?: { current: boolean },
+  ): Promise<{ ok: true; sessionId?: SessionId } | { fallback: true } | { error: string }> {
     const target = c.attach
-    if (!target) return
+    if (!target) return { fallback: true }
+    if (prepareTileAttach(c) === 'focused') return { ok: true }
+    const out: { sessionId?: SessionId } = {}
     const err = await runAttach(
       c.name, target.host, target.port,
       { account: c.account, game: c.game },
-      pendingCancelledRef,
+      cancelled,
+      out,
     )
-    if (err === null) { setPendingConnect(null); return }
+    if (err === null) return { ok: true, sessionId: out.sessionId }
     const nothingListening = /Nothing accepted the connection/i.test(err)
     const canLogin = !!c.account && c.account.toLowerCase() !== 'attach'
-    if (nothingListening && canLogin) {
-      await runConnect(c)
-      return
+    if (nothingListening && canLogin) return { fallback: true }
+    return {
+      error: nothingListening && !canLogin
+        ? `${err} This tile has no saved account, so there is no normal login to fall back to.`
+        : err,
     }
-    setConnectError(nothingListening && !canLogin
-      ? `${err} This tile has no saved account, so there is no normal login to fall back to.`
-      : err)
+  }
+
+  // The Connect-button attach (see handleCardConnect's attach branch).
+  async function attachFromCard(c: LauncherCharacter) {
+    const outcome = await tryAttachPick(c, pendingCancelledRef)
+    if ('ok' in outcome) { setPendingConnect(null); return }
+    if ('fallback' in outcome) { await runConnect(c); return }
+    setConnectError(outcome.error)
     setPendingConnect(null)
   }
 
@@ -1381,6 +1412,32 @@ function AppShell() {
       }
       setBulkProgress({ currentIndex: i + 1, total: picks.length, currentName: c.name })
       try {
+        // ATTACH FIRST for a saved-target character (Reconnect Last / Team
+        // Login / a saved set). Without this the batch ran the login flow for
+        // an attach tile and died on "No saved password" — an attach-only
+        // stub has no password to find, and even a real account would be
+        // starting a SECOND Lich against a headless session that is still
+        // logged in. tryAttachPick is shared with the tile Connect button, so
+        // the fallback judgement can't drift between them.
+        if (c.attach) {
+          const outcome = await tryAttachPick(c)
+          if ('ok' in outcome) {
+            // Same "open each in its own window" treatment as a logged-in
+            // character. `sessionId` is absent when an already-open tab was
+            // focused rather than attached — nothing new to move, and moving
+            // a tab the player already had open would be a surprise.
+            if (separateWindows && i > 0 && outcome.sessionId) {
+              await window.api.moveSessionToWindow(outcome.sessionId, 'new')
+            }
+            ok.push(c.name)
+            continue
+          }
+          if ('error' in outcome) {
+            failed.push({ name: c.name, error: outcome.error })
+            continue
+          }
+          // fallback → fall through to the normal login path below.
+        }
         const adv = loadAdvanced()
         const password = await window.api.loadPassword(c.account)
         if (password === null) {
