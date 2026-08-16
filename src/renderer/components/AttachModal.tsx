@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { backdropHandlers } from '../utils/backdropClose'
+// Imported explicitly rather than relying on Launcher having pulled it in:
+// this modal's `attach-backdrop` z-index override lives there, next to the
+// .cne-backdrop rule it overrides.
+import '../styles/character-notes-editor.css'
 
 // Attach to an already-running detachable Lich session (draft feature).
 //
@@ -82,7 +86,9 @@ export default function AttachModal({ onCancel, onAttach, initial = null, known 
   }
 
   return createPortal(
-    <div className="cne-backdrop" {...backdropHandlers(() => onCancel(), !busy)}>
+    // `attach-backdrop` raises the stacking context — see the CSS note. The
+    // cne-* chrome is reused; only the z-index differs.
+    <div className="cne-backdrop attach-backdrop" {...backdropHandlers(() => onCancel(), !busy)}>
       <div className="cne-modal">
         <div className="cne-header">
           <span className="cne-title">Attach to a running Lich</span>

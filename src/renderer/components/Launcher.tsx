@@ -198,6 +198,32 @@ function LauncherTopBar({
   )
 }
 
+/** Attach entry point for the COMPACT launcher (the Add Character modal shown
+ *  while characters are already connected).
+ *
+ *  The full top bar is `!compact` only — deliberately, since compact drops the
+ *  logo, headings and the rest of the chrome. But that also dropped the one
+ *  control that adds a character Lichborne has never seen: a tile whose target
+ *  is saved can be attached from its own Connect button, and a brand-new
+ *  attach needs the modal. Without this row, attaching a SECOND character
+ *  while the first is connected meant closing every open session to get the
+ *  full launcher back — the bug Kahlen hit. So compact keeps exactly one
+ *  button, not the whole bar. */
+function CompactAttachRow({ onAttach }: { onAttach?: () => void }) {
+  if (!onAttach) return null
+  return (
+    <div className="launcher-topbar launcher-topbar--compact">
+      <button
+        className="launcher-topbar-btn"
+        onClick={onAttach}
+        title="Attach to a Lich session that is already running and logged in (started with --headless / --detachable-client)"
+      >
+        ⇋ Attach to a running Lich
+      </button>
+    </div>
+  )
+}
+
 export interface TeamMemberView { name: string; state: 'on' | 'ready' | 'missing' }
 export interface TeamRowView {
   name: string
@@ -954,6 +980,7 @@ export default function Launcher({ onConnect, onAddNew, onAttach, onAttachCharac
             reconnectCount={lastSessionTiles.length}
           />
         )}
+        {compact && <CompactAttachRow onAttach={onAttach} />}
         <div className="launcher-welcome">
           <h2>Welcome to Lichborne</h2>
           <p>
@@ -1032,6 +1059,7 @@ export default function Launcher({ onConnect, onAddNew, onAttach, onAttachCharac
           reconnectCount={lastSessionTiles.length}
         />
       )}
+      {compact && <CompactAttachRow onAttach={onAttach} />}
 
       {connectError && (
         <div className="launcher-error">

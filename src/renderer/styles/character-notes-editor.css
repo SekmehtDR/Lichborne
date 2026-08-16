@@ -18,6 +18,23 @@
   z-index: 100;
 }
 
+/* Attach mode (draft): AttachModal reuses this chrome, and inherited the
+   z-index above with it — 100, which is BELOW .add-character-modal (1000,
+   character-tabs.css). Opened from the compact launcher inside that modal —
+   the only route to attaching a second character while one is connected —
+   it rendered BEHIND the backdrop, so the button appeared to do nothing.
+   Same failure .launcher-connecting documents in launcher.css, so the same
+   fix: above every login/launcher surface including that overlay (1500),
+   still below QuickSend (2000).
+
+   NOTE: Edit Profile… (this file's own modal) has the identical latent bug
+   when opened from the compact launcher. Left alone deliberately — it is
+   pre-existing and unrelated to attach mode, so fixing it belongs in its own
+   change rather than riding along in a feature patch. */
+.cne-backdrop.attach-backdrop {
+  z-index: 1600;
+}
+
 .cne-modal {
   background: var(--modal-bg);
   border: 1px solid var(--modal-border);
