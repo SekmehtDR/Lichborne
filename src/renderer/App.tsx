@@ -1296,6 +1296,31 @@ function AppShell() {
     return null
   }
 
+  // The modal's attach. Wraps runAttach with the same per-character guard the
+  // tile paths get from prepareTileAttach — the modal takes a TYPED name, so
+  // it is the one place a player can aim a second attach at a character that
+  // is already on. Without this, addSession replaces the record on the
+  // matching characterId: the first tab vanishes, its session is orphaned in
+  // main (still attached, no longer reachable), and it looks like attaching
+  // the second character "replaced" the first instead of adding to it.
+  async function runAttachFromModal(character: string, host: string, port: number): Promise<string | null> {
+    const name = character.trim()
+    const existing = sessions.find(s => s.character.toLowerCase() === name.toLowerCase())
+    if (existing?.status.connected) {
+      // Already on: show it rather than attaching a duplicate. Lich would
+      // accept a second front-end happily — the problem is on our side.
+      setActive(existing.characterId)
+      setShowAttach(false)
+      showToast({
+        title: `${existing.character} is already attached`,
+        message: 'Switched to its tab. To attach a different character, use its own name and its own Lich port.',
+      })
+      return null
+    }
+    if (existing) window.api.destroySession(existing.sessionId)
+    return runAttach(name, host, port)
+  }
+
   // Open the Attach modal with its memory loaded: the per-character targets
   // (for autofill as the name is typed) and the last successful attach (for
   // the blank-open prefill). Both are best-effort — the modal works empty.
@@ -1765,7 +1790,7 @@ function AppShell() {
       {showAttach && (
         <AttachModal
           onCancel={() => setShowAttach(false)}
-          onAttach={runAttach}
+          onAttach={runAttachFromModal}
           initial={attachInitial}
           known={attachKnown}
         />

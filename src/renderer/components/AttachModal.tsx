@@ -25,22 +25,39 @@ interface Props {
   // to show inline (modal stays open, values intact, for a fix-and-retry).
   onAttach: (character: string, host: string, port: number) => Promise<string | null>
   // The modal's memory (both loaded by App.openAttachModal, both optional):
-  // `initial` prefills the form with the last successful attach; `known` maps
-  // lowercased character names to their profile-saved targets, so typing a
-  // name that has attached before autofills its host/port.
+  // `initial` supplies the last successful attach — only its HOST is used as
+  // a default (see the state notes below). `known` maps lowercased character
+  // names to their profile-saved targets, so typing a name that has attached
+  // before autofills its host/port.
   initial?: { character: string; host: string; port: number } | null
   known?: Record<string, { host: string; port: number }>
 }
 
 export default function AttachModal({ onCancel, onAttach, initial = null, known = {} }: Props) {
-  const [character, setCharacter] = useState(initial?.character ?? '')
+  // THE NAME ALWAYS STARTS EMPTY. It used to prefill from the last successful
+  // attach, which was actively harmful: this modal exists to attach a
+  // character that has no tile yet (a tile with a saved target attaches from
+  // its own Connect button), so the overwhelmingly common case is a DIFFERENT
+  // character than last time. Prefilled, a player who changed only the port
+  // re-attached under the previous character's name — which succeeds, because
+  // the protocol neither sends nor checks a name — mislabelling the tab,
+  // overwriting that character's saved target, replacing its session record,
+  // and producing no second tile. Reported as "only one of my attached
+  // accounts shows a tile" (Kahlen).
+  const [character, setCharacter] = useState('')
+  // Host DOES prefill: it is stable across sessions (nearly always loopback,
+  // or the same remote box every time), and getting it wrong fails loudly
+  // rather than silently attaching to the wrong session.
   const [host, setHost] = useState(initial?.host ?? '127.0.0.1')
-  const [port, setPort] = useState(initial ? String(initial.port) : '8001')
+  // Port does NOT prefill from the last attach — each headless Lich listens on
+  // its own port, so last time's port belongs to a different character. It
+  // fills in from the saved target once a known name is typed (below).
+  const [port, setPort] = useState('8001')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   // True while host/port reflect a saved target rather than hand-typed values
   // — drives the "saved target" hint under the fields.
-  const [autofilled, setAutofilled] = useState(initial !== null)
+  const [autofilled, setAutofilled] = useState(false)
 
   // Name → saved-target autofill. Deliberately overwrite-on-match: the name
   // is typed first in practice, and a match means "this character has a known
@@ -111,9 +128,16 @@ export default function AttachModal({ onCancel, onAttach, initial = null, known 
               onChange={e => setCharacter(e.target.value)}
               disabled={busy}
               className="cne-input"
-              placeholder="Name shown on the tab — also picks the saved profile to load"
+              placeholder="Who is logged in on that Lich session"
               autoFocus
             />
+            {/* The protocol carries no character name, so this label is taken
+                on trust — and a wrong one silently mislabels the tab and the
+                profile it loads. Say which session it must match. */}
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.78em', fontWeight: 400 }}>
+              Must match the character that Lich session is logged in as —
+              the one you passed to <code>--login</code>.
+            </span>
           </label>
 
           <div className="cne-row">
