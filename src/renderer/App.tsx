@@ -1270,7 +1270,18 @@ function AppShell() {
     try {
       await saveCharacterAttach(character, account, game, { host, port })
       setLauncherRefreshKey(k => k + 1)
-    } catch (err) { console.error(err) }
+    } catch (err) {
+      // SAY SO. A console.error alone made a failed save look identical to
+      // the collapsed-section bug this code also fixes: no tile, no reason.
+      // The attach itself has already succeeded — the character is on — so
+      // this is a toast, not an error banner: what was lost is the shortcut
+      // back, not the session.
+      console.error('Failed to save the attach target', err)
+      showToast({
+        title: 'Attached, but the target was not saved',
+        message: `${character} is connected, but Lichborne could not write its profile, so no tile will remember ${host}:${port}.`,
+      })
+    }
 
     setShowAttach(false)
     handleConnected({

@@ -427,6 +427,10 @@ export async function saveCharacterAttach(
     await window.api.writeCharacterProfile(characterName, { ...profile, attach })
     return
   }
+  // Prior accounts, read BEFORE the write, for the 1→2 transition below.
+  const priorAccounts = new Set(
+    (await loadCharacterCards().catch(() => [])).map(c => c.account),
+  )
   await window.api.writeCharacterProfile(characterName, {
     profileVersion: 2,
     account,
@@ -437,6 +441,44 @@ export async function saveCharacterAttach(
     theme: localStorage.getItem('lichborne.theme') ?? 'classic',
     state: {},
   } satisfies CharacterProfile)
+  // AND MAKE THE TILE VISIBLE. Account sections default to COLLAPSED for
+  // multi-account users (see expandedAccounts), so a stub filed under a
+  // brand-new account — 'attach' for an attach-only character — was written
+  // to disk correctly and then rendered inside a section the player had
+  // never opened. Indistinguishable from "attach doesn't save anything"
+  // (Kahlen). AddCharacterWizard already solves this for wizard-created
+  // tiles by writing the new account name here before bumping refreshKey;
+  // an attach creates tiles too, so it owes the same courtesy.
+  //
+  // Only on stub CREATION (this branch): re-expanding on every attach would
+  // fight a player who deliberately collapsed the section.
+  //
+  // The 1→2 case rides along for the same reason the wizard carries it: a
+  // player with exactly ONE account sees it expanded by the single-account
+  // rule, and adding a second (here, 'attach') silently collapses it. Expand
+  // the prior one too so nothing the player was looking at disappears.
+  expandAccountOnce(account, priorAccounts)
+}
+
+// Add `account` to the launcher's expanded set, so its section renders open
+// the next time the launcher reads the key (its refreshKey effect re-reads
+// it). Mirrors AddCharacterWizard's write, including the same
+// never-block-on-storage posture: a failure here costs one extra click, so
+// it must never fail the attach that triggered it.
+function expandAccountOnce(account: string, priorAccounts: Set<string> = new Set()): void {
+  try {
+    const raw = localStorage.getItem('lichborne.launcher.expandedAccounts')
+    const set = new Set<string>()
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) for (const v of arr) if (typeof v === 'string') set.add(v)
+    }
+    set.add(account)
+    if (priorAccounts.size === 1 && !priorAccounts.has(account)) {
+      for (const a of priorAccounts) set.add(a)
+    }
+    localStorage.setItem('lichborne.launcher.expandedAccounts', JSON.stringify([...set]))
+  } catch { /* auto-expand silently fails — not a blocker */ }
 }
 
 // Soft-delete toggle (v0.8.0). Hiding a tile preserves the full character
