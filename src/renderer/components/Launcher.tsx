@@ -423,6 +423,23 @@ export async function saveCharacterAttach(
   const raw = await window.api.readCharacterProfile(characterName).catch(() => null)
   if (raw && typeof raw === 'object') {
     const profile = raw as CharacterProfile
+    // EXPAND FIRST, ALWAYS — including when the target is unchanged and there
+    // is nothing to write.
+    //
+    // A character that ALREADY has a profile keeps its real account (Ethun
+    // stays on lenairk6), which is right: it really is on that account, and
+    // after detaching the player may want to log in normally. But that account
+    // section is typically COLLAPSED, so attaching such a character updated
+    // disk and showed nothing — the player counted tiles under 'attach', found
+    // one, and reasonably concluded the other attaches hadn't saved (Kahlen,
+    // with three attached characters spread over lenairk6 / lenairk21 /
+    // attach).
+    //
+    // The earlier "only on stub creation, or we fight a deliberate collapse"
+    // reasoning was wrong on the evidence: a player who just attached a
+    // character wants to see that character, and this fires once per attach —
+    // it is not a persistent override of their choice.
+    expandAccountOnce(profile.account ?? account)
     if (profile.attach?.host === attach.host && profile.attach?.port === attach.port) return
     await window.api.writeCharacterProfile(characterName, { ...profile, attach })
     return
@@ -449,9 +466,6 @@ export async function saveCharacterAttach(
   // (Kahlen). AddCharacterWizard already solves this for wizard-created
   // tiles by writing the new account name here before bumping refreshKey;
   // an attach creates tiles too, so it owes the same courtesy.
-  //
-  // Only on stub CREATION (this branch): re-expanding on every attach would
-  // fight a player who deliberately collapsed the section.
   //
   // The 1→2 case rides along for the same reason the wizard carries it: a
   // player with exactly ONE account sees it expanded by the single-account
