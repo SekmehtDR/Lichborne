@@ -568,11 +568,28 @@ export class StormFrontParser {
           const label = rawLabel
             ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
             : undefined
+          // ATTACH RESYNC (draft attach mode). Lich's detachable-client init
+          // hardcodes value='0' on every bar and carries the real numbers ONLY
+          // in `text`: `<progressBar id='health' value='0' text='health
+          // 100/100'/>` (lich-5 global_defs.rb, detachable_client_send_init).
+          // Reading `value` therefore painted every vital at ZERO the instant
+          // you attached — worse than showing nothing, because a zeroed bar
+          // looks like live data and reads as "one hit from dead".
+          //
+          // Deliberately narrow: `text` is consulted ONLY when `value` is 0 but
+          // the text carries a non-zero current. DR's own bars send a correct
+          // `value`, so they take exactly the path they always did, and a
+          // genuinely-zero vital still reports zero from either source.
+          // Widening this to "always prefer text" would change the numbers
+          // every existing player sees, which is not this patch's business.
+          const textPair = /(\d+)\s*\/\s*(\d+)/.exec(text)
+          const useText  = value === 0 && textPair !== null
+            && Number(textPair[1]) > 0 && Number(textPair[2]) > 0
           this.emit({
             type: 'vital-update',
             id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
-            current: value,
-            max: 100,
+            current: useText ? Number(textPair![1]) : value,
+            max:     useText ? Number(textPair![2]) : 100,
             ...(label !== undefined ? { label } : {}),
           })
         }
