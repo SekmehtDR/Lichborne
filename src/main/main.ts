@@ -146,6 +146,9 @@ interface Session {
   // B169: one-shot — `_flag Display Inventory Boxes 1` sent to Lich after login
   // (player-info) to disarm Lich's tag-eating inventory_boxes_off hook.
   invBoxesFixSent?: boolean
+  // Pending auto re-attach (attach sessions only). Held so teardown and a
+  // manual reconnect can cancel it — see scheduleReattach / cancelReattach.
+  reattachTimer?: ReturnType<typeof setTimeout>
 }
 
 const HISTORY_BUFFER_MAX = 600
@@ -324,6 +327,19 @@ function wireSession(s: Session) {
     s.cleanDisconnect = false
     s.connected = false
     sendStatus(s, false, 'Disconnected', wasClean)
+    // ATTACH SESSIONS RE-ATTACH THEMSELVES (draft attach mode).
+    //
+    // Safe here in a way it would NOT be for a login: re-attaching starts no
+    // SGE auth, claims no account slot, spawns no Lich, and cannot bounce
+    // anyone out of the game. The character never left — Lich still holds the
+    // game connection, scripts are still running — so a dropped attach socket
+    // is a lost VIEW, not a lost session, and restoring the view is
+    // idempotent. That is the whole promise of attach mode, and it is worth
+    // nothing if a Wi-Fi blip or a laptop sleep strands the tab.
+    //
+    // Not attempted after a CLEAN disconnect: the player closing the tab, or
+    // typing `exit`, means they wanted out.
+    if (!wasClean && s.meta?.attach) scheduleReattach(s)
   })
 
   s.connection.on('error', (err: Error) => {
@@ -385,9 +401,64 @@ function sendStatus(s: Session, connected: boolean, message: string, clean?: boo
   broadcastRoster()  // roster `connected` mirrors s.connected — keep windows in sync
 }
 
+// ── Auto re-attach (draft attach mode) ───────────────────────────────────────
+// Backoff schedule for restoring a dropped attach socket. Front-loaded because
+// the common cases — a Wi-Fi hiccup, a VPN re-handshake, a laptop waking —
+// clear in seconds; then it settles to a 30s heartbeat and stays there
+// INDEFINITELY while the tab is open. Deliberately no attempt cap: the whole
+// point of attach mode is that the session outlives the client, so the view
+// should keep trying to come back for as long as the player leaves the tab
+// open — a cap would guarantee that the one time they wanted it back is the
+// time it had quietly given up. The player stops it by closing the tab.
+const REATTACH_BACKOFF_MS = [2_000, 4_000, 8_000, 15_000, 30_000]
+
+function reattachDelay(attempt: number): number {
+  return REATTACH_BACKOFF_MS[Math.min(attempt, REATTACH_BACKOFF_MS.length - 1)]
+}
+
+function scheduleReattach(s: Session, attempt = 0) {
+  if (!s.meta?.attach || !sessions.has(s.id)) return
+  const delay = reattachDelay(attempt)
+  const secs = Math.round(delay / 1000)
+  sendStatus(s, false, attempt === 0
+    ? `Connection lost — re-attaching in ${secs}s…`
+    : `Re-attaching in ${secs}s… (attempt ${attempt + 1})`)
+  s.reattachTimer = setTimeout(() => {
+    s.reattachTimer = undefined
+    // Re-check under the timer: the tab may have been closed, or the player
+    // may have reconnected by hand, while we were waiting.
+    if (!sessions.has(s.id) || s.connected || !s.meta?.attach) return
+    const { host, port } = s.meta.attach
+    sendStatus(s, false, `Re-attaching to ${host}:${port}…`)
+    s.connection.connectAttach({
+      account: s.meta.account, character: s.meta.character,
+      game: s.meta.game, host, port,
+    })
+      .then(() => {
+        if (!sessions.has(s.id)) return
+        s.connected = true
+        sendStatus(s, true, 'Re-attached')
+        broadcastRoster()
+      })
+      .catch(() => {
+        // Still down. The listener is gone or unreachable — keep waiting,
+        // because a headless Lich that is briefly unreachable is exactly the
+        // situation this exists for.
+        if (sessions.has(s.id) && !s.connected) scheduleReattach(s, attempt + 1)
+      })
+  }, delay)
+}
+
+function cancelReattach(s: Session) {
+  if (s.reattachTimer) { clearTimeout(s.reattachTimer); s.reattachTimer = undefined }
+}
+
 function destroySession(id: SessionId) {
   const s = sessions.get(id)
   if (!s) return
+  // Kill any pending re-attach FIRST: the timer closes over the session and
+  // would otherwise resurrect a socket for a tab that no longer exists.
+  cancelReattach(s)
   // Detach listeners before forceDisconnect so any final event from the socket
   // teardown doesn't fire into a session that's mid-removal.
   s.connection.removeAllListeners()
@@ -1127,6 +1198,9 @@ ipcMain.on(CH.SEND_USER_TEXT, (_event, sessionId: SessionId, text: string) => {
 ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
   const s = getSession(sessionId)
   if (!s) return
+  // An explicit Disconnect outranks a pending auto re-attach — otherwise the
+  // tab the player just closed the connection on springs back to life.
+  cancelReattach(s)
   s.cleanDisconnect = true
   sendStatus(s, false, 'Disconnecting...')
   s.connection.gracefulDisconnect().then(() => {
@@ -1145,6 +1219,7 @@ ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
 ipcMain.handle('disconnect-await', async (_event, sessionId: SessionId) => {
   const s = getSession(sessionId)
   if (!s) return
+  cancelReattach(s)
   s.cleanDisconnect = true
   sendStatus(s, false, 'Disconnecting...')
   await s.connection.gracefulDisconnect()

@@ -82,6 +82,31 @@ export class AttachConnection extends EventEmitter {
         socket.removeListener('error', onPreConnectError)
         this.socket = socket
         this.connected = true
+        // Stale bytes from a previous socket must not prefix the new stream:
+        // a reconnect that begins mid-line would otherwise splice the tail of
+        // the dropped session onto the first line of the new one.
+        this.buffer = ''
+
+        // TCP KEEPALIVE — the difference between "my attach died" and "my
+        // attach is fine" on a link that goes quiet.
+        //
+        // An attach target is often NOT loopback — another machine on the
+        // network, or one reached over a VPN — and an idle TCP connection
+        // through NAT gets reaped by intermediaries that never tell either
+        // end. Without
+        // probes, Lichborne holds a socket it believes is live, shows the tab
+        // as connected, and only discovers otherwise when the player types
+        // something — which is the worst possible moment. DR is also happy to
+        // leave a session silent for many minutes, so "idle" here is normal,
+        // not a sign of trouble.
+        //
+        // Probes every 30s keep the path warm through NAT AND surface a dead
+        // peer as a real 'close', which is what the auto re-attach in main
+        // hangs off. Cheap: a few bytes per minute per session.
+        socket.setKeepAlive(true, 30_000)
+        // Vitals and prompts are small and latency-sensitive; Nagle buys
+        // nothing on a stream this shape.
+        socket.setNoDelay(true)
 
         // Live-session listeners wired only AFTER a successful connect, so a
         // failed attempt's socket never emits 'disconnect' (the
