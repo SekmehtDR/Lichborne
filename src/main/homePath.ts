@@ -1,3 +1,11 @@
+// homePath — `~` → home-directory expansion for MAIN-side paths (v0.18.0 cross-platform pass).
+//
+// Linux/Mac Lich paths are stored `~`-relative (the renderer can't resolve the
+// home dir synchronously), so MAIN expands at every consumption point — the
+// function comment below lists the current ones. The invariant: any NEW
+// main-side consumer of a lichPath/rubyPath must call expandHome() before
+// touching the filesystem. Windows paths never start with `~`, so it's a
+// no-op there.
 import * as os from 'os'
 
 // Cross-platform (v0.18.0): expand a leading `~` to the user's home directory.

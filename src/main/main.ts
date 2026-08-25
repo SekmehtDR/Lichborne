@@ -1,3 +1,63 @@
+// main — the Electron main process: sessions, windows, the IPC surface, menu, updater, shutdown.
+//
+// This is the hub every other main-side module plugs into. It OWNS:
+//  • The SESSION roster — `sessions: Map<SessionId, Session>`; each Session
+//    bundles one ConnectionManager (socket), StormFrontParser, SceneParser,
+//    LichBridge, its event queue and the replay state. Minted by the LOGIN
+//    handler, torn down by `session:destroy` / window close. See "Session
+//    model" and "Session roster".
+//  • The WINDOW registry — `windows` keyed by webContents id, one PRIMARY
+//    (launcher) window plus SECONDARY windows for decoupled characters. Main
+//    is the source of truth for which window renders which session
+//    (`ownerWindowId`), and every window mirrors the roster. See "Windows",
+//    "Session roster" and "IPC: multi-window decouple".
+//  • The per-session PIPELINE — wireSession(): raw line → (Debug raw-XML
+//    feed) → LichBridge.interceptLine → StormFrontParser.parse → the one-shot
+//    B169 Lich flag → SceneParser.derive → eventQueue → scheduleFlush, a
+//    leading-edge 16ms coalescer (B172) that ships ONE batch per frame during
+//    a flood and records every flushed event into the sticky `stateSnapshot`
+//    / scrollback `historyBuffer` for window-takeover replays (pitfall #60).
+//  • The whole IPC surface, grouped by the `// ── … ──` banners below:
+//    session lifecycle, multi-window decouple + replay, command sends
+//    (`SEND_COMMAND` writes the socket; `SEND_USER_TEXT` is forwarded to the
+//    OWNER window's GameWindow so it runs the normal input path), Lich script
+//    injection, file-system helpers + Lich/Ruby auto-discovery, the Genie
+//    parse cache, the Moons sun-anchor fetch, Lich file helpers, passwords,
+//    the SGE character preview, profiles, Profile Transfer, clipboard/log
+//    helpers, and the updater. The other handler groups are registered from
+//    their own modules at load time (sqliteReader, sessionLog, ai, simucoin).
+//  • Lich launch coordination lives in ConnectionManager (serializeLichLaunch);
+//    main just awaits `connectViaLich` / `connectDirect` per session.
+//  • The NATIVE MENU (setupMenu — File·Edit·View·Tools·Lich·Window·Help,
+//    click-only items dispatched to the FOCUSED window via sendMenuAction;
+//    refreshMenuState scopes the Window items to that window's tab count),
+//    the DUAL-FEED auto-updater (checkForUpdatesDualFeed — new home first,
+//    legacy repo as fallback; gated off on macOS), the one permission
+//    allowlist shared by both permission handlers (pitfall #127), and the
+//    SHUTDOWN sequence (confirmCloseThenRun → runSecondaryWindowClose /
+//    runAppShutdown, which must end in an explicit app.quit — pitfall #114).
+//
+// Rules for anyone adding to this file:
+//  • Channel names come from the ONE shared `IPC` list in shared/types.ts —
+//    never a private map (pitfall #127; an `undefined` channel registers
+//    silently on "undefined" and eats every send).
+//  • Every per-session push carries `sessionId` and routes via ownerWindow(s)
+//    (falls back to the primary so output is never dropped). The single
+//    deliberate exception is `window-visibility`, which is about the OS
+//    window, not a character.
+//  • A window taking over a session (decouple / re-home / reload / and since
+//    v0.19.0 the first connect) gets a one-shot replay: set `replayTarget` +
+//    `holdingForReplay`, arm scheduleReplayHoldRelease, and never let live and
+//    replay overlap. Decouple moves ownership ONLY — the socket, parser and
+//    LichBridge are never touched (pitfall #59).
+//  • Main owns every session's socket, so nothing here may block: the close
+//    confirmation is async (never showMessageBoxSync), the trigger `write-log`
+//    path is buffered rather than one appendFileSync per line, and any
+//    multi-file scan belongs in a yielding helper (see sessionLog.ts).
+//  • On secrets: AI keys and the SimuCoin flow keep credentials inside main,
+//    but `password:load` DOES return the saved account password to the
+//    renderer — the renderer builds LoginCredentials (with the password) for
+//    the LOGIN handler. Don't describe the boundary as stricter than it is.
 import { app, BrowserWindow, ipcMain, dialog, Menu, shell, session, clipboard, safeStorage } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -18,6 +78,7 @@ import { savePassword, loadPassword, deletePassword } from './passwords'
 import { registerAIHandlers } from './ai'
 import { registerSimuCoinHandlers } from './simucoin'
 import { IPC } from '../shared/types'
+import { makeCharacterId } from '../shared/characterId'
 import type {
   GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
@@ -206,11 +267,9 @@ function broadcastRoster() {
   broadcastAll(CH.SESSION_ROSTER, { roster: buildRoster() } as SessionRosterPayload)
 }
 
-// characterId formula MUST match makeCharacterId() in the renderer's
-// SessionsContext — account::character::game, all lowercased.
-function makeCharacterId(account: string, character: string, game: string): string {
-  return `${account.toLowerCase()}::${character.toLowerCase()}::${game.toLowerCase()}`
-}
+// (B301: makeCharacterId used to be a local copy here, kept in sync with the
+// renderer's by a comment alone — it now lives once in shared/characterId.ts,
+// imported at the top, so the two processes structurally cannot drift.)
 
 function wireSession(s: Session) {
   s.connection.on('status', (msg: string) => {
@@ -1656,8 +1715,82 @@ ipcMain.on('check-for-updates',  () => {
       'Auto-update is unavailable on macOS (unsigned beta build) — download new versions from GitHub Releases.')
     return
   }
-  autoUpdater.checkForUpdates()
+  void checkForUpdatesDualFeed()
 })
+
+// ── Dual-feed update check (Elanthia-Online handover — DESIGN §18.4.1) ──────
+// Lichborne is moving from github.com/SekmehtDR/Lichborne to
+// github.com/elanthia-online/Lichborne. Every shipped install has the OLD repo
+// baked into its app-update.yml (extraResources), so the check tries the new
+// home FIRST and falls back to the legacy repo. Correct on both sides of the
+// transfer:
+//   - BEFORE: elanthia-online/Lichborne doesn't exist (404 on releases.atom)
+//     or exists with no releases yet (ERR_UPDATER_NO_PUBLISHED_VERSIONS) —
+//     both REJECT checkForUpdates(), and we quietly fall back to the legacy
+//     feed, so today's behavior is unchanged.
+//   - AFTER: the new feed answers and the legacy entry is never consulted.
+//     (GitHub's transfer redirect covers even pre-handover installs, but only
+//     until anything named "Lichborne" is re-created under SekmehtDR — this
+//     list is what keeps updates working if that redirect is ever severed.)
+// setFeedURL() OVERRIDES the baked app-update.yml (electron-updater prefers a
+// runtime-set provider over the disk config), and the winning feed's provider
+// also serves the subsequent download — so Download/Install ride the same repo
+// that answered the check. app-update.yml must still ship (electron-updater
+// reads updaterCacheDirName from it). A feed that ANSWERS is authoritative —
+// "no update available" does NOT fall through to the next feed — so never
+// pre-create a PARTIAL repo at the new home carrying only some releases; the
+// transfer itself moves all of them.
+const UPDATE_FEEDS = [
+  { owner: 'elanthia-online', repo: 'Lichborne' }, // new home — preferred
+  { owner: 'SekmehtDR',       repo: 'Lichborne' }, // legacy — pre-transfer, and belt-and-braces after
+]
+// True while a NON-FINAL feed attempt is in flight. checkForUpdates() both
+// rejects AND emits 'error' on failure, and the error handler forwards errors
+// to the launcher's updater log — without this gate, every launch before the
+// transfer would show a scary ERROR for the (expected) missing new-home repo.
+let updaterProbing = false
+
+// Concurrent invocations JOIN the in-flight run (the serializeLichLaunch shape).
+// Without this, a menu-click check overlapping the startup check interleaves two
+// loops over ONE shared autoUpdater: electron-updater dedups concurrent
+// checkForUpdates() onto one promise (AppUpdater.checkForUpdatesPromise), so the
+// second loop would (a) log ITS loop-variable's feed name for a check the OTHER
+// feed actually answered, and (b) flip updaterProbing under the first loop's
+// final attempt, suppressing a real error for one round-trip. One run at a time
+// makes both impossible; the reset lives in this function's own finally
+// (pitfall #122 — the function that is guarded owns the reset).
+let dualFeedRun: Promise<void> | null = null
+
+function checkForUpdatesDualFeed(): Promise<void> {
+  if (dualFeedRun) return dualFeedRun
+  dualFeedRun = (async () => {
+    try {
+      for (let i = 0; i < UPDATE_FEEDS.length; i++) {
+        const feed = UPDATE_FEEDS[i]
+        updaterProbing = i < UPDATE_FEEDS.length - 1
+        autoUpdater.setFeedURL({ provider: 'github', owner: feed.owner, repo: feed.repo })
+        try {
+          const res = await autoUpdater.checkForUpdates()
+          // res is null only when the updater is inactive (unpackaged dev build) —
+          // don't name a feed that was never actually consulted.
+          if (res) {
+            primaryWindow()?.webContents.send('updater-log', `Update feed: ${feed.owner}/${feed.repo}`)
+          }
+          return
+        } catch {
+          // This feed failed (missing repo / no releases / network) — try the next.
+          // Its 'error' event already fired and was suppressed via updaterProbing;
+          // the LAST feed's failure reaches the updater log exactly as before.
+        } finally {
+          updaterProbing = false
+        }
+      }
+    } finally {
+      dualFeedRun = null
+    }
+  })()
+  return dualFeedRun
+}
 
 function setupAutoUpdater() {
   // macOS unsigned builds: skip the startup check entirely (same reason as
@@ -1674,6 +1807,9 @@ function setupAutoUpdater() {
   autoUpdater.on('error', (err) => {
     const msg = err?.message ?? String(err)
     console.error('[auto-updater] error:', msg)
+    // A non-final feed attempt failing is EXPECTED (see checkForUpdatesDualFeed)
+    // — the fallback handles it; only the last feed's failure reaches the user.
+    if (updaterProbing) return
     primaryWindow()?.webContents.send('updater-log', `ERROR: ${msg}`)
   })
   autoUpdater.on('update-not-available', () => {
@@ -1682,7 +1818,7 @@ function setupAutoUpdater() {
   autoUpdater.on('checking-for-update', () => {
     primaryWindow()?.webContents.send('updater-log', 'Checking for update...')
   })
-  setTimeout(() => autoUpdater.checkForUpdates(), 3000)
+  setTimeout(() => { void checkForUpdatesDualFeed() }, 3000)
 }
 
 // Top-chrome redesign Phase 2a: native menu items dispatch a MenuAction to the

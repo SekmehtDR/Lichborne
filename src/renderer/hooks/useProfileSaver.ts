@@ -1,3 +1,14 @@
+// useProfileSaver — the per-session "persist my localStorage change to YAML" hook.
+//
+// The one-liner every panel needs after a character-scoped localStorage write:
+// call the returned `saveProfile()` and `scheduleProfileSave` (../profile)
+// debounces a YAML flush for that character (2.5s). It resolves the session's
+// identity (account / character / game / useLich) from `useSessions()` by
+// character name, so it must run under a CharacterProvider — inside a
+// GameWindow's tree. Its returned function has a STABLE identity on purpose
+// (sessions are read through a ref): panels put it in effect deps, and a
+// callback that churned on every vital tick would re-fire all of them.
+
 import { useCallback, useEffect, useRef } from 'react'
 import { useCharacter } from '../CharacterContext'
 import { useSessions, type SessionRecord } from '../SessionsContext'

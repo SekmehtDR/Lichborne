@@ -1,3 +1,40 @@
+// Profiles — the bridge between localStorage (the working copy) and the YAML files (the truth).
+//
+// The renderer works out of localStorage; this file is what moves that state
+// to and from `_shared.yaml` / `{Character}.yaml` on disk (through
+// `window.api.read*/write*Profile` — main owns the files). Nothing else
+// builds or applies the FULL profile shape; the one other writer is the
+// Launcher's read-modify-write helpers, which patch launcher-owned top-level
+// fields (favorite/hidden/notes/game/useLich…) directly — and which
+// `exportCharacterProfile` must therefore preserve, not clobber (pitfall #26).
+//
+// THE MODEL: `buildCharacterProfile` SCANS every `lichborne.{character}.*`
+// key into the dynamic `state` map, and `importCharacterProfile` writes every
+// `state` entry back to its `scopedKey` — so a new per-character setting needs
+// NO plumbing here. `buildSharedProfile` is the opposite shape: one explicit
+// line per app-wide field, each read FRESH from localStorage by its own loader
+// at build time (`overview` is the one that goes through its store instead).
+// Adding a shared setting = a `SharedProfile` type entry + a build line + an
+// import line.
+//
+// INVARIANTS (each has a comment at its site):
+//  • `exportCharacterProfile` is READ-MERGE-WRITE (B97, v0.8.0): the GameWindow
+//    is authoritative for `theme` + `state` ONLY; game / useLich / hidden /
+//    favorite / guild / circle / notes are launcher-owned and preserved from
+//    the YAML on every save. Don't write `buildCharacterProfile`'s output
+//    verbatim.
+//  • Schema versions (SHARED 1 / CHARACTER 2) are bumped only for a breaking
+//    change, with a migration registered in profile-migrations.ts keyed by the
+//    SOURCE version. `runMigrations` returns null for a FUTURE-version file
+//    and the import is then SKIPPED with a warning — the YAML is never
+//    clobbered by code that doesn't understand it.
+//  • Saves are DEBOUNCED (2.5s), one timer PER CHARACTER (`scheduleProfileSave`)
+//    plus one for `_shared.yaml`; `flushPendingProfileSaves` fires them all
+//    immediately for the before-close path.
+//  • The six global rule lists (F37, v0.15.2) live under the virtual `_global`
+//    scope and ride `_shared.yaml`, accessed by RAW key here so this file
+//    imports no rule modules; the stores re-validate on load.
+
 import type { SharedProfile, CharacterProfile } from './profile-types'
 import { loadMyThemes, saveMyThemes } from './myThemes'
 import { scopedKey, normalizeCharacter, GLOBAL_RULES_SCOPE } from './characterScope'

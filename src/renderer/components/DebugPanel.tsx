@@ -1,3 +1,20 @@
+// DebugPanel — the diagnostics surface: three tabs over buffers GameWindow
+// owns — Fires (highlight/trigger fire log, with an "Edit →" that opens the
+// source rule via `onGotoFireRule`), Events (parsed GameEvents as JSON), and
+// Raw XML — plus Copy All, Export CSV (F45), Clear, and a right-click menu.
+//
+// Pure view: every buffer and every clear comes in as a prop. It is hosted
+// TWO ways from one component (v0.11.5): docked as the bottom strip of the
+// game column (`resizable` — a drag handle, height persisted per character on
+// the `debugPanelHeight` scopedKey, which rides `state.*` into YAML for free)
+// or inside a PanelFrame zone / floating window (`debug-panel--fill`, no
+// handle, `character` unused). Each tab keeps its own pinned-to-bottom scroll;
+// the Events / Raw XML rows key off a rolling base offset so a buffer that
+// trims from the front doesn't re-key every DOM node. Copy goes through
+// `window.api.writeClipboard` — never `navigator.clipboard` (B18/B102). CSV
+// export is RFC-4180 quoted AND formula-injection guarded, because game text
+// is other-player-authored.
+
 import { useEffect, useRef, useState } from 'react'
 import type { GameEvent, FireLogEntry } from '../../shared/types'
 import { scopedKey } from '../characterScope'

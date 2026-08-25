@@ -1,3 +1,24 @@
+// profiles — disk I/O for the YAML profile store, {userData}/profiles/ (DESIGN §20).
+//
+// YAML is truth for user state (Principle #1): `_shared.yaml` plus one
+// `{Character}.yaml` each. This file owns PATHS and RAW read/write only —
+// payloads are `unknown` here; profile shape, versioning and migrations are
+// the caller's concern. What it does own:
+//
+//  • Atomic writes (tmp + rename — see atomicWriteFile for the Windows EPERM
+//    dance) so a crash mid-save can't corrupt a profile.
+//  • The one-time v0.6.4 legacy migration (install-dir → userData; the NSIS
+//    uninstaller wiped $INSTDIR on every upgrade — pitfall #3). It runs at
+//    first access via getProfilesDir(), copies without deleting the legacy dir.
+//  • Timestamped rolling backups ({name}.yaml.{ts}.bak, retention 5), written
+//    by backupAllProfiles() on clean shutdown.
+//  • Sibling folders: Exports/ (Profile Transfer .lb.yaml bundles, F38) and
+//    profiles/Archive/ (v0.18.2 — removing an ACCOUNT moves its characters'
+//    YAMLs here instead of deleting; see the Archive section for why it must
+//    stay a subdirectory of profiles/).
+//
+// ensureProfilesDir() is the canonical accessor; go through it (or the
+// read/write functions here) rather than composing profile paths elsewhere.
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'

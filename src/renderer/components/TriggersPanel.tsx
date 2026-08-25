@@ -1,3 +1,26 @@
+// Triggers editor — the WHEN → THEN → TEST form that edits the `triggers`
+// rule store. WHEN: fires on Game Text (a text / phrase / regex pattern on a
+// chosen watch stream) or on a Variable Change (`watchVariable`), with a
+// cooldown, one-shot, and AND/OR state-gate conditions. THEN: an ordered
+// list of action cards (command · echo · notify · sound · flash · beep · log
+// · webhook · variable), each with `$var` pickers from `INTERPOLATABLE_VARS`.
+// TEST: a sample line + stream run through the REAL `buildTriggerRegex` and
+// `interpolate` (with placeholder vars) to show what would fire.
+//
+// Hosted INLINE by AutomationsPanel or standalone as its own modal when
+// `inline` is false. Per character via `useCharacter()` — in the Automations
+// "All Characters" scope that provider is re-pointed at the virtual `_global`
+// store, so `loadTriggers`/`saveTriggers` edit global rules unchanged
+// (`scope='global'` hides Groups; `onMoveScope` renders the F63 "Applies to"
+// control, which MOVES the draft). Every write is `setRules` →
+// `saveTriggers` (localStorage) → `onSaved` (the host's scheduled profile
+// save → YAML); the list loads ONCE on mount. Entry points: `prefillPattern`
+// (right-click "Trigger …" → `newTrigger(pattern)` as an unsaved draft) and
+// `openRuleId` (v0.8.2, the Debug Fires-tab GOTO — the pattern the other rule
+// panels later copied; a no-op if the rule was deleted). The action editing
+// here is the FULL editor; slash `/trigger` only fills the built-in command
+// action. Classes are `.trg-*`. Analytics is opt-in via `analyticsOn`.
+
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { ResizeDivider } from './ResizeDivider'

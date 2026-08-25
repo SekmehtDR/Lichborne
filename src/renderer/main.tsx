@@ -1,3 +1,11 @@
+// Renderer entry point — boots one BrowserWindow's React tree.
+//
+// Three one-time initialisations run BEFORE React mounts, in this order:
+// localStorage migrations (v0.8.10, B135 — rewrites stale per-character keys
+// so the first read below sees transformed values), then `initTheme`, then
+// `initSettings`. Keep the migration first; everything after it reads the
+// keys it may rewrite. Then `<App />` mounts under StrictMode.
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

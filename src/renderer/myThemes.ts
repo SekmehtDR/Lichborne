@@ -1,3 +1,18 @@
+// myThemes — the user's custom themes: create / duplicate / export / import + the store.
+//
+// Custom themes live under ONE raw localStorage key (`lichborne.myThemes`) —
+// app-wide, not per-character — as `CustomTheme` records: a minted
+// `custom_<ts>_<rand>` id, a display name, `basedOn` (the built-in it was
+// copied from, resolved to a name by `getBaseThemeName`), and `vars`.
+//
+// THE INVARIANT: `vars` is ALWAYS a COMPLETE set, never a partial override.
+// Every constructor here guarantees it — `createCustomThemeFrom` spreads the
+// base theme over `darkBase`, `duplicateCustomTheme` copies a full set, and
+// `importTheme` re-merges the file's vars over `darkBase` — so a hand-edited
+// or older theme file can't produce a theme with holes. Export writes a
+// `*.lichborne-theme.json` download; import validates `name` + `vars` and
+// always mints a fresh id (importing your own export makes a copy).
+
 import { darkBase, THEMES, type ThemeVars, type Theme } from './themes'
 
 export interface CustomTheme {

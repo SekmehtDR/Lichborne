@@ -1,3 +1,31 @@
+// Import Wizard — "Import from another client": Wrayth (one XML), Genie
+// (.cfg files) or Frostbite (.ini files) → the neutral `ImportResult` from
+// the parsers under ../import → `mapImportResult` (+ `mapMute` /
+// `mapSubstitute`) → THIS character's rule stores. Four steps: source →
+// preview → confirm → done. Lichborne→Lichborne moved to the Launcher's
+// Transfer in v0.10.0; the `nativeRules` / `nativeLayout` / `nativeGroups`…
+// branches in `doImport` are left from that era and the legacy parsers never
+// populate them (`parse()` returns null for a `lichborne` source).
+//
+// Rendered by AutomationsPanel inside its `CharacterProvider`, so
+// `useCharacter()` names the target; writes go straight to `saveHighlights`
+// / `saveTriggers` / `saveMacros` / `saveAliases` / `saveMutes` /
+// `saveSubstitutes` / `saveContacts` / `saveContactTemplates` (localStorage)
+// and `onSaved` lets the host remount its panels and schedule the profile
+// save; `onThemeSaved` fires when presets became an "Imported from X" custom
+// theme in `myThemes`. Invariants worth keeping: EVERY save is gated on the
+// category having selected content (B127 — in BOTH merge modes an import
+// touches only the categories it carries, so a Wrayth file with no triggers
+// can never wipe your Genie ones); duplicates are flagged in the preview by
+// CONTENT key (`hlContentKey` / `trContentKey`, macros by key, aliases by
+// input, contacts by name) and Append skips them with the SAME keys, while
+// everything stays pre-selected because unchecking a duplicate under Replace
+// would wipe the original; incoming macros are deduped by key first-wins
+// (v0.11.1, Wrayth's 10 sets); names become Contacts with per-colour
+// templates found-or-created by NAME; "Select all" never selects an
+// `unsupported` row. Variables / scripts / alert highlights / quick buttons
+// are counted and reported as "belong in Lich", never imported.
+
 import { useRef, useState } from 'react'
 import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'

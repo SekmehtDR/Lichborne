@@ -124,9 +124,18 @@
   overflow: hidden;
 }
 
-.ov-card:hover {
-  border-color: var(--accent-dim);
+/* B295: hover must not OUTRANK the state borders. An unqualified `:hover` is
+ * (0,2,0) against a state class's (0,1,0), so mousing over an urgent card
+ * erased its red border at the exact moment you moved to confirm it — pitfall
+ * #107's shape, and #107's fix: EXCLUDE the states from the selector, never
+ * duel specificity. The background tint stays as the hover affordance on
+ * everything but --active (whose own stronger tint would be dimmed by it);
+ * the border is owned by whichever state the card is in. */
+.ov-card:not(.ov-card--active):hover {
   background: color-mix(in srgb, var(--accent) 4%, var(--bg-raised));
+}
+.ov-card:not(.ov-card--urgent):not(.ov-card--alert):not(.ov-card--active):hover {
+  border-color: var(--accent-dim);
 }
 
 .ov-card:focus-visible {
@@ -876,10 +885,14 @@
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-input));
 }
 
-/* The wrapper carries the border/background/focus ring (game.css). Only the
- * flex behaviour is ours: the input has to absorb the row's leftover width, and
- * `min-width: 0` is what lets a flex item actually shrink below its content. */
-.ov-inputbar-wrap { flex: 1 1 auto; min-width: 0; }
+/* The wrapper carries the border/background/focus ring — AND its flex — from
+ * the shared rule in game.css (which names `.ov-inputbar-wrap` alongside
+ * `.cmd-input-wrap` and sets `flex: 1`). B294: a `flex: 1 1 auto` used to be
+ * restated here at equal specificity — decided by bundle order, the exact
+ * fragility this file's own header forbids (pitfall #111). One owner now.
+ * Only `min-width: 0` is ours: it is additive (the shared rule doesn't set
+ * it), and it is what lets a flex item actually shrink below its content. */
+.ov-inputbar-wrap { min-width: 0; }
 
 /* No connected characters — the field states why rather than sitting inert. */
 .ov-inputbar-input:disabled { color: var(--text-faint); cursor: not-allowed; }

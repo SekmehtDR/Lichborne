@@ -129,14 +129,24 @@ export interface CharacterDigest {
 export const IDLE_QUANTUM_MS = 5_000
 
 /**
- * Frozen key list driving the equality gate. A KEY LOOP, never a hand-written
- * `&&` chain — that shape is precisely how a field gets added to the payload and
+ * Key list driving the equality gate. A KEY LOOP, never a hand-written `&&`
+ * chain — that shape is precisely how a field gets added to the payload and
  * forgotten in the comparison, after which it is written but never re-renders.
+ *
+ * Derived from a `Record<keyof CharacterDigest, true>` because that is what
+ * actually makes omission a COMPILE ERROR: the earlier `[...] as const` list
+ * only typed its entries as a SUBSET of the digest's keys, so a 12th field
+ * forgotten here compiled clean and silently recreated the staleness this gate
+ * exists to kill (B298). A missing key errors below; so does a stale extra one.
  */
-const DIGEST_KEYS = Object.freeze([
-  'characterId', 'character', 'game', 'connected', 'healthPct',
-  'score', 'flagsKey', 'room', 'lockedSkills', 'uptimeStartedAt', 'lastInboundAt',
-] as const)
+const DIGEST_KEY_RECORD: Record<keyof CharacterDigest, true> = {
+  characterId: true, character: true, game: true, connected: true, healthPct: true,
+  score: true, flagsKey: true, room: true, lockedSkills: true,
+  uptimeStartedAt: true, lastInboundAt: true,
+}
+const DIGEST_KEYS = Object.freeze(
+  Object.keys(DIGEST_KEY_RECORD) as readonly (keyof CharacterDigest)[],
+)
 
 function digestEqual(a: CharacterDigest, b: CharacterDigest): boolean {
   for (const k of DIGEST_KEYS) if (a[k] !== b[k]) return false
@@ -398,6 +408,19 @@ export function resetOverviewTarget(): void {
 export function useDigests(): readonly CharacterDigest[] {
   return useSyncExternalStore(subscribe, getDigests, getDigests)
 }
+
+// ── Input-bar ↑ history (B303) ───────────────────────────────────────────────
+// WINDOW-lifetime, deliberately: the bar is rendered `{open && …}` so it
+// unmounts on every Session⇄Overview flip, and a component ref there made the
+// history per-VISIT — while B278's design says per-window ("in-memory and per
+// window"). Pitfall #132 in reverse: the state's lifetime was NARROWER than its
+// documented scope. Plain module state, not a subscribed slice — it is read at
+// keydown time and never rendered, so nothing needs to re-render when it
+// changes. Mutated IN PLACE by the bar (unshift + truncate); the cap lives here
+// beside it because an array that now lives for the window's whole life must be
+// bounded by construction.
+export const overviewInputHistory: string[] = []
+export const OVERVIEW_INPUT_HISTORY_MAX = 200
 
 // ── Shared 1 Hz clock ────────────────────────────────────────────────────────
 // Lives HERE, not in a React context on OverviewShell, because the cards are

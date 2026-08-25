@@ -67,7 +67,17 @@ export function mindstateName(idx: number): string {
 
 // Non-skill pseudo-keys that ride the same `expSkills` map (see ExpPanel's
 // footer). They are not skills and must never be counted as saturated.
+//
+// B299: ONE set and ONE predicate. This file used to hold a second,
+// same-content set (`META_KEYS`, compared raw) for the compact view — two lists
+// answering the same question with divergent case handling is pitfall #127's
+// duplicate-list shape, one rename away from the card and the panel
+// disagreeing on what a skill is. The lowercased compare is the keeper (it is
+// the superset filter; the keys as pushed by the game are lowercase anyway).
 const NON_SKILL_KEYS = new Set(['tdp', 'favor', 'rexp', 'sleep'])
+function isNonSkillKey(key: string): boolean {
+  return NON_SKILL_KEYS.has(key.toLowerCase())
+}
 
 export interface ExpSummary {
   /** Skills with a parseable line (excludes the tdp/favor/rexp/sleep pseudo-keys). */
@@ -86,7 +96,7 @@ export function summarizeExp(skills: Record<string, string>): ExpSummary {
   let tracked = 0, locked = 0, nearLocked = 0
   let topSkill: ExpSummary['topSkill'] = null
   for (const [skill, text] of Object.entries(skills)) {
-    if (NON_SKILL_KEYS.has(skill.toLowerCase())) continue
+    if (isNonSkillKey(skill)) continue
     const { mindstateIdx } = parseExp(text)
     tracked++
     if (mindstateIdx >= MIND_LOCK_IDX) locked++
@@ -105,16 +115,15 @@ export function summarizeExp(skills: Record<string, string>): ExpSummary {
 export type SortMode = 'alpha' | 'rate' | 'rank' | 'next'
 export const SORT_MODES: SortMode[] = ['alpha', 'rate', 'rank', 'next']
 
-/** Meta keys that are not skills — they ride the same map as pseudo-entries. */
-const META_KEYS = new Set(['rexp', 'tdp', 'favor', 'sleep'])
-
 /**
  * Skills ACTIVELY training — a mindstate above 0. This is what makes the view
  * self-bounding: it is "what you are working on", not the full skill list.
+ * (Shares `isNonSkillKey` with `summarizeExp` — B299: one definition of "not a
+ * skill", so the card and the panel can never drift.)
  */
 export function activeSkillEntries(skills: Record<string, string>): [string, string][] {
   return Object.entries(skills).filter(([k, text]) =>
-    !META_KEYS.has(k) && parseExp(text).mindstateIdx > 0)
+    !isNonSkillKey(k) && parseExp(text).mindstateIdx > 0)
 }
 
 /** Pinned first, then the chosen mode. Ties always fall to name, so the order is

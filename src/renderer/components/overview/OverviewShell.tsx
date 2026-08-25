@@ -66,6 +66,16 @@ export default function OverviewShell({ open, characterCount, activeCharacterId,
     return () => ro.disconnect()
   }, [hostRef])
 
+  // B296: subscribe THIS component to the 1 Hz clock. The fresh-per-render
+  // `getComputedStyle` read below was justified by "the shell renders on the
+  // 1 Hz clock" — which was false: the shell's only changing subscription was
+  // options (a clock notify left that snapshot identical, so React bailed), so a
+  // `--game-font-size` change never re-planned the grid except by an incidental
+  // App re-render (the Settings modal closing masked it). This makes the claim
+  // true by construction: the clock only runs while the view is open, a shell
+  // render is cheap (the cards are PORTALED — they are GameWindow's children,
+  // not re-rendered by this), and font changes now land within a second.
+  useOverviewNow()
   // `em` resolved against the GAME font, so every threshold in overviewLayout
   // tracks Settings → Font Size (Principle #9) instead of a fixed pixel guess.
   //
@@ -73,8 +83,8 @@ export default function OverviewShell({ open, characterCount, activeCharacterId,
   // when a CSS custom property does, so a memo keyed on the box and the tile
   // size held a stale value until something else happened to invalidate it —
   // and the grid would not re-plan on a font change at all, which is precisely
-  // what this is here to make it do. The shell renders on the 1 Hz clock, so
-  // this is a few `getComputedStyle` calls a second, only while the view is open.
+  // what this is here to make it do. With the clock subscription above, this is
+  // a few `getComputedStyle` calls a second, only while the view is open.
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--game-font-size')
   const parsedEm = parseFloat(raw)
   const emPx = Number.isFinite(parsedEm) && parsedEm > 0 ? parsedEm : 12

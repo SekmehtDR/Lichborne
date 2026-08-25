@@ -1,3 +1,19 @@
+// Theme Editor — the portaled modal that edits a custom theme's CSS-variable
+// map, opened by ThemePicker on "Customize…" / "Edit".
+//
+// The editable surface is the declarative `TABS` schema below (Surfaces ·
+// Game Text · Vitals · HUD · Room & Exp): every row is a Color / Gradient /
+// Rgba / Preset field keyed by the `--var` it paints, with a `desc` that
+// becomes the row's hover tooltip (B112). A var NOT listed there is simply not
+// reachable from this editor — add a field to expose one. Every edit
+// live-applies through `applyCustomTheme(next)` as you type, so the whole app
+// previews the change; Save hands `{ ...theme, name, vars }` up via `onSave`
+// and Cancel is the PARENT's job to undo (ThemePicker restores the previous
+// theme). Persistence is not here either — the parent owns `myThemes`.
+// Color text fields accept named colors resolved on commit (blur/Enter,
+// v0.14.6) but theme vars always STORE hex; a theme must never depend on the
+// named palette existing. Rendered on top of the picker at document.body.
+
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { applyCustomTheme, type ThemeVars } from '../themes'

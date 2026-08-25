@@ -1,3 +1,41 @@
+// Genie Maps view — the SVG graph renderer behind MapPanel's "Genie Maps" mode.
+// Draws one zone at a time at the hand-curated coordinates in the Genie XML
+// (no auto-layout, no BFS placement, no zone stitching), with Genie's own
+// rendering rules mirrored from MapForm.cs (8×8 rects CENTRED on the XML
+// position, arcs through the position, labels at +1/+1). MapPanel owns the
+// parsed `zones`; this component owns view state (zone, level, pan/zoom) and
+// the current-room MATCH. It is a big file, so the orientation lives in its
+// `// ──` section comments — this header is the index:
+//
+//   • "Genie Map view" — the original design note. Its "title alone, no
+//     description disambig" paragraph is HISTORY; the resolver below is the
+//     live behaviour.
+//   • "Exit-set matching" + "Current-room resolver (pure, testable)" — the
+//     matching signals. Genie data carries NO game room ids, so identity is
+//     TITLE (the candidate pool) + DESCRIPTION + EXIT-SET + graph adjacency,
+//     mirroring GenieMaps' own `Node.Compare`. `resolveGenieRoom` is a pure
+//     module-level function; ONE effect in the component owns the breadcrumb
+//     (`prevLocationRef`) and the cross-zone hold counter (`staleCountRef`),
+//     writes the BREADCRUMB back to MapPanel's `persist` so a view switch
+//     doesn't lose it (the hold counter is deliberately NOT persisted — it
+//     starts fresh on remount), and is idempotency-gated for StrictMode.
+//     Exits are ADDITIVE,
+//     never a pre-filter (pitfall #70 — read it before touching the ladder).
+//   • "BFS over Genie arcs within a zone" / "Click-to-walk" — left-click PINS
+//     a path (or, on a cross-zone stub, switches zone); right-click WALKS via
+//     `sendWalkPath`, one command per `WALK_STEP_MS`. Handlers in the node
+//     layer's deps read their inputs from `walkCtxRef` so their identities
+//     stay stable and the whole-zone `nodeRects` memo holds.
+//   • "Fit-to-view + center-on-current" / "Pan / zoom" — the follow camera is
+//     a `useLayoutEffect` (same paint frame as the indicator's new position);
+//     `snapTransform` drops the glide for big jumps; a `ResizeObserver`
+//     recentres when a hidden (0×0) tab regains its size.
+//   • "Memoized SVG layers" — every hook MUST sit above the "Render guards"
+//     early returns (hook order is load-bearing, React #310). Per-colour
+//     category effects render only while `showEffects` (still + animations
+//     on) and only for the `EFFECT_CAP` nearest rooms; the pan group wears
+//     ONE of two freeze classes — `genie-anim-off` (setting off) or
+//     `genie-pan-dragging` (drag / motion / zoom).
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import type { GenieZone, GenieNode } from './mapTypes'
 import { noteAliases, COLOR_LEGEND, normalizeDesc, normalizeMatchKey } from './mapTypes'

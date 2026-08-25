@@ -1,3 +1,20 @@
+// global.d.ts — the renderer's ambient types: `window.api` (the preload bridge) + `__APP_VERSION__`.
+//
+// TYPES ONLY. `window.api` is the one door between the renderer and the main
+// process — the object preload's contextBridge exposes — and this file is its
+// declared shape, grouped by subsystem (session lifecycle, the multi-window
+// roster, per-session push channels, Lich SQLite readers and command
+// injection, profile I/O, Profile Transfer, Session Log, AI, SimuCoin, …).
+// The implementation lives in preload; keep the two in lockstep — a method
+// declared here but not exposed there is a runtime `undefined`, and one
+// exposed there but not declared here is unusable from typed renderer code.
+// Payload/result shapes come from `../shared/types` (the single source both
+// processes import); don't restate them inline.
+//
+// Two conventions visible in the signatures: anything about a CHARACTER takes
+// a `sessionId`; every `on*` subscription returns its unsubscribe function.
+// `__APP_VERSION__` is a build-time constant.
+
 import type {
   LoginCredentials, LoginResult, SessionId, SessionRosterPayload, RosterEntry,
   GameEventBatch, ConnectionStatusPayload, RawXmlPayload, ErrorPayload,

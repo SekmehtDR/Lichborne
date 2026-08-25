@@ -1,3 +1,14 @@
+// LichProfileModal — a read-only viewer for the YAML profiles in Lich's
+// `scripts/profiles/` folder: a list on the left (`window.api.listLichProfiles`),
+// the selected file's text on the right through a minimal YAML highlighter
+// (keys / strings / comments / booleans / numbers → `yaml-*` spans).
+//
+// Reads `lichPath` from the `lichborne.advancedSettings` localStorage key and
+// composes the file path HERE in the renderer (`dirname(lichPath)/scripts/
+// profiles/<name>`) before `window.api.readFile` — the shape pitfall #100 warns
+// about; let main build the path if this is ever revived. As of this header
+// nothing in `src/` mounts it (grep `LichProfileModal` — definition only).
+
 import { useState, useEffect } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

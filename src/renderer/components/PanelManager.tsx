@@ -1,3 +1,22 @@
+// PanelManager — the "Layout Manager" modal (the app-bar Layout button): the
+// mode chooser (Windowed Panels, recommended · Static Panels, legacy), and
+// then a per-mode body. Windowed: a Windows section (Lock windows · Fit bars
+// to content · Rebuild from panels) + Add Window. Static: Panel Locations
+// (the four docked slots, each independently added/removed), each slot's
+// Streams (move / reorder / remove), and the Available Streams pool.
+//
+// Pure view over the zone arrays + `*Added` flags; every mutation is a
+// callback into GameWindow. The one derivation it owns matters: `allTabs` is
+// built ONLY from zones that are added — a tab parked in an un-added zone must
+// not block its stream id from appearing under Available Streams (the same
+// gate as GameWindow's `watchedStreamsRef`; the v0.8.3 "Moons" fix), and a
+// discovered id that matches a builtin PanelType stays in the builtin column,
+// never as a duplicate custom row. Static-only controls (Reset Panels, the
+// zone manager) are hidden in Windowed mode rather than left as invisible
+// no-ops; Add Window stays available while LOCKED, because the lock freezes
+// window geometry, not what lives inside a window. Add/remove of a SLOT is
+// independent of the streams inside it.
+
 import type { TabDef, PanelType } from './PanelFrame'
 import { backdropHandlers } from '../utils/backdropClose'
 import { streamLabel } from '../aiConfig'

@@ -1,3 +1,16 @@
+// aiKeys — encrypted-at-rest store for the BYOK AI API keys (DESIGN §10, v0.16.0).
+//
+// One JSON file, {userData}/ai-keys.json, keyed by AI capability
+// (`text` / `embeddings` / `image`) rather than by account — the passwords.ts
+// safeStorage pattern in its own file so AI keys never mingle with account
+// passwords. Consumed only by ./index.ts (the AI IPC handlers), which is the
+// single place a decrypted key is ever read; the key is handed straight to the
+// provider client and only the boolean `aiKeyStatus()` map crosses IPC.
+//
+// Invariants: never expose getAIKey() over an IPC handler; and note that
+// setAIKey() silently no-ops and getAIKey() returns null when safeStorage
+// encryption is unavailable — callers must treat "no key" as the normal
+// degraded state, not an error.
 import { app, safeStorage } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'

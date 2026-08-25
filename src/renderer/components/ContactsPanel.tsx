@@ -1,3 +1,21 @@
+// Contacts panel — the modal that edits a character's CONTACTS (who: name,
+// template, guild/circle, notes, plus the read-only last-seen + F34 encounter
+// stats) and their TEMPLATES (how they paint: text/bg color, bold, a text
+// effect, an optional tag with its own effect, and group gating).
+//
+// Rendered by GameWindow, portaled to document.body. Per character via
+// `useCharacter()`; both lists load ONCE on mount and every write goes
+// straight to `saveContacts` / `saveContactTemplates` (localStorage) with
+// `onSaved` so the host can schedule the profile save and pick up the
+// change. `openContactId` selects a contact on open. The one invariant the
+// file states for itself: EVERY preview here goes through `paintContactText`
+// — the same builder `renderSegmentFull` uses for game text — so there is ONE
+// definition of how a template looks and no second copy to drift (a rainbow
+// template used to preview as flat colour). Deleting a template does not
+// touch the contacts that referenced it; their `templateId` just stops
+// resolving (`getTemplate` returns null). Color fields resolve named colors
+// on blur via `normalizeColorInput`.
+
 import { useEffect, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { ResizeDivider } from './ResizeDivider'

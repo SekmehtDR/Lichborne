@@ -16,8 +16,12 @@ import '../styles/app-bar.css'
 // (the active GameWindow handles it, guarded on isActiveRef). No keyboard
 // accelerators here (those live in App.tsx / the native menu).
 //
-// Deferred (v1): per-button active-state highlight (needs GameWindow to report
-// open-panel state up) and the per-session script palette (currently empty).
+// The per-button active-state glow (originally deferred) SHIPPED in v0.10.0's
+// polish pass: GameWindow reports each overlay's open state up through
+// `SessionStatus.panel*`, and this bar applies `btn-*--active` for the ACTIVE
+// session — including the ⋯ More button when a hidden item is open. The
+// per-session script palette stub was removed rather than built; build it
+// fresh if wanted (CLAUDE.md, top-chrome section).
 
 interface Props {
   onAdd: () => void

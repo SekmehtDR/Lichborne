@@ -1,3 +1,16 @@
+// claudeProvider — hand-rolled streaming client for the Anthropic Messages API (DESIGN §10).
+//
+// The TEXT capability of the AIProvider: one exported function,
+// claudeChatStream(), which POSTs a streaming request over Electron's global
+// `fetch`, parses the SSE frames itself, calls `onDelta` per text chunk, and
+// resolves with token usage. Called only from ./index.ts (the `ai:chat` and
+// `ai:test-key` handlers); it never touches IPC or key storage itself.
+//
+// Deliberately NOT @anthropic-ai/sdk — see the note below. Two things to keep
+// intact: the `error` SSE frame branch in handleFrame() MUST throw (a mid-stream
+// overloaded/529 otherwise ends the stream silently with a partial result), and
+// describeError() is the user-facing text for non-2xx responses — keep it
+// readable, it surfaces verbatim in the client.
 import type { AIChatMessage, AIUsage } from '../../shared/types'
 
 // Thin raw-fetch client for the Anthropic Messages API (the TEXT capability of

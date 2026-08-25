@@ -1,3 +1,14 @@
+// Renderer AI client (DESIGN §10) — the ONE renderer entry point for a streamed
+// model call: `aiChatStream(opts, handlers)` → `window.api.aiChat` → main's
+// capability-routed adapter, with deltas / done / error pushed back over three
+// per-request IPC channels.
+//
+// Owns: the `requestId` that scopes every listener (concurrent calls never
+// cross), the session token-usage accumulator behind the Settings cost meter,
+// and the default model (the user's configured text model from `loadAIConfig`).
+// Invariants: the API key NEVER reaches this process — only prompts go out and
+// text + usage come back; `abort()` tears the listeners down BEFORE the cancel
+// lands, so a cancelled request can never fire `onDone`/`onError` afterwards.
 import { loadAIConfig } from '../aiConfig'
 import type { AIChatMessage, AIUsage } from '../../shared/types'
 

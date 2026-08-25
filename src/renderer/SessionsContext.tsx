@@ -1,3 +1,24 @@
+// SessionsContext — the list of character tabs THIS WINDOW renders, and which is active.
+//
+// APP-LEVEL (mounted once in App.tsx, inside RosterProvider), not per-session.
+// Owns `sessions` (one `SessionRecord` per tab), `activeId`, and the mutators
+// GameWindow/App drive: add / remove / setActive / updateStatus /
+// updateCharacterName. The cross-window picture lives in RosterContext; this
+// is the window-local render source.
+//
+// Three things to hold:
+//  • A tab's identity is `CharacterId` (account + character + game shard) —
+//    computed ONCE in shared/characterId.ts (B301) and re-exported from here.
+//    `addSession` REPLACES an existing record with that id (a reconnect inside
+//    the same tab) and resets its status to DEFAULT_STATUS (B96, v0.8.0).
+//  • `SessionStatus` is the SMALL snapshot the tab bar / app-bar read (health,
+//    RT, indicators, which overlay panels are open). GameWindow pushes it via
+//    `updateStatus`, which BAILS when no field changed so a vital tick doesn't
+//    re-render the tab strip — that check is a hand-written field-by-field
+//    chain, so a NEW `SessionStatus` field MUST be added to it, or changes to
+//    that field alone never re-render anything.
+//  • The provider value is `useMemo`'d over stable callbacks; keep it so.
+
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
 import type { SessionId } from '../shared/types'
@@ -11,9 +32,12 @@ import type { SessionId } from '../shared/types'
 // the other in disconnected state for re-login.
 export type CharacterId = string
 
-export function makeCharacterId(account: string, character: string, game: string): CharacterId {
-  return `${account.toLowerCase()}::${character.toLowerCase()}::${game.toLowerCase()}`
-}
+// B301: the formula lives ONCE in shared/characterId.ts (main imports the same
+// module, so the processes cannot drift). Imported-then-re-exported (a bare
+// `export … from` would not bind the name for this file's own use below), and
+// re-exported because this is where renderer code has always imported it from.
+import { makeCharacterId } from '../shared/characterId'
+export { makeCharacterId }
 
 // Snapshot of game-state signals that the tab bar (and any other consumer)
 // needs to render glyphs/health/dim state. GameWindow pushes updates via

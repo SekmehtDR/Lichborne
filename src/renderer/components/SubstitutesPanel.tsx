@@ -1,3 +1,22 @@
+// Substitutes editor — the Automations tab that edits the `substitutes` rule
+// store (DESIGN §31). What a substitute IS is described in the block below
+// the imports; this panel is MutePanel's structural twin.
+//
+// Rendered by AutomationsPanel inside a `CharacterProvider`: `useCharacter()`
+// names the store this panel edits, and in the F37 "All Characters" scope
+// that provider is re-pointed at the virtual `_global` character, so the same
+// `loadSubstitutes`/`saveSubstitutes` calls land on the global keys unchanged.
+// Every write goes through ONE `persist()`: set state → `saveSubstitutes`
+// (localStorage) → `onSaved` (the host's scheduled profile save → YAML). The
+// list is loaded ONCE on mount — the host remounts the panel (its
+// `importNonce` key) after an import or a scope move. Entry points besides
+// the sidebar: `prefill` (a right-click "Substitute …" arrives as an unsaved
+// draft) and `openRuleId` (slash `/sub edit`). `scope='global'` hides the
+// Groups row; `onMoveScope` renders the F63 "Applies to" control, which MOVES
+// the draft to the other store. Analytics (`useRuleAnalytics` +
+// `AnalyticsReview`) is opt-in via `analyticsOn`. The per-rule "Apply to"
+// stream restrict reuses `STREAM_OPTIONS` from mutes.ts.
+
 import { useEffect, useRef, useState } from 'react'
 import { ResizeDivider } from './ResizeDivider'
 import { loadSubstitutes, saveSubstitutes, newSubstitute, type SubstituteRule } from '../substitutes'

@@ -1,3 +1,20 @@
+// CharacterTabBar — the character tab strip hosted by AppBar (one tab per
+// session in THIS window).
+//
+// Each tab shows name + Lich/Direct pill + game code + live health% + ONE
+// priority-resolved status glyph (Dead > Stunned > Bleeding > Roundtime; the
+// slot stays reserved via CSS so tab width never shifts). Disconnect reads as
+// dim + italic with the last-known glyph preserved. Right-click opens the
+// per-character action menu (v0.11.6 expansion) — items built by
+// characterMenu.ts, SHARED with the Overview card so the two surfaces can't
+// offer different actions; only actionable options are listed (no greyed rows)
+// and the connection toggle sits LAST below a divider.
+//
+// This is an app-level strip, so re-render economy matters: the single 500ms
+// RT tick runs ONLY while some session has a roundtime pending (keyed on the
+// furthest expiry, self-clearing one tick past it) — don't add per-tab timers
+// or high-frequency state here.
+
 import { useEffect, useState } from 'react'
 import { useSessions, type CharacterId, type SessionRecord } from '../SessionsContext'
 import { useRoster } from '../RosterContext'

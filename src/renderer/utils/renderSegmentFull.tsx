@@ -1,3 +1,30 @@
+// Highlight + contact compositor — the full-fat segment renderer behind the main
+// window (TextLineRow) and the Room panel's prose sections.
+//
+// Three exports, in pipeline order:
+//   • `computeLineMatchRanges` (B172) — ONE scan of the whole line for contact
+//     names + match-scope highlight rules (each rule pre-gated on its
+//     `fastLower` literal before the regex runs), returning ranges in LINE
+//     coordinates so a multi-segment line pays the ruleset once, not once per
+//     segment.
+//   • `renderSegmentFull` — intersects those ranges with this segment's window
+//     (B115: matching is line-wide, so a rule can cross the segment boundaries
+//     DR's XML fragments a line into), then resolves each non-overlapping run:
+//     contacts outrank highlights (B116); among highlights it is SPECIFICITY +
+//     PER-PROPERTY COMPOSITING (v0.11.3, ProfanityFE's model) — text colour,
+//     background, bold and effect are each taken independently from the
+//     SMALLEST covering highlight that sets that property, equal-length ties to
+//     the first-encountered (top-of-list) rule. Contact runs paint through
+//     `paintContactText` (the same builder the Contacts previews use); plain
+//     runs fall back to `renderSegment`.
+//   • `getLineHighlightStyle` — the separate LINE-scope path: first matching
+//     line rule wins and styles the whole line container.
+//
+// Invariants: keep the run-merge `key` in sync with the composited properties
+// (adjacent runs merge only when the key matches); every `exec` loop guards
+// zero-width matches by bumping `lastIndex`; and any caller rendering a
+// multi-segment line must pass precomputed ranges or it re-runs the scan per
+// segment (the pre-B172 cost).
 import type { TextSegment } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'
 import type { CompiledRule } from '../HighlightsContext'

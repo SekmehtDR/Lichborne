@@ -12,14 +12,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRoster } from '../../RosterContext'
-import { useOverviewTarget, setOverviewTarget } from '../../overviewStore'
+import {
+  useOverviewTarget, setOverviewTarget,
+  overviewInputHistory, OVERVIEW_INPUT_HISTORY_MAX,
+} from '../../overviewStore'
 import { loadCommandHistorySettings, shouldRememberCommand } from '../../commandHistorySettings'
 
 /** Sentinel for "every connected character". */
 const ALL = '__all__'
-
-/** Matches the game bar's cap. Ephemeral, so this only bounds memory. */
-const HISTORY_MAX = 200
 
 interface Props {
   /** The character Session view is on. See the follow effect below. */
@@ -58,7 +58,13 @@ export default function OverviewInputBar({ activeCharacterId }: Props) {
   // `dispatchUserText`.
   //
   // Newest first, matching the game bar, so index 0 is the last thing sent.
-  const historyRef = useRef<string[]>([])
+  //
+  // B303: the ARRAY lives in overviewStore, not a ref here — this bar is rendered
+  // `{open && …}` so it unmounts on every Session⇄Overview flip, and a component
+  // ref made the history per-VISIT (toggle out to check something, come back, ↑
+  // recalls nothing) when the design says per-WINDOW. The browse INDEX and the
+  // stashed draft stay component-local on purpose: re-entering the view at the
+  // live line with an empty draft is correct.
   const idxRef = useRef(-1)
   const draftRef = useRef('')
 
@@ -141,8 +147,13 @@ export default function OverviewInputBar({ activeCharacterId }: Props) {
     // Same gate as the game bar, so the app-wide minimum length means the same
     // thing on both, and a consecutive repeat does not stack.
     if (shouldRememberCommand(cmd, loadCommandHistorySettings().minLength)
-        && historyRef.current[0] !== cmd) {
-      historyRef.current = [cmd, ...historyRef.current].slice(0, HISTORY_MAX)
+        && overviewInputHistory[0] !== cmd) {
+      // In place — the array is shared module state (B303), so this window's
+      // next visit sees it. The cap matters more now that it lives indefinitely.
+      overviewInputHistory.unshift(cmd)
+      if (overviewInputHistory.length > OVERVIEW_INPUT_HISTORY_MAX) {
+        overviewInputHistory.length = OVERVIEW_INPUT_HISTORY_MAX
+      }
     }
     // Enter always returns you to the live line, stored or not.
     idxRef.current = -1
@@ -161,7 +172,7 @@ export default function OverviewInputBar({ activeCharacterId }: Props) {
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      const h = historyRef.current
+      const h = overviewInputHistory
       // Empty history is a NO-OP, never a wipe of what is typed.
       if (h.length === 0) return
       // Entering from the live line stashes the draft, so ↓ back to the bottom
@@ -177,7 +188,7 @@ export default function OverviewInputBar({ activeCharacterId }: Props) {
       // which Binu reported against the game bar; no reason to ship it twice.
       const next = Math.max(-1, idxRef.current - 1)
       idxRef.current = next
-      setText(next === -1 ? draftRef.current : (historyRef.current[next] ?? ''))
+      setText(next === -1 ? draftRef.current : (overviewInputHistory[next] ?? ''))
     }
   }
 

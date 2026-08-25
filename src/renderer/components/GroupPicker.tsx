@@ -1,3 +1,15 @@
+// GroupPicker — the "+ Group" chip control every rule editor uses to assign a
+// rule's `groupIds` (Highlights / Triggers / Macros / Aliases / Mutes /
+// Substitutes / Contacts). Assigned groups render as removable colour chips;
+// the add menu lists assigned-then-available.
+//
+// Controlled: it owns no rule state, just calls `onChange` with the next id
+// list. Reads the group catalogue from `useGroups()`, so it can only mount
+// under a GroupsProvider (per-session, inside GameWindow). The menu is
+// portaled to `document.body` at a fixed position under the button
+// (`.gp-menu`, groups.css) so a scrolling editor pane can't clip it; an
+// outside `mousedown` closes it.
+
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGroups } from './GroupsContext'

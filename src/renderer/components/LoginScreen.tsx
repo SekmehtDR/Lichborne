@@ -1,3 +1,19 @@
+// LoginScreen — the LEGACY single-character login form, kept as the type host
+// for `SessionInfo`.
+//
+// Nothing renders this component any more: the Launcher + AddCharacterWizard
+// own the modern connect flow, and every import of this file elsewhere
+// (App, SessionsContext, GameWindow, LichDashboard) is `import type
+// { SessionInfo }`. The form itself still shows the old shape of a connect —
+// build `LoginCredentials`, `window.api.login`, then import the character's
+// YAML into localStorage and export shared + character profiles before
+// handing `onConnected` a `SessionInfo`. Two limits its own comments record:
+// the game is INFERRED from the global `lichPort` (this screen has no
+// `character.game` to consult — the wizard supersedes it for multi-shard
+// setups), and `document.title` is owned by AppShell, not here. It shares
+// `LichSetupFields` (wrapped in `.login-form` for CSS scoping) with the
+// Lich Setup dialog. Don't extend it; add to the Launcher/Wizard path instead.
+
 import { useState, useEffect, useRef } from 'react'
 import { LoginCredentials } from '../../shared/types'
 import { exportSharedProfile, exportCharacterProfile, importSharedProfile, importCharacterProfile, clearCharacterLocalStorage } from '../profile'

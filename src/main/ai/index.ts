@@ -1,3 +1,17 @@
+// ai/index — the AI IPC surface: the main-process half of the §10 AIProvider (v0.16.0).
+//
+// registerAIHandlers() (called once from main.ts) owns every `ai:*` channel:
+// key management (set/clear/status — booleans out, never the secret), a tiny
+// real-call key test, and the fire-and-stream chat path — the renderer sends
+// `ai:chat`, main streams `ai:chat-chunk` / `-done` / `-error` back to the
+// SAME webContents keyed by requestId, and `ai:chat-abort` cancels one
+// in-flight request via its AbortController.
+//
+// ALL provider traffic runs here, in main — the renderer never holds a key and
+// never talks to the provider directly. Feeds: aiKeys.ts (the safeStorage key
+// store) and claudeProvider.ts (the raw-fetch SSE client). Only the `text`
+// capability is implemented; `embeddings` / `image` are declared and must keep
+// failing with a clear message, never a crash (guardrail #3).
 import { ipcMain } from 'electron'
 import { setAIKey, getAIKey, clearAIKey, aiKeyStatus } from './aiKeys'
 import { claudeChatStream } from './claudeProvider'

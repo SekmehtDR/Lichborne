@@ -1,3 +1,17 @@
+// ModeSwitcher — the "Mode ▾" button + dropdown that applies a saved mode (a
+// named set of group states), clears it ("No Mode"), or jumps to Manage… The
+// label is the active mode's name, with a trailing `*` once the user has
+// hand-toggled groups away from it (`isModified`).
+//
+// Reads everything from `useGroups()` — modes, `activeModeId`, `isModified`,
+// `applyMode`, `clearMode` — so it needs the per-session GroupsProvider and
+// therefore lives in the Icon Bar's `trailing` slot inside GameWindow, not in
+// the app-level app-bar. GameWindow's `onManage` opens Automations on the
+// Groups tab. The menu is portaled to `document.body` and, because the Icon
+// Bar can sit at the BOTTOM of the window, it right-aligns under a right-side
+// button, clamps to the viewport, and flips upward when the button is in the
+// lower half. Outside `mousedown` or Escape closes it.
+
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useGroups } from './GroupsContext'

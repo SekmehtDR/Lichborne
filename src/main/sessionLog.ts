@@ -1,3 +1,39 @@
+// sessionLog — the Session Log on disk: per-character daily files, and every `session-log:*` IPC (DESIGN §28, v0.7.0).
+//
+// Main's half of the Session Log. The renderer decides WHAT is captured
+// (GameWindow.logToSession → `session-log:append`); this file owns everything
+// after that: a per-character buffered WRITER (1s / 100-record flush, forced
+// at 5000) into {userData}/Logs/{Character}/{Character}_YYYY-MM-DD.log, the
+// background MAINTENANCE pass (gzip closed days to `.log.gz`, prune by
+// `retentionDays`, cap raw `.log` bytes by `maxRawMB` — never today's file,
+// never an archive), and all the READ side: list-days, the paginated tail,
+// search, the per-day stream-tag list, disk usage, the Export builder, a
+// time-window reader, and the Catch Me Up digest. registerSessionLogHandlers()
+// is called once from main.ts; flushAllSessionLogs() runs on graceful shutdown.
+//
+// Rules that hold the whole file together:
+//  • Every reader goes through resolveDayFile() + readLogFile() (plain wins
+//    over `.gz`, gunzip is transparent), and every read handler FLUSHES the
+//    character's buffer first so a read reflects the live session.
+//  • Two line formats are accepted forever — the trimmed `[HH:MM:SS][stream]`
+//    (the date is in the filename) and the legacy dated form — via
+//    EXPORT_LINE_RE; the renderer's tail parser must keep accepting both too.
+//  • Big data never crosses IPC: the Export builder and the digest take a spec
+//    and return a small result; only the requested slice of a day is ever sent.
+//  • Anything that walks many day-files is ASYNC and yields between days
+//    (search, listStreams, the digest) — main owns every session's socket, so
+//    a synchronous multi-file scan freezes EVERY connected character at once.
+//    readWindow() is the one synchronous walker and is for short windows only.
+//  • A TIME window is filtered here, never approximated by a line count
+//    (pitfall #92; `maxRows` is a transport tail, not the bound).
+//  • The Catch Me Up digest (buildCatchupDigest) is the AI feature's reader:
+//    it tallies ranks/hits/deaths/work orders/banking over the RAW rows BEFORE
+//    dedup (identical lines are separate real events), dedups on text alone
+//    (DR double-emits speech — pitfall #49), skips the state-readout streams
+//    in DIGEST_SKIP_STREAMS (keep it in sync with CATCHUP_SKIP_STREAMS in
+//    GameWindow), and redacts ONLY the AI-bound body via redactForAI — the log
+//    on disk stays pristine. Its game math (coin ratios, the damage ladder) is
+//    mirrored from verified sources; never invent DR constants here.
 import { app, ipcMain, shell, dialog, clipboard } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'

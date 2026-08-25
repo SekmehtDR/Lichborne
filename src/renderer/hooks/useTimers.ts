@@ -1,3 +1,19 @@
+// useTimers — countdown state for the roundtime / cast / aim timer bars.
+//
+// Takes the three ABSOLUTE expiry timestamps (local-clock ms; 0 = no timer)
+// that game events stamp into session state, and returns what a bar needs:
+// seconds remaining (`rt`/`ct`/`aim`, floored at 0), the duration each timer
+// STARTED with (`*Max`, captured in a ref the moment its expiry changes), and
+// `rtPct`/`ctPct` = remaining ÷ start. Consumers include the timer strips and
+// every Overview card, so one instance runs per bar shown.
+//
+// The clock is a 10 Hz `setInterval` that exists ONLY while a timer is live —
+// and (B292) it must CLEAR ITSELF once every stamp is in the past, because the
+// expiry values are never zeroed after a character's first roundtime, so the
+// "all zero" bail alone never holds again. Without the self-clear one RT armed
+// a permanent tick for the whole session. A new timer event changes a dep and
+// re-arms a fresh interval; keep that shape.
+
 import { useEffect, useRef, useState } from 'react'
 
 export function useTimers(rtExpires: number, ctExpires: number, aimExpires = 0) {
@@ -23,7 +39,18 @@ export function useTimers(rtExpires: number, ctExpires: number, aimExpires = 0) 
 
   useEffect(() => {
     if (rtExpires === 0 && ctExpires === 0 && aimExpires === 0) return
-    const id = setInterval(() => setNow(Date.now()), 100)
+    // B292: the interval must ALSO stop itself once every live stamp is in the
+    // past. The expiry timestamps are set by game events and never zeroed, so
+    // the all-zero guard above almost never holds again after a character's
+    // first roundtime — without the self-clear, one RT armed a permanent 10 Hz
+    // tick (× every Overview card, × every character, for the whole session).
+    // The final tick still runs setNow, so the bar renders its 0 before the
+    // interval dies; a NEW timer event changes a dep and re-arms a fresh one.
+    const id = setInterval(() => {
+      const t = Date.now()
+      setNow(t)
+      if (t >= rtExpires && t >= ctExpires && t >= aimExpires) clearInterval(id)
+    }, 100)
     return () => clearInterval(id)
   }, [rtExpires, ctExpires, aimExpires])
 

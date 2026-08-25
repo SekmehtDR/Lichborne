@@ -133,6 +133,13 @@ function OverviewCardImpl(p: Props) {
   // The feed shows whichever stream the card's dropdown selects.
   const feed = useMemo(() => {
     if (o.feedLines <= 0) return []
+    // B291: the shell publishes the corrected capacity in an EFFECT, so when the
+    // user flips the feed 0→N the options land on this render while the store
+    // still holds 0 — and `slice(-0)` is `slice(0)`, the WHOLE scrollback (up to
+    // 2400 TextLineRows × every open character) committed for one frame before
+    // the real capacity arrives. One empty frame instead: the feed was off a
+    // moment ago, so nobody can see it.
+    if (capacity <= 0) return []
     if (p.streamId === 'main') return p.lines.slice(-capacity)
     // MERGE the stream's own buffer with the parallel capture, because neither
     // is sufficient alone:
@@ -205,11 +212,11 @@ function OverviewCardImpl(p: Props) {
         // would render at the active character's size. Same mechanism PanelFrame
         // uses for its per-panel A−/A+ override.
         ['--game-font-size' as string]: `${p.settings.largePrint ? 18 : p.settings.fontSize}px`,
-        // Drives the feed's FIXED height in CSS. Without it the feed is
-        // content-sized, so every batch of game text resized the card and the
-        // whole grid re-flowed — the "quiver" Sekmeht saw at certain chunk
-        // sizes. A card must be a stable rectangle whatever arrives in it.
-        ['--ov-feed-lines' as string]: String(o.feedLines),
+        // (B297: a `--ov-feed-lines` custom property used to be written here,
+        // with a comment crediting it for preventing the grid "quiver". It had
+        // ZERO consumers — the quiver is actually prevented by the grid row
+        // floor + `.ov-card { overflow: hidden }` + the feed's flex/clip in
+        // overview.css. Removed so nobody hunts a mechanism that doesn't exist.)
       } as React.CSSProperties}
       role="button"
       tabIndex={0}
@@ -356,9 +363,11 @@ function OverviewCardImpl(p: Props) {
  * three primitives, so a card re-render caused by anything else does not reach
  * it either.
  *
- * The interval only exists while a timer is live (`useTimers` returns early at
- * all-zero), so a calm dashboard pays nothing — the §35.6 "free until used"
- * rule the rest of the view follows.
+ * The interval only exists while a timer is live: `useTimers` returns early at
+ * all-zero AND self-clears once every stamp is in the past (B292 — the stamps
+ * are set by events and never zeroed, so before the self-clear one roundtime
+ * armed a permanent 10 Hz tick per card). A calm dashboard pays nothing — the
+ * §35.6 "free until used" rule the rest of the view follows.
  *
  * The strip's HEIGHT is always reserved, even with nothing running: cards must
  * not resize when a roundtime starts, which is the quiver this view has already
@@ -630,10 +639,14 @@ function RoomLine({ roomState }: { roomState: RoomState }) {
 function StatRow({ stats, now, idleMs, connected }: {
   stats: SessionStats; now: number; idleMs: number; connected: boolean
 }) {
-  const uptime = stats.startedAt > 0 ? now - stats.startedAt : 0
+  // B287: the clock STOPS at the drop — a disconnected card answers "how long
+  // did the session run", never "up 0s" (the old hard reset) and never a figure
+  // that keeps growing after the socket died.
+  const uptime = stats.startedAt > 0 ? (stats.stoppedAt > 0 ? stats.stoppedAt : now) - stats.startedAt : 0
   return (
     <div className="ov-card-stats">
-      <Stat label="up" value={shortDuration(uptime)} title="How long this connection has been up" />
+      <Stat label="up" value={shortDuration(uptime)}
+        title={connected ? 'How long this connection has been up' : 'How long the session ran before it dropped'} />
       <Stat label="idle" value={connected ? shortDuration(idleMs) : '—'} title="Time since the last game text arrived" />
       {/* Evaluated NOW, not read off the render-time value: a quiet character
           stops re-rendering its GameWindow, so the stored rate would freeze

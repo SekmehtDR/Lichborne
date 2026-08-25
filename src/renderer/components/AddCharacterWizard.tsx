@@ -1,3 +1,22 @@
+// Add Account wizard — the two-step, ACCOUNT-driven discovery flow that turns
+// one SimuCo login into a launcher tile per character (rewritten v0.8.0).
+// The design rationale is in the block below the imports.
+//
+// Step 1 collects account + password + game and calls main's
+// `eaccessFetchCharacters` (no Lich, no game connection); step 2 is a
+// checklist of the roster, with already-added characters disabled. Finish
+// writes one stub `CharacterProfile` YAML per pick via
+// `window.api.writeCharacterProfile` — or RESTORES an archived profile of
+// that name instead, so remove-and-re-add never clobbers a saved setup — and
+// then `onCompleted(added)` lets the launcher refresh (it also pre-expands the
+// new account in `lichborne.launcher.expandedAccounts`). Nothing connects
+// here. Two orderings to keep: the password is saved ONLY after EAccess
+// accepted it (a typo must never auto-fill later), and a same-account
+// conflict raises the disconnect-and-continue modal (mirroring App's
+// `handleCardConnect`) before discovery runs. `prefillAccount` is set only by
+// the per-account "↺ Refresh" path; the blank "+ Add account" path starts
+// empty by design (v0.18.2).
+
 import { useState, useEffect } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

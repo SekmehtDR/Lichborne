@@ -1,3 +1,25 @@
+// useLichBridge — the Lich Scripts panel's running-script list + pause/resume/kill.
+//
+// PER SESSION: the list is refreshed by asking main to inject `;listall`
+// (`lichPollScripts`) every POLL_INTERVAL_MS; main intercepts Lich's reply and
+// pushes it back on `onLichScriptsUpdate`, which this hook filters by
+// `sessionId`. Everything resets on disconnect, and every effect is keyed on
+// `[connected, sessionId]` so a reconnect re-arms cleanly. `custom` on each
+// record is a cross-reference against the Lich install's custom/ folder
+// (`listLichScripts`, path read from `lichborne.advancedSettings`).
+//
+// TWO INVARIANTS, both from tester reports:
+//  • THE POLL SENDS NOTHING UNLESS `shouldPollRef.current` IS TRUE (Idea A,
+//    Binu, v0.13.1). `;listall` rides the same front-end socket Lich hands to
+//    scripts' UpstreamHooks, so an unwatched poll can be captured as if the
+//    player TYPED it (global_defs.rb:2225 — hooks run before `;` handling).
+//    The caller sets that ref from "is a Lich Scripts panel open"; don't
+//    un-gate it, and don't move the poll somewhere unconditional.
+//  • A script missing from one poll LINGERS for LINGER_MS before it is dropped
+//    (kill/restart cycles can straddle a poll boundary) — EXCEPT one the user
+//    killed here, which drops immediately (`killingRef`).
+// One `pending` flag + PENDING_TIMEOUT_MS stop polls stacking on a slow reply.
+
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ScriptRecord, SessionId } from '../../shared/types'
 

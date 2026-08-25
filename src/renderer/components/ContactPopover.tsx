@@ -1,3 +1,17 @@
+// ContactPopover — the card that opens when you click a contact's name in the
+// game text: tag + name in the template's colours, guild · circle, last seen
+// (+ room), the F34 Encounters / Time Encountered counters, notes, and an
+// "Edit contact" button.
+//
+// Pure display over one `Contact` + its `ContactTemplate`. GameWindow mounts it
+// from `contactPopover` state, resolving the contact from the LIVE `contacts`
+// list at render time — so the presence stats it shows are fresh, unlike the
+// render-keyed copy the text rows paint from. Portaled to `document.body` at a
+// fixed position (`.cpop`, contact-popover.css — z 500 is deliberate: it only
+// ever opens over the game area), clamped into the viewport before first paint
+// (flips above the click if it would run off the bottom); outside `mousedown`
+// or Escape closes it.
+
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { Contact, ContactTemplate } from '../contacts'

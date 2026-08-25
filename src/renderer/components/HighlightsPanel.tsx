@@ -1,3 +1,26 @@
+// Highlights editor — the sidebar + detail form that edits the `highlights`
+// rule store: pattern (text / phrase / regex, case toggle), line-or-match
+// scope, style (colors, bold, text effect), an optional sound, and groups.
+//
+// Hosted INLINE by AutomationsPanel (the normal case) or standalone as its own
+// modal when `inline` is false. It runs per character via `useCharacter()`,
+// and inside the Automations "All Characters" scope that provider is
+// re-pointed at the virtual `_global` store, so the same
+// `loadHighlights`/`saveHighlights` calls edit global rules unchanged
+// (`scope='global'` hides the Groups row; `onMoveScope` renders the F63
+// "Applies to" control, which MOVES the draft to the other store). Every
+// write is `setRules` → `saveHighlights` (localStorage) → `onSaved` (the
+// host's scheduled profile save → YAML); the list is loaded ONCE on mount and
+// the host remounts the panel after an import or scope move. The live Preview
+// runs the REAL `buildHighlightRegex` + `resolveEffect`/`effectContent`, so
+// what it shows is what the game window will paint. Entry points: `prefill`
+// (right-click "Highlight …" → unsaved draft, with `initialTestText`) and
+// `openRuleId` (slash `/highlight edit`, v0.14.6). There is deliberately NO
+// reorder UI — overlap precedence is by match specificity, not list order
+// (v0.11.3; see the note above the sidebar). Analytics is opt-in via
+// `analyticsOn`. The `.hp-*` classes here are the layout MutePanel /
+// SubstitutesPanel mirror.
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { ResizeDivider } from './ResizeDivider'

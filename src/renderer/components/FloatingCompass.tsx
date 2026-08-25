@@ -1,3 +1,15 @@
+// FloatingCompass — the glanceable exits HUD: a 3×3 arrow grid (cardinals +
+// diagonals) with an UP / DOWN / OUT row beneath, overlaid bottom-right of the
+// text window.
+//
+// Pure display. GameWindow renders it inside `.text-area` (so it rides the
+// main text into a floating window in free mode) and feeds it the parser's
+// `exits` event directions verbatim — the `dir` keys ARE the typed-command
+// names. Chrome-less and `pointer-events: none` (floatingcompass.css): a cell
+// is a glowing glyph, not a button, and it never intercepts a click on the
+// text beneath it. The cell geometry is DELIBERATELY fixed-px, not game-font
+// scaled (B305, see the CSS) — scale the whole grid together or not at all.
+
 import '../styles/floatingcompass.css'
 
 // Arrow glyphs for the 8 cardinal/diagonal directions — chosen over

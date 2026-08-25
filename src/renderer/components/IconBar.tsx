@@ -1,3 +1,18 @@
+// IconBar — the per-session status strip: hands (L/R), prepared spell, and the
+// indicator chips (stance · invisible · webbed · joined · hidden · combat ·
+// affliction).
+//
+// Pure display over parser-fed state. Two chips are MULTIPLEXED by priority:
+// combat = bleeding > stunned > dead (bleeding wins on a dead-and-bleeding
+// character — that's the actionable signal), and affliction = poisoned >
+// diseased in its OWN slot so a poisoned-AND-bleeding character shows both.
+// "Joined" (not "Grouped"): DR's IconJOINED marks the FOLLOWER, never the
+// group leader — read the inline note before renaming it.
+//
+// The `trailing` slot hosts the per-session ModeSwitcher — it needs
+// GroupsContext, which only exists inside GameWindow, so it can't live in the
+// app-level app-bar (top-chrome redesign 2c).
+
 import type { ReactNode } from 'react'
 import '../styles/iconbar.css'
 

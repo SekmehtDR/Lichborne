@@ -1,3 +1,14 @@
+// Text-effect resolution — turns a `HighlightEffect` (glow / wave / bounce / …)
+// into the class + inline-style bits a render site applies to a styled run.
+//
+// ONE resolver serves BOTH consumers of effects — highlight matches (hl-match)
+// and contact-template names — so the effect CSS (`hl-fx-*` in highlights.css)
+// is written once. Contract a caller must honour: when `colorReplacing` is true
+// the effect supplies the colour itself, so the caller must SKIP its inline
+// `color`; `glow` stays an inline text-shadow (identical to pre-effects
+// rendering); `wave`/`bounce` animate per LETTER, so `effectContent` splits the
+// text into `--i`-staggered character spans and everything else renders the
+// plain string.
 import type { CSSProperties, ReactNode } from 'react'
 import type { HighlightEffect } from '../highlights'
 import { FX_COLOR_REPLACING } from '../highlights'

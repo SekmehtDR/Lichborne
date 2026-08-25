@@ -1,3 +1,13 @@
+// Injuries panel — a read-only list of wounded/scarred body parts, grouped by
+// the `SECTIONS` tables in injuryParse.ts.
+//
+// Pure view: it takes GameWindow's `InjuryState` (per-part `<image name>` from
+// DR's `injuries` dialog) and runs every part through the SHARED `parseInjury`
+// (the Lich-mirroring parser that also feeds the Overview card, B224) — this
+// file deliberately owns no parsing of its own. Two display rules it upholds:
+// a SCAR is healed history, not damage, so it renders on the muted
+// `injury-scar` class with the scar label; and "No active wounds." is shown
+// whenever no WOUND is present, even if scars remain.
 import type { InjuryState } from '../../../shared/types'
 // v0.19.0: the part tables, the Lich-mirroring parser and its B224 reasoning
 // moved to a shared module so the Overview card summarises wounds the same way

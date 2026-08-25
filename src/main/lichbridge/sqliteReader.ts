@@ -1,3 +1,26 @@
+// sqliteReader — read-only access to Lich's own database, `<lich_dir>/data/lich.db3`.
+//
+// The `lich:get-vars` / `lich:get-settings` / `lich:get-sessions` /
+// `lich:db-info` invoke handlers (registered once from main.ts via
+// registerLichSqliteHandlers). Consumed through preload's `lichGetVars` /
+// `lichGetSettings` / `lichGetSessions` / `lichDbInfo` by the Lich Dashboard
+// (Variables / Settings / Sessions tabs) and by GameWindow's Moons sun-anchor
+// fallback, which reads the character's own `UserVars.sun`.
+//
+// How it works: the DB path is derived from the `lichPath` setting (the path
+// to lich.rbw) — expandHome'd, because Linux/Mac paths are `~`-relative — and
+// every call opens the file `readonly` + `fileMustExist`, runs one query, and
+// closes it in `finally`. The `uservars.hash` column is a Ruby Marshal blob,
+// decoded by ./marshalParser; a blob that fails to decode degrades to a
+// per-row `{ _parseError }` rather than failing the whole read.
+//
+// Two things to keep: better-sqlite3 is the app's ONE native dependency and is
+// `require`d LAZILY inside getDatabase() so a not-yet-rebuilt module can't
+// break startup (a launch alone therefore doesn't prove the ABI — exercise a
+// real read after an Electron upgrade); and this file is strictly READ-ONLY by
+// design — don't add a write path. While Lich is running its in-memory state
+// is authoritative and lich.db3 is only its persistence, so edits go through
+// Lich's runtime API, not the DB.
 import * as path from 'path'
 import * as fs from 'fs'
 import { ipcMain } from 'electron'

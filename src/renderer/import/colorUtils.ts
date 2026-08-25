@@ -1,4 +1,20 @@
-// Colour normalisation utilities for all three legacy client formats.
+// Colour normalisation utilities for all three legacy client formats — every
+// import parser resolves its source colours to a `#RRGGBB` hex (or null when
+// undecodable) through here, so candidates reach mapper.ts in one form.
+//
+// Three decoders, one per client: Genie (`parseGenieColor` — hex, a
+// "fg, bg" hex pair, or one of the named colours in `GENIE_NAMED`); Wrayth
+// (`buildWraythPalette` + `resolveWraythColor` — `@N` palette references
+// resolved against the file's `<palette>`, bare hex passed through); and
+// Frostbite (`parseFrostbiteColor` — a Qt `@Variant` QColor blob: spec byte at
+// index 4 must be 1 = RGB, channels are 16-bit so take the high byte).
+//
+// `parseQtEscapes` is the shared Qt byte-escape decoder under the Frostbite
+// path and is EXPORTED so the highlight parser decodes the `options`
+// QBitArray blob the same way. Its one invariant: Qt writes MINIMAL hex
+// escapes (`\x1`, not `\x01`), so it reads 1–2 hex digits greedily and
+// advances by what it consumed — a fixed-width read desyncs every byte after
+// the first single-digit escape (see the inline comment).
 
 // ── Genie named colours ───────────────────────────────────────────────────────
 const GENIE_NAMED: Record<string, string> = {

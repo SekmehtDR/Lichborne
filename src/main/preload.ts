@@ -1,3 +1,27 @@
+// preload — the contextBridge boundary. Everything the renderer may ask of the
+// main process is a method on `window.api`, defined here (typed for the
+// renderer in src/renderer/global.d.ts — keep the two in lockstep).
+//
+//  • Channel names come from THE ONE shared IPC map (`const CH = IPC`,
+//    shared/types.ts). Main and preload each used to keep a private partial
+//    copy, and a channel present in one but not the other registered a
+//    listener on the literal channel "undefined" — silent in both directions
+//    (pitfall #127). Import the shared map; never re-fork it.
+//  • Every `on*` push subscription RETURNS its unsubscribe function — renderer
+//    effects rely on that for cleanup.
+//  • Per-session calls take the SessionId main's login minted, threaded by the
+//    renderer through every call (Principle #6). App-level surfaces (updater,
+//    profile I/O, SimuCoin — which is per ACCOUNT) deliberately take none.
+//  • AI keys travel one way: set/clear go down; aiKeyStatus returns booleans
+//    only — a key never comes back up.
+//  • `platform` / `arch` / `isAppImage` are plain values, not calls — the
+//    sandboxed preload can read `process` synchronously, saving platform-
+//    branching UI an IPC round-trip.
+//
+// The method-level contracts (why disconnectAwait exists, why sendUserText
+// echoes while sendCommand writes straight to the socket, why catchup returns
+// a digest instead of rows) live in the inline comments below — read the
+// neighbours before adding a sibling method.
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 import type {

@@ -1,3 +1,29 @@
+// Frostbite importer — parses Frostbite's Qt INI config files into the neutral
+// `ImportResult` / `ImportCandidate` intermediate (types.ts) that the Import
+// Wizard previews and mapper.ts converts to native rules. Entry point:
+// `parseFrostbiteFiles({ highlights, macros, ignores, substitutes, general })`,
+// each field the text of the matching `.ini`.
+//
+// The format is Qt QSettings: sections of `key=value`, arrays as `size=N` +
+// `N\field` keys, colours and option flags as `@Variant(...)` byte blobs
+// (decoded via colorUtils' `parseFrostbiteColor` / `parseQtEscapes`). Two
+// format truths this file encodes: `size=` is STALE in real exports, so
+// `arrayIndices` derives the index set from the keys actually present; and
+// `[AlertHighlight]` / `[GeneralHighlight]` have NO `size=` at all — they are
+// keyed by alert / role name. Values are unescaped in TWO layers (Qt INI, then
+// QRegExp punctuation escapes) for highlights, but only the regex-SAFE layer
+// for substitutes (`unescapeQtRegex`).
+//
+// What each file becomes: `[TextHighlight]` → highlights (the 5-bit `options`
+// QBitArray decoded per Frostbite's highlighter.cpp — entire-row → line scope,
+// partial-words → phrase; `|` in a value is alternation and becomes a regex;
+// dedup by full visual identity, pitfall #61a) — EXCEPT `group=Names`, which
+// are Contacts with per-colour templates; `[keypad]/[alt]/[ctrl]/[function]`
+// → macros via the shared `parseImportedMacroAction` (`$n`/`$s` send, `@`
+// cursor); `[ignore]` → mutes; `[substitution]` → substitutes (`\N`/`\0` →
+// `$N`/`$&`; `target=Experience` mind-state rules flagged `unsupported`);
+// `[GeneralHighlight]` + general.ini colours → `themeVars`; alerts and
+// QuickButtons are count-only notices. No aliases or triggers.
 import { ImportResult, ImportHighlight, ImportMacro, ImportMute, ImportSubstitute } from '../types'
 import { parseFrostbiteColor, parseQtEscapes } from '../colorUtils'
 import { normalizeFrostbiteKey } from '../keyNormalizer'

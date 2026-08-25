@@ -46,7 +46,15 @@ export default function ViewToggle() {
             title={active && m.id === 'overview'
               ? 'Already in Overview — click to aim the input bar at all characters again'
               : m.title}
-            onClick={() => {
+            onClick={e => {
+              // B285: drop focus from the clicked button. Chromium focuses a
+              // <button> on click and nothing else blurs it (App's blur-on-enter
+              // covers only `.session-shell`), so focus sat HERE — outside the
+              // Overview input bar's `.ov-shell` location allowlist — and every
+              // printable key after "click Overview, start typing" was refused,
+              // while Space/Enter re-fired this very button. Blurring lands
+              // focus on <body>, which the allowlist accepts.
+              e.currentTarget.blur()
               // Clicking the view you are ALREADY on is otherwise a no-op, so
               // Overview reuses it to widen the input bar's target back to All.
               // Tabs narrow it (the bar follows a tab switch); this is the way

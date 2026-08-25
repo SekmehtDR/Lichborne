@@ -1,3 +1,21 @@
+// Room panel — the structured room view (v0.14.7 redesign, F52): title (+ a
+// creature-count chip), description, then the game's own component sentences
+// verbatim ("You also see …", "Also here: …") and a clickable "Obvious paths:"
+// line LAST, in game order. Pure view over GameWindow's `RoomState`.
+//
+// The one thing that is uniquely ours is the PAINT: every prose line goes
+// through `computeLineMatchRanges` → `renderSegmentFull` with the session's
+// contacts + match-scope highlights, and `getLineHighlightStyle` per line for
+// line-scope rules — so the panel styles the same content the same way the
+// main scroll does (pitfall #44; B111/B115/B117). Line-scope rules are
+// applied PER sentence and skipped on `desc`. Exit words the compass confirms
+// are linkified and send the FULL direction word (`dn` is not a valid DR
+// command); the exits sentence follows Genie's normalization (" none." /
+// trailing period) with a compass-composed fallback mid-transition.
+//
+// `memo`'d (B172): it re-runs the rule passes over every section per render,
+// so it must render only when the room (or, via context, rules/contacts)
+// actually changes — both consumed context values are useMemo'd in GameWindow.
 import { memo } from 'react'
 import type { RoomState, TextSegment } from '../../../shared/types'
 import { useContacts } from '../../ContactsContext'

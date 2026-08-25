@@ -1,3 +1,21 @@
+// Experience panel — the skill readout. `skills` is GameWindow's raw per-skill
+// component text (plus the `rexp` / `tdp` / `favor` / `sleep` meta keys); all
+// line parsing and the sort live in the SHARED expParse.ts (`parseExp`,
+// `MINDSTATES`, `dotBucket`, `sortSkillEntries` — moved there v0.19.0/v0.19.1
+// so the Overview card reads and orders skills exactly as this panel does).
+//
+// Two renders over the same data: the FULL panel (Mind Locked / Learning
+// groups, per-row mindstate bar + pin, Badging / Focus / Sort pickers, an
+// `ExpFooter` with TDP / favor / sleep / Death's Sting and the self-calibrating
+// Rested-XP widget) and the COMPACT text-forward view (`compactExp`,
+// Rakkor/Morress) — a pure alternate render that reuses every helper here.
+// The compact branch sits AFTER the hooks (Rules of Hooks). Per-character
+// prefs persist via scopedKeys + `saveProfile`: `expSort`, `expSortDesc`
+// (default descending), `expFocusMode`, and `rxpCapMin` (the RXP bar cap grows
+// to the largest Stored/Usable ever observed, so it self-calibrates to the
+// subscription tier). Badging templates come from focusTemplates.ts; `focus`
+// itself is owned by the parent (`onFocusChange`). `memo`'d (B172) — callers
+// must pass referentially stable callbacks and Sets.
 import { memo, useState, useRef, useEffect } from 'react'
 import { FOCUS_OPTIONS, FOCUS_NONE, getSkillBadge, getSkillSortPriority, type SkillBadge } from '../../focusTemplates'
 import { scopedKey } from '../../characterScope'

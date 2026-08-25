@@ -1,3 +1,27 @@
+// Triggers — the rule SHAPE, storage, regex compile, and editor catalogues (the engine is elsewhere).
+//
+// A `TriggerRule` is WHEN (a text pattern on a watched stream, OR a watched
+// game variable) + optional state GATES (health < 50 and stance = …) + THEN
+// (an ordered list of `TriggerAction`s: command / echo / notify / sound /
+// webhook / variable / flash / beep / log), with cooldown, one-shot, and the
+// shared `groupIds` + `allGroups` gating every rule type carries. This file
+// owns that shape, the per-character store (`scopedKey(character,'triggers')`;
+// `saveTriggers` goes through `safeSetItem` and RETURNS the write's success so
+// the F63 scope move can abort on a failed target write), the factories, the
+// regex compile, `$var` interpolation, and the option lists the editor
+// renders. Evaluation lives in hooks/useTriggerEngine.ts.
+//
+// `buildTriggerRegex`: `text` mode splits on whitespace, escapes each token,
+// wraps it in `\b` only where the token itself starts/ends with a word char,
+// and joins with `\s+`; `phrase` is one escaped literal; `regex` is raw.
+// Case-insensitive unless the rule says otherwise; empty or invalid → null.
+// `interpolate` replaces `$name` from the vars map and leaves an UNKNOWN
+// `$name` as literal text. `INTERPOLATABLE_VARS` is the editor's DISPLAY list
+// of those vars — the values are built by the engine's `buildVars`, so a var
+// added to one belongs in the other. `newTrigger` defaults `watchStream` to
+// `'main'`, not `'any'` (B128, Jaded, v0.8.9 — DR routes speech to both
+// `main` and the conversation stream, so `'any'` double-fired).
+
 export type ActionType = 'command' | 'echo' | 'notify' | 'sound' | 'webhook' | 'variable' | 'flash' | 'beep' | 'log'
 
 export type WatchStream = 'any' | string

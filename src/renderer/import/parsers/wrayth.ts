@@ -1,3 +1,23 @@
+// Wrayth importer — parses a Wrayth `settings.xml` export into the neutral
+// `ImportResult` / `ImportCandidate` intermediate (types.ts) that the Import
+// Wizard previews and mapper.ts converts to native rules. Entry point:
+// `parseWraythXml(xml)`.
+//
+// Deliberately NOT a full XML parser — a regex attribute extractor (`getAttr`,
+// which decodes the five XML 1.0 entities, B129) over `iterTags`. Colours are
+// `@NN` palette references resolved through the file's own `<palette>`
+// (colorUtils). What each block becomes: `<strings>` → match-scope text
+// highlights (NOT `<highlights>`, which does not exist in Wrayth exports —
+// pre-v0.11.1 these were silently dropped; dedup is by FULL visual identity,
+// pattern + fg + bg, because Wrayth legitimately repeats a word in two
+// colours); `<names>` → Contacts, grouped into per-colour contact templates
+// via `templateName` (`colorNN` from the palette index); `<presets>` →
+// `themeVars` for an "Imported from Wrayth" theme; `<keys id='0'..'9'>` → macros
+// from ALL ten sets, cross-set key collisions flagged `partial`, actions
+// through the shared `parseImportedMacroAction` (`\r` = send, no trailing `\r`
+// = type-and-wait `@`, B137); `<ignores>` → mutes. `<scripts>` / `<vars>` are
+// count-only notices. Wrayth carries no aliases or triggers, so those arrays
+// are always empty.
 import { ImportResult, ImportHighlight, ImportMacro, ImportMute } from '../types'
 import { buildWraythPalette, resolveWraythColor } from '../colorUtils'
 import { normalizeWraythKey } from '../keyNormalizer'

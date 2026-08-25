@@ -1,3 +1,30 @@
+// Settings panel — the one modal that edits BOTH kinds of setting, and the
+// split is the thing to understand before adding a row:
+//   - PER-CHARACTER `AppSettings` (Display · Accessibility · Layout ·
+//     Behavior's first three rows): `set(key, value)` → `onChange({…})`; the
+//     parent (GameWindow, which renders this) owns persistence. The Layout
+//     radios grey out in Windowed Panels (`layoutMode`), where those bars are
+//     windows of their own.
+//   - APP-WIDE blocks that live in `_shared.yaml`, each held as local state
+//     and flushed on change: Session Log (`SessionLogSettings`, a
+//     read-modify-write of ONLY the capture/retention fields so the Logs
+//     modal's own prefs aren't clobbered), AI (`AIConfig` — the KEY itself
+//     lives in main's safeStorage and only its presence is shown; a save
+//     RE-QUERIES rather than assuming success), SimuCoins (`SimuCoinConfig`,
+//     persisted from an identity-guarded EFFECT — never inside a setState
+//     updater — with all three of save + `scheduleSharedProfileSave` +
+//     `SIMUCOIN_CHANGED_EVENT`, and adopting changes made in another window),
+//     command-history minimum length (F82) and the Overview options
+//     (v0.19.0, through overviewStore).
+// F61 search + nav rail: every row has a `vis(section, …labels)` boolean and
+// every section a `sec*` flag; `SECTION_NAMES`, the `sectionRendered` map and
+// the `ref`'d section wrappers MUST stay in sync or the rail offers a jump to
+// nothing (`jumpToSection` lands the coin popover's "Set up in Settings…").
+// Lich Setup is NOT embedded — the row opens the shared `LichSetupDialog`.
+// The font picker enumerates installed fonts via `queryLocalFonts` and
+// detects monospace with a canvas width test; `LEGACY_KEYS` migrates retired
+// preset keys, and `cascadia` is deliberately NOT one of them (see below).
+
 import { useState, useEffect, useRef } from 'react'
 import { loadCommandHistorySettings, saveCommandHistorySettings, CMD_HISTORY_MIN_MAX } from '../commandHistorySettings'
 import { useOverviewOptions, setOverviewOptions, MAX_FEED_LINES, type OverviewOptions } from '../overviewStore'

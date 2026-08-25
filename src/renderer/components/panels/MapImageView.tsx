@@ -1,3 +1,19 @@
+// Lich Map view — the image-tile renderer behind MapPanel's "Lich Map" mode.
+// Draws the current room's Lich map tile (read via `readMapImage`, cached as a
+// data URL per image) inside a pan/zoom SVG, with one clickable rect per room
+// on that tile from `image_coords`, and the sonar "you are here" locator
+// (v0.8.2) on the current room.
+//
+// It does NO room matching of its own: `currentRoom` arrives resolved from
+// MapPanel (game uid → Lich id → title+description), and this view only
+// renders it — the NEEDS MAPPING banner is the `roomTitle && !currentRoom`
+// case. Interaction: left-click pins a local `bfsPath` preview (gold), right-
+// click / "Walk here" delegates the walk to Lich's `;go2 <id>` (v0.8.2 — one
+// fire-and-forget send; `;k go2` stops it), search matches room titles.
+// Zoom is per-character (`scopedKey('lichMapScale')`, default 1.5, saved
+// debounced 400ms). Every centring path bails on a 0×0 SVG and a
+// `ResizeObserver` recentres on the 0→size transition (B132 — an inactive tab
+// is display:none and would otherwise strand the camera).
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import type { LichRoom } from './mapTypes'
 import { lichTitle, bfsPath } from './mapTypes'

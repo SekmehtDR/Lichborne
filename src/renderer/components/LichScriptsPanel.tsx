@@ -1,3 +1,13 @@
+// LichScriptsPanel — a portaled modal that BROWSES the scripts installed in the
+// Lich folder (`window.api.listLichScripts(lichPath)` → core vs custom, with a
+// search box and an All / Custom / Core filter). Clicking a row sends
+// `;scriptname` through `onSendCommand` and closes the modal.
+//
+// Not to be confused with ScriptListPanel, the "Active Scripts" zone panel that
+// shows what is currently RUNNING. This one reads `lichPath` straight from the
+// `lichborne.advancedSettings` localStorage key. As of this header nothing in
+// `src/` mounts it (grep `LichScriptsPanel` — only the definition matches).
+
 import { useState, useEffect, useMemo } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

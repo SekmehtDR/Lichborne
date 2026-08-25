@@ -37,6 +37,11 @@
 }
 
 .fc-cell {
+  /* DELIBERATELY fixed-px, not game-font scaled (Sekmeht, 2026-08-23 — B305):
+     the whole compass is a fixed 24px-cell grid — the arrows, the diamond, the
+     gaps are one pixel design, and scaling the FONTS alone would break the
+     alignment. If the compass ever needs to track the font setting, the whole
+     geometry converts together, not these rules piecemeal. */
   width: 24px;
   height: 24px;
   border-radius: 3px;

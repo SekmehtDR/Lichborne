@@ -1,3 +1,23 @@
+// LichBridge — per-session script-list tracking over the shared Lich socket.
+//
+// One instance per Session, created in main.ts with that session's
+// `connection.send`, and the ONLY filter that sits between the connection's
+// raw line events and StormFrontParser.parse: main's line handler calls
+// interceptLine() first, and a `false` return skips the parser entirely.
+//
+// What it owns: the CommandInjector (the `;listall` / `;pause` / `;unpause` /
+// `;kill` / `;start` sends, routed to it by main's `lich:*` IPC handlers), and
+// the `--- Lich: …` response intercept — a recognised script list ALWAYS
+// refreshes the Lich Scripts panel (`lich:scripts-update` to the owner window,
+// keyed by sessionId) but is HIDDEN from the game window only when it answers
+// our own auto-poll. The 4s `expectAutoListUntil` window is what tells the two
+// apart, so: issue the auto-poll through LichBridge.pollScriptList(), never
+// through `injector.pollScriptList()` directly, or a player's typed `;list`
+// output disappears. The renderer's useLichBridge hook drives that poll on a
+// 5s interval, gated on a Lich Scripts panel actually being open.
+//
+// SCRIPT_LIST_RE is pinned to Lich core's exact `;listall` format — keep it
+// narrow; every other `--- Lich:` message must pass through untouched.
 import type { BrowserWindow } from 'electron'
 import { CommandInjector } from './commandInjector'
 import type { LichScriptsUpdatePayload, SessionId } from '../../shared/types'

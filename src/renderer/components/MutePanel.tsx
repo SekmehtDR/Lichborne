@@ -1,3 +1,21 @@
+// Mutes editor — the Automations tab that edits the `mutes` rule store
+// (DESIGN §31). What a mute IS is described in the block below the imports.
+//
+// Rendered by AutomationsPanel inside a `CharacterProvider`: `useCharacter()`
+// names the store this panel edits, and in the F37 "All Characters" scope
+// that provider is re-pointed at the virtual `_global` character, so the same
+// `loadMutes`/`saveMutes` calls land on the global keys unchanged. Every write
+// goes through ONE `persist()`: set state → `saveMutes` (localStorage) →
+// `onSaved` (the host's scheduled profile save → YAML). The list is loaded
+// ONCE on mount — the host remounts the panel (its `importNonce` key) after
+// an import or a scope move. Entry points besides the sidebar: `prefill` (a
+// right-click "Mute …" arrives as an unsaved draft) and `openRuleId` (slash
+// `/mute edit`, the TriggersPanel pattern). `scope='global'` hides the Groups
+// row (global rules are always-active); `onMoveScope` renders the F63
+// "Applies to" control, which MOVES the draft to the other store. The
+// Analytics wrapper (`useRuleAnalytics` + `AnalyticsReview`) is opt-in via
+// `analyticsOn`. Substitutes have their own sibling panel (SubstitutesPanel).
+
 import { useEffect, useRef, useState } from 'react'
 import { ResizeDivider } from './ResizeDivider'
 import { loadMutes, saveMutes, newMute, STREAM_OPTIONS, type MuteRule } from '../mutes'

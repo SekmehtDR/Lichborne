@@ -1,5 +1,21 @@
-// Neutral intermediate types produced by each parser.
-// These are converted to Frostborne rule types by mapper.ts.
+// Import intermediate — the neutral `ImportCandidate` shapes every legacy-client
+// parser (wrayth.ts / genie.ts / frostbite.ts) produces, and the `ImportResult`
+// bundle the Import Wizard previews. mapper.ts converts these to native
+// Lichborne rule types; the intermediate itself is only for the wizard's
+// preview/selection UI.
+//
+// Deliberately NOT the full native rule shape (no bold/glow, gates, oneShot,
+// groupIds, name, enabled …) — it models the union of the three source
+// formats. That is why `ImportResult.nativeRules` exists (B124, v0.8.7): a
+// Lichborne-native import carries the complete rule objects index-aligned
+// with the candidate arrays and the wizard prefers them, bypassing the
+// mapper. Every candidate carries a `status` (`ready` / `partial` /
+// `unsupported`) + `statusNote` that the preview surfaces; `names` are
+// highlights re-routed to Contacts, with `templateName` grouping them into
+// per-colour contact templates.
+//
+// Adding a rule type here means: the candidate interface, its slot in
+// `ImportResult`, a `mapX` in mapper.ts, and an apply branch in the wizard.
 
 export type ImportSource = 'wrayth' | 'genie' | 'frostbite' | 'lichborne'
 

@@ -69,6 +69,44 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
+**v0.19.2**
+
+- **Lichborne is joining Elanthia-Online** — the community organization that
+  maintains Lich itself. This release makes the move invisible: the updater now
+  checks the project's new home first and its current one second, so updates
+  keep arriving through the transfer with nothing for you to do.
+- **Lichborne is formally open source** under the BSD 3-Clause License — the
+  same license as Lich — © 2026 Sekmeht and Binu. (And in writing: DragonRealms
+  is Simutronics' trademark; Lichborne is an independent community project.)
+- **Eighteen fixes from a full internal audit**, most in the new Overview:
+  typing works immediately after clicking into the view, the "Spoken to" alert
+  clears itself again, a disconnected card reports how long the session ran
+  instead of "up 0s", hovering an urgent card no longer hides its red border,
+  and the contact popover plus several small controls (panel tab buttons, the
+  "new lines" badge) finally respect your Font Size setting. Plus quieter
+  timers, a smoother feed toggle, and `/view set conditions=/timers=`.
+- Under the hood: Electron and the build tools updated, one dependency security
+  patch.
+
+**v0.19.1**
+
+- **Overview cards stopped cutting off room descriptions** — lines are no longer
+  capped mid-text; the oldest lines scroll off the top instead.
+- **The Overview input bar got ↑/↓ command history**, follows the character tab
+  you switch to, and clicking **Overview** again re-aims it at everyone.
+- **Roundtime on every card** — a thin RT / Cast / Aim strip in the same colours
+  as your command bar.
+- **Contact text effects fixed and finished**: effects no longer vanish when
+  templates reload, previews render exactly as game text does, and a template's
+  **tag** can carry its own effect separate from the name's.
+- **Experience on a card**: pick **Experience** from a card's stream dropdown for
+  the compact skill view — same skills, same order as the Experience panel.
+- **The map follows you far more reliably** — the fast room lookup now works for
+  every room instead of ~3% (a Lich room-id vs game room-id mismatch).
+- **The Overview stays put**: tab clicks no longer re-theme the dashboard, and
+  clicking a card aims the input bar instead of yanking you into that session
+  (double-click, or the card menu, when you do want to go).
+
 **v0.19.0**
 
 - **Views — see every character at once.** A new switch in the top bar, next to
@@ -134,54 +172,14 @@ A few ideas shape everything:
   into its own window has its own switch there. Lichborne always starts in
   Session view.
 
-**v0.18.6**
-
-- **Closing with several characters up now asks first.** If two or more
-  characters are connected, quitting shows a confirmation that names them, so
-  you can see exactly what you are about to log out. One character (or none)
-  closes straight away, disconnected tabs don't count, and Cancel is the default
-  so a reflexive Enter never ends your session. Closing a separate character
-  window asks the same way, and reminds you that **Window → Move Character to
-  Main Window** keeps that character running.
-- **SimuCoins show your balance.** Settings → SimuCoins lists each account's
-  balance and when it was last checked; the coin popover summarises the total
-  in one line. Balances survive restarts, and every one is shown with its age
-  so a stale figure can never read as current. No extra requests are made to
-  the store — this surfaces a number the existing check already read.
-- Fixed: a theme you picked no longer reverts after restarting.
-- Fixed: a one-shot trigger no longer comes back armed after a restart.
-
-**v0.18.5** — a performance release.
-
-- **The map was slowing down the whole client.** The way map animations were
-  paused while you walked made the browser re-evaluate the entire map on every
-  room change, and that work came out of the same budget the story window needed.
-  Walking is now smoother in both places.
-- **You should no longer need to turn Genie Map Animations off.** If you turned
-  them off to cope with sluggishness, try turning them back on. Note the setting
-  is **per character**, so it would have had to be turned off on each one.
-- **Mouse-wheel zoom on the Genie map is smooth.** Spinning the wheel was asking
-  for more redraws than the screen could draw; zoom now redraws once per frame
-  however fast you spin it.
-- **Lighter when minimized.** Lichborne keeps running while minimized on purpose,
-  so your map position, timers and game text stay current — but it was also
-  still animating the map, the Moons sky, the Living Tableau and highlight text
-  effects for every character you had open. Animation now pauses while the
-  window is minimized or hidden and resumes where it left off. Nothing looks
-  different while you can see it.
-- **Copying a large selection copies all of it.** Selecting text, scrolling down
-  to extend the selection, then releasing used to copy only the last part. If
-  part of the selection has scrolled out of the buffer entirely you now get a
-  notice instead of a silent partial copy.
-- Fixed: browsing a map level you are not standing on no longer snaps back to
-  your own level a moment later.
-- The download is about 6 MB smaller — developer debug files were being packaged
-  into the installer by mistake.
-
 ## On the Horizon (Roadmap)
 
 Lichborne is actively developed. A few things we're heading toward — directional, not promises with dates:
 
+- **The move to Elanthia-Online.** Lichborne's repository is transferring to the
+  community organization that maintains Lich — the client built with the
+  community, stewarded by it. Updates and links carry over seamlessly (v0.19.2
+  installs are already transfer-ready, and GitHub redirects cover the rest).
 - **Windowed Panels becomes the default.** The floating-window layout is the future; the older docked "Static Panels" mode will eventually retire, with an automatic one-time conversion so no layout is ever lost.
 - **More Lichborne Experiences.** The graphical scenes (Living Tableau, Moons) are the first of a larger set of "graphics for text players" — richer combat instruments, wound/status visuals, and more.
 - **More AI helpers.** Catch Me Up is the first BYOK ("bring your own key") AI feature. Others are designed and on the way — always optional, always with a working non-AI baseline, and always privacy-first.
@@ -768,6 +766,12 @@ Lichborne keeps a clean, dated **plain-text log** of every session — the game 
 - **Ruby GTK script windows** (e.g. `kill-counter.lic`, `;vars setup`) are supported as of v0.9.1 (Lichborne now launches Lich the way Frostbite/Genie do). For variables specifically, the **Lich Dashboard → Variables** editor does the job in-app with no script window needed.
 
 Still stuck? **Join us on Discord** (link in **Help → About Lichborne**) — we're happy to help.
+
+---
+
+## License
+
+Lichborne is free, open-source software under the [BSD 3-Clause License](LICENSE) (© 2026 Sekmeht and Binu) — the same license as Lich itself. DragonRealms and StormFront are trademarks of Simutronics Corp.; Lichborne is an independent community project, not affiliated with or endorsed by Simutronics, and playing through it requires your own Simutronics account under Simutronics' terms of service.
 
 ---
 

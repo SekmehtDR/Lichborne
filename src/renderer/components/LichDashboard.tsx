@@ -1,3 +1,30 @@
+// Lich Dashboard — the per-session modal that SURFACES Lich's own state, in
+// five tabs: Scripts (list / run / edit `.lic` files), Variables (Lich
+// `Vars`), DR Infomon (a catalog of drinfomon accessors), Settings (read-only
+// `lich.db3` settings + feature flags) and Profile (YAMLs)
+// (`scripts/profiles/*.yaml` with js-yaml validation).
+//
+// Two send paths come in as props and are NOT interchangeable:
+// `onSendCommand` PRE-FILLS the command bar for the user to review and send
+// (`;script args`, `;e echo DRStats.health`), while `onRunCommand` executes
+// immediately and SILENTLY — the Variables tab's writes ride it as one atomic
+// `;eq Vars[name] = value; Vars.save`, mutating Lich's live memory AND forcing
+// its flush, with an optimistic overlay (`pendingRef`) bridging the read-back.
+// Reads stay on the SQLite/Marshal path (`lichGetVars` etc.). Editing vars is
+// allowed ONLY for the connected character's own scope (`canEdit`), because
+// `;eq` acts on the attached session whatever scope the dropdown shows.
+// File editing (Scripts / Profiles) shares one machinery: `YamlHighlight`
+// (view) and `EditorWithGutter` (a transparent textarea over a highlighted
+// pre; their font metrics MUST match) behind the `YamlViewHandle` find /
+// scrollToLine handle, `useGutterSync` for the line gutter, and an LCS
+// `computeDiff` review before any `writeLichScript` / `writeLichProfile`.
+// `readOk` gates Edit so a failed read's placeholder can never be saved back
+// over a real file, and paths are composed with forward slashes. A
+// `[diag B236]` console logger for the search-highlight offset is still in
+// place and marked for removal. The Lich path comes from
+// `lichborne.advancedSettings`; the Scripts / Variables / Settings / Profiles
+// tabs each degrade to an `ld-empty` notice without it.
+
 import { useState, useEffect, useMemo, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { useResizableColumn } from '../hooks/useResizableColumn'

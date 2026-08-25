@@ -1,3 +1,19 @@
+// Theme Picker — the portaled modal for choosing a built-in theme (General /
+// Guild tabs) or a user's Custom theme, previewing it, and launching the
+// ThemeEditor.
+//
+// Rendered by GameWindow, which owns the persisted state: `currentThemeId`
+// and the `myThemes` list arrive as props, and every change is reported UP via
+// `onThemeChange(id)` / `onMyThemesChange(list)` — the parent schedules the
+// profile save. Picking a theme applies it IMMEDIATELY (`applyTheme` /
+// `applyCustomTheme` write the CSS vars) so the whole app previews live;
+// "Customize…" / "Edit" open ThemeEditor on a copy with the copy applied, and
+// Cancel restores whatever was active before (`prevThemeIdRef`). The preview
+// mock reads the same `darkBase`-merged var set `applyTheme` uses, so what it
+// shows is what the theme resolves to. Deleting the ACTIVE custom theme falls
+// back to `THEMES[0]`. Import/Export are JSON files via `myThemes` helpers.
+// Styles are the `.tp-*` classes in theme-picker.css.
+
 import { useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

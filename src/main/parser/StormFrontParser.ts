@@ -1,3 +1,60 @@
+// StormFrontParser — the stateful StormFront/DR XML tokenizer: one raw line in, typed GameEvent[] out.
+//
+// Where it sits: ConnectionManager 'line' → LichBridge.interceptLine →
+// parse(line) here → main.ts's session line handler consumes the events
+// (scene derivation, state snapshots and the renderer IPC batch all happen
+// there, not here). One instance per Session, alive for the session's
+// lifetime; call reset() on every new login (pitfall #4) — stream, style,
+// capture and timer state otherwise bleed into the next connection.
+//
+// What it does: a two-token regex splits each line into tags and text. Tags
+// drive a switch in tagStart()/tagEnd() that either mutates parser STATE
+// (bold depth, the push/popStream stack, preset, colour stack, mono mode,
+// <d>/<a> link context, compass dirs) or emits a TYPED event (vitals,
+// indicators/stance, RT/CT/aim timers, room title/id/exits, hands, spell,
+// injuries, exp components, stream push/declare/clear, player-info,
+// game-exit, launch-url). Text accumulates as styled TextSegments in
+// `pendingSegments` and is flushed as one `stream-text` event per stream per
+// line; text inside a capture context (component/compdef, preset, prompt,
+// inv/spell/right/left) is buffered and interpreted when its tag closes.
+// Every `<…>` is consumed by the tokenizer — an unrecognised tag becomes an
+// `unknown` event (unless in SILENT_TAGS; main drops these before the IPC
+// batch, so it is a parser-level marker only) and its inner text still
+// shows, so a new Lich/DR tag can never leak markup into the display.
+//
+// Invariants a change must keep (each has its own comment at the site):
+//  • emit() is the SINGLE chokepoint for every event and takes ONE event —
+//    never push to `events` directly, never spread an array into emit(). It
+//    maintains the prompt dedup (`lastEmitWasPrompt`): a `>` is suppressed
+//    only when the immediately-preceding emitted event was that same prompt,
+//    so sub-stream activity (a move's room components) still lets the next
+//    prompt through.
+//  • Call claimPending() before every `pendingSegments.push`. push/popStream
+//    deliberately do NOT flush — DR splits one sentence across consecutive
+//    stream blocks on a single physical line, and a flush per transition
+//    shredded remote-viewed text mid-word; the buffer is filed under
+//    `pendingStream`, the stream it was WRITTEN to, not the one active at
+//    flush time.
+//  • RT / CT / aim-timer end values are DEFERRED and anchored on the next
+//    <prompt time> — server clock, never `value*1000 − Date.now()` (pitfall
+//    #87; the file also emits a `server-clock` offset on first sight/drift).
+//    Any future server-pushed countdown joins the same pending*/anchor lane.
+//  • The prompt is a frame boundary: it resets bold depth, preset, colour
+//    stack and link context so a script's unclosed tag can't bleed forward.
+//  • Room state has two independent id sources — the `<streamWindow id='main'>`
+//    subtitle (three formats, pitfall #65) and `<nav rm>` (pitfall #46) — and
+//    a title CHANGE emits the six room sub-stream clears BEFORE the
+//    `room-title` event (B121); keep that ordering.
+//  • Stream ids are normalized only through the shared alias table
+//    (normalizeStreamId returns anything else unchanged — case is preserved).
+//  • Hot-path work is gated: the glance-text hand fallback (inferHandsFromGlance,
+//    a Profanity-style re-sync for the tags DR doesn't always send) runs behind
+//    a cheap `includes()` gate, main-stream only, and yields to a real hand tag
+//    on the same line; the scene line capturers run ONLY while
+//    `sceneCapturersEnabled` is set from main (§35.6 — zero per-line cost
+//    until an Experience is open). Keep that shape for any new per-line scan.
+//  • In mono mode (`<output class="mono">`) leading/trailing whitespace IS the
+//    layout — don't trim it.
 import type { GameEvent, StreamTarget, TextSegment } from '../../shared/types'
 import { STREAM_ID_ALIASES, normalizeStreamId } from '../../shared/streamAliases'
 import { runSceneCapturers } from './sceneCapturers'

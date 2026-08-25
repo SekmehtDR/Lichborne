@@ -1,3 +1,18 @@
+// RosterContext — this window's mirror of main's cross-window session roster (v0.11.0).
+//
+// APP-LEVEL (the outermost provider in App.tsx), not per-session: main owns the
+// authoritative list of every session in every window and broadcasts it on
+// each change; this context mirrors it and exposes `roster` (everywhere),
+// `windowId`, `isPrimary` (null until known — treat as primary while unknown)
+// and `myRoster` (the entries this window owns). This window's own TABS are
+// still driven by SessionsContext; this is the cross-window awareness layer
+// (cross-window Quick Send targets read `roster`).
+//
+// INVARIANT: the mount effect must both SUBSCRIBE to pushes AND PULL the current
+// roster. Push-only loses the race with main's did-finish-load broadcast in a
+// freshly-opened window and leaves `roster` empty with nothing to heal it —
+// the comment inside the effect explains the ordering. Don't make it push-only.
+
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { RosterEntry } from '../shared/types'
 

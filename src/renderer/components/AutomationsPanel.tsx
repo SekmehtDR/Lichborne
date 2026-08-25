@@ -1,3 +1,27 @@
+// Automations panel — the tabbed host for every native rule editor:
+// Highlights · Triggers · Macros · Aliases · Mutes · Substitutes · Groups.
+//
+// It renders no rule UI of its own. It owns the things the editors share:
+//   - the F37 SCOPE switch (v0.15.2): "This Character" vs "All Characters".
+//     Global rules are a SEPARATE STORE under the virtual `_global` character
+//     scope, so the six rule panels run UNCHANGED inside a re-pointed
+//     `CharacterProvider` — their own load/save/analytics land on the
+//     `_global` keys, which ride `_shared.yaml` instead of the character YAML.
+//     `handleSaved` adds the shared-YAML flush + the same-window
+//     `lichborne:global-rules-changed` event for that scope. Groups & Modes is
+//     per-character only; its switch renders DISABLED in place, never hidden.
+//   - F63 `moveRuleScope`: a deliberate MOVE between the two stores (target
+//     written FIRST, aborted on a failed write; a content-identical target
+//     rule means "remove the source", never a duplicate).
+//   - `importNonce`: every tab panel loads its list ONCE on mount, so the
+//     ImportWizard's save (and a scope move) bump it to force a remount. Keys
+//     are tab-unique because Macros and Aliases are the same component.
+//   - the app-wide Automation Analytics toggle (v0.14.4) + the stats prune on
+//     open, which must count GLOBAL rule ids as live.
+// The only import path left here is "Import from another client…" (Wrayth /
+// Genie / Frostbite); Lichborne→Lichborne moved to the Launcher's Transfer
+// (v0.10.0). Rendered by GameWindow, portaled to document.body.
+
 import { useEffect, useState } from 'react'
 import { backdropHandlers } from '../utils/backdropClose'
 import { createPortal } from 'react-dom'

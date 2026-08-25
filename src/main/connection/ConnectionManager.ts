@@ -1,3 +1,35 @@
+// ConnectionManager — one character's transport: Lich mode OR direct-SGE mode behind one interface.
+//
+// Owned one-per-Session by main.ts. It composes a LichConnection and an
+// SGEConnection and exposes a single surface to the rest of main —
+// connectViaLich(creds) / connectDirect(creds), send(cmd), gracefulDisconnect()
+// / forceDisconnect(), and the events 'line' (newline-terminated raw XML),
+// 'status' (user-facing connect progress), 'disconnect', 'error'. Main's
+// session line handler feeds 'line' into LichBridge.interceptLine → the
+// StormFrontParser; nothing here knows what the text means.
+//
+// Both paths start with SGE auth (eaccess login → per-character login key,
+// shard-correct via `creds.game`). Lich mode then launches Lich and connects
+// to its front-end port; direct mode opens the game socket itself and does
+// the Genie-style handshake (key + CLIENT_ID, then `\n\n` after the first
+// "Please wait" bytes). send() routes by `mode`; in direct mode it appends
+// `\r\n` itself.
+//
+// Invariants worth knowing before you edit:
+//  • serializeLichLaunch() is a MODULE-LEVEL promise chain shared by every
+//    instance: a Lich serves exactly one front-end then closes its listener,
+//    so multi-character logins must spawn→connect one at a time. SGE auth
+//    deliberately runs OUTSIDE that queue so it overlaps the wait, and a
+//    failed auth bails before Lich is ever spawned; a failed connect kills
+//    the spawned Lich so it can't squat the port.
+//  • Connect progress is `step(n, TOTAL, text)` with the totals declared once
+//    per path (LICH_STEPS / DIRECT_STEPS) — add or remove a phase and you
+//    renumber that path's sites together, or the count lies to the user.
+//  • gracefulDisconnect() has two shapes: the default sends QUIT and waits up
+//    to 5s for the server's own close (the account slot must be released
+//    before a same-account retry); `quickClose` half-closes via socket.end()
+//    so QUIT is guaranteed out the door without waiting for the ack (app
+//    shutdown). Don't collapse them.
 import * as net from 'net'
 import { EventEmitter } from 'events'
 import { LichConnection } from './LichConnection'

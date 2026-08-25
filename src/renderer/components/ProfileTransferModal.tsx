@@ -1,3 +1,21 @@
+// Profile Transfer modal — the Export / Import UI for moving one character's
+// setup (by `TRANSFER_CATEGORIES`) to a `.lb.yaml` file and onto other
+// characters. The logic lives in profileTransfer.ts; this file is the form.
+//
+// Rendered by App, which passes the live `sessions` (so the modal can tell an
+// ACTIVE target — any open session, focused or backgrounded — from an
+// inactive one) and `reloadSession`, which remounts an active target after a
+// live import. Export: pick ANY source profile (works disconnected — it reads
+// the YAML via `buildProfileExport`; an active source's pending saves are
+// flushed first so the file reflects the latest edits), tick categories,
+// write into the Exports folder. Import: choose a file from that folder (or
+// Browse…), tick categories, pick a merge strategy for rules (Append skips
+// duplicates / Replace overwrites per type — Display, Layout, View Prefs and
+// Theme always overwrite), and fan out to any number of target characters.
+// Each target goes through `applyProfileImport(name, isActive, …)`, then
+// `_shared.yaml` is flushed once because two categories (custom themes,
+// named colors) merge into APP-WIDE stores rather than a character's profile.
+
 import { useEffect, useMemo, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

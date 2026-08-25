@@ -1,3 +1,20 @@
+// Stream panel — the generic text-stream view (thoughts, combat, arrivals,
+// any discovered or custom stream) hosted in a zone tab or a floating window.
+//
+// Renders each `TextLine` through `TextLineRow` with the per-session
+// highlight/contact rules pulled from context (`useHighlights` /
+// `useContacts`), so a stream paints exactly like the main scroll. Owns its
+// OWN scroll pin — separate from GameWindow's Virtuoso machinery — with two
+// load-bearing rules: `pinnedRef` changes ONLY from real scroll events, never
+// from render-time geometry (B203), and a `ResizeObserver` re-asserts the
+// bottom on container resizes via a bare `scrollTop` write (the pitfall #68c
+// observer rule). Right-click builds the stream context menu (highlight /
+// trigger from the word or line, timestamps, Clear, Close).
+//
+// `memo`'d (B172): every prop must stay referentially stable across unrelated
+// GameWindow renders, which is why `onClear` / `onToggleTimestamp` /
+// `onCloseStream` take the `streamId` as an argument instead of receiving a
+// per-render closure.
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { TextLine } from '../../../shared/types'
 import { useContacts } from '../../ContactsContext'

@@ -1,3 +1,36 @@
+// Themes — the CSS custom-property palette, the built-in theme catalog, and how a theme is applied.
+//
+// Every colour the UI paints comes from a `--*` custom property on the document
+// root; this file defines them. THE MODEL IS MERGE-OVER-`darkBase`:
+//
+//  • `darkBase` is the ONE complete set of vars (it IS the "Dark" theme, whose
+//    catalog entry carries `vars: {}`). Every other built-in theme below is a
+//    PARTIAL override, and `applyTheme` / `applyCustomTheme` always spread it
+//    over `darkBase` — so a theme (built-in or custom) can never leave a var
+//    undefined, and a var added to `darkBase` reaches every theme for free.
+//  • `MAP_STRUCTURAL_CASCADE` — the map's structural colours, wired to the
+//    general palette as `var(--bg-app)` etc. — is spread into `darkBase` AND
+//    re-applied LAST in both apply functions, so a theme's pinned `--map-*`
+//    literal is INERT (Binu's "map won't follow App Background" bug). Only
+//    the semantic map cues (`--map-arc-*`, `--map-current-color`,
+//    `--map-select-color`) stay per-theme. Don't pin structural map vars.
+//  • Palettes that must stay legible on every theme without per-theme work
+//    (the `--syntax-*` tokens, the `--experience-*` vars, §34.7) are defined
+//    ONCE here as `color-mix(...)` / `var(...)` toward the general palette —
+//    the pitfall #34 / #63 cascade rule. Prefer that shape over a literal.
+//
+// Applying writes each var to the root, records the theme id under
+// `lichborne.theme`, then calls the post-apply hook (`registerThemeAppliedHook`,
+// B114, v0.8.4) so the accessibility overlays in settings.ts — which share
+// these keys — are re-applied after EVERY theme write; settings.ts can't be
+// imported here (circular), so GameWindow registers that callback. `initTheme`
+// resolves the saved id against `THEMES`, then the custom themes in
+// `lichborne.myThemes`, then falls back to the first built-in.
+//
+// The catalog is keyed by `id` ONLY — two built-ins (`classic`, `classic-light`)
+// share the display name "Classic" and differ by swatch, so never look a theme
+// up by name.
+
 export interface ThemeVars { [key: string]: string }
 
 export interface Theme {

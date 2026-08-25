@@ -6,6 +6,70 @@
 
 ---
 
+## v0.19.2 — the Elanthia-Online handover, a license, and a full internal sweep
+
+The release that prepares Lichborne's transfer to the **Elanthia-Online** org
+(the community team that maintains Lich) — plus the deepest proactive bug sweep
+the project has run, with everything it found fixed the same day.
+
+- **Dual-feed auto-updater** (DESIGN §18.4.1). Every shipped install has the old
+  repo baked into `app-update.yml`, so `checkForUpdatesDualFeed()` tries
+  `elanthia-online/Lichborne` first and falls back to `SekmehtDR/Lichborne` —
+  silent pre-transfer (the `updaterProbing` flag suppresses the expected 404's
+  ERROR line; only the FINAL feed's failure reaches the updater log), seamless
+  after. The winning feed serves the download too (verified in electron-updater's
+  source: the provider is captured at check time). Concurrent runs JOIN one
+  in-flight check (the `serializeLichLaunch` shape) — found by the sweep's own
+  review of the fresh code before it ever shipped. Rollout: ship this from
+  SekmehtDR → transfer the repo (a true transfer; GitHub's redirects cover even
+  never-updated installs) → flip the 12 hardcoded URLs and cut from the org
+  (§18.4.1's Phase-3 checklist + the org Actions write-permission pre-flight).
+- **Lichborne has a license: BSD 3-Clause** — the same license as Lich itself —
+  © 2026 Sekmeht and Binu, with the Miron→Tillmen→Elanthia-Online copyright-line
+  pattern as the stewardship template. `package.json` carries `license`/`author`;
+  README + User Guide carry the Simutronics non-affiliation disclaimer. The
+  LICENSE file is kept pure license text so GitHub's detector badges the repo.
+- **Full internal bug sweep** (three parallel code audits + recurring-class greps
+  + all harnesses): zero open tester bugs, all seven v0.19.1 fixes verified
+  intact — and **B285–B301 + B303 found and fixed** (see BUGS.md): the Overview
+  toggle swallowing typing (B285), spoken-to never expiring (B286, timer-driven
+  expiry), "up 0s" on a dropped card (B287, uptime stops instead), a stale
+  session id in `setSessionName` (B288, the one live pitfall-#86 instance), the
+  contact popover + six game-area controls ignoring Font Size (B289/B290), the
+  feed-flip full-scrollback frame (B291), card timers ticking at 10 Hz forever
+  (B292), `/view set conditions=/timers=` (B293), a bundle-order `flex`
+  restatement (B294), hover outranking severity borders (B295), the grid not
+  re-planning on font changes (B296), a dead CSS var (B297), DIGEST_KEYS made
+  genuinely compile-enforced (B298), duplicate non-skill key sets merged (B299),
+  nsys out of `worstParts` (B300), `makeCharacterId` unified into `src/shared`
+  (B301), and the Overview ↑-history made truly per-window (B303). B305
+  (A−/A+ + compass fixed-size) confirmed deliberate and commented; B302/B304
+  deferred by Sekmeht as conscious calls.
+- **The scene harness had been crashing mid-file** on a never-committed
+  `observeLine` API — every case below the crash silently wasn't running.
+  Repaired; all four harnesses + the literal-gate check green (137/35/ALL/160,
+  21,191 real rules, zero gate disagreements).
+- **Maintenance:** Electron 43.2.0 → **43.4.1** (ABI 148 held — verified by an
+  in-Electron better-sqlite3 query, no rebuild; note `npm update` skipped
+  electron's binary postinstall and `install.js` had to be run by hand), esbuild
+  0.28.2, highlight.js 11.12.0, react-virtuoso 4.18.12, nanoid 3.3.18 (audit
+  fix; the advisory wasn't exploitable here — verified all call sites are plain
+  `nanoid()`). Held majors unchanged; **js-yaml 5 newly joins the held list**
+  (the profile parser — dedicated migration only).
+- **Every source file now opens with an orientation header** (the community
+  handover comments pass). 171/171 `.ts/.tsx` files under `src/` carry a
+  top-of-file block: what the file is, where it sits in the pipeline, what a
+  developer must not break — 94 written new, 4 one-liners upgraded, 11 left
+  as-is because they already carried the block below their imports. Written
+  by five parallel agents on disjoint file sets, each required to ground every
+  claim in the file's own code/comments and to report its least-certain claim
+  per file; five headers were corrected from those reports (profile.ts and
+  profile-types.ts overstated "only reader/writer" against pitfall #26,
+  LichDashboard's "every tab", GenieMapView's persisted-state claim, and a
+  pre-existing stale "deferred" note in AppBar). Verified insertion-only by a
+  numstat diff against a pre-pass baseline; tsc unchanged. The convention is
+  now a CLAUDE.md guardrail.
+
 ## v0.19.1 — Binu's first pass over Views
 
 Both reported against the Overview specifically, on the released v0.19.0 build.

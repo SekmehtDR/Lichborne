@@ -1,3 +1,24 @@
+// Map data model + shared helpers for BOTH map views — the types and pure
+// functions MapPanel, MapImageView (Lich Map) and GenieMapView (Genie Maps)
+// import; no React, no state.
+//
+// Two data sources, two number spaces. `LichRoom` is a row of Lich's map JSON:
+// `id` is LICH's own room id, `uid` the GAME's (a different space — the
+// `<nav rm>` / subtitle lookup supplies a GAME id, which is why the map must
+// index both; Lich 5.20 review). `GenieZone` / `GenieNode` / `GenieArc` /
+// `GenieLabel` are the Genie XML shape, produced by `parseGenieZone` (renderer
+// DOMParser; throws on `<parsererror>` so a broken file is skipped rather than
+// loaded as an empty zone; node colours normalized to canonical hex so effect
+// lookups keyed by hex don't silently miss). Genie data carries NO game room
+// ids — its matching is title + description (+ exits, in GenieMapView).
+//
+// `findRoom` is the Lich Map's title+description FALLBACK for when the room-id
+// lookup misses (exact-case title → normalized title; then description
+// EXACT → SUBSTRING at ≥24 chars, only when it resolves to exactly one
+// candidate — B148/B150). `bfsPath` walks Lich `wayto` for the Lich Map's
+// left-click path preview and step count. `COLOR_LEGEND` is the community's
+// canonical node-colour meanings, surfaced by GenieMapView's legend overlay.
+
 // ── Lich JSON room ────────────────────────────────────────────────────────────
 
 export interface LichRoom {

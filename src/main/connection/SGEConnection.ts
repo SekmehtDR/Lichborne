@@ -1,3 +1,23 @@
+// SGEConnection — the Simutronics eaccess login handshake (eaccess.play.net:7910, TLS).
+//
+// The account-auth step that BOTH connect paths share: it talks the SGE
+// line protocol over a short-lived TLS socket — `K` (fetch the 32-byte XOR
+// key) → `A` (account + password encrypted with that key) → `G` (select the
+// game/shard by code: DR / DRX / DRT / DRF) → `C` (list the characters) →
+// `L` (trade a character key for GAMEHOST / GAMEPORT / a one-shot login KEY).
+// It never carries game text; once getLoginKey() resolves the caller
+// disconnect()s and hands the key to Lich (the Genie handshake in
+// LichConnection) or to the direct game socket (ConnectionManager).
+//
+// Two consumers: ConnectionManager (per-session, both Lich and direct mode)
+// and main.ts's account-wide character discovery for the Add Character
+// wizard. The `gameCode` argument to authenticate() is load-bearing — the
+// wrong code returns an empty list or another shard's characters, and the
+// login key it yields is shard-specific (the v0.8.0 DRT/DRX/DRF routing bug).
+//
+// Reads are byte-timed, not line-framed: SGE responses have no newline
+// guarantee, so readRaw() collects whatever arrives within a settle window
+// after the first byte. Keep the per-step settle values if you touch them.
 import * as tls from 'tls'
 import { EventEmitter } from 'events'
 import type { CharacterEntry } from '../../shared/types'

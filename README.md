@@ -122,4 +122,12 @@ npm install
 npm start
 ```
 
-Needs Node 24+. Build commands, project layout, conventions, and the release pipeline are documented in [CLAUDE.md](CLAUDE.md) and [DESIGN.md](DESIGN.md).
+Needs Node 24+. Build commands, project layout, conventions, and the release pipeline are documented in [CLAUDE.md](CLAUDE.md) and [DESIGN.md](DESIGN.md) — and every source file opens with a comment block saying what it is, where it sits in the pipeline, and what not to break, so the code itself is a reasonable place to start reading.
+
+---
+
+## License
+
+Lichborne is open source under the [BSD 3-Clause License](LICENSE) — the same license as [Lich](https://github.com/elanthia-online/lich-5) itself. Copyright © 2026 Sekmeht and Binu.
+
+DragonRealms and StormFront are trademarks or registered trademarks of Simutronics Corp. Lichborne is an independent, unofficial community project — not affiliated with, sponsored by, or endorsed by Simutronics. Playing DragonRealms through Lichborne requires your own Simutronics account and is subject to Simutronics' terms of service.

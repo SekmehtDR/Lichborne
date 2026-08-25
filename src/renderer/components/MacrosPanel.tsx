@@ -1,3 +1,24 @@
+// Macros panel — ONE component that edits TWO rule stores behind an internal
+// tab: ALIASES (`aliases` — "when I type X, send these commands", with
+// `$1`/`$2`/`$rest`, pass-through and a per-command delay) and KEY BINDINGS
+// (`macros` — a recorded key combo → commands, with `$vars` and `{Token}`
+// playback such as RepeatLast).
+//
+// AutomationsPanel hosts it TWICE, once per `initialTab`, and `initialTab` is
+// read once on mount — which is why the host keys the two tabs distinctly.
+// It also runs standalone as its own modal when `inline` is false. Per
+// character via `useCharacter()` (re-pointed at the virtual `_global` store
+// in the Automations "All Characters" scope — `scope='global'` hides the
+// Groups rows, and `onMoveScope(type, rule)` carries WHICH store because this
+// panel hosts both). Every write is `setX` → `saveAliases`/`saveMacros`
+// (localStorage) → `onSaved` (the host's scheduled profile save → YAML);
+// lists load ONCE on mount. Exports `KeyBindingField` (the Record-a-combo
+// control, built on `formatKeyCombo`) — GroupsModesTab reuses it for mode
+// hotkeys. The command inputs document the `@` cursor convention (B137,
+// v0.8.10): an unescaped `@` makes a command "type and wait", `\@` is a
+// literal. `openAliasId` (v0.14.6) opens an existing alias for `/alias edit`.
+// Analytics is opt-in via `analyticsOn`, one review per tab.
+
 import { useEffect, useRef, useState } from 'react'
 import { backdropHandlers } from '../utils/backdropClose'
 import { ResizeDivider } from './ResizeDivider'

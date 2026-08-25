@@ -1,3 +1,22 @@
+// simucoin/client — the store.play.net sign-in → balance → claim → sign-out scrape (F71, v0.18.0 — DESIGN §42).
+//
+// One export, runSimuCoin(account, password, claim): an authenticated HTML
+// scrape over Electron's `net` stack that resolves to a SimuCoinStatus and
+// NEVER throws — every failure (unrecognised page, rejected sign-in, timeout,
+// unconfirmed claim) becomes a quiet status, so a store redesign or outage
+// makes the feature go silent rather than show a wrong number. Called only by
+// ./index.ts, which supplies the password and serializes runs. Every URL,
+// regex and form field that knows the store's HTML lives in ./constants.ts —
+// a store redesign is a one-file fix there, not here.
+//
+// The load-bearing details, each with its own comment below: the IN-MEMORY
+// 'simucoin' partition created with `cache: false` plus no-cache headers on
+// every request (a cached sign-in page hands you a stale anti-forgery token
+// against a fresh cookie — the second-account "authentication failure"), the
+// full cookies+cache resetJar() before every attempt AND in `finally` after
+// sign-out, the single bounded retry on `auth-failed`, and the rule that a
+// claim POST that doesn't confirm reports still-claimable, never success.
+// A plain check never claims; only `claim === true` posts.
 import { net, session as electronSession, type Session } from 'electron'
 import {
   SIGN_IN_URL, STORE_URL, BALANCE_URL, CLAIM_URL, SIGN_OUT_URL,

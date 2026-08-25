@@ -1,3 +1,28 @@
+// PanelFrame — the tabbed panel container: a tab strip plus the active tab's
+// body, and the ONE place that maps a `TabDef.type` to its component (the
+// `renderPanel` switch at the bottom). It also exports the panel vocabulary
+// everything else speaks: `PanelType`, `PANEL_LABELS`, `ALL_PANEL_TYPES`,
+// `makeTab` / `makeCustomTab` / `makeExperienceTab`, `EXP_TAB_PREFIX`.
+//
+// Rendered by GameWindow for every static zone AND inside every floating
+// window in Windowed Panels, always on the shared `sharedFrameProps` bag — a
+// prop wired to only one host is silently missing in the other (the B193 rule
+// noted on `renderExperienceTab`). It owns the strip's behaviour, not the
+// data: tabs/active changes go UP through `onTabsChange` / `onActiveChange`
+// and the host persists them. Features living here: the + menu (built-ins and
+// discovered streams sorted together, Experiences in an [e]-badged section,
+// "New stream…"), tab close + right-click Clear/Close, F46 drag-reorder
+// (`reorderTabs`) with the v0.18.2 cross-frame move (`frameId`/`onAdoptTab` —
+// a custom MIME type is the only hover-time signal), F31 per-panel A−/A+
+// (`--panel-font-size` on the body wrapper), and the tab-hosted Experience ⚙.
+// Perf invariants (B172): this component is NOT memoized and re-renders on
+// every game batch, but its panels ARE — so optional-prop fallbacks are the
+// module-level `EMPTY_ARRAY`/`EMPTY_SET`/`NOOP`, the close callback rides a
+// latest-closure ref (`closeStreamRef`), and layout measurement for the drag
+// animation runs only while a drag is live. Id invariants: an Experience tab
+// is ALWAYS `exp:<id>` and `experience` is deliberately absent from
+// `ALL_PANEL_TYPES`; the stream id is `conversation`, singular (v0.8.10).
+
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import ContextMenu from './ContextMenu'

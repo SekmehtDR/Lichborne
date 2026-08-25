@@ -1,3 +1,21 @@
+// Session Log modal — one per-character window over the on-disk day-files:
+// Recent Tail · Quick Search · Export (DESIGN §28.4). The three views are
+// described in the block below the imports.
+//
+// Rendered by GameWindow (the Logs button, or right-click "Show in Log" →
+// `initialSearch`; note `!= null` — an EMPTY string opens Search with a blank
+// query, `null` opens Recent). Every read goes through the `window.api.
+// sessionLog*` IPC and is PAGINATED (`PAGE` lines per tail page, `JUMP_RADIUS`
+// around a search hit) — the modal never loads a whole day, and Export sends
+// main a `SessionLogExportSpec` and gets back a small result, so big data
+// never crosses IPC. `LINE_RE` accepts both the current `[HH:MM:SS][stream]`
+// shape and the legacy dated form so pre-v0.7.0 logs still parse. The
+// Recent-tail filter and the Export format checkboxes persist in the APP-WIDE
+// `SessionLogSettings` (`_shared.yaml`) via read-modify-write +
+// `scheduleSharedProfileSave`, skipping the mount run; date ranges and the
+// export stream selection are deliberately transient. The tail's
+// `useLayoutEffect` keeps content anchored when older lines are prepended.
+
 import { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

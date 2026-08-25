@@ -1,3 +1,16 @@
+// Base segment renderer — ONE `TextSegment` → one React node, no rule matching.
+// The bottom of the text-render stack: `renderSegmentFull` (highlights + contacts)
+// and `renderWithContacts` split a segment into runs and hand every run back
+// here, and `TextLineRow` calls it directly when a line has no rules to apply.
+//
+// What it owns: the `data-preset` attribute (a bare `bold` segment falls back to
+// the `bold` preset — an explicit preset always wins), inline fg/bg colour from
+// the segment's own `fg`/`bg`, and the two click surfaces — `url-link` (external
+// URLs wrapped in Simu's Play.net bounce page, v0.8.1 F23; the URL is passed RAW,
+// see `wrapExternalLink`) and `cmd-link` (a `<d cmd>` link → `onSendCommand`).
+// `overrideColor` is how a line-scope highlight's text colour beats the
+// segment's preset colour — inline, colour ONLY, never the preset's background
+// or the segment's bold/links (the parameter comment has the full story).
 import type { TextSegment } from '../../shared/types'
 
 // v0.8.1 (F23): wrap external URLs in Simu's bounce page so the user gets

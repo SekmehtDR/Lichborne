@@ -1,3 +1,32 @@
+// useTriggerEngine — the per-session native trigger engine (WHEN a line/variable → THEN actions).
+//
+// GameWindow owns one per session and feeds it every incoming line via
+// `processLine(stream, text)` and every game-variable change via
+// `processVariableChange(name, value)`. This file COMPILES the rules (an
+// effect keyed on `rules`: text triggers → regex + a `fastLower` pre-gate
+// from `literalGate`, B172; variable-watch triggers indexed separately),
+// EVALUATES them, and EXECUTES the actions through the `TriggerCallbacks`
+// the caller supplies — sending a command, echoing to a stream, setting a
+// variable, disabling a one-shot, flashing the window, writing a log. The
+// engine never touches the socket or the DOM directly; the callbacks do.
+//
+// `processLine`'s per-rule ladder, in order — keep it in this order:
+// enabled+compiled → `fastLower` includes() pre-check (skips the regex for
+// most rules on most lines) → group gating (`isRuleActive`) → stream scope →
+// regex exec → cooldown → state gates → record the cooldown → capture groups
+// (named AND numbered) → `buildVars` → `onFire` (the Debug/analytics hook,
+// optional) → each action → one-shot disable.
+//
+// Live game state and the active-group map come in through REFS (`stateRef`,
+// `activeGroupStatesRef`), so a fire reads the value of THIS moment without
+// the callbacks re-creating on every vital tick. `buildVars` is the catalogue
+// of `$vars` an action may interpolate (match/groups, character, date/time,
+// vitals, RT/CT, stance, spell, hands, room, exits, indicator booleans, then
+// the trigger-set variables and the regex groups on top). Delayed `command`
+// actions are tracked in `pendingTimersRef` so `cancelPending()` can drop
+// them on disconnect. `playWavFile` is exported for reuse; its comment covers
+// the Windows-vs-POSIX `file://` URL shapes.
+
 import { useCallback, useEffect, useRef } from 'react'
 import {
   type TriggerRule, type TriggerAction, type StateGate, type GateOperator,

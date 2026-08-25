@@ -1,3 +1,16 @@
+// ScriptListPanel — the "Active Scripts" panel: the `lichScripts` PanelFrame
+// tab listing the Lich scripts currently RUNNING for this session, with
+// pause / resume / kill (kill is click-to-confirm) and a manual refresh.
+//
+// Pure view over props. PanelFrame feeds it `scripts` / `lastUpdated` /
+// `pending` and the action callbacks from `useLichBridge`, whose `;listall`
+// poll only INJECTS while a Lich Scripts panel is open (the Idea A gate in
+// useLichBridge.ts — an unwatched poll can be mis-captured by a script's
+// UpstreamHook as typed input). A 1s tick re-renders the uptime / "ago"
+// readouts. It is a PANEL, so `.sl-panel` (lich-panels.css) anchors to the
+// panel font and sizes children in `em` — the Lich Dashboard MODAL is the one
+// that stays `rem`.
+
 import { useState, useEffect, useRef } from 'react'
 import type { ScriptRecord } from '../../shared/types'
 import '../styles/lich-panels.css'

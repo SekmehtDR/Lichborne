@@ -1226,10 +1226,15 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       // (UX standard #8): it turns on scene capture for EVERY open character,
       // not just this one, which is why it defaults off.
       { key: 'speech',   values: ['on', 'off'], hint: 'flag when somebody speaks to a character — turns on scene capture for every open character' },
-      { key: 'vitals',   values: ['on', 'off'], hint: 'show the vitals bar on each card' },
-      { key: 'room',     values: ['on', 'off'], hint: 'show the room and who is in it' },
-      { key: 'exp',      values: ['on', 'off'], hint: 'show the session stat chips' },
-      { key: 'injuries', values: ['on', 'off'], hint: 'show the wound chip' },
+      { key: 'vitals',     values: ['on', 'off'], hint: 'show the vitals bar on each card' },
+      // B293: `conditions` and `timers` were missing while their four siblings
+      // were offered — two of the six card-section toggles were mouse-only
+      // (Principle #11 lockstep). Order mirrors the card top-to-bottom.
+      { key: 'conditions', values: ['on', 'off'], hint: 'show the condition chips (bleeding, stunned, spoken to…)' },
+      { key: 'room',       values: ['on', 'off'], hint: 'show the room and who is in it' },
+      { key: 'exp',        values: ['on', 'off'], hint: 'show the session stat chips' },
+      { key: 'injuries',   values: ['on', 'off'], hint: 'show the wound chip' },
+      { key: 'timers',     values: ['on', 'off'], hint: 'show the RT / Cast / Aim strip on each card' },
     ],
     flags: [],
     description: 'Configure what the Overview cards show',
@@ -1272,7 +1277,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
             patch.healthCritPct = n; applied.push(`critical below ${n}%`); break
           }
           default: {
-            const key = ({ speech: 'watchSpeech', pulse: 'alertPulse', vitals: 'showVitals', room: 'showRoom', exp: 'showExp', injuries: 'showInjuries' } as Record<string, string>)[k]
+            const key = ({ speech: 'watchSpeech', pulse: 'alertPulse', vitals: 'showVitals', conditions: 'showConditions', room: 'showRoom', exp: 'showExp', injuries: 'showInjuries', timers: 'showTimers' } as Record<string, string>)[k]
             if (!key) return err(`/view set does not know "${k}". Try /help view set.`)
             const b = onOff(v)
             if (b === null) return err(`${k}= takes "on" or "off" — not "${raw}".`)

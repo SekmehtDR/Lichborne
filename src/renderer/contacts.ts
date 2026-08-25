@@ -1,3 +1,24 @@
+// Contacts — the per-character player list and the templates that colour/tag their names.
+//
+// Types, per-character storage, factories and display formatters for two
+// records: a `Contact` (a player name + guild/circle/notes + presence stats)
+// and a `ContactTemplate` (how a contact's NAME and optional TAG are painted —
+// colours, bold, and the same text-effect menu highlights use). Storage is two
+// `scopedKey`s (`contacts` / `contact-templates`), written through
+// `safeSetItem` because imports mint big lists and a bare `setItem` at quota
+// throws and loses the write (B197 family, v0.14.5). The two DEFAULT_TEMPLATES
+// (Friends / Enemies) are re-added by id on every load if missing.
+//
+// THE TRAP TO KNOW (pitfall #121, spelled out on `normalizeTemplate`): every
+// load REBUILDS each template field by field, and the panel saves what it was
+// handed — so an optional field added to `ContactTemplate` but not to that
+// rebuild is silently DESTROYED on the next save. Adding a field means adding
+// it there too; the round trip is harness-covered.
+//
+// The F34 (v0.8.6) social stats on `Contact` (`encounterCount`, `timeSpentMs`,
+// `lastEncounterAt`) are optional and PER CLIENT; they're maintained by the
+// room-presence tracking elsewhere — this file only defines and formats them.
+
 export interface ContactTemplate {
   id: string
   name: string

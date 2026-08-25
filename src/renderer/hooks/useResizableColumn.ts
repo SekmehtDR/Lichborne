@@ -1,3 +1,13 @@
+// useResizableColumn — a draggable, remembered left-column width for split-pane views.
+//
+// Self-contained UI hook with no game or session dependency: the width is
+// clamped to [min, max], persisted under the RAW `storageKey` you pass (plain
+// localStorage — app-wide, not character-scoped), written once on mouse-up
+// (rounded), and `reset()` drops the stored key. During a drag it pins a
+// `col-resize` cursor and disables text selection on `<body>`, restoring both
+// on release. Every localStorage touch is try/catch'd — a quota failure just
+// forgets the width. Used by the Lich Dashboard's Scripts/Profiles split.
+
 import { useCallback, useRef, useState } from 'react'
 
 // A draggable, persisted column width for a two-pane split view. Returns the

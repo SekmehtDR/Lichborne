@@ -1,3 +1,22 @@
+// TextLineRow — ONE rendered line of game text: timestamp prefix + every
+// segment, with line-scope highlights, match-scope highlights and contact
+// names painted on. It is the row type for the main window's Virtuoso list
+// (GameWindow), every StreamPanel, and the Overview card's feed.
+//
+// The per-line hot path lives here, so two invariants hold:
+// - The expensive work runs ONCE per line, not per segment: `lineText` is
+//   joined once (B115 — DR fragments a line into 3-5 segments around names /
+//   links / bold, so a regex could never match a slice) and the contact +
+//   match-rule scan produces `lineRanges` once (B172); each segment just
+//   intersects. Don't add a render path that re-scans per segment.
+// - It is `memo`'d, and the panels above are memo'd on it — every prop must
+//   keep a referentially stable identity (arrays, callbacks, the regex) or the
+//   memo is silently defeated on every game line.
+//
+// Cheap-path shortcut: with no contacts and no match rules (`hasExtras` false)
+// each segment goes through the lighter `renderSegment`. `data-line-id` is
+// the DOM→TextLine handle that lets a large selection be rebuilt from the data.
+
 import { memo } from 'react'
 import type { TextLine } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'

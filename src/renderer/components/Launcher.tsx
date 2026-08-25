@@ -1,3 +1,29 @@
+// Launcher — the logon screen: one tile per character, grouped account → game
+// section, with a Favorites quick-select block (characters AND pinned teams),
+// the Teams section (F85), and a top bar (Reconnect Last F62 · Team Login F21
+// · Add account · Transfer · Lich Setup). Also exports `LauncherCharacter` and
+// `loadCharacterCards()`, the tile shape everything else reads.
+//
+// Rendered by App as the full logon screen, and again in `compact` mode
+// embedded in the Add Character modal (no logo, no Teams, no account Remove).
+// It never connects anything itself: every launch goes UP through `onConnect`
+// / `onBulkConnect` / `onReconnectLast` / `onConnectSet` (names→characters are
+// resolved HERE, one per account, then App runs the plan). What it OWNS is
+// per-tile profile state, written IMMEDIATELY by the read-modify-write
+// helpers (`setCharacterGame` / `setCharacterUseLich` / `setCharacterHidden`
+// / `setCharacterFavorite` / `patchCharacterProfile`) straight to the YAML
+// via `window.api` — NEVER through `buildCharacterProfile`, which pulls
+// `state` from localStorage and would wipe any character that isn't the
+// active one (the comment on `setCharacterGame`). Launcher-local UI state in
+// localStorage: `expandedAccounts` (a JSON array; the wizard pre-seeds a new
+// account and `refreshKey` re-reads it), `favCollapsed` / `teamsCollapsed`
+// (INVERTED flags, so an absent key means expanded), `favTipDismissed`;
+// "Show hidden" is session-only. `refreshKey` is a SOFT refresh, not a
+// remount key, so that state survives. Removing an ACCOUNT archives its
+// profiles (profiles first, password second — order matters) rather than
+// deleting them; deleting a character deletes only its profile. Teams
+// re-read on `BULK_SETS_CHANGED_EVENT` (this window) and `storage` (others).
+
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { backdropHandlers } from "../utils/backdropClose"

@@ -1,3 +1,23 @@
+// simucoin/index — the SimuCoin IPC surface + run scheduling (F71, v0.18.0 — DESIGN §42).
+//
+// registerSimuCoinHandlers() (called once from main.ts) owns the three
+// app-level `simucoin:*` channels: `check` (check one ACCOUNT, optionally
+// claim), `cached` (last status per account, for a window that opens later),
+// and `has-password` (is the feature even offerable — a boolean, never the
+// credential). These are keyed by account, not sessionId: an allotment
+// belongs to an account, not a character.
+//
+// The boundary: the renderer names an account; main pulls the password from
+// passwords.ts (safeStorage) and hands it to ./client's runSimuCoin. Only a
+// SimuCoinStatus ever goes back. Consent gating is the renderer's; the
+// mechanical precondition enforced here is "no saved password ⇒ no run".
+//
+// Two guards, and both are needed: `inFlight` dedupes the SAME account (one
+// run shared by two windows or a click racing the startup pass — never a
+// double claim POST), and `simucoinChain` serializes ALL runs GLOBALLY,
+// because every run shares one cookie jar that it wipes on entry and exit —
+// two different accounts overlapping would read/claim under the wrong name
+// (see the comment on the chain). Don't collapse either into the other.
 import { ipcMain } from 'electron'
 import { runSimuCoin } from './client'
 import { loadPassword } from '../passwords'

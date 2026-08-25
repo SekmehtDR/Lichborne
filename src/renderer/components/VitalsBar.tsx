@@ -1,3 +1,12 @@
+// VitalsBar — the health/mana/concentration/stamina/spirit bar strip, in
+// regular or opt-in compact (acronym-label) form.
+//
+// Pure display: renders only the vitals present in the `vitals` prop, in fixed
+// order. Guild-renamed vitals arrive through `labels` (the parser's
+// progressbar customText — a Barbarian's "Inner Fire" mana); compact mode
+// derives its acronym from that LIVE label (IF, not I), so don't replace the
+// derivation with a fixed map.
+
 import '../styles/vitalsbar.css'
 
 interface VitalState {

@@ -1,3 +1,26 @@
+// Settings — per-character display & accessibility settings, and how they reach the DOM.
+//
+// `AppSettings` is the PER-CHARACTER settings record: game font size / family
+// / line height, large print, high contrast, colour-blind mode, epilepsy-safe,
+// vitals/icon bar positions, compact vitals / compact exp, timer style, URL
+// auto-linking + web-link safety (F23), map animations, text weight (B113),
+// and the per-panel font overrides (F31, `panelFontSizes`). Each field's own
+// comment carries its history. Stored under `scopedKey(character,'settings')`
+// and loaded by spreading the saved JSON over DEFAULT_SETTINGS, so a field a
+// previous version never wrote just takes its default. `loadSettings()` with
+// NO character is the boot path and returns pure defaults. Session Log
+// preferences are deliberately NOT here — they're app-wide (see
+// sessionLogSettings.ts).
+//
+// `applySettingsToDOM` is the single writer of the game-area CSS vars
+// (`--game-font-size` / `--game-line-height` / `--game-font-family` / the
+// text-weight pair), the large-print root font size, `data-epilepsy-safe`,
+// and then the two OVERLAYS — high contrast first, colour-blind after it so
+// the more specific semantics win. Those overlay keys are the SAME custom
+// properties the theme sets (`--bg-*`, `--text-*`, `--vital-*`, …), so any
+// theme write must be followed by a re-apply of this function or the overlay
+// is silently erased. `initSettings` runs it once at boot with defaults.
+
 import type { ThemeVars } from './themes'
 
 export interface AppSettings {

@@ -1,3 +1,19 @@
+// Import mapper — converts the neutral `ImportCandidate` intermediate (types.ts,
+// produced by the Wrayth / Genie / Frostbite parsers) into native Lichborne
+// rule objects the Import Wizard merges into the active profile.
+//
+// One `mapX` per rule type (highlight / mute / substitute / macro / alias /
+// trigger), plus `mapImportResult`, which applies the wizard's selection sets
+// by INDEX over the candidate arrays. Every mapped rule gets a fresh `nanoid`,
+// a blank name, `enabled: true`, and `groupIds: [] + allGroups: true` (the
+// shared group-gating shape). Choices baked in here: imported mutes are
+// always `line` scope (every source client's gag hides the whole line);
+// imported triggers watch `main`, not `any` (B128 — DR double-routes speech,
+// so watch-all double-fired); a trigger sound that is a real audio FILE is
+// preserved verbatim as `soundFile`, and only a built-in sound NAME falls
+// back to the closest `soundPreset`. Fields the intermediate does not model
+// take defaults — which is exactly why Lichborne-native imports bypass this
+// mapper via `ImportResult.nativeRules` (see types.ts).
 import { nanoid } from 'nanoid'
 import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportMute, ImportSubstitute } from './types'
 import { HighlightRule, HighlightStyle } from '../highlights'

@@ -298,7 +298,10 @@
   background: color-mix(in srgb, var(--bg-base) 93%, transparent);
   border: 1px solid var(--accent-bg);
   color: var(--accent);
-  font-size: 0.75rem;
+  /* B290: was 0.75rem = exactly the default 12px game font — identical by
+     coincidence, frozen by unit. The badge overlays game text and should
+     read at the same size the user chose for it (pitfall #45). */
+  font-size: var(--game-font-size);
   padding: 5px 16px;
   border-radius: 12px;
   cursor: pointer;
@@ -389,7 +392,9 @@
 
 .empty-panel-slot-label {
   color: var(--accent);
-  font-size: 0.78rem;
+  /* B290: game-area placeholder — anchored to the game font (was 0.78rem,
+     frozen while everything around it scaled; × 1.04 preserves the default). */
+  font-size: calc(var(--game-font-size) * 1.04);
   font-weight: 700;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -397,7 +402,7 @@
 
 .empty-panel-slot-hint {
   color: var(--text-faint);
-  font-size: 0.78rem;
+  font-size: calc(var(--game-font-size) * 1.04); /* B290: was 0.78rem */
   font-style: italic;
 }
 

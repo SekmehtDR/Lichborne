@@ -1,7 +1,9 @@
 {
   "name": "lichborne",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "description": "DragonRealms game client with a primary Lich integration focus.",
+  "author": "Sekmeht and Binu",
+  "license": "BSD-3-Clause",
   "main": "dist/main/main.js",
   "scripts": {
     "dev:renderer": "vite",

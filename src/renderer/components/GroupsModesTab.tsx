@@ -1,3 +1,15 @@
+// Groups & Modes tab — the editor for rule GROUPS (which display rules are
+// active) and MODES (named on/off sets of groups with an optional hotkey).
+//
+// Rendered by AutomationsPanel as its `groups` tab. It owns no persistence of
+// its own: every edit goes through `useGroups()` (GroupsContext), whose
+// `setGroups`/`setModes` write state AND save it for the current character.
+// Two side effects a developer should keep: deleting a group also strips its
+// id from every mode's `enabledGroups`, and deleting the ACTIVE mode calls
+// `clearMode()` so no stale mode stays applied. "Apply" saves the draft first,
+// then applies it via `applyModeObject`. The hotkey field is MacrosPanel's
+// `KeyBindingField`, reused so mode hotkeys capture keys the same way macros do.
+
 import { useState } from 'react'
 import { type RuleGroup, type GameMode, newGroup, newMode } from '../groups'
 import { useGroups } from './GroupsContext'

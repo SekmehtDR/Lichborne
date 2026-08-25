@@ -1,3 +1,42 @@
+// GameWindow — ONE character's whole session UI: the event-stream
+// subscription, the text pipeline and scroll machinery, the command-send
+// funnels, rule-engine wiring, the panel zones / windowed layout, and the
+// per-session providers. Mounted once per session by App; it stays mounted
+// but `display:none` while its tab is in the background (`isActive` gates
+// anything that touches the DOM or keyboard), and a reconnect-in-place swaps
+// `session.sessionId` WITHOUT a remount — so every send reads
+// `sessionIdRef.current`, never a captured id (see the ref's own comment).
+//
+// Navigate by the `── section ──` dividers rather than top-down:
+//   - module constants above the component: `MAX_LINES`/`TRIM_CHUNK` +
+//     `appendTrimmed` (the only way scrollback grows), `NEVER_DISCOVER`,
+//     `STREAM_FALLBACK` (where an UNWATCHED stream's text is shown instead).
+//   - "Event stream": the single `window.api.onGameEvent` subscription,
+//     filtered by session id, turning one batch into main/stream lines,
+//     room/vital/indicator state, discovery, `applyTextMods` (mutes →
+//     substitutes), `logToSession`, and `replayingRef` (a replay batch
+//     rebuilds state but fires NO side effects).
+//   - "Scroll" / "stickToBottom": the SINGLE auto-scroll primitive over
+//     react-virtuoso.
+//   - "Macro/alias helpers" + "Command bar": the send funnels —
+//     `dispatchUserText` (typed text: `runSlashLine` intercept, aliases, echo,
+//     history, log), `sendCommandSequence` (macros/aliases) and the echoing
+//     `sendCommand` (map / exits / links / triggers); a bare
+//     `window.api.sendCommand` is for deliberately silent sends only.
+//   - "Trigger engine": `useTriggerEngine` on `triggerCallbacks` + the live
+//     `triggerCtxRef`; engines read the character's rules merged with the
+//     `_global` scope's.
+//   - "Persist panel layout" · "Free Layout" · "Lichborne Experiences" ·
+//     "Shared PanelFrame props": the zone skeleton vs `WindowLayer`, the
+//     `ExperienceLayer`, and `sharedFrameProps` — a prop a PanelFrame needs
+//     must ride that bag or a floating window silently lacks it.
+//   - "Views": the Overview card, rendered by THIS component through
+//     `createPortal` into the app-level host so it keeps this session's
+//     context (v0.19.0, DESIGN §47).
+// The `HighlightsContext` / `ContactsContext` providers are created at the
+// bottom of the render; `useGroups()` comes from the per-session provider App
+// wraps around this component.
+
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
@@ -3050,7 +3089,11 @@ export default function GameWindow({
             updateCharacterName(characterId, evt.char)
             // Multi-window (v0.11.0): also report the canonical name up to
             // main so the roster (and other windows' Quick Send) show it too.
-            window.api.setSessionName(session.sessionId, evt.char)
+            // B288: via sessionIdRef, NEVER the captured `session.sessionId` —
+            // this closure mounts once (pitfall #86), and a tab Reconnect swaps
+            // the id without remounting, so the capture goes stale and main's
+            // getSession silently drops the dead id (stale roster name).
+            window.api.setSessionName(sessionIdRef.current, evt.char)
             break
           case 'game-exit':
             break

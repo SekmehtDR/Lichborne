@@ -1,3 +1,39 @@
+// Living Tableau (Experience X1, DESIGN §32.2 / §34.9) — the room as a scene:
+// every player a procedural avatar at a stable seat, creatures along the back,
+// you foreground-centre, speech as bubbles. `memo`'d (pitfall #82c) so it
+// re-renders on ITS inputs, not every game batch.
+//
+// A PURE VIEW over typed scene state. The cast/speech/moves arrive as
+// `ExperienceProps` from GameWindow (fed by main's SceneParser, §35 — the
+// Lich-derived text extraction lives in src/shared/sceneExtract.ts, NOT here);
+// combat state rides the `combat` prop; the window's ⚙ content layers are
+// gated ONCE at the top of the component (`hidden` → identity-stable filtered
+// arrays, because effects key on those identities). Nothing here parses game
+// text.
+//
+// What the body does, in order — each block carries its own comment:
+//   • seating: `assignSeats` / `seatPos` (name-hash seats, the 12-seat arc
+//     that auto-switches to the 26-seat amphitheater, "+N others" overflow,
+//     promote-on-speak), then CONVERSATION GRAVITY (`circlePos` — talkers drift
+//     into an inner circle, directed speech pulls pairs together, self gravity)
+//     and a self personal-space push;
+//   • choreography: entrances slide in from their origin edge, departures
+//     linger as ghosts (skipped under epilepsy-safe), thoughts are WISPS in the
+//     bottom-left log and never a body (§32.2);
+//   • the COMBAT FACET (G1, DESIGN §32.1): readiness rings on the avatar
+//     (`CombatRings`, ticking inside `useTimers`), the danger pulse, a sticky
+//     `inCombat` hold, BAL/POS bipolar gauges + RNG pinned to the stage bottom,
+//     and the ASSESS arena — id'd creatures by relation, reconciled by NAME
+//     COUNT against the live cast so the dead/departed never linger, corpses in
+//     a row above, click → `face #id`, aged out after `ASSESS_TTL_MS`;
+//   • the BUBBLE LAYER: laid out in scene-PIXEL space outside the scaled
+//     figure tree so bubbles keep the game-font size, collision-aware and
+//     newest-first — out of headroom DROPS (never clamps), except the first.
+//
+// Layout invariants: the stage is measured with a 0×0 guard (pitfall #83);
+// gauge / status-chip / wisp heights are MEASURED in a layout effect so the
+// self figure and bubbles are held clear of them; the fit-to-container scale
+// is WIDTH-dominant; bubble spacing derives from the game font (pitfall #45).
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Contact, ContactTemplate } from '../../contacts'
 import type { ExperienceProps, SceneSpeechItem, SceneMoveItem } from '../../experiences'

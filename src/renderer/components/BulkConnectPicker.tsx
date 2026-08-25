@@ -1,3 +1,20 @@
+// Team Login picker — the one-shot modal that picks ONE character per account
+// and hands the list back for a sequential connect (v0.8.0 F21; named sets +
+// per-account exclude v0.18.3 F85). The feature history and the rename from
+// "Bulk Connect" are in the block below the imports — read that first.
+//
+// What it owns: the per-account `picks` map + a separate `excluded` set
+// (separate so re-ticking an account restores your choice), and the saved
+// TEAMS (`BulkSet`s via loadBulkSets/saveBulkSets, flushed to `_shared.yaml`
+// with `exportSharedProfile`). What it does NOT own: the connects — Confirm
+// returns `(picks, separateWindows)` and App.tsx walks them in order.
+// Two invariants worth keeping: `setMembership()` (what a SET saves) is
+// deliberately NOT `currentSelection()` (what CONNECT sends) — an already-
+// connected account contributes its live character to the roster but nothing
+// to the connect list; and `applySet` REPLACES the whole selection, so the
+// `initialSetName` preload runs mount-only. The "own window" checkbox is the
+// app-wide `bulkConnectSeparateWindows` preference (v0.11.0).
+
 import { useEffect, useRef, useState } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

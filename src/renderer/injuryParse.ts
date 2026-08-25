@@ -75,6 +75,13 @@ export function summarizeInjuries(parts: InjuryState): InjurySummary {
   if (worstWound > 0) {
     for (const { ids } of SECTIONS) {
       for (const id of ids) {
+        // B300: nsys is EXCLUDED from `worstWound` above (nerve damage is not a
+        // limb wound — it has its own field), so it must be excluded from the
+        // parts labelled WITH that severity too, or a nerve rank that happens to
+        // equal the worst limb wound lists "Nerves" under a label that
+        // deliberately left nerves out. (It still counts into `woundCount` on
+        // purpose — nerve damage IS active damage the chip should tally.)
+        if (id === 'nsys') continue
         const p = parts[id]
         if (p && parseInjury(p.name).wound === worstWound) worstParts.push(PART_LABELS[id] ?? id)
       }

@@ -1,3 +1,29 @@
+// Profile types — the on-disk shape of the two YAML profile files (types only).
+//
+// Two records, two files:
+//  • `SharedProfile` → `_shared.yaml` (profileVersion 1): everything APP-WIDE —
+//    account, Lich/Ruby advanced settings, map folders, the game definitions,
+//    custom themes, and one optional block per app-wide feature (session log,
+//    analytics, teams, command history, Overview options, named colours,
+//    last-session snapshot, the six global rule lists, AI config, SimuCoin).
+//  • `CharacterProfile` → `{Character}.yaml` (profileVersion 2): the identity /
+//    launcher fields, the boot-fallback `theme`, and `state` — a DYNAMIC map
+//    that mirrors that character's `lichborne.{character}.*` localStorage
+//    keys 1:1.
+//
+// The v2 `state` map is why a NEW PER-CHARACTER setting needs nothing here:
+// write to a `scopedKey` and the round-trip is automatic. A new SHARED setting
+// DOES need a typed entry here (plus its build/import lines in profile.ts).
+// Every addition follows the same shape — OPTIONAL, with a comment naming the
+// version it landed in and what an older file defaults to — so adding a field
+// is never a breaking change; renaming or retyping one is (see profile.ts for
+// the version constants + migrations). Two blocks (`ai`, `simucoin`) are
+// deliberately NOT Profile Transfer categories: machine-local / credential-
+// gated. profile.ts is the only place that BUILDS or APPLIES the full shape;
+// the Launcher's read-modify-write helpers patch launcher-owned top-level
+// fields (favorite/hidden/notes/game/useLich…) directly through
+// `window.api.writeCharacterProfile` — pitfall #26. This file imports types only.
+
 import type { CustomTheme } from './myThemes'
 import type { SessionLogSettings } from './sessionLogSettings'
 import type { AIConfig } from './aiConfig'

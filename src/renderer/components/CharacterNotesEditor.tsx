@@ -1,3 +1,16 @@
+// CharacterNotesEditor — the launcher's "Edit Profile — <name>" modal for the
+// three LAUNCHER-OWNED profile fields: guild (from the canonical `GUILDS` list
+// exported here), circle, and free-form notes.
+//
+// Controlled by the Launcher: it seeds the initial values, and `onSave`
+// receives a patch that Launcher writes via `patchCharacterProfile` — the
+// launcher-side read-modify-write, never a GameWindow save path. Empty fields
+// go out as `undefined` so the YAML doesn't accumulate blanks; circle only
+// survives as a real number. `onSave` is awaited behind a `busy` flag that
+// also holds Esc / backdrop-close until the write settles. Portaled to
+// `document.body`. `guildLabel()` is the display-side helper the Launcher's
+// card pills use; the `.cne-*` markup is mirrored there too.
+
 import { useState, useEffect } from 'react'
 import { backdropHandlers } from "../utils/backdropClose"
 import { createPortal } from 'react-dom'

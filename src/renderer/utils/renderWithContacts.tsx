@@ -1,3 +1,17 @@
+// Contact-name matching for rendered text — `buildNameRegex` plus a contacts-only
+// segment renderer.
+//
+// `buildNameRegex(contacts)` is the live export: it compiles every contact name
+// into ONE case-insensitive, word-bounded alternation (`\b(A|B|…)\b`, escaped),
+// which GameWindow memoizes off the render-facing contacts list and threads
+// into `renderSegmentFull`, where contact runs are painted. The regex is `g`, so
+// every consumer must reset `lastIndex` before scanning (this file does).
+//
+// `renderSegmentWithContacts` is the standalone contacts-only path — it splits a
+// segment around name matches, prefixes an optional template tag span (render-
+// only, never touches the text data) and styles the name from its template.
+// It has no in-tree caller as of this header; `renderSegmentFull` is the path
+// the main window and panels actually use.
 import type { TextSegment } from '../../shared/types'
 import type { Contact, ContactTemplate } from '../contacts'
 import { renderSegment } from './renderSegment'

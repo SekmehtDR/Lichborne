@@ -1,3 +1,24 @@
+// Map panel — the per-character host for BOTH map views: 'image' (Lich Map,
+// MapImageView) and 'genie' (Genie Maps, GenieMapView), switched by the
+// toolbar and persisted under `scopedKey('mapViewMode')` (legacy 'graph' /
+// 'lich-graph' selections migrate to 'genie'). Receives this GameWindow's live
+// room signals (`roomTitle` / `roomDesc` / `roomExits` / `roomId`) and owns the
+// DATA both views consume.
+//
+// Lich side: loads Lich's `map-*.json` and builds the indexes — `lichDb` by
+// Lich `id`, `uidIndex` by the GAME uid (a different number space — Lich 5.20
+// review), exact + normalized title indexes, and `imageIndex` by tile. The
+// current room resolves uid → Lich id → `findRoom` title+description (both id
+// spaces are tried because the subtitle slot is ambiguous); a no-match is
+// debounced 400ms so the NEEDS-MAPPING banner can't flash mid-move (B109), and
+// the DB reloads only on a real `lichMapVersion` CHANGE after mount (B174).
+// Genie side: loads every zone XML from the shared `lichborne.genieMapsDir`
+// progressively (generation-counted so a stale load aborts), through main's
+// fingerprinted parse cache first, disambiguating duplicate zone ids the way
+// Frostbite's mapreader does. `geniePersistRef` keeps the Genie view's zone +
+// resolver breadcrumb alive across a view switch — one ref per instance, never
+// module scope (pitfall #6). `memo`'d (B172): props are room primitives +
+// stable callbacks, so it renders on room change, not every GameWindow render.
 import { memo, useState, useRef, useEffect, useCallback } from 'react'
 import type { LichRoom, GenieZone } from './mapTypes'
 import { findRoom, parseGenieZone, lichTitle, normalizeMatchKey } from './mapTypes'

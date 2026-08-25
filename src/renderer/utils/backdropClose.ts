@@ -1,3 +1,11 @@
+// Modal-backdrop close handlers — the shared mousedown+click pair a dialog spreads
+// onto its backdrop div so "click the empty area" closes it.
+//
+// Closing requires BOTH the mousedown and the click to land on the backdrop
+// element itself, so a text-selection drag that starts inside the dialog and
+// ends on the backdrop can never dismiss it (the full reasoning is the comment
+// below). Pure DOM-event logic with one module-level flag — no React state, no
+// dependency on which modal is hosting it.
 import type { MouseEvent } from 'react'
 
 // Spread onto a modal's backdrop div: `<div className="…-backdrop" {...backdropHandlers(onClose)}>`.

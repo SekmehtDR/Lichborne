@@ -1,3 +1,15 @@
+// passwords — the saved-account-password store, encrypted at rest via Electron
+// safeStorage (Windows DPAPI and platform equivalents).
+//
+// One JSON file at {userData}/passwords.json (outside the repo/install tree),
+// keyed by ACCOUNT — not character, since multiple characters share an account
+// (which is also why deleting a character profile leaves its password alone).
+// Values are safeStorage-encrypted then base64'd; when OS encryption is
+// unavailable, save returns without storing and load returns null — plaintext
+// is never written to disk. Consumers: the `password:*` IPC handlers in
+// main.ts (the launcher/wizard prefill and login credentials), and main-side
+// features that pull the password themselves without it crossing IPC at all
+// (the SimuCoin runner).
 import { app, safeStorage } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'

@@ -1,3 +1,21 @@
+// HighlightsContext — the per-session COMPILED highlight ruleset text renderers read.
+//
+// Two things live here:
+//
+//  • `useCompiledHighlights(rules, activeGroupStates)` — the ONE compile site
+//    that turns raw `HighlightRule`s into `CompiledRule`s: it drops disabled /
+//    empty / group-inactive rules (`isRuleActive`), builds each regex, and
+//    attaches `fastLower` — the lowercase literal the hot path `includes()`-
+//    checks BEFORE running the regex (B172). That literal comes from
+//    `literalGate`, never from here; a wrong literal silently kills a rule, so
+//    don't hand-roll one. Rules split by scope into `matchRules` (style a
+//    range) and `lineRules` (style the whole line).
+//
+//  • The context itself, provided inside GameWindow (one per session, value
+//    `useMemo`'d there) and consumed by the text-rendering panels via
+//    `useHighlights()`. Its default is an EMPTY ruleset, so a renderer outside
+//    a provider paints unstyled text rather than throwing.
+
 import { createContext, useContext, useMemo } from 'react'
 import { buildHighlightRegex, type HighlightRule } from './highlights'
 import { isRuleActive } from './groups'

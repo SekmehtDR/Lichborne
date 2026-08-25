@@ -52,6 +52,10 @@
   border-radius: 3px;
   padding: 1px 5px;
   font-family: inherit;
+  /* DELIBERATELY fixed-size, not game-font scaled (Sekmeht, 2026-08-23 — B305):
+     these are the CONTROLS that change the panel's font, so sizing them by the
+     value they change would make the buttons themselves grow/shrink as you
+     click them. Same stance as the Experience ⚙ popover (experiences.css). */
   font-size: 0.7rem;
   line-height: 1.2;
   cursor: pointer;
@@ -148,7 +152,11 @@
 }
 
 .panel-tab-close {
-  font-size: 0.85rem;
+  /* B290: em, not rem — the ✕ sits inside the game-font-anchored tab strip
+     (its parent .panel-tab is 0.93em of the anchor), and a rem here froze it
+     at 13.6px while the label scaled with Settings → Font Size (pitfall #45).
+     1.22em preserves the default look: 13.6px ÷ (0.93 × 12px). */
+  font-size: 1.22em;
   color: var(--text-faint);
   line-height: 1;
   padding: 0 1px;
@@ -174,9 +182,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  /* B290: em off the strip anchor (was 30px / 1rem — frozen while the labels
+     scaled). Width is em of this element's OWN font (pitfall #58b):
+     30px ÷ (1.33 × 12px) = 1.88em, so the click target grows with the glyph. */
+  width: 1.88em;
   height: 100%;
-  font-size: 1rem;
+  font-size: 1.33em;
   color: var(--text-faint);
   background: transparent;
   border: none;
@@ -218,7 +229,9 @@
 
 .panel-add-item {
   padding: 8px 12px;
-  font-size: 0.78rem;
+  /* B290: the + menu renders inside the anchored strip, so em inherits the
+     game font; the old rem ignored it (0.78 × 16/12 = 1.04). */
+  font-size: 1.04em;
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
@@ -273,7 +286,9 @@
 .exp-tab-missing {
   padding: 1.2em;
   text-align: center;
-  font-size: 0.8rem;
+  /* B290: the panel BODY carries no font anchor (each panel root sets its own,
+     pitfall #58a), so this placeholder anchors itself to the F31 chain. */
+  font-size: calc(var(--panel-font-size, var(--game-font-size)) * 1.07);
   color: var(--text-muted);
 }
 
@@ -292,7 +307,7 @@
   border-radius: 3px;
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 0.75rem;
+  font-size: 1em; /* B290: was 0.75rem = 12px — identical at default, now scales */
   padding: 4px 6px;
   outline: none;
   min-width: 0;
@@ -307,7 +322,7 @@
   border-radius: 3px;
   padding: 3px 7px;
   font-family: inherit;
-  font-size: 0.85rem;
+  font-size: 1.13em; /* B290: was 0.85rem */
   cursor: pointer;
   flex-shrink: 0;
 }

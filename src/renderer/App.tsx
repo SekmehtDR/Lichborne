@@ -1,3 +1,62 @@
+// App — the renderer's root: one BrowserWindow's shell, its character tabs, and everything app-level.
+//
+// `App` mounts the two APP-LEVEL providers — `RosterProvider` (main's
+// cross-window session list) and `SessionsProvider` (this window's tabs) —
+// around `AppShell`, the single component that owns everything above the
+// per-character GameWindows. `ConnectStep` is a deliberately isolated leaf so
+// the ~1/s connect commentary re-renders one line, not every game window
+// (v0.18.0 perf audit).
+//
+// WHAT AppShell OWNS (each block below carries its own history):
+//  • The session RENDER: every session gets a `.session-shell` that is hidden
+//    by CSS (`display:none`), NEVER unmounted, when inactive — keyed
+//    `${characterId}:${reloadNonce}` so bumping a nonce remounts that
+//    GameWindow to re-read its localStorage working copy after a live profile
+//    import (cross-window via `onSessionReload`). Each GameWindow is wrapped in
+//    its PER-SESSION `CharacterProvider` + `GroupsProvider`; the socket lives in
+//    main, so neither a remount nor a window move touches the connection.
+//  • ONE connect flow, `runConnect` — password → `login` IPC →
+//    `importCharacterProfile` → `exportCharacterProfile` → `addSession` —
+//    reused by the launcher card (1.5s grace window + a Cancel honoured even
+//    mid-flight), the tab-menu Reconnect, the same-account conflict resolve
+//    (awaited disconnect + one 2s retry, v0.8.0), and Team Login
+//    (`runBulkConnect`, F21 v0.8.0; sequential, Stop-not-Cancel v0.18.4).
+//    `pendingCancelledRef` is reset at the TOP of `runConnect`, not by callers.
+//  • The launcher / Add Character wizard / Lich Setup / Profile Transfer /
+//    About / Quick Send / quit-confirm modals, the auto-update banner, and the
+//    B99 "Closing…" overlay (delayed 250ms so instant shutdowns never flash it).
+//  • Views (v0.19.0, DESIGN §47): the per-window, EPHEMERAL view mode; the
+//    Overview is an OVERLAY over the session shells (they stay laid out so the
+//    active scrollback stays measured) with an always-mounted portal host;
+//    focus is moved out on entry and back on exit; theme ownership is FROZEN
+//    on the character that was active when the Overview opened (v0.19.1); an
+//    emptied window drops back to Session view.
+//  • Multi-window (v0.11.0): the decouple-sync effect PULLS this window's
+//    owned sessions on mount and reacts to PUSHED acquire/release; the
+//    cross-window `storage` listener re-applies the theme and re-seeds the
+//    Overview options (the ONE shared setting read from module memory).
+//  • F62 (v0.15.2): the "Reconnect Last" snapshot — primary window only,
+//    connected roster entries only, non-empty only — and its account-conflict
+//    chooser, with eligibility in the PURE `planReconnect` (reconnectPlan.ts).
+//  • The menu-action bridge: native-menu actions arrive on `onMenuAction`;
+//    SESSION actions are re-dispatched as the `lichborne:session-action` DOM
+//    event (only the ACTIVE GameWindow acts), APP actions run here through a
+//    latest-closure ref. App-level chrome cannot read per-session contexts —
+//    that bridge (and props) is how it reaches a character.
+//  • App keyboard chords (§13.7): Ctrl/Cmd+1–9, Ctrl+Tab, Ctrl+Shift+Enter;
+//    every tab switch refocuses the active command bar — never one the
+//    Overview is covering. `document.title` has its single writer here.
+//  • Cold start: `importSharedProfile` → silent Lich-path discovery (no
+//    Desktop probe, DESIGN §41.3) → `sharedReady`, which gates the SimuCoin
+//    startup pass (F71, DESIGN §42): app-level and per ACCOUNT, consent
+//    RE-READ at the one choke point (`runSimucoin`), network pass in the
+//    PRIMARY window once per launch, secondaries seeded from main's cache.
+//  • `window.__flushProfileSaves` — main invokes it on close; it flushes every
+//    pending debounced save AND re-exports every open character's profile so
+//    a write that never scheduled a save still reaches YAML.
+//  • `data-window-hidden` on <html>, stamped from main's per-window visibility
+//    signal (`document.hidden` is unreliable here — pitfall #96).
+
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
 import Launcher, { loadCharacterCards, type LauncherCharacter } from './components/Launcher'

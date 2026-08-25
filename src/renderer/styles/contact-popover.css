@@ -1,15 +1,25 @@
 /* ── Contact name popover ────────────────────────────────────────────────── */
 
+/* B289: anchored to the GAME font. This popover is PORTALED to document.body,
+   so it inherits nothing from the game area — pitfall #45(b) names it as one
+   that must size off `var(--game-font-size)` directly, and for a whole release
+   the shipped CSS was fixed `rem` throughout: raise Settings → Font Size for
+   readability and the one place you read contact details stayed tiny. The root
+   carries the anchor; children are `em` at (old rem × 16/12) so the default
+   12px look is byte-identical; the WIDTH is em off the root's OWN font
+   (pitfall #58b) so the v0.8.6 two-column stats fit survives any font size. */
 .cpop {
   position: fixed;
   z-index: 500;
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 6px;
+  font-size: var(--game-font-size);
   /* v0.8.6 (Rakkor): bumped 240→290px so the two-column stats row
      ("Encounters: N" + "Time Encountered: 2h 13m") fits on one line
-     each without wrapping into stacked columns. */
-  width: 290px;
+     each without wrapping into stacked columns. 24.17em = 290px at the
+     default 12px game font. */
+  width: 24.17em;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
   display: flex;
   flex-direction: column;
@@ -35,11 +45,11 @@
 }
 
 .cpop-tag {
-  font-size: 0.78rem;
+  font-size: 1.04em;
 }
 
 .cpop-name {
-  font-size: 0.95rem;
+  font-size: 1.27em;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -50,7 +60,7 @@
   background: transparent;
   border: none;
   color: var(--text-dim);
-  font-size: 1rem;
+  font-size: 1.33em;
   cursor: pointer;
   padding: 0 0 0 8px;
   line-height: 1;
@@ -64,13 +74,13 @@
 
 .cpop-subtitle {
   padding: 5px 12px 2px;
-  font-size: 0.78rem;
+  font-size: 1.04em;
   color: var(--text-secondary);
 }
 
 .cpop-lastseen {
   padding: 2px 12px 5px;
-  font-size: 0.75rem;
+  font-size: 1em;
   color: var(--text-muted);
 }
 
@@ -83,7 +93,7 @@
    numbers to draw the eye without adding a row of labels. */
 .cpop-stats {
   padding: 0 12px 5px;
-  font-size: 0.75rem;
+  font-size: 1em;
   color: var(--text-muted);
   display: flex;
   gap: 12px;
@@ -102,7 +112,7 @@
 
 .cpop-notes {
   padding: 6px 12px;
-  font-size: 0.82rem;
+  font-size: 1.09em;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
@@ -128,7 +138,7 @@
   border-radius: 4px;
   padding: 3px 12px;
   font-family: inherit;
-  font-size: 0.78rem;
+  font-size: 1.04em;
   cursor: pointer;
   transition: all 0.15s;
 }

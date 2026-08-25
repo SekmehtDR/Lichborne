@@ -1,3 +1,20 @@
+// GroupsContext — a session's rule groups, game modes, and which groups are ON right now.
+//
+// `GroupsProvider` is mounted PER SESSION (App.tsx wraps each GameWindow in one,
+// inside its CharacterProvider), so everything here is one character's state:
+// the group list, the mode list, the live `activeGroupStates` map that
+// `isRuleActive` gates highlights/triggers/macros/aliases on, and the
+// `activeModeId` + derived `isModified` (has the user toggled groups away from
+// the applied mode's preset?). Anything rendered ABOVE that provider — the
+// app-level bar — has no access to it; `useGroups()` throws outside one.
+//
+// Persistence is WRITE-THROUGH: every setter calls the matching `save*` from
+// ../groups in the same breath as its `setState`, and the initial state is
+// loaded from the same store keyed by `character`. Two rules that flow from
+// the code: `clearMode` means "ungrouped rules only" — every group OFF, not
+// "leave whatever the last mode set" — and an effect prunes `activeGroupStates`
+// entries for groups that no longer exist (saving only when something changed).
+
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   type RuleGroup, type GameMode,

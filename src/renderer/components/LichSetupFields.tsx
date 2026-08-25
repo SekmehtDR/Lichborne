@@ -1,3 +1,21 @@
+// LichSetupFields — the ONE editor for the pre-connect Lich configuration:
+// Ruby path, Lich path (lich.rbw), the Lich Frontend flag (+ its lock), an
+// Auto Detect button with its result banner, and a read-only Games List of
+// shard → Lich port from `GAMES`.
+//
+// Controlled: `adv` in, `setAdv(updater)` out — it never persists anything
+// itself. Two render sites host it, both wrapping it in `.login-form` for the
+// input/label styling it relies on: LichSetupDialog (the launcher ⚙, and what
+// Settings opens) with `alwaysShowFields`, and the legacy LoginScreen, where
+// direct-connect collapses it to a one-line note. Two probes, deliberately
+// different: the per-field ✓/✕ is a debounced, unprompted existence check
+// that reads ONLY the `*AlreadyValid` flags (so it can never imply a path is
+// fine because one was found elsewhere) and keeps `probeDesktop` OFF; Auto
+// Detect is the only call that passes `probeDesktop: true`, because probing
+// the Mac Desktop raises a macOS privacy prompt that must follow a click.
+// Platform copy comes from `IS_WINDOWS` / `IS_MAC`; the Ruby-version advisory
+// is phrased conditionally because it reads the RUBY version, not Lich's.
+
 import { useState, useEffect } from 'react'
 import {
   type AdvancedSettings,

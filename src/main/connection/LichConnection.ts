@@ -1,3 +1,29 @@
+// LichConnection — spawn a Lich process and connect to its front-end port (v0.7.0 launch model; v0.9.x GTK-friendly spawn shape).
+//
+// The Lich-mode transport, owned one-per-session by ConnectionManager. Two
+// phases, deliberately separate: launch() spawns `rubyw lich.rbw <mode>
+// <shard flags>` as a DETACHED child that must outlive us (Lich is the
+// proxy), resolving on the child's 'spawn' event — NOT on readiness; then
+// connectWithRetry() retries the REAL connection to the front-end port
+// (250ms cadence, 30s cap) until Lich accepts, and that first success IS the
+// session socket. No throwaway probes: Lich's listener accepts exactly one
+// front-end then closes, so a connect-then-drop probe could confuse it.
+// After connecting it is a line splitter — 'line' events (newline-terminated
+// raw XML) flow up to ConnectionManager → main's session line handler; send()
+// writes `cmd + '\r\n'`.
+//
+// What will bite you, each explained at its site: the SPAWN SHAPE (rubyw.exe
+// via resolveRubyw, no windowsHide, stdout+stderr to a per-character log
+// file at {userData}/Logs/lich-launch/ rather than a pipe — GTK scripts break
+// under any other shape); spawnEnv()'s UTF-8 LANG default off-Windows (a GUI
+// app inherits no shell env, and Ruby then reads scripts as US-ASCII); the
+// paths are expandHome'd here because Linux/Mac defaults are `~`-relative;
+// the pre-flight check that names the missing Ruby/Lich path instead of a
+// raw `spawn ENOENT`; and exitInfo, which lets a Lich that dies on startup
+// fail fast (with the log tail) instead of retrying the port for 30s.
+// killProcess() is for a FAILED connect only — a connected Lich is left
+// running on purpose. The multi-character spawn→connect serialization lives
+// in ConnectionManager (serializeLichLaunch), not here.
 import * as net from 'net'
 import * as cp from 'child_process'
 import * as fs from 'fs'

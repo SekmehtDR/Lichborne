@@ -1,3 +1,21 @@
+// Groups & Modes — the per-character on/off switches that gate every rule type.
+//
+// A `RuleGroup` is a named, coloured tag a rule can belong to; a `GameMode` is
+// a PRESET of which groups are enabled (Hunting → Combat, Town → Social, …).
+// This file owns the types, the per-character storage (four `scopedKey`s:
+// `groups` / `modes` / `activeGroupStates` / `activeModeId` — localStorage
+// working copies, seeded from DEFAULT_GROUPS / DEFAULT_MODES when nothing is
+// stored), the factories, and the three pure rules. GroupsContext is the React
+// layer that holds the live state and writes through these load/save pairs.
+//
+// `isRuleActive(groupIds, activeGroupStates, allGroups)` is THE gate the rule
+// engines evaluate through (HighlightsContext, useTriggerEngine, …), and its
+// semantics are exact: `allGroups` ⇒ always on; NO groups and not allGroups ⇒
+// OFF; otherwise on when ANY listed group is currently enabled. Applying a
+// mode (`applyModeToStates`) writes a COMPLETE states map — every known group
+// set true or false, nothing left over — and `isModeModified` is simply
+// "does any group's live state differ from what the mode would set".
+
 export interface RuleGroup {
   id:    string
   name:  string

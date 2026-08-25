@@ -18,7 +18,7 @@
 //     remounting (pitfall #69) — keying the reset effect on `sessionId` is what
 //     stops a six-hour uptime surviving a drop and lying about it.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeAttention, type AttentionFlag, type AttentionThresholds } from '../attention'
 import { publishDigest, dropDigest, IDLE_QUANTUM_MS } from '../overviewStore'
 import { summarizeExp } from '../expParse'
@@ -48,8 +48,15 @@ export interface SessionStatsInput {
 }
 
 export interface SessionStats {
-  /** ms timestamp the current connection began; 0 while disconnected. */
+  /** ms timestamp the current connection began; 0 before the first connect. */
   startedAt: number
+  /**
+   * ms timestamp the connection DROPPED; 0 while connected. Uptime for display
+   * is `(stoppedAt || now) - startedAt` — the clock stops at the drop rather
+   * than resetting (B287) or growing past it, so a disconnected card says how
+   * long the session actually ran.
+   */
+  stoppedAt: number
   /** Total ranks gained this session, and the per-skill breakdown. */
   ranks: number
   ranksBySkill: Readonly<Record<string, number>>
@@ -80,6 +87,7 @@ export interface SessionStats {
 
 export function useSessionStats(i: SessionStatsInput): SessionStats {
   const startedAtRef = useRef(0)
+  const stoppedAtRef = useRef(0)
   const ranksRef = useRef<Record<string, number>>({})
   const ranksTotalRef = useRef(0)
   const deathsRef = useRef(0)
@@ -92,6 +100,7 @@ export function useSessionStats(i: SessionStatsInput): SessionStats {
   // ── Reset on a NEW CONNECTION (pitfall #69: same component, fresh session) ──
   useEffect(() => {
     startedAtRef.current = 0
+    stoppedAtRef.current = 0
     ranksRef.current = {}
     ranksTotalRef.current = 0
     deathsRef.current = 0
@@ -100,12 +109,23 @@ export function useSessionStats(i: SessionStatsInput): SessionStats {
     rateRef.current = { counts: new Array(RATE_BUCKETS).fill(0), bucket: 0 }
   }, [i.sessionId])
 
-  // Uptime starts when the connection does, and stops (rather than resetting) on
+  // Uptime starts when the connection does, and STOPS (rather than resetting) on
   // a drop so a disconnected card can still say how long the session ran.
+  // B287: this comment always promised "stops", but the code hard-reset
+  // `startedAt` to 0, so a dropped character's card read "up 0s". The drop now
+  // stamps `stoppedAt` instead; the fresh-connection reset is the [i.sessionId]
+  // effect above (a reconnect-in-place mints a new sessionId — pitfall #69 —
+  // which is also why sessionId joins the deps: the connected flag alone need
+  // not change across the swap).
   useEffect(() => {
-    if (i.connected && startedAtRef.current === 0) startedAtRef.current = Date.now()
-    if (!i.connected) startedAtRef.current = 0
-  }, [i.connected])
+    if (i.connected && startedAtRef.current === 0) {
+      startedAtRef.current = Date.now()
+      stoppedAtRef.current = 0
+    }
+    if (!i.connected && startedAtRef.current > 0 && stoppedAtRef.current === 0) {
+      stoppedAtRef.current = Date.now()
+    }
+  }, [i.connected, i.sessionId])
 
   const advanceRate = useCallback((now: number) => {
     const r = rateRef.current
@@ -201,6 +221,27 @@ export function useSessionStats(i: SessionStatsInput): SessionStats {
     if (i.alertPulse && !document.hasFocus()) window.api.flashWindow()
   }, [i.connected, i.indicators.dead, healthPct, i.thresholds.healthCritPct, i.alertPulse])
 
+  // B286: `spoken-to` is a TIME WINDOW evaluated inside the push-driven memo
+  // below — ENTRY is covered (spokenToAt is a dep) but EXPIRY needs a
+  // re-evaluation that a character who then does nothing never triggers, so the
+  // chip and the app-bar badge stayed lit for hours on a parked alt. One bounded
+  // timeout per speech re-runs the memo just past the window's end. This is the
+  // file's ONE deliberate piece of React state (the header says "refs, not
+  // state"): it MUST cause a render (that is the point), it fires at most once
+  // per spoken-to window, and the alternative — deriving expiry in every
+  // consumer against the shared 1 Hz clock, the way `idle` does — fails the
+  // app-bar badge, whose clock only runs while the Overview is OPEN.
+  const [spokeTick, setSpokeTick] = useState(0)
+  useEffect(() => {
+    if (i.spokenToAt <= 0) return
+    // +250ms so clock jitter can't fire the re-evaluation a hair BEFORE the
+    // window closes (which would re-arm nothing and leave the flag lit).
+    const remaining = i.spokenToAt + i.thresholds.spokeToYouSeconds * 1000 - Date.now() + 250
+    if (remaining <= 0) return
+    const t = setTimeout(() => setSpokeTick(n => n + 1), remaining)
+    return () => clearTimeout(t)
+  }, [i.spokenToAt, i.thresholds.spokeToYouSeconds])
+
   const attention = useMemo(() => computeAttention({
     connected: i.connected,
     dead: !!i.indicators.dead,
@@ -218,9 +259,11 @@ export function useSessionStats(i: SessionStatsInput): SessionStats {
   }, Date.now(), i.thresholds),
   // lastInboundRef is a ref by design: the `idle` flag is re-evaluated by the
   // card on the shared 1 Hz clock, not by re-running this on every line.
+  // `spokeTick` is the B286 expiry re-evaluation — it is how the spoken-to
+  // window's END reaches this memo on a character nothing else re-renders.
   [i.connected, i.indicators.dead, i.indicators.bleeding, i.indicators.stunned,
-   i.indicators.poisoned, i.indicators.diseased, i.indicators.webbed,
-   healthPct, i.spokenToAt, i.rtExpires, i.ctExpires, expSummary.locked, i.thresholds])
+   i.indicators.poisoned, i.indicators.diseased, i.indicators.webbed, healthPct,
+   i.spokenToAt, spokeTick, i.rtExpires, i.ctExpires, expSummary.locked, i.thresholds])
 
   // Publish the cross-character reduction. The store's own equality gate drops a
   // no-op, so this is safe to call on every render.
@@ -252,6 +295,7 @@ export function useSessionStats(i: SessionStatsInput): SessionStats {
 
   return {
     startedAt: startedAtRef.current,
+    stoppedAt: stoppedAtRef.current,
     ranks: ranksTotalRef.current,
     ranksBySkill: ranksRef.current,
     deaths: deathsRef.current,

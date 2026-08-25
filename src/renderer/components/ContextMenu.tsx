@@ -1,3 +1,17 @@
+// ContextMenu — the app-wide right-click menu: a flat list of `CtxItem`s
+// (action / `{ label: null }` separator / hover-expanding `submenu`), used by
+// the game text, stream panels, PanelFrame tabs, character tabs, floating
+// windows, the Debug panel and the launcher.
+//
+// Dumb and portaled: callers build the item list, the menu just renders it and
+// calls `onClose` after any click (or on outside `mousedown` / Escape). It is
+// portaled to `document.body`, so it escapes its opener's stacking context and
+// must win on z-index alone — `.ctx-menu` (game.css) sits at 2100, ABOVE the
+// modal tier, so a menu opened from inside a modal isn't painted under the
+// scrim; any new modal must stay below that. The root clamps itself into the
+// viewport before paint; a SubMenu opens to the right of its parent row and
+// flips left / shifts up at the viewport edges.
+
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 

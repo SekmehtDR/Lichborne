@@ -1,3 +1,27 @@
+// Genie importer — parses Genie's `.cfg` files (`#command {arg} {arg} …` lines)
+// into the neutral `ImportResult` / `ImportCandidate` intermediate (types.ts)
+// that the Import Wizard previews and mapper.ts converts to native rules. It is
+// the only one of the three legacy parsers that yields ALIASES and TRIGGERS.
+// Entry point: `parseGenieFiles({ highlights, names, macros, aliases,
+// triggers, substitutions, presets, gags, variables })`.
+//
+// Shared machinery: `parseArgs` walks `{…}` arguments char-by-char, resolving
+// Genie's Level-1 escapes (`\\` `\}` `\{`) and leaving runtime escapes (`\x`,
+// `\@`) untouched (B137 follow-up, v0.8.10); `stripGenieSlashWrap` treats a
+// `/pattern/` or `/pattern/i` value as an EXPLICIT regex regardless of the
+// declared type (Globals.cs); `beginswith` imports as a `^`-anchored regex, not
+// a substring. Macros and aliases go through the shared
+// `parseImportedMacroAction` in SEPARATOR mode — `;`-split, every command
+// auto-sends, only an author-written `@` is type-and-wait, `\x`/`\r` are
+// import-time noise, `#`-prefixed parts are Genie-internal and filtered.
+//
+// Per file: highlights.cfg → highlights (type → mode/scope mapping); names.cfg
+// → Contacts with per-colour `templateName`; triggers.cfg → triggers via
+// `parseActionParts` (B133's alias families for send/var/sound, `##` = literal
+// `#`, `#send #X` recursed (B130), `#nop`/`#comment` silently skipped, every
+// other `#command` recorded as `dropped` → `partial`; eval `e/…/` triggers
+// `unsupported`); gags.cfg → mutes; substitutes.cfg → substitutes (regex, `$N`
+// passes through); presets.cfg → `themeVars`; variables.cfg is count-only.
 import { ImportResult, ImportHighlight, ImportMacro, ImportAlias, ImportTrigger, ImportMute, ImportSubstitute, ImportEchoAction, ImportVarAction, ImportLogAction } from '../types'
 import { normalizeStreamId } from '../../../shared/streamAliases'
 import { parseGenieColor } from '../colorUtils'
