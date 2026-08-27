@@ -18,6 +18,8 @@
 // independent of the streams inside it.
 
 import type { TabDef, PanelType } from './PanelFrame'
+import { panelTypeAvailable } from './PanelFrame'
+import type { GameFamily } from '../../shared/types'
 import { backdropHandlers } from '../utils/backdropClose'
 import { streamLabel } from '../aiConfig'
 import '../styles/panel-manager.css'
@@ -66,6 +68,13 @@ interface Props {
   midAdded: boolean
   bottomAdded: boolean
   allTypes: PanelType[]
+  // GS4 support: gates which builtin types show as ADDABLE ("Available
+  // Streams") via panelTypeAvailable — deliberately NOT applied to allTypes
+  // itself, which also backs the discovery-defense set (allBuiltinSet below,
+  // pitfall #27): that set must stay the FULL builtin list regardless of
+  // family, or a discovered stream colliding with a family-hidden builtin id
+  // could slip through as a duplicate "custom" row.
+  gameFamily?: GameFamily
   labels: Record<PanelType, string>
   discoveredStreams: string[]
   streamTitles?: Record<string, string>
@@ -93,7 +102,7 @@ interface Props {
 export default function PanelManager({
   mainTopTabs, topTabs, midTabs, bottomTabs,
   mainTopAdded, topAdded, midAdded, bottomAdded,
-  allTypes, labels,
+  allTypes, gameFamily, labels,
   discoveredStreams, streamTitles = {},
   onMoveTab, onReorderTab, onRemoveTab, onAddToZone, onAddPanelZone, onRemovePanelZone, onResetLayout,
   layoutMode, onToggleLayoutMode, onRebuildFromPanels, onFitChromeWindows, freeLayoutLocked, onToggleFreeLock, freeAddItems, onAddFreeWindow,
@@ -120,8 +129,10 @@ export default function PanelManager({
   // of the discovery-site filter so a duplicate can't reappear here.
   const allBuiltinSet = new Set<string>(allTypes)
 
-  // Built-in types not yet in any zone
-  const availableBuiltin = allTypes.filter(t => t !== 'custom' && !openTypes.has(t))
+  // Built-in types not yet in any zone. gameFamily-gated (panelTypeAvailable)
+  // — see the Props comment on gameFamily for why allBuiltinSet above is
+  // deliberately NOT gated the same way.
+  const availableBuiltin = allTypes.filter(t => t !== 'custom' && !openTypes.has(t) && panelTypeAvailable(t, gameFamily))
   // Discovered streams not yet in any zone (and not a builtin in disguise)
   const availableCustom = discoveredStreams.filter(id =>
     !openCustomIds.has(id) && !allBuiltinSet.has(id) && !openTypes.has(id as PanelType))
