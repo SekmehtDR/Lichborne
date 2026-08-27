@@ -129,7 +129,7 @@ function playBeep() {
 // fire as a GS4 player intends. Computing the percentage here keeps the
 // established DR meaning for both games; a no-op for DR (max is always 100
 // there, so this equals raw current already).
-function vitalPercent(v: { current: number; max: number } | undefined): number {
+export function vitalPercent(v: { current: number; max: number } | undefined): number {
   if (!v) return 0
   return v.max > 0 ? Math.round((v.current / v.max) * 100) : v.current
 }

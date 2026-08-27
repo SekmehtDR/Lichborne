@@ -61,7 +61,7 @@ import AIConsentModal from './AIConsentModal'
 import SlashPalette, { type SlashPaletteHandle } from './SlashPalette'
 import { loadAnalyticsEnabled, recordFire } from '../automationStats'
 import { loadTriggers, saveTriggers, type TriggerRule } from '../triggers'
-import { useTriggerEngine, playWavFile, type TriggerGameState } from '../hooks/useTriggerEngine'
+import { useTriggerEngine, playWavFile, vitalPercent, type TriggerGameState } from '../hooks/useTriggerEngine'
 import { loadAliases, loadMacros, saveAliases, saveMacros, resolveAlias, resolveMacro, matchKeyCombo, getMacroToken, newMacro, parseCursorMarker, splitTypedCommands, type AliasRule, type MacroRule } from '../macros'
 import { IS_MAC } from '../lichSettings'
 import { loadSimuCoinConfig, accountConfig } from '../simucoinConfig'
@@ -4044,11 +4044,16 @@ export default function GameWindow({
   function buildMacroVars(): Record<string, string> {
     const s = triggerCtxRef.current
     return {
-      health:        String(s.vitals.health?.current        ?? 0),
-      mana:          String(s.vitals.mana?.current          ?? 0),
-      stamina:       String(s.vitals.stamina?.current       ?? 0),
-      spirit:        String(s.vitals.spirit?.current        ?? 0),
-      concentration: String(s.vitals.concentration?.current ?? 0),
+      // GS4 support: same fix as useTriggerEngine's buildVars — GS4 vitals
+      // carry raw current/max HP, not a pre-computed percentage, so $health
+      // etc. must go through vitalPercent() here too or a GS4 macro/alias
+      // reads a hundreds-range HP number instead of the 0-100 percent DR
+      // players have always gotten. No-op for DR (max is always 100 there).
+      health:        String(vitalPercent(s.vitals.health)),
+      mana:          String(vitalPercent(s.vitals.mana)),
+      stamina:       String(vitalPercent(s.vitals.stamina)),
+      spirit:        String(vitalPercent(s.vitals.spirit)),
+      concentration: String(vitalPercent(s.vitals.concentration)),
       rt:            String(Math.ceil(s.rtSeconds)),
       ct:            String(Math.ceil(s.ctSeconds)),
       casttime:      String(Math.ceil(s.ctSeconds)),

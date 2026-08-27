@@ -976,12 +976,22 @@ export class StormFrontParser {
           this.inInjuriesDialog = true
           this.injuryBuf = []
         } else if (EFFECTS_DIALOG_IDS.has(attrs.id ?? '')) {
-          // `clear='t'` (a real GS4 shape — see active_spells_clear.xml) needs
-          // no special handling: it always arrives with zero children, so
-          // effectsBuf naturally stays empty and the close handler emits
-          // entries:[] — the correct "list cleared" signal.
           this.inEffectsDialog = attrs.id as EffectsDialog
           this.effectsBuf = []
+          // `clear='t'` (a real GS4 shape — see active_spells_clear.xml)
+          // arrives SELF-CLOSING (`<dialogData id='Active Spells'
+          // clear='t'/>`) — the parse() dispatch above only calls tagEnd()
+          // for a real `</dialogData>` closing tag, never for a self-closing
+          // one, so without this the "clear" would never finalize: no
+          // effects-update emits, and inEffectsDialog sticks open to swallow
+          // whatever unrelated <progressBar> arrives next. Finalize
+          // immediately here instead; the normal (non-self-closing, has
+          // children) shape still finalizes in tagEnd as before.
+          if (selfClosing) {
+            this.emit({ type: 'effects-update', dialog: this.inEffectsDialog, entries: this.effectsBuf })
+            this.inEffectsDialog = null
+            this.effectsBuf = []
+          }
         }
         break
 
