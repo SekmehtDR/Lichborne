@@ -6,6 +6,32 @@
 
 ---
 
+## v0.19.3 — Shopping shows up again
+
+- **B306 (JadedSoul):** `shop` at DR's surface-based shops (Fang Cove) printed
+  NOTHING in the game window — the listing was only visible with a Shopping
+  panel open and vanished when it closed. DR sends it on `shopWindow`, which had
+  no `STREAM_FALLBACK` entry, so unwatched output was buffered invisibly (the
+  exact "silently buffered" failure the table exists to prevent). One row added;
+  the sibling clients (Frostbite, Profanity) both render shopWindow in main, and
+  the report's blank output is itself the pitfall-#49 proof that DR doesn't
+  double-emit it. The stream id is recorded in Knowledge.md.
+- **B307 (Sekmeht):** Catch Me Up's lbAI routing keyed on whether an lbAI tab
+  EXISTED anywhere, so a background tab swallowed the recap invisibly (unread
+  dot only) — "closed but nothing came out". Now `watched && active`: the tab
+  must be in a rendered surface AND be its active tab. `activeIdsRef`'s panels-
+  mode set also gained the `*Added` gate it was missing (pitfall #39).
+- **Stream-behaviour sweep** prompted by both: verified the `shopWindow` key
+  matches the id the parser emits (pushStream ids keep their case — the fix is
+  live, not a silent no-op), audited every "is this tab open/visible" aggregation
+  (expTabIds, lichScriptsOpen, debugOpen, `/panel list`, watched — all gated and
+  per-mode), and inventoried DR stream ids from the three sibling clients against
+  our routing table: `ooc` correctly has no fallback (Frostbite's own comment
+  says its speech is a native duplicate of the whisper stream), `speech`/`whisper`
+  are presets not streams, and `chatter` is the one undecided id — recorded as
+  needing a raw-XML capture rather than routed on a guess. Pitfall #133 records
+  both lessons; the inventory is in Knowledge.md.
+
 ## v0.19.2 — the Elanthia-Online handover, a license, and a full internal sweep
 
 The release that prepares Lichborne's transfer to the **Elanthia-Online** org

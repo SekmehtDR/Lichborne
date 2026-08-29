@@ -921,3 +921,49 @@ append to the same line; **Frostbite** caches across chunks while inside a
 stream (`onProcess` withholds until the stream closes) and re-joins the block
 with `aggregateXml`; **Genie** switches output window on push and restores on
 pop. See CLAUDE.md pitfall #120 for what this cost Lichborne.
+
+## DR protocol — shop output rides the `shopWindow` stream (v0.19.3, B306)
+
+DR's SHOP command family — the surface list (`shop` → *"The following items contain
+goods for sale:"*), `shop window`, and `shop <item>` — is sent **inside
+`<pushStream id="shopWindow"/>` … `<popStream/>`**, with a `<streamWindow
+id='shopWindow' title='Shopping' …/>` declaration (the "Shopping" title on a
+discovered panel is DR's, not ours). There is **no outside-the-block copy** to
+main — a client that only displays watched streams shows nothing at all for
+`shop` (that was B306's symptom).
+
+Verified against the sibling clients rather than a capture: Frostbite handles
+`id == "shopWindow"` explicitly and writes it into the main text
+(`gui/xml/xmlparserthread.cpp`, `writeTextLines(toString(e))`); Profanity lists
+`shopWindow` in its known-stream regex alongside `death|logons|thoughts|familiar|
+assess|ooc|combat|moonWindow|atmospherics` — the streams it renders in main when
+no dedicated window is configured (`lib/game_text_processor.rb`). Lichborne
+treats it the same way via `STREAM_FALLBACK['shopWindow'] = 'main'`, and it stays
+discoverable as a panel.
+
+## DR stream inventory — routing decisions grounded in the sibling clients (v0.19.3 sweep)
+
+Every `<pushStream id="…">` DR is known to emit, cross-checked against Frostbite's
+`gui/xml/xmlparserthread.cpp` id branches and Profanity's known-stream regex
+(`lib/game_text_processor.rb`), with Lichborne's routing decision for each. The three
+classes: **fallback** (narrative text shown in main when no panel watches it),
+**state** (clear-and-rewrite tables — never spilled to main), **native-dup** (DR also
+sends an outside-the-block copy to main — a fallback would double-print, B136).
+
+| DR id | Class | Lichborne | Grounding |
+|---|---|---|---|
+| `thoughts` (+ `thought`) | fallback | alias `thought`→`thoughts`, fallback `main` | Profanity main-list; Frostbite Thoughts window |
+| `death` / `logons` | fallback | aliased to `deaths` / `arrivals`, fallback `main` | Profanity main-list |
+| `familiar`, `combat`, `atmospherics`, `assess` | fallback | fallback `main` | Profanity main-list; Frostbite |
+| `shopWindow` | fallback | fallback `main` (B306) | Frostbite `writeTextLines()`; Profanity main-list; report's blank output = no native copy |
+| `talk` / `whispers` | native-dup | alias → `conversation`, **no** fallback | B136 (verified capture: speech emitted twice) |
+| `ooc` | native-dup | **no** fallback | Frostbite comment on its ooc branch: *"ignore speech in ooc stream; duplicated from whisper stream"* |
+| `percWindow` / `inv` / `group` / `moonWindow` / `room` | state | no fallback (state streams) | clear+rewrite shape, observed |
+| `chatter` | **undecided** | discoverable only | Frostbite routes it into Thoughts; Lich never emits it; no capture — see BUGS pending follow-ups |
+| `speech`, `whisper` (singular) | — | not streams | These are `<preset id>` ids in Frostbite (`parseTalk`), not pushStream ids — nothing to route |
+
+Two facts worth keeping: (1) pushStream ids reach the renderer with their case
+preserved (`normalizeStreamId` only rewrites the alias table's keys), so a fallback key
+must match DR's casing exactly (`shopWindow`, `percWindow`); (2) the routing rule for an
+UNWATCHED stream with no table entry is "buffer invisibly", which is correct only for the
+state and native-dup classes — a narrative stream left undecided is a silent-loss bug.

@@ -441,15 +441,17 @@ The server declares all streams it intends to use via `<streamWindow id="..." ti
 | `talk` | `conversations` | In-game speech, yell, whisper | Top-Right |
 | `whispers` | `whispers` | Direct whispers (separate channel) | discoverable |
 | `conversation` | `conversation` | Conversation channel | discoverable |
-| `ooc` | `ooc` | Out-of-character channel | discoverable |
+| `ooc` | `ooc` | Out-of-character channel | discoverable; **deliberately NO `main` fallback** (v0.19.3 sweep): Frostbite's parser comments that the speech in the ooc stream is *"duplicated from whisper stream"* — a native outside-the-block copy, the B136/pitfall-#49 case, so a fallback would double-print |
+| `chatter` | `chatter` | Seen by Frostbite (routed into its Thoughts window); source and duplication unknown — **UNDECIDED, needs a Debug raw-XML capture** before it gets a fallback or an alias (v0.19.3 sweep) | discoverable |
 | `familiar` | `familiar` | Familiar link output | `familiar` |
 | `percWindow` | `spells` | Active spells / buffs | Center-Right |
 | `inv` | `inv` | Inventory updates | `inv` |
 | `room` | `room` | Room description components | `room` |
 | `combat` | `combat` | Combat messages | `main` |
 | `atmospherics` | `atmospherics` | Ambient / weather text | `main` |
-| `group` | `group` | Group channel | `main` |
+| `group` | `group` | Group roster — a clears-and-rewrites STATE stream, not a log | discoverable; **no** `main` fallback since v0.14.3 (re-spammed the roster on every change) |
 | `assess` | `assess` | Combat-situation ASSESS block (creatures, ranges, facing) — also consumed by the Living Tableau's combat arena, independent of whether a panel watches it | discoverable, falls back to `main` |
+| `shopWindow` | `shopWindow` | SHOP replies at surface-based shops (the goods list, `shop window`, `shop <item>`) — DR titles it "Shopping"; no outside-the-block copy to main (B306, v0.19.3) | discoverable, falls back to `main` |
 | `moonWindow` | `moonWindow` | Moon phase tracker (replace-on-push) | discoverable |
 | `LichScripts` | `LichScripts` | Running Lich scripts — live list from `script-watch.lic` (replace-on-push) | discoverable |
 
@@ -1340,8 +1342,13 @@ log) on the cheapest input. **What shipped in v0.16.0:**
 - **Output routing — the `lbAI` stream (DECIDED default, 2026-07-14).** AI feature output is a first-class named
   stream, **`lbAI`** (LichborneAI), seeded into `discoveredStreams` so it's always addable in Panel Manager /
   `/panel open lbai`. **Default = the MAIN game window; when an `lbAI` panel is open
-  (`watchedStreamsRef.has('lbAI')`) output routes THERE (`setStreamLines`) instead.** Routing is decided once
-  per run and the streaming updates + trailing newline follow it. `lbAI` is never emitted by the game, so it
+  output routes THERE (`setStreamLines`) instead.** Routing is decided once per run and the streaming updates
+  + trailing newline follow it. **"Open" means SHOWING (B307, v0.19.3): the lbAI tab must exist in a rendered
+  zone/window (`watchedStreamsRef`, gated on the zone's `*Added` flag) AND be that surface's active tab
+  (`activeIdsRef`).** Through v0.19.2 the check was tab EXISTENCE alone, so a background lbAI tab silently
+  captured the whole recap with only an unread dot to show for it — from the game window it read as "the
+  stream is closed and nothing came out" (Sekmeht, 2026-08-28). A non-active lbAI tab now gets the recap in
+  the game window like a closed one; bring the tab forward before running if you want it in the panel. `lbAI` is never emitted by the game, so it
   has **no `STREAM_FALLBACK` entry** — the open/closed fallback is handled inline in `runCatchup`. This is the
   shared output surface every future AI feature (Setup Sage cards, Chronicle, …) routes through.
   - **Making `lbAI` the DEFAULT target was considered and DECLINED (Sekmeht, 2026-07-14).** Rationale for

@@ -1,75 +1,35 @@
-## v0.19.2 — A new home 🏠
+## v0.19.3 — Shopping shows up again 🛒
 
-**Patch release**, on top of [v0.19.1](https://github.com/SekmehtDR/Lichborne/releases). A small
-one with a big purpose: Lichborne is joining **[Elanthia-Online](https://github.com/elanthia-online)** —
-the community organization that maintains Lich itself — and this release makes sure that move
-costs you nothing.
+**Patch release**, on top of [v0.19.2](https://github.com/SekmehtDR/Lichborne/releases).
 
-### Updates will follow the project to its new home
+### Fixed: `shop` printed nothing
 
-Lichborne's repository is moving from `SekmehtDR/Lichborne` to `elanthia-online/Lichborne`.
-From this version on, the update check looks in **both** places — the new home first, the
-current one as a fallback — so when the transfer happens, updates keep arriving exactly as
-before. Nothing to do on your end, ever: install this version and the transition is invisible.
+In DragonRealms' newer shops — the Fang Cove ones with items laid out on surfaces —
+typing `shop`, `shop window` or `shop <item>` showed **nothing at all** in the game
+window. The goods were only visible if you happened to have a **Shopping** panel
+open, and vanished again the moment you closed it; the only way back was to log
+out and in.
 
-(Until the move happens, nothing changes — the client quietly notices the new home isn't
-live yet and carries on checking the current one.)
+DR sends that output on its own **shopWindow** stream, and Lichborne had no rule
+for where that stream should go when no panel is watching it — so the text was
+quietly filed into a buffer nothing displays. It now falls back to the game window
+like the other narrative streams (thoughts, arrivals, combat…), which is also what
+Frostbite and Profanity do. Open a Shopping panel and the listing routes there
+instead, exactly as before.
 
-### Lichborne now has a license
+Thanks to JadedSoul for the report — and the screenshots that made it a five-minute
+diagnosis.
 
-Fitting for the handover to the community: Lichborne is now formally open source under the
-**BSD 3-Clause License** — the same license as Lich itself — © 2026 Sekmeht and Binu. The
-short version: use it, share it, build on it; the names stay on it.
+### Fixed: Catch Me Up could vanish into a background lbAI tab
 
-And for the record, in writing: DragonRealms and StormFront are trademarks of Simutronics
-Corp. Lichborne is an independent, unofficial community project — not affiliated with or
-endorsed by Simutronics — and playing through it requires your own Simutronics account.
-
-### A full internal bug sweep, and eighteen fixes from it
-
-Before handing the project over, we ran a deep audit of the whole codebase — three
-parallel reviews plus every regression harness. The best news is what it *didn't*
-find: no open tester bugs, and every fix from v0.19.1 verified intact. What it did
-find got fixed the same day. The ones you might have met:
-
-- **Click "Overview", start typing — it works now.** The clicked button was quietly
-  keeping the keyboard's attention, so typing after entering the view did nothing
-  (and Space could bounce you back out). The most common way into the dashboard now
-  behaves like the feature always intended.
-- **The "Spoken to" alert turns itself off again.** A whisper to a character you'd
-  parked used to light the attention badge until that character did something —
-  hours, sometimes. It now clears on schedule (about a minute), so the badge only
-  ever means "someone needs you *now*."
-- **A disconnected card tells you how long the session ran** instead of "up 0s".
-- **Everything respects your Font Size setting now.** The contact popover, the
-  panel tab ✕ and + buttons, the add-stream menu, the "new lines" badge and the
-  empty-panel placeholders were all frozen at a fixed size while the text around
-  them scaled. If you play with a large (or tiny) font, the edges match the middle
-  now. (The A−/A+ buttons and the floating compass stay fixed on purpose.)
-- **Hovering an urgent card no longer hides its red border** at exactly the moment
-  you mouse over to check on it.
-- **Quieter under the hood:** each card's timer strip stops ticking once your
-  roundtime ends (it used to keep working at 10 beats a second forever), turning
-  the card feed on no longer causes a one-frame hitch, and the dashboard grid now
-  re-fits within a second of a font-size change.
-- **`/view set` learned `conditions=` and `timers=`** — all six card sections can
-  now be toggled from the command line, matching Settings.
-- **The Overview bar remembers your ↑ history across view switches**, and after
-  reconnecting a tab, other windows now pick up the character's proper name.
-
-### Under the hood
-
-Electron 43.4.1 (crash and memory-leak fixes from upstream), plus small updates to
-the build tools and the text-scrolling library, and one dependency security patch.
-A handful of internal guards were also strengthened so whole classes of future bugs
-fail the build instead of shipping.
-
-And for the developers who'll be picking this up: **every source file now opens
-with an orientation comment** — what it is, where it sits in the pipeline, and
-what not to break — so a newcomer to the codebase can start reading anywhere.
+`/ai catchup` decided where to put its recap by asking whether an **lbAI** tab existed
+anywhere in your layout — not whether it was showing. So an lbAI tab sitting behind
+another tab quietly swallowed the whole recap (you got an unread dot and nothing in
+the game window), which looked exactly like "the stream is closed and the output
+went nowhere". The rule is now what it always should have been: the recap goes to
+the game window **unless the lbAI panel is actually on screen**, in which case it
+goes there. A background lbAI tab no longer counts as open.
 
 ### Notes
 
 - Nothing here changes how existing characters or settings behave.
-- Handing Lichborne to the community to manage is the plan working as intended — built with
-  the DragonRealms community, now stewarded by it. Thank you to everyone who got it here.
