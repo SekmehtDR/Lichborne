@@ -568,11 +568,38 @@ export class StormFrontParser {
           const label = rawLabel
             ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
             : undefined
+          // ATTACH RESYNC (draft attach mode). Lich's detachable-client init
+          // hardcodes value='0' on every bar and carries the real numbers ONLY
+          // in `text` (lich-5 global_defs.rb, detachable_client_send_init), so
+          // reading `value` painted every vital at ZERO the instant you
+          // attached — worse than blank, since a zeroed bar looks like live
+          // data and reads as "one hit from dead".
+          //
+          // THE TEXT IS "health 100/" IN DR — NOT "health 100/100".
+          // Lich builds it as "#{XMLData.health}/#{XMLData.max_health}", and it
+          // derives both by scanning numbers out of DR's own bar text
+          // (xmlparser.rb: `@health, @max_health = text.scan(/-?\d+/)`). DR
+          // sends a PERCENTAGE — `text='mana 86%'` (captured live) — which
+          // yields ONE number, leaving max_health nil, which interpolates to
+          // the empty string. GS sends "health 100/100", so this is a
+          // DR-only shape and a `(\d+)/(\d+)` pair regex silently never
+          // matches there. Hence: take the FIRST number in the text and treat
+          // a missing or zero max as 100, which is correct for DR because
+          // these vitals ARE percentages.
+          //
+          // Still deliberately narrow — only when `value` is 0. DR's live bars
+          // carry a correct `value` (86 in that capture) and take exactly the
+          // path they always did; customText bars ('inner fire 59%') likewise.
+          const textNums = value === 0 ? text.match(/-?\d+/g) : null
+          const useText  = textNums !== null && textNums.length > 0
+          const textMax  = useText && textNums.length > 1 && Number(textNums[1]) > 0
+            ? Number(textNums[1])
+            : 100
           this.emit({
             type: 'vital-update',
             id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration',
-            current: value,
-            max: 100,
+            current: useText ? Number(textNums![0]) : value,
+            max:     useText ? textMax : 100,
             ...(label !== undefined ? { label } : {}),
           })
         }

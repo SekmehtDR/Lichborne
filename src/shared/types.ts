@@ -49,6 +49,39 @@ export interface LoginCredentials {
   lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
 }
 
+// Attach to an ALREADY-RUNNING, detachable Lich session (draft feature).
+//
+// Target: a Lich started attachably — `lich --login Char --headless PORT`
+// (normalized by Lich to `--without-frontend --detachable-client=PORT`), or
+// any `--detachable-client=` launch. Lich's detachable listener accepts a
+// plain TCP connection with NO authentication and NO handshake, so unlike
+// LoginCredentials there is no password, no SGE step, no Ruby/Lich path, and
+// no spawn: headless Lich authenticated itself from its own saved entries.
+// A Lich mid-session with a normal front-end is NOT attachable — its listener
+// accepted one client and closed (that constraint lives in Lich, not here).
+// Where a detachable Lich listener lives. Persisted per character (the
+// renderer's CharacterProfile mirrors this shape) so an attach can be
+// repeated without retyping, and carried on the roster so a re-homed window
+// can re-attach a session it inherited.
+export interface AttachTarget {
+  host: string
+  port: number
+}
+
+export interface AttachCredentials {
+  // Account is resolved by the RENDERER (from the character's existing profile
+  // YAML when one exists, else the 'attach' placeholder) so the roster, the
+  // one-character-per-account conflict planner, and profile exports keep
+  // working: an attached character really does hold its account's slot.
+  account: string
+  character: string
+  // Shard code for characterId / profile bookkeeping only — attach itself is
+  // host:port, the shard ports in DEFAULT_GAMES don't apply.
+  game: string
+  host: string
+  port: number
+}
+
 export interface CharacterEntry {
   key: string
   name: string
@@ -71,6 +104,11 @@ export interface RosterEntry {
   useLich: boolean
   connected: boolean
   ownerWindowId: number
+  // Set for attach-mode sessions: the detachable listener this session is
+  // (or was) connected to. Rides the roster so the owning window's Reconnect
+  // re-ATTACHES instead of relaunching a login — including after a decouple /
+  // re-home, where the new window rebuilds its session records from here.
+  attach?: AttachTarget
 }
 
 export interface SessionRosterPayload {
@@ -88,6 +126,8 @@ export interface SessionRosterPayload {
 // deleted in the same change. Import this; do not re-fork it (pitfall #127).
 export const IPC = {
   LOGIN:             'login',
+  // Attach to an already-running detachable Lich session (AttachCredentials).
+  LOGIN_ATTACH:      'login-attach',
   SEND_COMMAND:      'send-command',
   // v0.19.0: a command typed AT a character from somewhere else (the Overview's
   // input bar, Quick Send). Distinct from SEND_COMMAND, which writes straight to

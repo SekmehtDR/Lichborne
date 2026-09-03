@@ -3443,17 +3443,28 @@ export default function GameWindow({
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
       if (s.sessionId !== sessionIdRef.current) return
-      if (s.connected && s.message === 'Connected') {
-        // Clear the disconnected flags on (re)connect. Before v0.11.6 a reconnect
-        // always REMOUNTED this GameWindow (Login button: destroy+remove → fresh
-        // mount with dropped=false), so this was unnecessary. The tab-menu
-        // "Reconnect" reconnects IN PLACE (the window is keyed by characterId,
-        // not sessionId, so it stays mounted and just gets the new sessionId),
-        // so without clearing `dropped` here the status effect would keep
-        // pushing connected:false and re-grey the tab despite a good reconnect.
+      // Clear the disconnected flags on (re)connect. Before v0.11.6 a reconnect
+      // always REMOUNTED this GameWindow (Login button: destroy+remove → fresh
+      // mount with dropped=false), so this was unnecessary. The tab-menu
+      // "Reconnect" reconnects IN PLACE (the window is keyed by characterId,
+      // not sessionId, so it stays mounted and just gets the new sessionId),
+      // so without clearing `dropped` here the status effect would keep
+      // pushing connected:false and re-grey the tab despite a good reconnect.
+      //
+      // KEYED ON THE FLAG, NOT THE WORDING. This also required
+      // `s.message === 'Connected'`, which made the connected FLAG decorative
+      // and a human-readable string load-bearing. Attach mode sends 'Attached'
+      // and 'Re-attached', so the tab stayed greyed out — toolbar offering
+      // Login — while game text streamed happily into the same window
+      // (Kahlen, after an auto re-attach). Main only ever sends connected:true
+      // from a genuine connect/attach; every progress line goes out as
+      // connected:false, so the flag alone is both sufficient and the thing
+      // that actually carries the meaning. The message is now free to say
+      // something useful, and the session log records what it said.
+      if (s.connected) {
         setDropped(false)
         setDisconnecting(false)
-        logToSession([{ ts: Date.now(), stream: 'sys', text: 'Connected' }])
+        logToSession([{ ts: Date.now(), stream: 'sys', text: s.message || 'Connected' }])
       }
       if (s.message === 'Disconnecting...') {
         setDisconnecting(true)

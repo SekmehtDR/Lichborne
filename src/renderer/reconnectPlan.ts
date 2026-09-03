@@ -19,7 +19,11 @@
 //
 // Pure and UI-free on purpose: App.tsx maps the result onto its chooser state.
 
-export interface ReconnectPick { account: string; name: string }
+// `attach` marks a pick that joins an ALREADY-RUNNING detachable Lich session
+// rather than starting a login. Its presence changes three of the rules below,
+// all for the same reason: the account-slot arithmetic that governs logins
+// simply doesn't apply to a session that is already logged in.
+export interface ReconnectPick { account: string; name: string; attach?: { host: string; port: number } }
 export interface ReconnectLive { account: string; character: string; connected: boolean; sessionId: string }
 
 export interface ReconnectConflictPlan<P extends ReconnectPick> {
@@ -37,12 +41,36 @@ export interface ReconnectPlan<P extends ReconnectPick> {
 export function planReconnect<P extends ReconnectPick>(picks: P[], roster: ReconnectLive[]): ReconnectPlan<P> {
   const live = roster.filter(r => r.connected)
   const connectedChars = new Set(live.map(r => `${r.account}:${r.character}`.toLowerCase()))
+  // Attach picks are matched by CHARACTER alone: identity for an attach is the
+  // character, and an attach-only stub carries the 'attach' placeholder
+  // account, which would never match a real roster account.
+  const connectedNames = new Set(live.map(r => r.character.toLowerCase()))
   const liveByAccount = new Map(live.map(r => [r.account.toLowerCase(), r]))
   const batchAccounts = new Set<string>()
   const todo: P[] = []
   const conflicts: ReconnectConflictPlan<P>[] = []
   for (const c of picks) {
     const acct = c.account.toLowerCase()
+    // ATTACH PICKS BYPASS THE ACCOUNT ARITHMETIC ENTIRELY.
+    //
+    // All three account rules exist to protect a LOGIN from DR's
+    // one-character-per-account law. An attach starts no login: the session on
+    // the other end is already in the game, holding whatever slot it holds,
+    // with or without Lichborne. So:
+    //   - no conflict row (nothing is being displaced; if two characters on
+    //     one account really were both live, the GAME already resolved that
+    //     long before this button was pressed),
+    //   - no one-per-account batch dedup — which is load-bearing, not just
+    //     tidy: every attach-only stub shares the 'attach' placeholder
+    //     account, so the dedup silently dropped all but the FIRST of them
+    //     and "Reconnect Last (3)" would revive one character.
+    // Still skipped when the character is already on, which is the only
+    // question an attach actually has to ask.
+    if (c.attach) {
+      if (connectedNames.has(c.name.toLowerCase())) continue
+      todo.push(c)
+      continue
+    }
     if (connectedChars.has(`${acct}:${c.name.toLowerCase()}`)) continue // already on — nothing to do
     if (batchAccounts.has(acct)) continue
     batchAccounts.add(acct)

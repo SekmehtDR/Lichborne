@@ -225,6 +225,7 @@ export async function exportCharacterProfile(
         guild:    existing.guild,
         circle:   existing.circle,
         notes:    existing.notes,
+        attach:   existing.attach,
       }
     : built
   await window.api.writeCharacterProfile(character, merged)

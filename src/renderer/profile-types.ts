@@ -166,6 +166,13 @@ export interface CharacterProfile {
   guild?: string         // canonical guild key (lowercase, matches themes.ts entries: 'empath', 'moonmage', etc.)
   circle?: number        // character circle / level — surfaced on the tile meta line
   notes?: string         // free-text notes (multi-line); when non-empty, the tile shows a ✎ indicator
+  // Attach mode (draft): the detachable Lich listener this character was last
+  // attached to (`lich --login Char --headless PORT`). Written on every
+  // successful attach; read by the tile ⋯ menu's "⇋ Attach" action and the
+  // Attach modal's autofill, so a re-attach never needs the host/port retyped.
+  // Launcher-owned like hidden/favorite (preserved by exportCharacterProfile's
+  // read-merge-write). Optional — undefined means never attached.
+  attach?: { host: string; port: number }
   theme: string                            // boot-fallback theme (shared)
   state: Record<string, unknown>           // dynamic map of localStorage scope
 }

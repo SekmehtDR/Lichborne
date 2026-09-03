@@ -80,7 +80,7 @@ import { registerSimuCoinHandlers } from './simucoin'
 import { IPC } from '../shared/types'
 import { makeCharacterId } from '../shared/characterId'
 import type {
-  GameEvent, GameEventBatch, LoginCredentials, LoginResult,
+  AttachCredentials, GameEvent, GameEventBatch, LoginCredentials, LoginResult,
   ConnectionStatusPayload, RawXmlPayload, ErrorPayload, SessionId,
   RosterEntry, SessionRosterPayload,
   UserTextPayload,
@@ -121,7 +121,7 @@ interface Session {
   // login. Both feed the roster broadcast (buildRoster). `meta` is null until
   // the LOGIN handler attaches credentials.
   ownerWindowId: number
-  meta: { characterId: string; account: string; character: string; game: string; useLich: boolean } | null
+  meta: { characterId: string; account: string; character: string; game: string; useLich: boolean; attach?: { host: string; port: number } } | null
   // Replay state for a window that takes over rendering this session (decouple /
   // re-home / remount): the LATEST value of each sticky state (vitals, RT/CT,
   // indicators, stance, spell, hands, room title/id, exp, injuries, exits, …),
@@ -146,6 +146,9 @@ interface Session {
   // B169: one-shot — `_flag Display Inventory Boxes 1` sent to Lich after login
   // (player-info) to disarm Lich's tag-eating inventory_boxes_off hook.
   invBoxesFixSent?: boolean
+  // Pending auto re-attach (attach sessions only). Held so teardown and a
+  // manual reconnect can cancel it — see scheduleReattach / cancelReattach.
+  reattachTimer?: ReturnType<typeof setTimeout>
 }
 
 const HISTORY_BUFFER_MAX = 600
@@ -251,6 +254,7 @@ function rosterEntryFor(s: Session): RosterEntry | null {
     useLich: s.meta.useLich,
     connected: s.connected,
     ownerWindowId: s.ownerWindowId,
+    attach: s.meta.attach,
   }
 }
 
@@ -323,6 +327,19 @@ function wireSession(s: Session) {
     s.cleanDisconnect = false
     s.connected = false
     sendStatus(s, false, 'Disconnected', wasClean)
+    // ATTACH SESSIONS RE-ATTACH THEMSELVES (draft attach mode).
+    //
+    // Safe here in a way it would NOT be for a login: re-attaching starts no
+    // SGE auth, claims no account slot, spawns no Lich, and cannot bounce
+    // anyone out of the game. The character never left — Lich still holds the
+    // game connection, scripts are still running — so a dropped attach socket
+    // is a lost VIEW, not a lost session, and restoring the view is
+    // idempotent. That is the whole promise of attach mode, and it is worth
+    // nothing if a Wi-Fi blip or a laptop sleep strands the tab.
+    //
+    // Not attempted after a CLEAN disconnect: the player closing the tab, or
+    // typing `exit`, means they wanted out.
+    if (!wasClean && s.meta?.attach) scheduleReattach(s)
   })
 
   s.connection.on('error', (err: Error) => {
@@ -384,9 +401,64 @@ function sendStatus(s: Session, connected: boolean, message: string, clean?: boo
   broadcastRoster()  // roster `connected` mirrors s.connected — keep windows in sync
 }
 
+// ── Auto re-attach (draft attach mode) ───────────────────────────────────────
+// Backoff schedule for restoring a dropped attach socket. Front-loaded because
+// the common cases — a Wi-Fi hiccup, a VPN re-handshake, a laptop waking —
+// clear in seconds; then it settles to a 30s heartbeat and stays there
+// INDEFINITELY while the tab is open. Deliberately no attempt cap: the whole
+// point of attach mode is that the session outlives the client, so the view
+// should keep trying to come back for as long as the player leaves the tab
+// open — a cap would guarantee that the one time they wanted it back is the
+// time it had quietly given up. The player stops it by closing the tab.
+const REATTACH_BACKOFF_MS = [2_000, 4_000, 8_000, 15_000, 30_000]
+
+function reattachDelay(attempt: number): number {
+  return REATTACH_BACKOFF_MS[Math.min(attempt, REATTACH_BACKOFF_MS.length - 1)]
+}
+
+function scheduleReattach(s: Session, attempt = 0) {
+  if (!s.meta?.attach || !sessions.has(s.id)) return
+  const delay = reattachDelay(attempt)
+  const secs = Math.round(delay / 1000)
+  sendStatus(s, false, attempt === 0
+    ? `Connection lost — re-attaching in ${secs}s…`
+    : `Re-attaching in ${secs}s… (attempt ${attempt + 1})`)
+  s.reattachTimer = setTimeout(() => {
+    s.reattachTimer = undefined
+    // Re-check under the timer: the tab may have been closed, or the player
+    // may have reconnected by hand, while we were waiting.
+    if (!sessions.has(s.id) || s.connected || !s.meta?.attach) return
+    const { host, port } = s.meta.attach
+    sendStatus(s, false, `Re-attaching to ${host}:${port}…`)
+    s.connection.connectAttach({
+      account: s.meta.account, character: s.meta.character,
+      game: s.meta.game, host, port,
+    })
+      .then(() => {
+        if (!sessions.has(s.id)) return
+        s.connected = true
+        sendStatus(s, true, 'Re-attached')
+        broadcastRoster()
+      })
+      .catch(() => {
+        // Still down. The listener is gone or unreachable — keep waiting,
+        // because a headless Lich that is briefly unreachable is exactly the
+        // situation this exists for.
+        if (sessions.has(s.id) && !s.connected) scheduleReattach(s, attempt + 1)
+      })
+  }, delay)
+}
+
+function cancelReattach(s: Session) {
+  if (s.reattachTimer) { clearTimeout(s.reattachTimer); s.reattachTimer = undefined }
+}
+
 function destroySession(id: SessionId) {
   const s = sessions.get(id)
   if (!s) return
+  // Kill any pending re-attach FIRST: the timer closes over the session and
+  // would otherwise resurrect a socket for a tab that no longer exists.
+  cancelReattach(s)
   // Detach listeners before forceDisconnect so any final event from the socket
   // teardown doesn't fire into a session that's mid-removal.
   s.connection.removeAllListeners()
@@ -876,6 +948,57 @@ ipcMain.handle(CH.LOGIN, async (event, creds: LoginCredentials): Promise<LoginRe
   }
 })
 
+// Attach to an already-running detachable Lich session. The same session
+// lifecycle as CH.LOGIN — mint, hold-for-replay, roster, progress mirroring —
+// with connectAttach in place of the SGE + spawn pipeline. useLich is true by
+// definition (the whole point is that Lich is on the other end), which is what
+// keeps the Lich Scripts panel polling and the rest of the Lich-only surface
+// alive for attached tabs. The B169 inv-boxes `_flag` one-shot keys off the
+// player-info event, which an attach never re-emits (Lich sent <app> to its
+// FIRST front-end at login) — so it simply never fires here; if the running
+// session's original front-end was Wrayth-shaped it was already sent, and if
+// not, the greedy-strip exposure is no worse than that session already had.
+ipcMain.handle(CH.LOGIN_ATTACH, async (event, creds: AttachCredentials): Promise<LoginResult> => {
+  const s = createSession()
+  s.ownerWindowId = event.sender.id
+  // Same hold as CH.LOGIN and for the same reason: the renderer can't mount a
+  // GameWindow until this invoke resolves, and Lich pushes its state resync
+  // the moment we attach — without the hold, that resync (the exact vitals /
+  // indicators an attached tab needs most) is flushed into a window with no
+  // subscriber and dropped on the floor.
+  s.replayTarget = s.ownerWindowId
+  s.holdingForReplay = true
+  s.meta = {
+    characterId: makeCharacterId(creds.account, creds.character, creds.game),
+    account: creds.account,
+    character: creds.character,
+    game: creds.game,
+    useLich: true,
+    // Remembered on the session (and thus the roster) so Reconnect re-attaches
+    // to the same listener instead of relaunching a login — in any window.
+    attach: { host: creds.host, port: creds.port },
+  }
+  broadcastRoster()
+
+  const onProgress = (message: string) => {
+    if (event.sender.isDestroyed()) return
+    event.sender.send('connect-progress', { character: creds.character, message })
+  }
+  s.connection.on('status', onProgress)
+  try {
+    await s.connection.connectAttach(creds)
+    s.connected = true
+    sendStatus(s, true, 'Attached')
+    scheduleReplayHoldRelease(s)
+    return { ok: true, sessionId: s.id }
+  } catch (err) {
+    destroySession(s.id)
+    return { ok: false, error: String(err) }
+  } finally {
+    s.connection.off('status', onProgress)
+  }
+})
+
 // Returns this window's stable id + whether it's the primary (launcher) window.
 // The renderer uses the id to filter the roster to sessions it owns, and
 // isPrimary to choose its empty-state (primary → Launcher; secondary → a small
@@ -1075,6 +1198,9 @@ ipcMain.on(CH.SEND_USER_TEXT, (_event, sessionId: SessionId, text: string) => {
 ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
   const s = getSession(sessionId)
   if (!s) return
+  // An explicit Disconnect outranks a pending auto re-attach — otherwise the
+  // tab the player just closed the connection on springs back to life.
+  cancelReattach(s)
   s.cleanDisconnect = true
   sendStatus(s, false, 'Disconnecting...')
   s.connection.gracefulDisconnect().then(() => {
@@ -1093,6 +1219,7 @@ ipcMain.on(CH.DISCONNECT, (_event, sessionId: SessionId) => {
 ipcMain.handle('disconnect-await', async (_event, sessionId: SessionId) => {
   const s = getSession(sessionId)
   if (!s) return
+  cancelReattach(s)
   s.cleanDisconnect = true
   sendStatus(s, false, 'Disconnecting...')
   await s.connection.gracefulDisconnect()

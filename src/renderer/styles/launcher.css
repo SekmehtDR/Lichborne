@@ -45,6 +45,17 @@
   padding: 0 4px 24px;
 }
 
+/* Attach mode (draft): the single-button row the COMPACT launcher shows in
+   place of the full top bar (see CompactAttachRow). The full bar's 24px of
+   bottom padding separates it from the character groups below a hero lockup
+   that compact never renders, so inside the modal it reads as dead space —
+   tightened here, with a hairline doing the separating instead. */
+.launcher-topbar--compact {
+  padding: 0 4px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* v0.8.0 UX: Add-account + Bulk-Connect buttons sit alongside Lich Setup
    in the top bar. The accent style on Add Account makes it the prominent
    action — testers were scrolling past collapsed accounts to find it. */
