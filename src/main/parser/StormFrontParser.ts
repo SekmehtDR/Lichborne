@@ -766,6 +766,38 @@ export class StormFrontParser {
             const rawLabel = text.replace(/\s*\d+%?\s*$/, '').trim()
             label = rawLabel ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1) : undefined
           }
+          // ATTACH RESYNC. Lich's detachable-client init hardcodes value='0'
+          // on every bar and carries the real numbers ONLY in `text` (lich-5
+          // global_defs.rb, detachable_client_send_init), so reading `value`
+          // painted every vital at ZERO the instant you attached — worse than
+          // blank, since a zeroed bar looks like live data and reads as "one
+          // hit from dead".
+          //
+          // THE TEXT IS "health 100/" IN DR — NOT "health 100/100".
+          // Lich builds it as "#{XMLData.health}/#{XMLData.max_health}", and it
+          // derives both by scanning numbers out of DR's own bar text
+          // (xmlparser.rb: `@health, @max_health = text.scan(/-?\d+/)`). DR
+          // sends a PERCENTAGE — `text='mana 86%'` (captured live) — which
+          // yields ONE number, leaving max_health nil, which interpolates to
+          // the empty string. Hence: take the FIRST number in the text and
+          // treat a missing or zero max as 100, which is correct for DR
+          // because these vitals ARE percentages.
+          //
+          // Only reached when curMaxMatch above didn't already resolve
+          // current/max — a GS4 attach (if that ever exists) would already be
+          // customText='t' with a "current/max" shape indistinguishable from
+          // this, so curMaxMatch fires first and this never double-applies.
+          // Still deliberately narrow beyond that — only when `value` is 0.
+          // DR's live bars carry a correct `value` (86 in that capture) and
+          // take exactly the path they always did; customText bars
+          // ('inner fire 59%') likewise.
+          if (!curMaxMatch && value === 0) {
+            const textNums = text.match(/-?\d+/g)
+            if (textNums !== null && textNums.length > 0) {
+              current = Number(textNums[0])
+              max = textNums.length > 1 && Number(textNums[1]) > 0 ? Number(textNums[1]) : 100
+            }
+          }
           this.emit({
             type: 'vital-update',
             id: normalizedId as 'health' | 'mana' | 'spirit' | 'stamina' | 'concentration' | 'mindstate' | 'encumbrance',

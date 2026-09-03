@@ -59,8 +59,9 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import type { SessionInfo } from './components/LoginScreen'
-import Launcher, { loadCharacterCards, type LauncherCharacter } from './components/Launcher'
+import Launcher, { loadCharacterCards, saveCharacterAttach, type LauncherCharacter } from './components/Launcher'
 import AddCharacterWizard from './components/AddCharacterWizard'
+import AttachModal from './components/AttachModal'
 import LichSetupDialog from './components/LichSetupDialog'
 import ProfileTransferModal from './components/ProfileTransferModal'
 import AboutModal from './components/AboutModal'
@@ -96,6 +97,12 @@ declare global {
 }
 
 type UpdateState = 'idle' | 'available' | 'downloading' | 'ready'
+
+// Attach mode: last successful attach, for prefilling the modal.
+// Deliberately GLOBAL (not per-character scoped) — it answers "what did I
+// attach to most recently", which is the right default when the modal opens
+// blank. Per-character targets live on the profile (CharacterProfile.attach).
+const ATTACH_LAST_KEY = 'lichborne.attach.last'
 
 export default function App() {
   return (
@@ -226,6 +233,9 @@ function AppShell() {
       const cid = addSession({
         sessionId: e.sessionId, account: e.account,
         character: e.character, game: e.game, useLich: e.useLich,
+        // Attach target rides the roster so a decoupled / re-homed attach
+        // session keeps its re-attach path in the new window.
+        attach: e.attach,
       })
       updateStatus(cid, { connected: e.connected })
     }
@@ -421,6 +431,12 @@ function AppShell() {
   // backed out before any network traffic.
   const [pendingConnect, setPendingConnect] = useState<LauncherCharacter | null>(null)
   const [connectError,    setConnectError]    = useState<string>('')
+  // Attach-to-running-Lich modal (see runAttach). Opened via
+  // openAttachModal, which loads the prefill (last attach) and the saved
+  // per-character targets (for name → host:port autofill) before showing it.
+  const [showAttach, setShowAttach] = useState(false)
+  const [attachInitial, setAttachInitial] = useState<{ character: string; host: string; port: number } | null>(null)
+  const [attachKnown, setAttachKnown] = useState<Record<string, { host: string; port: number }>>({})
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingCancelledRef = useRef(false)
 
@@ -942,6 +958,32 @@ function AppShell() {
     if (pendingConnect) return  // already connecting; ignore double-clicks
     if (pendingConflict) return // resolution modal already open
 
+    // ATTACH TILES ATTACH. A tile with a saved target treats Connect
+    // as "put me in that running session" — not as "start a login", which for
+    // a stub tile can only dead-end in the Add Account wizard asking for a
+    // password that doesn't exist. This branch also BYPASSES the same-account
+    // conflict modal below: that guard protects a NEW login against DR's
+    // one-per-account law, but an attach joins a session that is already on
+    // — and stub tiles all share the 'attach' placeholder account, so the
+    // guard would cross-flag unrelated characters. The per-CHARACTER cases
+    // are handled in prepareTileAttach (focus a live tab, revive a dead one),
+    // and the target-is-down case falls back inside attachFromCard.
+    if (c.attach) {
+      if (prepareTileAttach(c) === 'focused') return
+      setConnectError('')
+      pendingCancelledRef.current = false
+      setPendingConnect(c)
+      pendingTimerRef.current = setTimeout(() => {
+        pendingTimerRef.current = null
+        if (pendingCancelledRef.current) return
+        attachFromCard(c).catch(err => {
+          setConnectError(String(err))
+          setPendingConnect(null)
+        })
+      }, 1500)
+      return
+    }
+
     // Same-account guard. DR allows only one active character per account at
     // a time — pre-v0.8.0 this was a flat refusal (`setConnectError(...)`).
     // Now we surface a confirmation modal: the user can either disconnect the
@@ -1151,6 +1193,230 @@ function AppShell() {
     })
   }
 
+  // Attach to an already-running detachable Lich session.
+  // Returns null on success, or the error sentence for the caller to surface
+  // (the modal shows it inline and stays open for a fix-and-retry — a closed
+  // modal plus the launcher error banner would throw away the typed
+  // host/port; the tile / Reconnect paths route it to the error banner).
+  //
+  // No password, no SGE, no pendingConnect grace window: there's no network
+  // side effect worth backing out of — a failed attach touches nothing.
+  //
+  // Identity: `fixed` pins account+game when the caller already KNOWS them —
+  // the tile ⋯ menu and the tab's Reconnect, where re-resolving could drift
+  // (a missing profile would resolve to the 'attach' placeholder, mint a
+  // different characterId, and open a SECOND tab instead of reviving the
+  // one being reconnected). The modal path leaves it unset and resolves from
+  // the character's profile YAML when one exists, else placeholders
+  // ('attach' / 'DR'). Resolving the REAL account when known is what keeps
+  // the roster and the one-per-account conflict planner truthful — an
+  // attached character genuinely holds its account's slot in game — and
+  // keeps the ambient profile export (exportCharacterProfile's
+  // read-merge-write, where `built` wins on account) writing the same
+  // account back instead of clobbering it.
+  async function runAttach(
+    character: string,
+    host: string,
+    port: number,
+    fixed?: { account: string; game: string },
+    // Card-path cancellation (the pendingConnect overlay's Cancel). Checked
+    // after the attach lands: the session is destroyed instead of becoming a
+    // tab. Destroy = detach for attach mode, so the running Lich session is
+    // untouched — unlike a cancelled LOGIN, nothing needs to run to
+    // completion first. Only the Connect-button path passes this; the modal
+    // and menu paths have no Cancel racing them.
+    cancelled?: { current: boolean },
+    // Out-param filled with the new sessionId on success. An out-param rather
+    // than a richer return type because the modal's onAttach contract is
+    // "error sentence or null", and only the bulk path needs the id (to
+    // honour "open each in its own window").
+    out?: { sessionId?: SessionId },
+  ): Promise<string | null> {
+    let account = fixed?.account ?? 'attach'
+    let game = fixed?.game ?? 'DR'
+    if (!fixed) {
+      try {
+        const existing = await window.api.readCharacterProfile(character)
+          .catch(() => null) as { account?: string; game?: string } | null
+        if (existing?.account) account = existing.account
+        if (existing?.game) game = existing.game
+      } catch { /* no profile — placeholders stand */ }
+    }
+
+    const result = await window.api.loginAttach({ account, character, game, host, port })
+    if (!result.ok) return result.error ?? 'Attach failed'
+
+    if (cancelled?.current) {
+      window.api.destroySession(result.sessionId)
+      return null
+    }
+
+    // Same per-character profile load as runConnect, so an attached tab gets
+    // the character's saved layout, highlights, macros and theme.
+    try {
+      const loaded = await importCharacterProfile(character)
+      if (!loaded) clearCharacterLocalStorage(character)
+    } catch (err) { console.error(err) }
+
+    // REMEMBER THE TARGET — the reason this feature is usable twice. Saved on
+    // success only (a failed target isn't worth prefilling), to two homes:
+    // the character's profile YAML (drives the tile ⋯ menu's one-click
+    // re-attach and the modal's name → host:port autofill; creates a stub
+    // profile for an attach-only character, which is exactly the tile the
+    // next session starts from) and the global last-attach key (prefills the
+    // modal when it opens blank). The refreshKey bump makes a just-created
+    // stub tile appear without a restart.
+    try { localStorage.setItem(ATTACH_LAST_KEY, JSON.stringify({ character, host, port })) } catch { /* ignore */ }
+    try {
+      await saveCharacterAttach(character, account, game, { host, port })
+      setLauncherRefreshKey(k => k + 1)
+    } catch (err) {
+      // SAY SO. A console.error alone made a failed save look identical to
+      // the collapsed-section bug this code also fixes: no tile, no reason.
+      // The attach itself has already succeeded — the character is on — so
+      // this is a toast, not an error banner: what was lost is the shortcut
+      // back, not the session.
+      console.error('Failed to save the attach target', err)
+      showToast({
+        title: 'Attached, but the target was not saved',
+        message: `${character} is connected, but Lichborne could not write its profile, so no tile will remember ${host}:${port}.`,
+      })
+    }
+
+    setShowAttach(false)
+    handleConnected({
+      sessionId: result.sessionId,
+      account,
+      character,
+      game,
+      useLich: true,
+      attach: { host, port },
+    })
+    if (out) out.sessionId = result.sessionId
+    return null
+  }
+
+  // The modal's attach. Wraps runAttach with the same per-character guard the
+  // tile paths get from prepareTileAttach — the modal takes a TYPED name, so
+  // it is the one place a player can aim a second attach at a character that
+  // is already on. Without this, addSession replaces the record on the
+  // matching characterId: the first tab vanishes, its session is orphaned in
+  // main (still attached, no longer reachable), and it looks like attaching
+  // the second character "replaced" the first instead of adding to it.
+  async function runAttachFromModal(character: string, host: string, port: number): Promise<string | null> {
+    const name = character.trim()
+    const existing = sessions.find(s => s.character.toLowerCase() === name.toLowerCase())
+    if (existing?.status.connected) {
+      // Already on: show it rather than attaching a duplicate. Lich would
+      // accept a second front-end happily — the problem is on our side.
+      setActive(existing.characterId)
+      setShowAttach(false)
+      showToast({
+        title: `${existing.character} is already attached`,
+        message: 'Switched to its tab. To attach a different character, use its own name and its own Lich port.',
+      })
+      return null
+    }
+    if (existing) window.api.destroySession(existing.sessionId)
+    return runAttach(name, host, port)
+  }
+
+  // Open the Attach modal with its memory loaded: the per-character targets
+  // (for autofill as the name is typed) and the last successful attach (for
+  // the blank-open prefill). Both are best-effort — the modal works empty.
+  async function openAttachModal() {
+    let known: Record<string, { host: string; port: number }> = {}
+    try {
+      const cards = await loadCharacterCards()
+      for (const c of cards) if (c.attach) known[c.name.toLowerCase()] = c.attach
+    } catch { /* no tiles yet — nothing to autofill */ }
+    let initial: { character: string; host: string; port: number } | null = null
+    try { initial = JSON.parse(localStorage.getItem(ATTACH_LAST_KEY) ?? 'null') } catch { /* ignore */ }
+    setAttachKnown(known)
+    setAttachInitial(initial)
+    setShowAttach(true)
+  }
+
+  // Shared pre-flight for every attach that starts from a tile. A character
+  // with a CONNECTED tab just gets focused — a second attach would work at
+  // the protocol level (Lich takes multiple front-ends) but the new record
+  // replaces the old one on characterId, orphaning a live session in main.
+  // A disconnected tab is torn down so the revived session replaces it
+  // cleanly instead of leaking the dead socket's session entry.
+  // Idempotent — handleCardConnect calls it early (to skip the connecting
+  // overlay for a no-op) and tryAttachPick calls it again for the callers
+  // that don't pre-check; main's destroySession no-ops on an unknown id.
+  function prepareTileAttach(c: LauncherCharacter): 'focused' | 'ready' {
+    const existing = sessions.find(s => s.character.toLowerCase() === c.name.toLowerCase())
+    if (existing?.status.connected) {
+      setActive(existing.characterId)
+      return 'focused'
+    }
+    if (existing) window.api.destroySession(existing.sessionId)
+    return 'ready'
+  }
+
+  // Attach one saved-target character, and decide what a failure MEANS.
+  // Shared by every entry point that starts from a tile — the Connect button
+  // and the bulk paths (Reconnect Last / Team Login) — so they can't drift on
+  // the one judgement call in the feature: when nothing is listening at the
+  // target, was the click "join that session" or "get me into the game"?
+  // Answer: the latter, whenever a real login is possible. A stub tile has no
+  // account to log in with, so its failure is terminal and says why.
+  //
+  //   { ok: true }       attached; the tab exists. `sessionId` is set for a
+  //                      NEW session and absent when an existing tab was
+  //                      focused — the bulk path uses that to decide whether
+  //                      there is anything to move to its own window.
+  //   { fallback: true } nothing listening, but this tile CAN log in normally
+  //   { error }          surface it
+  async function tryAttachPick(
+    c: LauncherCharacter,
+    cancelled?: { current: boolean },
+  ): Promise<{ ok: true; sessionId?: SessionId } | { fallback: true } | { error: string }> {
+    const target = c.attach
+    if (!target) return { fallback: true }
+    if (prepareTileAttach(c) === 'focused') return { ok: true }
+    const out: { sessionId?: SessionId } = {}
+    const err = await runAttach(
+      c.name, target.host, target.port,
+      { account: c.account, game: c.game },
+      cancelled,
+      out,
+    )
+    if (err === null) return { ok: true, sessionId: out.sessionId }
+    const nothingListening = /Nothing accepted the connection/i.test(err)
+    const canLogin = !!c.account && c.account.toLowerCase() !== 'attach'
+    if (nothingListening && canLogin) return { fallback: true }
+    return {
+      error: nothingListening && !canLogin
+        ? `${err} This tile has no saved account, so there is no normal login to fall back to.`
+        : err,
+    }
+  }
+
+  // The Connect-button attach (see handleCardConnect's attach branch).
+  async function attachFromCard(c: LauncherCharacter) {
+    const outcome = await tryAttachPick(c, pendingCancelledRef)
+    if ('ok' in outcome) { setPendingConnect(null); return }
+    if ('fallback' in outcome) { await runConnect(c); return }
+    setConnectError(outcome.error)
+    setPendingConnect(null)
+  }
+
+  // One-click re-attach from a tile's ⋯ menu (target saved on the profile).
+  // Errors surface on the launcher's existing error banner — the tile flow
+  // has no modal to carry an inline message. No fallback-to-login here: the
+  // menu item names the target explicitly, so failing loudly is the honest
+  // response (the Connect button is the entry point that falls back).
+  function attachFromTile(c: LauncherCharacter) {
+    if (!c.attach) return
+    if (prepareTileAttach(c) === 'focused') return
+    runAttach(c.name, c.attach.host, c.attach.port, { account: c.account, game: c.game })
+      .then(err => { if (err) setConnectError(err) })
+      .catch(err => setConnectError(String(err)))
+  }
+
   // Bulk Connect: walks the user-confirmed picks sequentially. Each char
   // gets the same connect flow as a single-tile click (login IPC, profile
   // import/export, session.add). Per-character errors don't abort the
@@ -1182,6 +1448,32 @@ function AppShell() {
       }
       setBulkProgress({ currentIndex: i + 1, total: picks.length, currentName: c.name })
       try {
+        // ATTACH FIRST for a saved-target character (Reconnect Last / Team
+        // Login / a saved set). Without this the batch ran the login flow for
+        // an attach tile and died on "No saved password" — an attach-only
+        // stub has no password to find, and even a real account would be
+        // starting a SECOND Lich against a headless session that is still
+        // logged in. tryAttachPick is shared with the tile Connect button, so
+        // the fallback judgement can't drift between them.
+        if (c.attach) {
+          const outcome = await tryAttachPick(c)
+          if ('ok' in outcome) {
+            // Same "open each in its own window" treatment as a logged-in
+            // character. `sessionId` is absent when an already-open tab was
+            // focused rather than attached — nothing new to move, and moving
+            // a tab the player already had open would be a surprise.
+            if (separateWindows && i > 0 && outcome.sessionId) {
+              await window.api.moveSessionToWindow(outcome.sessionId, 'new')
+            }
+            ok.push(c.name)
+            continue
+          }
+          if ('error' in outcome) {
+            failed.push({ name: c.name, error: outcome.error })
+            continue
+          }
+          // fallback → fall through to the normal login path below.
+        }
         const adv = loadAdvanced()
         const password = await window.api.loadPassword(c.account)
         if (password === null) {
@@ -1281,6 +1573,20 @@ function AppShell() {
     const s = sessions.find(x => x.characterId === id)
     if (!s || s.status.connected) return
     window.api.destroySession(s.sessionId)
+    // Attach sessions re-ATTACH to their saved listener — running the normal
+    // login here would spawn a SECOND Lich against an account whose headless
+    // session is still logged in, and DR would bounce one of them. Identity
+    // is pinned from the session record (see runAttach's `fixed` note) so the
+    // revived tab keeps the same characterId and replaces this one.
+    if (s.attach) {
+      const { host, port } = s.attach
+      setReconnectingIds(prev => new Set(prev).add(id))
+      runAttach(s.character, host, port, { account: s.account, game: s.game })
+        .then(err => { if (err) { setConnectError(err); setShowAdd(true) } })
+        .catch(err => { setConnectError(String(err)); setShowAdd(true) })
+        .finally(() => setReconnectingIds(prev => { const n = new Set(prev); n.delete(id); return n }))
+      return
+    }
     const c: LauncherCharacter = {
       name: s.character, account: s.account, game: s.game, useLich: s.useLich,
       hidden: false, favorite: false,
@@ -1394,6 +1700,8 @@ function AppShell() {
             onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
+            onAttach={() => { void openAttachModal() }}
+            onAttachCharacter={attachFromTile}
             onRefreshAccount={(account) => {
               setWizardPrefillAccount(account)
               setShowWizard(true)
@@ -1479,6 +1787,15 @@ function AppShell() {
         )}
       </div>
 
+      {showAttach && (
+        <AttachModal
+          onCancel={() => setShowAttach(false)}
+          onAttach={runAttachFromModal}
+          initial={attachInitial}
+          known={attachKnown}
+        />
+      )}
+
       {showModalLogin && (
         <div className="add-character-modal" onClick={e => { if (e.target === e.currentTarget) setShowAdd(false) }}>
           <button
@@ -1505,6 +1822,8 @@ function AppShell() {
             onEditSet={openTeamForEdit}
             onReconnectLast={handleReconnectLast}
             onAddNew={openAddNew}
+            onAttach={() => { void openAttachModal() }}
+            onAttachCharacter={attachFromTile}
             onRefreshAccount={(account) => {
               setShowAdd(false)
               setWizardPrefillAccount(account)

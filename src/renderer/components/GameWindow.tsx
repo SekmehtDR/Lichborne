@@ -497,6 +497,18 @@ const STREAM_FALLBACK: Record<string, string> = {
   combat:        'main',
   assess:        'main',
   atmospherics:  'main',
+  // B306 (JadedSoul, v0.19.3): DR sends SHOP output — the surface list, `shop
+  // window`, `shop <item>` — inside `<pushStream id="shopWindow"/>` (a
+  // 'Shopping'-titled stream). Without this entry an unwatched shopWindow was
+  // pushed into a stream buffer nobody displays, so `shop` printed NOTHING in
+  // the game window unless a Shopping panel happened to be open, and went dark
+  // again the moment it closed. Both sibling clients show it in main (Frostbite
+  // writeTextLines()s shopWindow; Profanity lists it among the streams rendered
+  // in main when no window exists), and DR does NOT emit an outside-the-block
+  // copy (pitfall #49 — the report's blank output is the proof), so main is
+  // the right fallback. The stream stays discoverable: add a Shopping panel and
+  // the listing routes there instead.
+  shopWindow:    'main',
   // NO group fallback (Cherisse/Agan, v0.14.3). The `group` stream is a
   // clears-and-rewrites ROSTER (every refresh is `<clearStream id='group'/>`
   // then 3-4 `<pushStream id='group'/>` lines — "Members of your group: …"),
@@ -2099,10 +2111,20 @@ export default function GameWindow({
   // windows are on screen at once, so each window's active tab is visible.
   const activeIdsRef = useRef(new Set([topActiveId, midActiveId, bottomActiveId]))
   useEffect(() => {
+    // B307: panels mode gates each zone's active id on its `*Added` flag — a
+    // REMOVED zone keeps its stale activeId in state (pitfall #39), and an
+    // ungated set called that tab "visible" for unread suppression AND for the
+    // lbAI routing below, when nothing of the sort was on screen.
     activeIdsRef.current = layoutMode === 'free'
       ? new Set(freeWindows.flatMap(w => (w.activeId ? [w.activeId] : [])))
-      : new Set([mainTopActiveId, topActiveId, midActiveId, bottomActiveId])
-  }, [layoutMode, freeWindows, mainTopActiveId, topActiveId, midActiveId, bottomActiveId])
+      : new Set([
+          ...(mainTopAdded ? [mainTopActiveId] : []),
+          ...(topAdded     ? [topActiveId]     : []),
+          ...(midAdded     ? [midActiveId]     : []),
+          ...(bottomAdded  ? [bottomActiveId]  : []),
+        ])
+  }, [layoutMode, freeWindows, mainTopActiveId, topActiveId, midActiveId, bottomActiveId,
+      mainTopAdded, topAdded, midAdded, bottomAdded])
 
   // Drag refs
   const virtuosoRef           = useRef<VirtuosoHandle>(null)
@@ -3444,17 +3466,28 @@ export default function GameWindow({
 
     const unsubStatus = window.api.onConnectionStatus((s) => {
       if (s.sessionId !== sessionIdRef.current) return
-      if (s.connected && s.message === 'Connected') {
-        // Clear the disconnected flags on (re)connect. Before v0.11.6 a reconnect
-        // always REMOUNTED this GameWindow (Login button: destroy+remove → fresh
-        // mount with dropped=false), so this was unnecessary. The tab-menu
-        // "Reconnect" reconnects IN PLACE (the window is keyed by characterId,
-        // not sessionId, so it stays mounted and just gets the new sessionId),
-        // so without clearing `dropped` here the status effect would keep
-        // pushing connected:false and re-grey the tab despite a good reconnect.
+      // Clear the disconnected flags on (re)connect. Before v0.11.6 a reconnect
+      // always REMOUNTED this GameWindow (Login button: destroy+remove → fresh
+      // mount with dropped=false), so this was unnecessary. The tab-menu
+      // "Reconnect" reconnects IN PLACE (the window is keyed by characterId,
+      // not sessionId, so it stays mounted and just gets the new sessionId),
+      // so without clearing `dropped` here the status effect would keep
+      // pushing connected:false and re-grey the tab despite a good reconnect.
+      //
+      // KEYED ON THE FLAG, NOT THE WORDING. This also required
+      // `s.message === 'Connected'`, which made the connected FLAG decorative
+      // and a human-readable string load-bearing. Attach mode sends 'Attached'
+      // and 'Re-attached', so the tab stayed greyed out — toolbar offering
+      // Login — while game text streamed happily into the same window
+      // (Kahlen, after an auto re-attach). Main only ever sends connected:true
+      // from a genuine connect/attach; every progress line goes out as
+      // connected:false, so the flag alone is both sufficient and the thing
+      // that actually carries the meaning. The message is now free to say
+      // something useful, and the session log records what it said.
+      if (s.connected) {
         setDropped(false)
         setDisconnecting(false)
-        logToSession([{ ts: Date.now(), stream: 'sys', text: 'Connected' }])
+        logToSession([{ ts: Date.now(), stream: 'sys', text: s.message || 'Connected' }])
       }
       if (s.message === 'Disconnecting...') {
         setDisconnecting(true)
@@ -4263,8 +4296,20 @@ export default function GameWindow({
     // model — so it's visible what personality shaped the recap.
     const voiceTag = persona.trim() ? ` · voice: ${persona.trim()}` : ''
 
-    // Route output to the lbAI stream panel if it's open, else the main window.
-    const toStream = watchedStreamsRef.current.has(AI_STREAM)
+    // Route output to the lbAI panel only when it is SHOWING — the active tab of
+    // a rendered zone / floating window — else the main window.
+    //
+    // B307 (Sekmeht, v0.19.3): this keyed on `watchedStreamsRef` alone, i.e. on
+    // whether an lbAI TAB EXISTED anywhere in the layout. A background lbAI tab
+    // (not the active one in its zone/window) therefore captured the whole
+    // recap with only an unread dot to show for it — from the game window it
+    // read as "the stream is closed and nothing came out", and the text only
+    // surfaced when the tab was brought forward. The feature's rule is "game
+    // window unless the stream is OPEN", and open means on screen: the tab must
+    // exist in a RENDERED surface (watched — gated on the zone's *Added flag)
+    // AND be that surface's active tab (activeIds). Decided once per run, as
+    // before, so the streaming updates follow the same target.
+    const toStream = watchedStreamsRef.current.has(AI_STREAM) && activeIdsRef.current.has(AI_STREAM)
     const appendLine = (line: TextLine) => {
       if (toStream) setStreamLines(prev => ({ ...prev, [AI_STREAM]: [...(prev[AI_STREAM] ?? []), line].slice(-MAX_STREAM_LINES) }))
       else setLines(prev => appendTrimmed(prev, [line]))

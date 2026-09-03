@@ -441,15 +441,17 @@ The server declares all streams it intends to use via `<streamWindow id="..." ti
 | `talk` | `conversations` | In-game speech, yell, whisper | Top-Right |
 | `whispers` | `whispers` | Direct whispers (separate channel) | discoverable |
 | `conversation` | `conversation` | Conversation channel | discoverable |
-| `ooc` | `ooc` | Out-of-character channel | discoverable |
+| `ooc` | `ooc` | Out-of-character channel | discoverable; **deliberately NO `main` fallback** (v0.19.3 sweep): Frostbite's parser comments that the speech in the ooc stream is *"duplicated from whisper stream"* — a native outside-the-block copy, the B136/pitfall-#49 case, so a fallback would double-print |
+| `chatter` | `chatter` | Seen by Frostbite (routed into its Thoughts window); source and duplication unknown — **UNDECIDED, needs a Debug raw-XML capture** before it gets a fallback or an alias (v0.19.3 sweep) | discoverable |
 | `familiar` | `familiar` | Familiar link output | `familiar` |
 | `percWindow` | `spells` | Active spells / buffs | Center-Right |
 | `inv` | `inv` | Inventory updates | `inv` |
 | `room` | `room` | Room description components | `room` |
 | `combat` | `combat` | Combat messages | `main` |
 | `atmospherics` | `atmospherics` | Ambient / weather text | `main` |
-| `group` | `group` | Group channel | `main` |
+| `group` | `group` | Group roster — a clears-and-rewrites STATE stream, not a log | discoverable; **no** `main` fallback since v0.14.3 (re-spammed the roster on every change) |
 | `assess` | `assess` | Combat-situation ASSESS block (creatures, ranges, facing) — also consumed by the Living Tableau's combat arena, independent of whether a panel watches it | discoverable, falls back to `main` |
+| `shopWindow` | `shopWindow` | SHOP replies at surface-based shops (the goods list, `shop window`, `shop <item>`) — DR titles it "Shopping"; no outside-the-block copy to main (B306, v0.19.3) | discoverable, falls back to `main` |
 | `moonWindow` | `moonWindow` | Moon phase tracker (replace-on-push) | discoverable |
 | `LichScripts` | `LichScripts` | Running Lich scripts — live list from `script-watch.lic` (replace-on-push) | discoverable |
 
@@ -1340,8 +1342,13 @@ log) on the cheapest input. **What shipped in v0.16.0:**
 - **Output routing — the `lbAI` stream (DECIDED default, 2026-07-14).** AI feature output is a first-class named
   stream, **`lbAI`** (LichborneAI), seeded into `discoveredStreams` so it's always addable in Panel Manager /
   `/panel open lbai`. **Default = the MAIN game window; when an `lbAI` panel is open
-  (`watchedStreamsRef.has('lbAI')`) output routes THERE (`setStreamLines`) instead.** Routing is decided once
-  per run and the streaming updates + trailing newline follow it. `lbAI` is never emitted by the game, so it
+  output routes THERE (`setStreamLines`) instead.** Routing is decided once per run and the streaming updates
+  + trailing newline follow it. **"Open" means SHOWING (B307, v0.19.3): the lbAI tab must exist in a rendered
+  zone/window (`watchedStreamsRef`, gated on the zone's `*Added` flag) AND be that surface's active tab
+  (`activeIdsRef`).** Through v0.19.2 the check was tab EXISTENCE alone, so a background lbAI tab silently
+  captured the whole recap with only an unread dot to show for it — from the game window it read as "the
+  stream is closed and nothing came out" (Sekmeht, 2026-08-28). A non-active lbAI tab now gets the recap in
+  the game window like a closed one; bring the tab forward before running if you want it in the panel. `lbAI` is never emitted by the game, so it
   has **no `STREAM_FALLBACK` entry** — the open/closed fallback is handled inline in `runCatchup`. This is the
   shared output surface every future AI feature (Setup Sage cards, Chronicle, …) routes through.
   - **Making `lbAI` the DEFAULT target was considered and DECLINED (Sekmeht, 2026-07-14).** Rationale for
@@ -9149,3 +9156,120 @@ ranks gained, deaths, damage taken (the confirmed 22-level ladder), coin flow
 `runLogExtractors(rows)`, add a cached on-demand handler, and surface it as a
 collapsed per-card "today" section fetched on expand — which also delivers
 backlog item **F93** (session summary card) nearly for free.
+
+---
+
+## 48. Attach Mode — connect to an already-running Lich (PR #2, Kahlen, v0.19.4)
+
+### 48.1 Why
+
+Lichborne could connect two ways: **launch Lich** for you, or go **Direct** to the
+game. Both tie the game session's lifetime to the client's — closing Lichborne
+logs the character out. Attach adds a third: connect to a Lich that is **already
+running and logged in**, so the session outlives the front-end. Close and reopen
+without losing your place, survive a front-end crash with the login intact, pick
+a character up from another machine, or watch one session from a second
+front-end alongside the first.
+
+This is squarely inside the product position (§1, §24): it is *display and
+configuration over Lich*, adding no automation. Lich already does all the work;
+Lichborne just learns to speak to a listener it wasn't previously using.
+
+### 48.2 What Lich provides (verified — full citations in Knowledge.md §19)
+
+An attachable Lich is started `--headless PORT` (sugar for
+`--without-frontend --detachable-client=PORT`). Its listener takes a **bare TCP
+connection with no auth and no handshake**; on accept Lich pushes a state resync
+(vitals, prepared spell, indicators, compass) and then the live stream. Multiple
+front-ends may attach at once and a detachable client dropping does not end the
+session. **Only an attachably-started Lich can be attached to** — a normally
+launched one accepted its single front-end and closed the listener, so this
+cannot and does not try to reach those.
+
+### 48.3 Architecture
+
+- **`AttachConnection`** ([src/main/connection/AttachConnection.ts](src/main/connection/AttachConnection.ts))
+  is the transport, deliberately free of electron imports so a plain-node harness
+  can exercise the protocol. It **sends nothing on connect** — no login key, no
+  `FE:` line — because anything a detachable client writes is dispatched to the
+  game as a command. TCP keepalive at 30s: an attach target is often not
+  loopback, and an idle connection through NAT gets reaped by intermediaries
+  that tell neither end.
+- **`ConnectionManager`** gains mode `'attach'` and `connectAttach()`, translating
+  ECONNREFUSED into "start Lich attachably" rather than a raw errno, and issuing
+  a post-attach `look` (Lich's resync covers everything *except* the room).
+- **`main.ts`** adds `CH.LOGIN_ATTACH` mirroring `CH.LOGIN`'s lifecycle —
+  **including the hold-for-replay** (§13.9 / pitfall #60), because the
+  attach-time resync would otherwise be flushed into a window that has no
+  GameWindow subscriber yet. Sessions carry `useLich: true` so the Lich Scripts
+  panel and the rest of the Lich-only surface stay live.
+- **Auto re-attach** on an unclean drop — 2/4/8/15/30s backoff then a 30s
+  heartbeat — reconnecting **in place** (pitfall #69's shape: the GameWindow is
+  keyed by characterId and just receives a new sessionId), so the tab, scrollback
+  and panels survive. **Deliberately uncapped:** the session outlives the client,
+  so giving up is precisely wrong — a cap would quit exactly when the player
+  wanted it back.
+
+### 48.4 Disconnect DETACHES; `exit` logs out
+
+`gracefulDisconnect` in attach mode **half-closes and never sends QUIT**, for both
+the in-tab Disconnect and app shutdown — that is what makes the session outlive
+the client, and it is the whole point of the feature.
+
+Typing `exit` remains a deliberate log-out, and this is **not** a Lichborne
+choice: Lich runs a full orderly shutdown of the entire session for a user-exit
+command from a detachable client (`user_exit_dispatch.rb#dispatch_detachable_client`).
+A front-end cannot soften it, so the asymmetry is **documented at the user** in
+release-notes and the User Guide rather than hidden.
+
+### 48.5 Target persistence and reconnect planning
+
+`CharacterProfile` grows an optional **launcher-owned** `attach?: { host, port }`,
+written on each successful attach through the `setCharacterGame`-style
+read-modify-write (pitfall #26 — never through GameWindow's debounced save). It
+drives the tile ⋯ menu entry, the modal prefill, an attach-first tile Connect
+(falling back to a normal login when nothing is listening and the tile has a real
+account), the tab's Reconnect, and the bulk paths.
+
+`planReconnect` ([src/renderer/reconnectPlan.ts](src/renderer/reconnectPlan.ts))
+gains an **attach branch that bypasses the account arithmetic**. Those rules exist
+to protect a *login* from DR's one-character-per-account law; an attach starts no
+login, so the dedup/already-on/conflict-chooser machinery does not apply. The
+login-mode rules are pinned unchanged by harness regression cases.
+
+### 48.6 No slash command — recorded decision (Principle #11)
+
+**Attach ships with no `/` command, by decision** (Sekmeht, v0.19.4). Principle #11
+requires the question be asked explicitly and the "no command because X" answer
+recorded rather than skipped silently; this is that record.
+
+The reasoning matches the Experiences precedent (§34.6): attach is **one-time
+setup, not an in-play verb.** You attach once per session from the launcher, and
+thereafter the saved target makes it a single click on the tile — there is no
+repeated action a command would accelerate, and the three fields it needs
+(character, host, port) are exactly what a form is better at than a command line.
+Revisit if attach ever grows an in-play action (re-attach on demand, switching
+targets mid-session) — that *would* deserve a verb.
+
+### 48.7 Known edges (accepted, left as-is)
+
+- An **attach-only character** never added through the wizard gets a minimal stub
+  profile under an `attach` placeholder account, so it has a tile to reconnect
+  from. Deliberate, but a design choice worth revisiting if it clutters rosters.
+- A **`--genie`-flavoured** headless Lich sends no attach-time resync at all and
+  suppresses stream tags (genie is registered without the `streams` capability).
+  Plain `--headless` is the shape to recommend; this is a Lich-side property.
+- **The parser is REUSED across an auto re-attach (B310 — open, unpatched).**
+  Every other connection path gets a fresh `StormFrontParser` because a new
+  connection means a new `Session`; auto re-attach reuses `s`, so a drop that
+  lands mid-block can carry `activeStream` / `streamStack` / `monoMode` into the
+  new socket, filing subsequent game text under a stale stream with nothing to
+  self-correct it. The prompt boundary already scrubs the inline style state
+  each turn, so an idle-time drop — the common keepalive case — is harmless.
+  Pre-existing gap (`reset()` has never had a call site), newly reachable.
+  Deliberately left for the author's call rather than patched; the fix, if
+  accepted, is `s.parser.reset()` before `connectAttach()` in `scheduleReattach`.
+- **Auto-discovery is not attempted.** Lich writes a session descriptor file
+  (`{name, host, port}` JSON) per character when detachable, which would remove
+  the host/port entry entirely and the risk of mislabelling a tab by typing the
+  wrong character name. The natural next step for this feature.

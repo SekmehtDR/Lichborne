@@ -44,6 +44,9 @@ export interface LauncherCharacter {
   guild?:  string     // v0.8.0: optional guild key (lowercase canonical, see GUILDS in CharacterNotesEditor)
   circle?: number     // v0.8.0: optional character circle / level
   notes?:  string     // v0.8.0: optional free-text notes; tile shows a ✎ indicator when set
+  // Attach mode: last detachable listener this character attached to.
+  // Presence lights up the tile ⋯ menu's "⇋ Attach" action.
+  attach?: { host: string; port: number }
 }
 
 interface Props {
@@ -51,6 +54,14 @@ interface Props {
   onConnect: (character: LauncherCharacter) => void
   // Triggered when the user clicks the "+ Add account" card.
   onAddNew:  () => void
+  // Attach to an already-running detachable Lich session —
+  // opens App's AttachModal. Optional so the compact Add-modal variant can
+  // omit it without a dead button.
+  onAttach?: () => void
+  // One-click re-attach from a tile's ⋯ menu, using the target saved on the
+  // character's profile (LauncherCharacter.attach). Only offered on tiles
+  // that have one.
+  onAttachCharacter?: (character: LauncherCharacter) => void
   // Triggered when the user clicks "↺ Refresh" on an account header — pre-fills
   // the Add Account flow with the chosen account so EAccess can pull any
   // characters that aren't already present as tiles. v0.8.0 (F18).
@@ -125,6 +136,7 @@ const LOGO_SRC = 'lichborne_logo_green.png'
 function LauncherTopBar({
   onOpenLichSetup,
   onAddNew,
+  onAttach,
   onBulkConnect,
   bulkConnectEnabled,
   onReconnectLast,
@@ -132,6 +144,7 @@ function LauncherTopBar({
 }: {
   onOpenLichSetup: () => void
   onAddNew?: () => void
+  onAttach?: () => void
   onBulkConnect?: () => void
   bulkConnectEnabled: boolean
   onReconnectLast?: () => void
@@ -176,6 +189,15 @@ function LauncherTopBar({
           + Add account
         </button>
       )}
+      {onAttach && (
+        <button
+          className="launcher-topbar-btn"
+          onClick={onAttach}
+          title="Attach to a Lich session that is already running and logged in (started with --headless / --detachable-client)"
+        >
+          ⇋ Attach
+        </button>
+      )}
       <button
         className="launcher-topbar-btn"
         onClick={() => document.dispatchEvent(new CustomEvent('lichborne:open-profile-transfer'))}
@@ -185,6 +207,32 @@ function LauncherTopBar({
       </button>
       <button className="launcher-topbar-btn" onClick={onOpenLichSetup} title="Lich Setup">
         ⚙ Lich Setup
+      </button>
+    </div>
+  )
+}
+
+/** Attach entry point for the COMPACT launcher (the Add Character modal shown
+ *  while characters are already connected).
+ *
+ *  The full top bar is `!compact` only — deliberately, since compact drops the
+ *  logo, headings and the rest of the chrome. But that also dropped the one
+ *  control that adds a character Lichborne has never seen: a tile whose target
+ *  is saved can be attached from its own Connect button, and a brand-new
+ *  attach needs the modal. Without this row, attaching a SECOND character
+ *  while the first is connected meant closing every open session to get the
+ *  full launcher back — the bug Kahlen hit. So compact keeps exactly one
+ *  button, not the whole bar. */
+function CompactAttachRow({ onAttach }: { onAttach?: () => void }) {
+  if (!onAttach) return null
+  return (
+    <div className="launcher-topbar launcher-topbar--compact">
+      <button
+        className="launcher-topbar-btn"
+        onClick={onAttach}
+        title="Attach to a Lich session that is already running and logged in (started with --headless / --detachable-client)"
+      >
+        ⇋ Attach to a running Lich
       </button>
     </div>
   )
@@ -338,6 +386,7 @@ export async function loadCharacterCards(): Promise<LauncherCharacter[]> {
       guild:    p.guild,
       circle:   p.circle,
       notes:    p.notes,
+      attach:   p.attach,
     } as LauncherCharacter
   }))
   return profiles
@@ -368,6 +417,96 @@ async function setCharacterUseLich(characterName: string, nextUseLich: boolean):
   const profile = raw as CharacterProfile
   if (profile.useLich === nextUseLich) return
   await window.api.writeCharacterProfile(characterName, { ...profile, useLich: nextUseLich })
+}
+
+// Attach mode: remember the detachable listener a character attached
+// to, so the next attach is one click (tile ⋯ menu) or pre-filled (modal).
+// Same read-modify-write shape as setCharacterGame above — and for the same
+// reason: buildCharacterProfile would wipe a non-active character's state.
+// UNLIKE its siblings, this CREATES a minimal profile when none exists: an
+// attach-only character (never added through the wizard) still needs a YAML
+// home for its target, and the resulting tile is exactly the reconnect
+// surface the feature promises. The stub carries no localStorage state, so a
+// later wizard add / normal session fills it in rather than fighting it.
+export async function saveCharacterAttach(
+  characterName: string,
+  account: string,
+  game: string,
+  attach: { host: string; port: number },
+): Promise<void> {
+  const raw = await window.api.readCharacterProfile(characterName).catch(() => null)
+  if (raw && typeof raw === 'object') {
+    const profile = raw as CharacterProfile
+    // EXPAND FIRST, ALWAYS — including when the target is unchanged and there
+    // is nothing to write.
+    //
+    // A character that ALREADY has a profile keeps its real account (Ethun
+    // stays on lenairk6), which is right: it really is on that account, and
+    // after detaching the player may want to log in normally. But that account
+    // section is typically COLLAPSED, so attaching such a character updated
+    // disk and showed nothing — the player counted tiles under 'attach', found
+    // one, and reasonably concluded the other attaches hadn't saved (Kahlen,
+    // with three attached characters spread over lenairk6 / lenairk21 /
+    // attach).
+    //
+    // The earlier "only on stub creation, or we fight a deliberate collapse"
+    // reasoning was wrong on the evidence: a player who just attached a
+    // character wants to see that character, and this fires once per attach —
+    // it is not a persistent override of their choice.
+    expandAccountOnce(profile.account ?? account)
+    if (profile.attach?.host === attach.host && profile.attach?.port === attach.port) return
+    await window.api.writeCharacterProfile(characterName, { ...profile, attach })
+    return
+  }
+  // Prior accounts, read BEFORE the write, for the 1→2 transition below.
+  const priorAccounts = new Set(
+    (await loadCharacterCards().catch(() => [])).map(c => c.account),
+  )
+  await window.api.writeCharacterProfile(characterName, {
+    profileVersion: 2,
+    account,
+    character: characterName,
+    game,
+    useLich: true,
+    attach,
+    theme: localStorage.getItem('lichborne.theme') ?? 'classic',
+    state: {},
+  } satisfies CharacterProfile)
+  // AND MAKE THE TILE VISIBLE. Account sections default to COLLAPSED for
+  // multi-account users (see expandedAccounts), so a stub filed under a
+  // brand-new account — 'attach' for an attach-only character — was written
+  // to disk correctly and then rendered inside a section the player had
+  // never opened. Indistinguishable from "attach doesn't save anything"
+  // (Kahlen). AddCharacterWizard already solves this for wizard-created
+  // tiles by writing the new account name here before bumping refreshKey;
+  // an attach creates tiles too, so it owes the same courtesy.
+  //
+  // The 1→2 case rides along for the same reason the wizard carries it: a
+  // player with exactly ONE account sees it expanded by the single-account
+  // rule, and adding a second (here, 'attach') silently collapses it. Expand
+  // the prior one too so nothing the player was looking at disappears.
+  expandAccountOnce(account, priorAccounts)
+}
+
+// Add `account` to the launcher's expanded set, so its section renders open
+// the next time the launcher reads the key (its refreshKey effect re-reads
+// it). Mirrors AddCharacterWizard's write, including the same
+// never-block-on-storage posture: a failure here costs one extra click, so
+// it must never fail the attach that triggered it.
+function expandAccountOnce(account: string, priorAccounts: Set<string> = new Set()): void {
+  try {
+    const raw = localStorage.getItem('lichborne.launcher.expandedAccounts')
+    const set = new Set<string>()
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) for (const v of arr) if (typeof v === 'string') set.add(v)
+    }
+    set.add(account)
+    if (priorAccounts.size === 1 && !priorAccounts.has(account)) {
+      for (const a of priorAccounts) set.add(a)
+    }
+    localStorage.setItem('lichborne.launcher.expandedAccounts', JSON.stringify([...set]))
+  } catch { /* auto-expand silently fails — not a blocker */ }
 }
 
 // Soft-delete toggle (v0.8.0). Hiding a tile preserves the full character
@@ -542,15 +681,21 @@ function CharacterCard({ character: c, busy, onConnect, onMenu, onToggleTest, on
           className="launcher-card-connect"
           onClick={() => onConnect(c)}
           disabled={busy}
+          title={c.attach
+            ? `Attach to the running Lich session at ${c.attach.host}:${c.attach.port} (falls back to a normal login if nothing is listening)`
+            : undefined}
         >
-          {busy ? 'Connecting…' : 'Connect →'}
+          {/* A tile with a saved attach target says what the click DOES —
+              App's handleCardConnect attaches first for these (falling back
+              to a normal login only when nothing is listening). */}
+          {busy ? 'Connecting…' : c.attach ? '⇋ Attach' : 'Connect →'}
         </button>
       </div>
     </div>
   )
 }
 
-export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
+export default function Launcher({ onConnect, onAddNew, onAttach, onAttachCharacter, onRefreshAccount, onOpenLichSetup, compact = false, connectingName = null, connectError = '', onDismissError, refreshKey = 0, onBulkConnect, onReconnectLast, onConnectSet, connectedNames = [], onEditSet }: Props) {
   const [characters, setCharacters] = useState<LauncherCharacter[] | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; character: LauncherCharacter } | null>(null)
   // F85 — saved sets, re-read on refresh so a set created in the picker shows
@@ -898,12 +1043,14 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           <LauncherTopBar
             onOpenLichSetup={onOpenLichSetup}
             onAddNew={onAddNew}
+            onAttach={onAttach}
             onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
             bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
             onReconnectLast={handleReconnectLastClick}
             reconnectCount={lastSessionTiles.length}
           />
         )}
+        {compact && <CompactAttachRow onAttach={onAttach} />}
         <div className="launcher-welcome">
           <h2>Welcome to Lichborne</h2>
           <p>
@@ -975,12 +1122,14 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
         <LauncherTopBar
           onOpenLichSetup={onOpenLichSetup}
           onAddNew={onAddNew}
+          onAttach={onAttach}
           onBulkConnect={onBulkConnect && characters && characters.length > 0 ? handleBulkConnectClick : undefined}
           bulkConnectEnabled={!!characters && bulkConnectIsEnabled(characters)}
           onReconnectLast={handleReconnectLastClick}
           reconnectCount={lastSessionTiles.length}
         />
       )}
+      {compact && <CompactAttachRow onAttach={onAttach} />}
 
       {connectError && (
         <div className="launcher-error">
@@ -1267,6 +1416,15 @@ export default function Launcher({ onConnect, onAddNew, onRefreshAccount, onOpen
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            // Attach (draft): shown only when this character has a saved
+            // target AND App wired the action — the label carries the target
+            // so the player knows where the click goes before committing.
+            ...(onAttachCharacter && menu.character.attach
+              ? [{
+                  label: `⇋ Attach (${menu.character.attach.host}:${menu.character.attach.port})`,
+                  onClick: () => onAttachCharacter(menu.character),
+                }]
+              : []),
             { label: 'Edit Profile…', onClick: () => setEditingNotes(menu.character) },
             menu.character.hidden
               ? { label: 'Unhide Profile', onClick: () => handleToggleHidden(menu.character, false) }

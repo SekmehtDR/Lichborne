@@ -33,8 +33,9 @@
 import * as net from 'net'
 import { EventEmitter } from 'events'
 import { LichConnection } from './LichConnection'
+import { AttachConnection } from './AttachConnection'
 import { SGEConnection } from './SGEConnection'
-import { gameFamilyFromCode, type LoginCredentials } from '../../shared/types'
+import { gameFamilyFromCode, type AttachCredentials, type LoginCredentials } from '../../shared/types'
 
 // Friendly per-family display name for connect-status text. Not the full
 // GAMES table (that's renderer-owned, LoginScreen/SettingsPanel territory) —
@@ -57,6 +58,9 @@ const CLIENT_ID = 'FE:WRAYTH /VERSION:1.0.1.22 /P:WIN_UNKNOWN /XML'
 // remove a phase, bump the total here and renumber that path's sites together.
 const LICH_STEPS = 5
 const DIRECT_STEPS = 4
+// Attach has almost nothing to narrate — no SGE, no spawn — but the two-phase
+// shape is kept so the connecting overlay reads the same as the other paths.
+const ATTACH_STEPS = 2
 const step = (n: number, total: number, text: string) => `Step ${n} of ${total} · ${text}`
 
 // ── Lich launch serialization ────────────────────────────────────────────────
@@ -88,9 +92,10 @@ function serializeLichLaunch<T>(task: () => Promise<T>): Promise<T> {
 
 export class ConnectionManager extends EventEmitter {
   private lich = new LichConnection()
+  private attach = new AttachConnection()
   private sge = new SGEConnection()
   private gameSocket: net.Socket | null = null
-  private mode: 'lich' | 'direct' = 'lich'
+  private mode: 'lich' | 'direct' | 'attach' = 'lich'
   private buffer = ''
 
   constructor() {
@@ -99,6 +104,12 @@ export class ConnectionManager extends EventEmitter {
     this.lich.on('line', (line: string) => this.emit('line', line))
     this.lich.on('disconnect', () => this.emit('disconnect'))
     this.lich.on('error', (err: Error) => this.emit('error', err))
+    // Same one-time wiring for the attach transport. Only one of the two is
+    // ever live per ConnectionManager (mode decides), so both being wired to
+    // the same emits can't cross streams.
+    this.attach.on('line', (line: string) => this.emit('line', line))
+    this.attach.on('disconnect', () => this.emit('disconnect'))
+    this.attach.on('error', (err: Error) => this.emit('error', err))
   }
 
   async connectViaLich(creds: LoginCredentials): Promise<void> {
@@ -219,6 +230,44 @@ export class ConnectionManager extends EventEmitter {
     this.emit('status', `Connected directly to ${gameName}.`)
   }
 
+  // Attach to an already-running detachable Lich (`--headless PORT` /
+  // `--detachable-client=PORT`). No SGE, no spawn, no handshake, no launch
+  // queue — see AttachConnection's header for what the protocol is (nothing)
+  // and for the three things this path must never send. On success Lich
+  // pushes its own state resync (vitals / indicators / compass); the one gap
+  // is the room, which never re-renders on its own — hence the `look` nudge.
+  async connectAttach(creds: AttachCredentials): Promise<void> {
+    this.mode = 'attach'
+    this.emit('status', step(1, ATTACH_STEPS, `Connecting to Lich at ${creds.host}:${creds.port}…`))
+    try {
+      await this.attach.connect(creds.host, creds.port)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ECONNREFUSED' || code === 'ETIMEDOUT' || code === 'EHOSTUNREACH' || code === 'ENOTFOUND') {
+        // Translate the raw socket error into the sentence the player can act
+        // on (the launch() pre-flight precedent): the overwhelmingly likely
+        // cause is "that Lich isn't attachable", not a Lichborne fault.
+        throw new Error(
+          `Nothing accepted the connection at ${creds.host}:${creds.port}. ` +
+          `Attach only works with a Lich started attachably — e.g. ` +
+          `\`lich --login ${creds.character} --headless ${creds.port}\` — ` +
+          `a Lich already serving another front-end normally cannot be attached to.`
+        )
+      }
+      throw err
+    }
+
+    // Room resync. Lich's attach-time init covers vitals, prepared spell,
+    // indicators and the compass, but the room title/description only arrive
+    // when the game next sends them — an attached tab would sit blank until
+    // the character moves. `look` repaints it now. Sent through the game (not
+    // a `;` command), which also confirms end-to-end that our writes dispatch.
+    this.emit('status', step(2, ATTACH_STEPS, 'Attached — requesting a room refresh…'))
+    this.attach.send('look')
+
+    this.emit('status', 'Attached to running Lich session.')
+  }
+
   private async connectToGameServer(host: string, port: number, key: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.gameSocket = new net.Socket()
@@ -254,6 +303,8 @@ export class ConnectionManager extends EventEmitter {
   send(command: string) {
     if (this.mode === 'lich') {
       this.lich.send(command)
+    } else if (this.mode === 'attach') {
+      this.attach.send(command)
     } else {
       this.gameSocket?.write(command + '\r\n')
     }
@@ -278,6 +329,21 @@ export class ConnectionManager extends EventEmitter {
   // in ~1–10ms; Direct internet sockets ~50–150ms; 500ms is the paranoid
   // safety net for the rare case the OS never reports 'close' at all.
   async gracefulDisconnect(opts: { quickClose?: boolean } = {}): Promise<void> {
+    // ATTACH MODE DETACHES — IT NEVER SENDS QUIT. From an attached client,
+    // Lich runs a user-exit command through its detachable dispatch and shuts
+    // the WHOLE session down: scripts killed, character logged out — for every
+    // other front-end attached to it too. The contract of attach is the
+    // reverse: closing Lichborne leaves the session running. So both the
+    // in-tab Disconnect and the app-shutdown quickClose path reduce to a
+    // half-close (pending bytes drain, then FIN) and the socket 'close' event
+    // drives the normal disconnect status. A player who really wants to log
+    // out types `exit` themselves — that reaching Lich as a real exit is the
+    // correct, deliberate path.
+    if (this.mode === 'attach') {
+      await this.attach.endAndAwaitClose(opts.quickClose ? 500 : 1500)
+      this.forceDisconnect()
+      return
+    }
     this.send('QUIT')
 
     if (opts.quickClose) {
@@ -304,6 +370,11 @@ export class ConnectionManager extends EventEmitter {
   private async endActiveSocket(timeoutMs: number): Promise<void> {
     if (this.mode === 'lich') {
       await this.lich.endAndAwaitClose(timeoutMs)
+    } else if (this.mode === 'attach') {
+      // Unreachable today (gracefulDisconnect returns early for attach) but
+      // kept correct so a future caller of the quickClose path can't regress
+      // into the game-socket branch.
+      await this.attach.endAndAwaitClose(timeoutMs)
     } else if (this.gameSocket) {
       const sock = this.gameSocket
       await new Promise<void>(resolve => {
@@ -316,6 +387,7 @@ export class ConnectionManager extends EventEmitter {
 
   forceDisconnect() {
     this.lich.disconnect()
+    this.attach.disconnect()
     this.gameSocket?.destroy()
     this.gameSocket = null
     this.sge.disconnect()

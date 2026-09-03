@@ -92,6 +92,9 @@ export interface SessionRecord {
   character: string
   game: string
   useLich: boolean
+  // Attach mode: set when this session attached to a running Lich —
+  // Reconnect re-attaches here instead of relaunching a login.
+  attach?: { host: string; port: number }
   status: SessionStatus
 }
 
@@ -136,6 +139,7 @@ export function SessionsProvider({ children }: { children: ReactNode }) {
         character: info.character,
         game: info.game,
         useLich: info.useLich,
+        attach: info.attach,
         status: { ...DEFAULT_STATUS },
       }
       if (existing >= 0) {

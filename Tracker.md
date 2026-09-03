@@ -6,6 +6,110 @@
 
 ---
 
+## v0.19.4 — Attach to a running Lich (PR #2, Kahlen)
+
+**Lichborne's first external code contribution.** Merged as a `--no-ff` merge
+commit so all 12 of the author's commits and their reasoning survive in history
+(note: the PR's commits are authored `Claude <noreply@anthropic.com>` — it was
+AI-assisted — so the human attribution lives in the merge commit, credits.ts and
+release-notes.md).
+
+- **F104 (Kahlen): attach mode — a third connection mode** beside Lich-launch and
+  Direct. `AttachConnection` (new, electron-free so a plain-node harness can
+  exercise it) opens a bare TCP connection to an already-running detachable Lich
+  (`--headless PORT` / `--detachable-client=`). No account, no password, no Ruby
+  path: headless Lich authenticated itself from its own saved entry, and its
+  listener takes the connection with no handshake. `CH.LOGIN_ATTACH` mirrors
+  `CH.LOGIN`'s lifecycle including the hold-for-replay (pitfall #60 — the
+  attach-time resync would otherwise flush into a window with no GameWindow
+  subscriber). `useLich: true` keeps the Lich Scripts panel and the rest of the
+  Lich-only surface alive. Target persisted as an optional launcher-owned
+  `CharacterProfile.attach {host, port}` via the `setCharacterGame`-style
+  read-modify-write (pitfall #26), driving the tile ⋯ menu, modal prefill,
+  attach-first tile Connect, tab Reconnect and the bulk paths. `planReconnect`
+  gains an attach branch that bypasses the account arithmetic — those rules
+  protect a *login* from DR's one-per-account law, and an attach starts no login.
+  Full spec: DESIGN §48. Verified Lich-side facts: Knowledge.md §19.
+- **Disconnect DETACHES, `exit` logs out.** `gracefulDisconnect` half-closes with
+  no QUIT in attach mode, for both in-tab Disconnect and app shutdown, so the
+  session outlives the client. Typing `exit` stays a deliberate log-out because
+  Lich runs a full orderly shutdown of the whole session for a user-exit from a
+  detachable client (`user_exit_dispatch.rb#dispatch_detachable_client`,
+  verified) — not something the front-end can soften.
+- **Auto re-attach on an unclean drop** — backoff 2/4/8/15/30s then a 30s
+  heartbeat, reconnecting IN PLACE so tab, scrollback and panels survive
+  (pitfall #69's reconnect-in-place shape). Deliberately uncapped: the session
+  outlives the client, so giving up is exactly wrong. TCP keepalive at 30s
+  because an attach target is often not loopback and NAT reaps idle connections
+  silently.
+- **Two SHARED-code changes — B308 + B309** (they affect normal play, not just attach):
+  **(a)** GameWindow's status handler cleared `dropped` only on
+  `s.connected && s.message === 'Connected'` — making the connected FLAG
+  decorative and a human-readable STRING load-bearing, so an 'Attached' /
+  'Re-attached' message left the tab greyed while text streamed in. Now keyed on
+  `s.connected` alone, which is safe because main sends `connected: true` only
+  from a genuine connect (every progress line goes out `connected: false`). The
+  mirror-image `!s.connected && s.message === 'Disconnected'` check is
+  deliberately left alone — there the string does real work. A latent fix for any
+  future connect path. **(b)** The vitals resync painted every bar at ZERO on
+  attach: Lich's init hardcodes `value='0'` and carries the numbers only in
+  `text`, and in DR that text is `health 100/` (Lich derives max by scanning
+  numbers out of DR's own bar text; DR sends a percentage, so one number is found
+  and max interpolates empty). GS sends `health 100/100`, so a `(\d+)/(\d+)` pair
+  regex silently never matches DR. Now takes the first number and treats a
+  missing/zero max as 100, **gated on `value === 0`** so live bars are untouched.
+- **Merge housekeeping:** version bumped to 0.19.4; the 17 `(draft attach mode)`
+  / `(draft feature)` comment markers cleared (it ships, so it isn't a draft);
+  Kahlen added to `CONTRIBUTORS` in credits.ts.
+- **Merge bug check** (internal, evidence-based against the merged code): found
+  **one real item, B310 — OPEN, deliberately NOT patched** (Sekmeht: raise it
+  with Kahlen first, since it may have been considered). The parser is reused
+  across a re-attach, so stale `activeStream`/`streamStack`/`monoMode` can carry
+  into the new connection. **Not introduced by PR #2** — `reset()` has had zero
+  call sites since forever and was harmless while every new connection meant a
+  new `Session`; auto re-attach is simply the first path to reuse one, which
+  makes the dormant gap reachable. Verified CLEAN in the same pass: pitfall #26
+  (`attach: existing.attach` IS in `exportCharacterProfile`'s merge, so the
+  debounced save can't strip it); the B308 premise (exactly three
+  `connected: true` sites, all genuine connects, so keying on the flag is safe
+  by construction); `cleanDisconnect` is read-and-reset in one handler, not a
+  stale latch; `destroySession` cancels the re-attach timer before teardown; and
+  `planReconnect`'s attach branch sits ahead of the account rules and matches on
+  character alone (correct, since attach-only stubs share the placeholder
+  account). One earlier suspicion was WITHDRAWN on evidence:
+  `AttachConnection.endAndAwaitClose` is byte-identical to the pre-existing
+  `LichConnection.endAndAwaitClose` it mirrors — deliberate, not an asymmetry.
+- **Slash surface: none, by decision** (Sekmeht) — attach is one-time setup
+  rather than an in-play verb, so the launcher button and modal are the surface.
+  Recorded in DESIGN §48.6 per Principle #11's "record the no-command decision"
+  requirement.
+
+## v0.19.3 — Shopping shows up again
+
+- **B306 (JadedSoul):** `shop` at DR's surface-based shops (Fang Cove) printed
+  NOTHING in the game window — the listing was only visible with a Shopping
+  panel open and vanished when it closed. DR sends it on `shopWindow`, which had
+  no `STREAM_FALLBACK` entry, so unwatched output was buffered invisibly (the
+  exact "silently buffered" failure the table exists to prevent). One row added;
+  the sibling clients (Frostbite, Profanity) both render shopWindow in main, and
+  the report's blank output is itself the pitfall-#49 proof that DR doesn't
+  double-emit it. The stream id is recorded in Knowledge.md.
+- **B307 (Sekmeht):** Catch Me Up's lbAI routing keyed on whether an lbAI tab
+  EXISTED anywhere, so a background tab swallowed the recap invisibly (unread
+  dot only) — "closed but nothing came out". Now `watched && active`: the tab
+  must be in a rendered surface AND be its active tab. `activeIdsRef`'s panels-
+  mode set also gained the `*Added` gate it was missing (pitfall #39).
+- **Stream-behaviour sweep** prompted by both: verified the `shopWindow` key
+  matches the id the parser emits (pushStream ids keep their case — the fix is
+  live, not a silent no-op), audited every "is this tab open/visible" aggregation
+  (expTabIds, lichScriptsOpen, debugOpen, `/panel list`, watched — all gated and
+  per-mode), and inventoried DR stream ids from the three sibling clients against
+  our routing table: `ooc` correctly has no fallback (Frostbite's own comment
+  says its speech is a native duplicate of the whisper stream), `speech`/`whisper`
+  are presets not streams, and `chatter` is the one undecided id — recorded as
+  needing a raw-XML capture rather than routed on a guess. Pitfall #133 records
+  both lessons; the inventory is in Knowledge.md.
+
 ## v0.19.2 — the Elanthia-Online handover, a license, and a full internal sweep
 
 The release that prepares Lichborne's transfer to the **Elanthia-Online** org
