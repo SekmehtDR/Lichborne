@@ -49,7 +49,7 @@ export interface LoginCredentials {
   lichMode: '--stormfront' | '--genie' | '--wizard' | '--avalon' | '--frostbite'
 }
 
-// Attach to an ALREADY-RUNNING, detachable Lich session (draft feature).
+// Attach to an ALREADY-RUNNING, detachable Lich session.
 //
 // Target: a Lich started attachably — `lich --login Char --headless PORT`
 // (normalized by Lich to `--without-frontend --detachable-client=PORT`), or

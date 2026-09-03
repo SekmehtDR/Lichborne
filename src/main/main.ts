@@ -327,7 +327,7 @@ function wireSession(s: Session) {
     s.cleanDisconnect = false
     s.connected = false
     sendStatus(s, false, 'Disconnected', wasClean)
-    // ATTACH SESSIONS RE-ATTACH THEMSELVES (draft attach mode).
+    // ATTACH SESSIONS RE-ATTACH THEMSELVES.
     //
     // Safe here in a way it would NOT be for a login: re-attaching starts no
     // SGE auth, claims no account slot, spawns no Lich, and cannot bounce
@@ -401,7 +401,7 @@ function sendStatus(s: Session, connected: boolean, message: string, clean?: boo
   broadcastRoster()  // roster `connected` mirrors s.connected — keep windows in sync
 }
 
-// ── Auto re-attach (draft attach mode) ───────────────────────────────────────
+// ── Auto re-attach ───────────────────────────────────────────────────────────
 // Backoff schedule for restoring a dropped attach socket. Front-loaded because
 // the common cases — a Wi-Fi hiccup, a VPN re-handshake, a laptop waking —
 // clear in seconds; then it settles to a 30s heartbeat and stays there

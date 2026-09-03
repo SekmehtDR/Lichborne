@@ -6,7 +6,7 @@ import { backdropHandlers } from '../utils/backdropClose'
 // .cne-backdrop rule it overrides.
 import '../styles/character-notes-editor.css'
 
-// Attach to an already-running detachable Lich session (draft feature).
+// Attach to an already-running detachable Lich session.
 //
 // The form is deliberately three fields — character, host, port — because the
 // protocol needs nothing else: no account, no password, no Ruby/Lich paths.

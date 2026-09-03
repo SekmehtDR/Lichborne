@@ -19,6 +19,7 @@ Welcome! Lichborne is a modern DragonRealms client for Windows, Linux, and macOS
   - [1. Install](#1-install)
   - [2. Set up Lich (recommended)](#2-set-up-lich-recommended)
   - [3. Log in](#3-log-in)
+  - [3b. Or: attach to a running Lich](#3b-or-attach-to-a-lich-thats-already-running)
   - [4. One-time in-game setup](#4-one-time-in-game-setup)
 - [Connecting & Playing Your Whole Team](#connecting--playing-your-whole-team)
 - [Feature Tour](#feature-tour)
@@ -69,108 +70,28 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
-**v0.19.2**
+**v0.19.4**
 
-- **Lichborne is joining Elanthia-Online** — the community organization that
-  maintains Lich itself. This release makes the move invisible: the updater now
-  checks the project's new home first and its current one second, so updates
-  keep arriving through the transfer with nothing for you to do.
-- **Lichborne is formally open source** under the BSD 3-Clause License — the
-  same license as Lich — © 2026 Sekmeht and Binu. (And in writing: DragonRealms
-  is Simutronics' trademark; Lichborne is an independent community project.)
-- **Eighteen fixes from a full internal audit**, most in the new Overview:
-  typing works immediately after clicking into the view, the "Spoken to" alert
-  clears itself again, a disconnected card reports how long the session ran
-  instead of "up 0s", hovering an urgent card no longer hides its red border,
-  and the contact popover plus several small controls (panel tab buttons, the
-  "new lines" badge) finally respect your Font Size setting. Plus quieter
-  timers, a smoother feed toggle, and `/view set conditions=/timers=`.
-- Under the hood: Electron and the build tools updated, one dependency security
-  patch.
+- **Attach to a Lich that's already running.** A third way to connect, beside
+  launching Lich and going direct. Start Lich headless, and Lichborne can attach
+  to that already-logged-in session — which means **closing Lichborne no longer
+  logs you out.** Close the window and reopen it later, recover from a crash with
+  your login intact, or pick the same character up from another machine. See
+  [Getting Started → Or: attach to a running Lich](#3b-or-attach-to-a-lich-thats-already-running).
+  Contributed by **Kahlen** — Lichborne's first outside code contribution.
+- **Vitals no longer flash empty right after attaching**, and a reconnected tab
+  no longer stays greyed out while text is streaming into it.
 
-**v0.19.1**
+**v0.19.3**
 
-- **Overview cards stopped cutting off room descriptions** — lines are no longer
-  capped mid-text; the oldest lines scroll off the top instead.
-- **The Overview input bar got ↑/↓ command history**, follows the character tab
-  you switch to, and clicking **Overview** again re-aims it at everyone.
-- **Roundtime on every card** — a thin RT / Cast / Aim strip in the same colours
-  as your command bar.
-- **Contact text effects fixed and finished**: effects no longer vanish when
-  templates reload, previews render exactly as game text does, and a template's
-  **tag** can carry its own effect separate from the name's.
-- **Experience on a card**: pick **Experience** from a card's stream dropdown for
-  the compact skill view — same skills, same order as the Experience panel.
-- **The map follows you far more reliably** — the fast room lookup now works for
-  every room instead of ~3% (a Lich room-id vs game room-id mismatch).
-- **The Overview stays put**: tab clicks no longer re-theme the dashboard, and
-  clicking a card aims the input bar instead of yanking you into that session
-  (double-click, or the card menu, when you do want to go).
-
-**v0.19.0**
-
-- **Views — see every character at once.** A new switch in the top bar, next to
-  the Lichborne wordmark, chooses between **Session** (what you have today — one
-  character at a time, switched by the tabs) and **Overview** (a grid of live
-  cards, one per character in that window). Each card shows vitals, what's wrong,
-  stance, hands, prepared spell, roundtime, the room and who's in it, the worst
-  wound, how the session has gone, and a short live feed of that character's game
-  text. Click a card to drop into that character.
-- **It tells you who needs you.** Cards carry the reasons they want attention —
-  Dead, Offline, Critical, Bleeding, Stunned, Poisoned, Diseased, Hurt, Webbed,
-  Spoken to, Idle, Mind locked — worst first on the card, with the border
-  colouring to match. The Overview button shows a count while you're in Session
-  view, so you learn something went wrong without watching the dashboard. A
-  character with nothing wrong reads a quiet **✓ calm**. Cards sit in **tab
-  order** by default so they stay where you put them; `/view sort attention`
-  makes whoever needs you rise to the top instead.
-- **The cards size themselves.** One character fills the screen, two split it,
-  four go 2×2. Thirty stay readable — tiles grow to fill the space but never
-  shrink past legibility, and past that the grid scrolls. As tiles shrink each
-  card sheds what it cannot honestly show, stats first. **Tile size** in Settings
-  overrides all of it.
-- **Roundtime at a glance.** A thin **RT / Cast / Aim** strip on each card, in
-  the same colours as the bar under your command input — so you can see who is
-  free to act without switching to them. Off via Settings → Overview if you would
-  rather have the space.
-- **Each card picks what it shows.** A **showing** dropdown on every card: the
-  game window by default, or switch it to `conversation` to see somebody talking
-  to that character without opening it. Per character, and remembered. Pick
-  **Experience** and the card shows the compact experience view instead of text —
-  the same skills, in the same order, as the Experience panel's compact mode,
-  with your pinned skills at the top.
-- **Configure it** in Settings → Overview or with `/view` — `/view status` lists
-  every character as text, `/view sort attention` reorders by who needs you,
-  `/view stream conversation` changes what the current character shows, and
-  `/view set tiles=small feed=10` tunes the rest. The text feed setting is a
-  MINIMUM — cards show more when there is room; 0 turns it off.
-- **An input bar along the bottom.** Pick a character and type at it, or leave it
-  on **All characters** to send to everybody. What you send behaves exactly as if
-  typed in that character's own bar — aliases expand, `;` splits, it echoes as
-  `>command`, and it reaches that character's history and log. Slash commands work
-  too and run on the character you targeted. **↑ and ↓ walk back through what
-  you've sent from the bar**, the same way they do in the game's command bar; that
-  history belongs to the bar rather than to whichever character is selected, since
-  the bar can send to all of them at once. Switching tabs while the Overview is
-  open — `Ctrl+1`…`Ctrl+9`, `Ctrl+Tab`, or clicking a tab — points the bar at that
-  character; it opens on **All characters** and only moves once you pick one.
-  Clicking **Overview** while you're already in it aims the bar back at everyone.
-- **Clicking a card aims the input bar at that character** rather than opening it
-  — the card picks up an accent ring, and clicking empty space goes back to all
-  characters. To open one full-screen, **double-click its card** or choose
-  **Go to … 's game session** from its ⋯ or right-click menu. Nothing in the
-  Overview moves you between views by accident.
-- **The theme stays put.** Switching tabs while the Overview is open no longer
-  re-themes the dashboard; when you leave, the character you land on applies its
-  own theme as usual.
-- Cards stay read-only otherwise; the input lives in one place so there is only
-  ever one field that can send text. Macro keys still do nothing in the Overview.
-- **Fixed:** Quick Send used to arrive *invisibly* — the command ran but the
-  receiving character showed only the game's reply, and a slash command typed
-  there was sent to the game as literal text. Both now behave like typing.
-- The Overview shows the characters **in that window**; a character you've moved
-  into its own window has its own switch there. Lichborne always starts in
-  Session view.
+- **`shop` shows its listing again.** At DragonRealms' newer surface-based shops,
+  `shop` and `shop <item>` printed nothing unless you happened to have a Shopping
+  panel open. The listing now falls back to the game window like any other
+  narrative stream.
+- **Catch Me Up can't vanish into a background tab.** `/ai catchup` put its recap
+  into an lbAI panel if one merely existed anywhere in your layout, even hidden
+  behind another tab. It now goes to the game window unless the lbAI panel is
+  actually on screen.
 
 ## On the Horizon (Roadmap)
 
@@ -226,6 +147,43 @@ Then open Lichborne normally; you'll never need it again. If macOS instead offer
 1. Enter your **account name**, **password**, and **character name** — just like any other client.
 2. Click **⚡ Connect via Lich** (or **⬡ Connect Direct** if you're going without Lich).
 3. Done — your account and Lich settings are remembered for next time.
+
+### 3b. Or: attach to a Lich that's already running
+
+There's a third way to connect, and it changes what closing Lichborne means.
+
+Normally your game session belongs to the client — quit Lichborne and you log
+out. But if you start Lich **headless**, the session belongs to *Lich*, and
+Lichborne can simply attach to it:
+
+```
+lich --login Yourcharacter --headless 8001
+```
+
+Then in Lichborne click **⇋ Attach** in the launcher's top bar and fill in three
+fields — character name, host (`127.0.0.1` if it's the same machine), and the
+port you used. No account name, no password: the headless Lich already logged
+itself in.
+
+Why you might want this:
+
+- **Close Lichborne without logging out.** Reopen later and pick up where you were.
+- **Survive a crash** with your login intact.
+- **Play from another machine** — attach to the same session from your laptop.
+- **Watch a session from a second front-end** alongside the first.
+
+Lichborne remembers the host and port, so next time it's one click on the
+character's tile.
+
+**Two things worth knowing.** *Disconnect detaches* — closing Lichborne or
+clicking Disconnect leaves the session running, which is the point. But typing
+**`exit`** in the game shuts the whole session down; that's Lich's own rule for
+attached clients, not something Lichborne can change. And if your connection
+drops, Lichborne **re-attaches by itself**, retrying for as long as you leave the
+tab open.
+
+*Use plain `--headless`. A `--genie`-flavoured headless Lich doesn't send the
+state refresh on attach, so your vitals would come up blank.*
 
 ### 4. One-time in-game setup
 
@@ -598,6 +556,7 @@ Lich is the **recommended** way to play — it unlocks the map, timers, variable
 | Feature | With Lich (recommended) | Direct / no Lich |
 |---|---|---|
 | Connect & play | ✅ | ✅ |
+| Attach to a running Lich session | ✅ | — (needs Lich) |
 | Themes, fonts, accessibility | ✅ | ✅ |
 | Static / Windowed Panels | ✅ | ✅ |
 | Highlights · Triggers · Macros · Aliases | ✅ | ✅ (native) |

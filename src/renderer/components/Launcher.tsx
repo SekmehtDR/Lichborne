@@ -44,7 +44,7 @@ export interface LauncherCharacter {
   guild?:  string     // v0.8.0: optional guild key (lowercase canonical, see GUILDS in CharacterNotesEditor)
   circle?: number     // v0.8.0: optional character circle / level
   notes?:  string     // v0.8.0: optional free-text notes; tile shows a ✎ indicator when set
-  // Attach mode (draft): last detachable listener this character attached to.
+  // Attach mode: last detachable listener this character attached to.
   // Presence lights up the tile ⋯ menu's "⇋ Attach" action.
   attach?: { host: string; port: number }
 }
@@ -54,7 +54,7 @@ interface Props {
   onConnect: (character: LauncherCharacter) => void
   // Triggered when the user clicks the "+ Add account" card.
   onAddNew:  () => void
-  // Attach to an already-running detachable Lich session (draft feature) —
+  // Attach to an already-running detachable Lich session —
   // opens App's AttachModal. Optional so the compact Add-modal variant can
   // omit it without a dead button.
   onAttach?: () => void
@@ -405,7 +405,7 @@ async function setCharacterUseLich(characterName: string, nextUseLich: boolean):
   await window.api.writeCharacterProfile(characterName, { ...profile, useLich: nextUseLich })
 }
 
-// Attach mode (draft): remember the detachable listener a character attached
+// Attach mode: remember the detachable listener a character attached
 // to, so the next attach is one click (tile ⋯ menu) or pre-filled (modal).
 // Same read-modify-write shape as setCharacterGame above — and for the same
 // reason: buildCharacterProfile would wipe a non-active character's state.

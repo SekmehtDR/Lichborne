@@ -1,35 +1,61 @@
-## v0.19.3 — Shopping shows up again 🛒
+## v0.19.4 — Attach to a running Lich ⇋
 
-**Patch release**, on top of [v0.19.2](https://github.com/SekmehtDR/Lichborne/releases).
+**Feature release**, on top of [v0.19.3](https://github.com/SekmehtDR/Lichborne/releases).
 
-### Fixed: `shop` printed nothing
+This one comes to you courtesy of **Kahlen**, who wrote it, researched it against
+the Lich source, and tested it in live play across several characters before
+sending it over as a pull request. It's Lichborne's first outside code
+contribution — thank you.
 
-In DragonRealms' newer shops — the Fang Cove ones with items laid out on surfaces —
-typing `shop`, `shop window` or `shop <item>` showed **nothing at all** in the game
-window. The goods were only visible if you happened to have a **Shopping** panel
-open, and vanished again the moment you closed it; the only way back was to log
-out and in.
+### New: a third way to connect
 
-DR sends that output on its own **shopWindow** stream, and Lichborne had no rule
-for where that stream should go when no panel is watching it — so the text was
-quietly filed into a buffer nothing displays. It now falls back to the game window
-like the other narrative streams (thoughts, arrivals, combat…), which is also what
-Frostbite and Profanity do. Open a Shopping panel and the listing routes there
-instead, exactly as before.
+Until now Lichborne could either launch Lich for you, or connect straight to the
+game. There's now a third option: **attach to a Lich that is already running and
+logged in** — one started as `lich --login Yourcharacter --headless 8001`.
 
-Thanks to JadedSoul for the report — and the screenshots that made it a five-minute
-diagnosis.
+A **⇋ Attach** button in the launcher top bar opens a small three-field form —
+character, host, port. No account, no password, no Ruby or Lich paths: the
+headless Lich already logged itself in, and its listener takes the connection
+directly.
 
-### Fixed: Catch Me Up could vanish into a background lbAI tab
+The reason this is worth having: **closing Lichborne currently means logging
+out.** With attach, the session outlives the client. You can close the window
+and reopen it later without losing your place, recover from a crash without
+losing the login, pick the same character up from another machine, or watch a
+session from a second front-end alongside the first.
 
-`/ai catchup` decided where to put its recap by asking whether an **lbAI** tab existed
-anywhere in your layout — not whether it was showing. So an lbAI tab sitting behind
-another tab quietly swallowed the whole recap (you got an unread dot and nothing in
-the game window), which looked exactly like "the stream is closed and the output
-went nowhere". The rule is now what it always should have been: the recap goes to
-the game window **unless the lbAI panel is actually on screen**, in which case it
-goes there. A background lbAI tab no longer counts as open.
+Lichborne remembers the last host and port a character attached to, so after the
+first time it's on the tile's ⋯ menu and the tile's Connect button — no retyping.
+
+### Worth knowing before you use it
+
+**Disconnect detaches; `exit` logs out.** Closing Lichborne or hitting Disconnect
+leaves the Lich session running, which is the whole point. But typing `exit` in
+the game from an attached client shuts the *entire* session down — that's Lich's
+own behaviour for detachable clients, not something Lichborne can soften.
+
+**If the connection drops, it re-attaches itself** — 2s, 4s, 8s, 15s, 30s, then
+every 30s for as long as you leave the tab open, reconnecting in place so your
+scrollback and panels survive.
+
+**Use plain `--headless`.** A `--genie`-flavoured headless Lich doesn't send the
+state resync on attach, so your vitals and indicators would come up blank.
+
+### Also fixed
+
+- **Vitals could paint every bar at zero right after attaching.** Lich's resync
+  sends the real numbers as text and hardcodes the numeric field to `0`, and in
+  DragonRealms that text reads `health 100/` with no maximum — so every bar
+  arrived looking like one hit from death. Reading the text handles both the DR
+  and GemStone shapes.
+- **A reconnected tab could stay greyed out** while game text streamed happily
+  into it. The check keyed on a human-readable status *message* rather than the
+  connected flag beside it. This one was latent for any connection path, not
+  just attach.
 
 ### Notes
 
-- Nothing here changes how existing characters or settings behave.
+- Nothing here changes how existing characters or settings behave. Lich-launch
+  and Direct connections are untouched.
+- Attach has no `/` command by design — it's one-time setup rather than something
+  you do mid-play, so the launcher button and modal are the whole surface.

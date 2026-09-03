@@ -22,6 +22,12 @@ export const CONTRIBUTORS = [
   // command-history minimum length (v0.18.3). One logged report, so the tail of
   // the volume ordering.
   'Qij',
+  // First EXTERNAL code contribution (PR #2, v0.19.4): attach to an
+  // already-running detachable Lich session — a whole third connection mode,
+  // researched against lich-5 source and verified in live play. GitHub handle
+  // kahlen-tech; the PR's own commits are authored 'Claude' (AI-assisted), so
+  // the human attribution lives in the merge commit and here.
+  'Kahlen',
 ]
 
 // All still at zero logged reports, so alphabetical is the stable order here —

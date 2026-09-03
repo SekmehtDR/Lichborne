@@ -18,7 +18,7 @@
   z-index: 100;
 }
 
-/* Attach mode (draft): AttachModal reuses this chrome, and inherited the
+/* Attach mode: AttachModal reuses this chrome, and inherited the
    z-index above with it — 100, which is BELOW .add-character-modal (1000,
    character-tabs.css). Opened from the compact launcher inside that modal —
    the only route to attaching a second character while one is connected —

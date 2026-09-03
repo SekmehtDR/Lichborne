@@ -98,7 +98,7 @@ declare global {
 
 type UpdateState = 'idle' | 'available' | 'downloading' | 'ready'
 
-// Attach mode (draft): last successful attach, for prefilling the modal.
+// Attach mode: last successful attach, for prefilling the modal.
 // Deliberately GLOBAL (not per-character scoped) — it answers "what did I
 // attach to most recently", which is the right default when the modal opens
 // blank. Per-character targets live on the profile (CharacterProfile.attach).
@@ -431,7 +431,7 @@ function AppShell() {
   // backed out before any network traffic.
   const [pendingConnect, setPendingConnect] = useState<LauncherCharacter | null>(null)
   const [connectError,    setConnectError]    = useState<string>('')
-  // Attach-to-running-Lich modal (draft feature; see runAttach). Opened via
+  // Attach-to-running-Lich modal (see runAttach). Opened via
   // openAttachModal, which loads the prefill (last attach) and the saved
   // per-character targets (for name → host:port autofill) before showing it.
   const [showAttach, setShowAttach] = useState(false)
@@ -958,7 +958,7 @@ function AppShell() {
     if (pendingConnect) return  // already connecting; ignore double-clicks
     if (pendingConflict) return // resolution modal already open
 
-    // ATTACH TILES ATTACH (draft). A tile with a saved target treats Connect
+    // ATTACH TILES ATTACH. A tile with a saved target treats Connect
     // as "put me in that running session" — not as "start a login", which for
     // a stub tile can only dead-end in the Add Account wizard asking for a
     // password that doesn't exist. This branch also BYPASSES the same-account
@@ -1193,7 +1193,7 @@ function AppShell() {
     })
   }
 
-  // Attach to an already-running detachable Lich session (draft feature).
+  // Attach to an already-running detachable Lich session.
   // Returns null on success, or the error sentence for the caller to surface
   // (the modal shows it inline and stays open for a fix-and-retry — a closed
   // modal plus the launcher error banner would throw away the typed

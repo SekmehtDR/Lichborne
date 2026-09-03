@@ -27,6 +27,7 @@
 16. [DragonRealms Protocol & drinfomon Parse Reference](#16-dragonrealms-protocol--drinfomon-parse-reference)
 17. [Lich Version Log](#17-lich-version-log)
 18. [Lich on Linux & macOS — Install Layouts](#18-lich-on-linux--macos--install-layouts)
+19. [Detachable Client — the Attach Protocol](#19-detachable-client--the-attach-protocol)
 
 ---
 
@@ -967,3 +968,91 @@ preserved (`normalizeStreamId` only rewrites the alias table's keys), so a fallb
 must match DR's casing exactly (`shopWindow`, `percWindow`); (2) the routing rule for an
 UNWATCHED stream with no table entry is "buffer invisibly", which is correct only for the
 state and native-dup classes — a narrative stream left undecided is a silent-loss bug.
+
+---
+
+## 19. Detachable Client — the Attach Protocol
+
+How a front-end connects to a Lich that is **already running and logged in**.
+Verified against lich-5 source while merging PR #2 (attach mode, v0.19.4); see
+DESIGN §48 for what Lichborne does with it.
+
+### Starting an attachable Lich
+
+`--headless PORT` is sugar that normalizes to
+`--without-frontend --detachable-client=PORT`
+([lib/main/arg_normalization.rb:16-18](file:///c:/temp/lich-dev/lich-5/lib/main/arg_normalization.rb#L16)).
+`--headless auto` → `--detachable-client=0` (OS-assigned port);
+`--headless HOST:PORT` is accepted. **Bare `--headless` with no port is
+REJECTED** (line 21) — an unattached fully headless login has nowhere to go.
+
+The hard constraint: **only an attachably-started Lich can be attached to.** A
+normally-launched Lich accepts its single front-end and closes the listener (the
+force-mode model in CLAUDE.md's Lich-launch section), so there is nothing
+listening afterwards. This is not something a client can work around.
+
+### The listener takes a BARE TCP connection — no auth, no handshake
+
+`detachable_client_thread`
+([lib/main/main.rb:836-878](file:///c:/temp/lich-dev/lich-5/lib/main/main.rb#L836))
+loops on `server.accept`, and the entire path from accept to live client is:
+
+```ruby
+accepted_socket, = server.accept
+client = SynchronizedSocket.new(accepted_socket, role: :detachable)
+client.sync = true
+detachable_client_register(client)
+Thread.new(client) { |c| handle_detachable_client(c) }
+```
+
+There is **no authentication step, no login key, and no `FE:` capability line**
+between accept and register. A client that sends anything on connect has it
+dispatched to the game as a command — which is why Lichborne's `AttachConnection`
+deliberately sends *nothing* on attach (verified by harness: zero unprompted
+bytes). Multiple front-ends may attach at once, and a detachable client dropping
+does **not** end the session.
+
+Lich also writes a **session descriptor file** per character when detachable —
+`Frontend.create_session_file(char_name, host, port)` (main.rb ~858). That is the
+natural source for auto-discovering attach targets instead of typing host/port;
+Lichborne does not read it yet (recorded as future work in DESIGN §48.7).
+
+### On accept, Lich pushes a state resync — and its vitals shape is DR-specific
+
+`detachable_client_send_init`
+([lib/global_defs.rb:2306](file:///c:/temp/lich-dev/lich-5/lib/global_defs.rb#L2306))
+pushes vitals, prepared spell, indicators and the compass, then the live stream
+follows. **Every `progressBar` in it hardcodes `value='0'`** and carries the real
+numbers only in `text`:
+
+```ruby
+init_str = "<progressBar id='mana' value='0' text='mana #{XMLData.mana}/#{XMLData.max_mana}'/>"
+```
+
+**In DragonRealms that text is `health 100/`, not `health 100/100`.** Lich derives
+both numbers by scanning DR's own bar text —
+`@health, @max_health = attributes['text'].scan(/-?\d+/).collect { |n| n.to_i }`
+([lib/common/xmlparser.rb:743](file:///c:/temp/lich-dev/lich-5/lib/common/xmlparser.rb#L743))
+— and **DR sends a percentage** (`text='mana 86%'`, captured live), so the scan
+finds ONE number, `max_health` stays nil, and it interpolates to the empty
+string. GemStone sends `health 100/100`, so a `(\d+)/(\d+)` pair regex parses GS
+and silently never matches DR. Consequence for any front-end: read the FIRST
+number and treat a missing/zero max as 100 (DR's vitals *are* percentages).
+
+A **`--genie`-flavoured** headless Lich sends no init at all (Lich skips it for
+genie sessions) and suppresses stream tags, since genie is registered without the
+`streams` capability. Plain `--headless` is the shape to recommend.
+
+### A user-exit from an attached client kills the WHOLE session
+
+`dispatch_detachable_client`
+([lib/main/user_exit_dispatch.rb:52-62](file:///c:/temp/lich-dev/lich-5/lib/main/user_exit_dispatch.rb#L52))
+tests the client string against `ShutdownIntent.user_exit_command?` and, on a
+match, calls `run_orderly_user_shutdown(source: :detachable_frontend, …)`. So
+`exit` typed at an attached front-end is a full orderly shutdown of the entire
+Lich session, not a detach of that one client.
+
+This dictates the disconnect semantics: **a front-end that wants "close my window,
+leave the session running" must half-close the socket and never send QUIT.** The
+distinction is invisible to the user unless the client explains it, which is why
+it is called out in Lichborne's release notes and User Guide.

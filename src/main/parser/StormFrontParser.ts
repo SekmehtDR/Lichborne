@@ -568,7 +568,7 @@ export class StormFrontParser {
           const label = rawLabel
             ? rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1)
             : undefined
-          // ATTACH RESYNC (draft attach mode). Lich's detachable-client init
+          // ATTACH RESYNC. Lich's detachable-client init
           // hardcodes value='0' on every bar and carries the real numbers ONLY
           // in `text` (lich-5 global_defs.rb, detachable_client_send_init), so
           // reading `value` painted every vital at ZERO the instant you

@@ -45,7 +45,7 @@
   padding: 0 4px 24px;
 }
 
-/* Attach mode (draft): the single-button row the COMPACT launcher shows in
+/* Attach mode: the single-button row the COMPACT launcher shows in
    place of the full top bar (see CompactAttachRow). The full bar's 24px of
    bottom padding separates it from the character groups below a hero lockup
    that compact never renders, so inside the modal it reads as dead space —
