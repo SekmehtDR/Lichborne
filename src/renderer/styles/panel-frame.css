@@ -90,10 +90,34 @@
   align-items: stretch;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  /* B312: `scroll`, NOT `auto` — the scrollbar must never TOGGLE.
+     This list has content-driven height, so when a horizontal scrollbar
+     appears its height is ADDED to the list's height (see (b) below —
+     it was Chromium's native ~11px bar, not 3px); the strip is flex-shrink:0
+     and .panel-frame-body is flex:1, so that came straight out of the body
+     and every line of game text reflowed. The
+     unread dot is a conditionally-rendered 6px flex child (PanelFrame
+     ~L584), so a stream tab going unread/read repeatedly crossed the
+     overflow threshold and the whole panel visibly quivered — worst on
+     HIGHLIGHTED runs, whose filled background makes the subpixel
+     re-raster read as the text "bolding" (Sekmeht: seen across many
+     versions, never reproducible, because it needs the strip to sit
+     right AT the threshold — panel width x tab count x label length x
+     font size). `scroll` reserves the gutter permanently, so the height
+     is constant either way. Visually a no-op: the track is
+     var(--bg-sunken), the same colour as the strip background, so an
+     always-present empty track is invisible. Same family as pitfall #10
+     (character strip) and #67 (reserve the gutter) — note
+     `scrollbar-gutter` does NOT apply to a horizontal scrollbar. */
+  overflow-x: scroll;
   overflow-y: visible;
-  scrollbar-width: thin;
-  scrollbar-color: var(--bg-btn) var(--bg-sunken);
+  /* B312 (b): `scrollbar-width` / `scrollbar-color` REMOVED — same finding as
+     B178 on the character strip. Modern Chromium implements the standard
+     properties, and setting either DISABLES all ::-webkit-scrollbar styling,
+     so the `height: 3px` rule below was inert and this strip was actually
+     showing Chromium's NATIVE thin bar (~11px). That is what made the height
+     toggle so visible. Dropping both re-enables the themed 3px bar, which is
+     also what makes `scroll` above cost nothing. */
 }
 
 .panel-tab-list::-webkit-scrollbar { height: 3px; }

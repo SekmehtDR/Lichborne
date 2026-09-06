@@ -76,7 +76,7 @@ import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
 import { SORT_MODES, type SortMode } from '../expParse'
-import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo } from '../experiences'
+import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, deriveSpellState, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo, type SpellState } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
 import { showToast } from '../toasts'
@@ -1229,6 +1229,49 @@ export default function GameWindow({
   const moonsState = useMemo<MoonsState | undefined>(
     () => moonData ? { ...moonData, ...(sunState ? { sun: sunState } : {}) } : undefined,
     [moonData, sunState])
+  // Spell Monitor (Experience #3, v0.19.5): the parsed percWindow readout.
+  // `streamLines.spells` is ALREADY an exact mirror of the current block — the
+  // stream is clear-and-rewrite and the clear is applied in the batch commit
+  // below — so no accumulator is needed here (unlike assess). Derived in ONE
+  // effect that owns the refs, with the resolver kept PURE (pitfall #70: the
+  // impure memo that mutated refs mid-render double-counted under StrictMode).
+  //
+  // `spellMaxRef` is the bar's denominator: DR never states a spell's full
+  // duration, so we remember the highest roisaen ever seen per effect. Living
+  // in a GameWindow ref (not the component) means it survives the Experience
+  // being closed, re-opened, or moved between a window and a tab — the
+  // component unmounts on every tab switch and would otherwise forget instantly.
+  const [spellsState, setSpellsState] = useState<SpellState | undefined>(undefined)
+  const spellMaxRef = useRef<Record<string, number>>({})
+  const spellPrevRef = useRef<SpellState | null>(null)   // delta-gate baseline
+  const spellLines = streamLines.spells
+  useEffect(() => {
+    if (spellLines && spellLines.length > 0) {
+      const next = deriveSpellState(spellLines, spellMaxRef.current, spellPrevRef.current)
+      if (!next) return                       // same reading — keep prev's identity
+      spellMaxRef.current = next.maxByName
+      spellPrevRef.current = next.state
+      setSpellsState(next.state)
+      return
+    }
+    // Empty buffer = the game cleared the block with nothing to replace it, i.e.
+    // everything dropped. That must clear the display (each effect's own timer
+    // could otherwise leave it on screen for another 29 minutes) — but it is
+    // DEFERRED, because a clear and its following lines can straddle a flush
+    // boundary and committing the gap would blink the whole grid empty for a
+    // frame. This is the assess "guard the snapshot on non-empty" problem
+    // (pitfall: clear-then-lines batch boundary) solved with a bounded wait
+    // instead of a guard, since here the empty reading is genuinely meaningful.
+    // The max ceilings are KEPT: a recast should still draw against what we
+    // learned about that spell.
+    if (spellPrevRef.current === null || spellPrevRef.current.effects.length === 0) return
+    const t = setTimeout(() => {
+      const empty: SpellState = { effects: [], reportedAt: Date.now() }
+      spellPrevRef.current = empty
+      setSpellsState(empty)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [spellLines])
   // DR's clock minus ours, from <prompt time> (F64a). 0 until the first prompt,
   // which just means "assume they agree" — a sane default, and phase buckets
   // last ~a day so a session's first seconds are never misleading. Deliberately
@@ -5355,6 +5398,7 @@ export default function GameWindow({
         weather={weather ?? undefined}
         calendar={calendar ?? undefined}
         onSyncSky={syncSky}
+        spells={spellsState}
       />
     )
   }

@@ -14,7 +14,7 @@
 // v0.14.6) but theme vars always STORE hex; a theme must never depend on the
 // named palette existing. Rendered on top of the picker at document.body.
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { applyCustomTheme, type ThemeVars } from '../themes'
 import type { CustomTheme } from '../myThemes'
@@ -190,6 +190,25 @@ const TABS: EditorTab[] = [
         c('--spell-active-color', 'Active spell',      'Name of the currently-prepared spell in the SPELL slot.'),
         r('--spell-active-glow',  'Spell glow',        'Soft glow behind the prepared spell name.'),
       ]},
+      { label: 'Spell Monitor — countdown', fields: [
+        c('--spell-band-ok',   'Full',   'Spell Monitor cell bar/border while an effect still has plenty of time left.'),
+        c('--spell-band-mid',  'Midway', 'Spell Monitor cell bar/border once an effect passes its halfway mark (or drops under five minutes).'),
+        c('--spell-band-crit', 'Ending', 'Spell Monitor cell bar/border in an effect\'s last stretch — also the colour of the countdown text and the expiry pulse.'),
+      ]},
+      { label: 'Spell Monitor — badges', fields: [
+        c('--spell-badge-a', 'Augmentation [A]',   'Badge chip for Augmentation spells in the Spell Monitor.'),
+        c('--spell-badge-u', 'Utility [U]',        'Badge chip for Utility spells.'),
+        c('--spell-badge-t', 'Targeted Magic [T]', 'Badge chip for Targeted Magic spells.'),
+        c('--spell-badge-d', 'Debilitation [D]',   'Badge chip for Debilitation spells.'),
+        c('--spell-badge-w', 'Warding [W]',        'Badge chip for Warding spells.'),
+        c('--spell-badge-c', 'Cantrip [C]',        'Badge chip for cantrips.'),
+        c('--spell-badge-x', 'Metamagic [X]',      'Badge chip for metamagic feats. (X rather than M — M is already Meditation.)'),
+        c('--spell-badge-f', 'Form [F]',           'Badge chip for Barbarian forms.'),
+        c('--spell-badge-b', 'Berserk [B]',        'Badge chip for Barbarian berserks.'),
+        c('--spell-badge-m', 'Meditation [M]',     'Badge chip for Barbarian meditations.'),
+        c('--spell-badge-r', 'Roar [R]',           'Badge chip for Barbarian roars.'),
+        c('--spell-badge-s', 'Scream [S]',         'Badge chip for Bardic screams.'),
+      ]},
       { label: 'Experience', fields: [
         c('--exp-skill-color',     'Skill name',           'Skill name on each row of the Exp panel. Falls back to --text-secondary.'),
         c('--exp-rank-color',      'Rank number',          'The numeric rank value next to each skill.'),
@@ -227,8 +246,55 @@ function hexOpacityToRgba(hex: string, opacity: number): string {
 
 // ── Field row components ───────────────────────────────────────────────────
 
+const HEX6 = /^#[0-9a-fA-F]{6}$/
+
+/**
+ * The hex to SHOW for a stored theme value.
+ *
+ * A theme var does not always hold a literal: `darkBase` deliberately stores
+ * cascading expressions — `var(--text-dim)` so a var follows its parent, and
+ * `color-mix(… var(--text-primary))` so a fixed hue self-corrects per theme
+ * (pitfall #34/#63). `createCustomThemeFrom` copies the whole of darkBase into a
+ * new custom theme, so those expressions land in the editor verbatim — and
+ * `<input type="color">` silently falls back to **black** on anything that is
+ * not `#rrggbb`. Every such row therefore displayed a black swatch that
+ * misrepresented what the app was actually painting.
+ *
+ * Resolving through a probe element asks the BROWSER what the expression
+ * currently evaluates to, which is the only correct answer (it depends on the
+ * live theme). Literal hex values — the large majority — skip all of this and
+ * take exactly the path they always did. Nothing here touches the COMMIT path:
+ * an edit still writes a plain hex, so a theme never comes to depend on the
+ * expression form.
+ */
+function resolveDisplayHex(value: string): string {
+  if (HEX6.test(value)) return value
+  try {
+    const probe = document.createElement('span')
+    probe.style.display = 'none'
+    // The property SETTER, not cssText — it validates and cannot be escaped by a
+    // stray `;` in a hand-edited theme file. `display:none` is fine here because
+    // `color` resolves without layout.
+    probe.style.color = value
+    document.body.appendChild(probe)
+    const rgb = getComputedStyle(probe).color
+    document.body.removeChild(probe)
+    const m = rgb.match(/(\d+(?:\.\d+)?)/g)
+    if (!m || m.length < 3) return '#000000'
+    const hx = (n: string) => Math.max(0, Math.min(255, Math.round(parseFloat(n)))).toString(16).padStart(2, '0')
+    return '#' + hx(m[0]) + hx(m[1]) + hx(m[2])
+  } catch {
+    // A probe can fail in an odd document state; black is the old behaviour, so
+    // this degrades to exactly what it did before rather than throwing.
+    return '#000000'
+  }
+}
+
 function ColorRow({ field, vars, onChange }: { field: ColorField; vars: ThemeVars; onChange: (k: string, v: string) => void }) {
-  const value = vars[field.key] ?? '#000000'
+  const stored = vars[field.key] ?? '#000000'
+  // Recomputed only when the stored value changes — the probe touches the DOM,
+  // and this editor re-renders on every keystroke.
+  const value = useMemo(() => resolveDisplayHex(stored), [stored])
   // v0.14.6: the text field accepts NAMED colors too (red, lime, ember — the
   // /colors palette), resolved to hex on COMMIT (blur/Enter). A local draft
   // lets the user type freely ("emb…" isn't valid yet); live #hex edits still

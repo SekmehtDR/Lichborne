@@ -70,6 +70,19 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
+**v0.19.5**
+
+- **New Experience: Spell Monitor.** Everything currently on you as a grid of
+  live countdowns, each with
+  a duration bar that drains as the effect does, running green while full, amber
+  past halfway and red near the end. Optional **skill badges** ([A]ugmentation,
+  [W]arding, [F]orm…) and **abbreviations** (ECRY rather than Eillie's Cry) make
+  it quick to see what to renew. Open it from the **Experiences** shelf, or dock
+  it as a panel tab from any panel's **+** menu. Works without Lich.
+- **Dragging a tab between windowed panels no longer leaves the strip jittering**
+  — a fix that also restores the map's animation smoothness, which the same bug
+  was quietly slowing down.
+
 **v0.19.4**
 
 - **Attach to a Lich that's already running.** A third way to connect, beside
@@ -102,7 +115,7 @@ Lichborne is actively developed. A few things we're heading toward — direction
   community, stewarded by it. Updates and links carry over seamlessly (v0.19.2
   installs are already transfer-ready, and GitHub redirects cover the rest).
 - **Windowed Panels becomes the default.** The floating-window layout is the future; the older docked "Static Panels" mode will eventually retire, with an automatic one-time conversion so no layout is ever lost.
-- **More Lichborne Experiences.** The graphical scenes (Living Tableau, Moons) are the first of a larger set of "graphics for text players" — richer combat instruments, wound/status visuals, and more.
+- **More Lichborne Experiences.** The graphical scenes (Living Tableau, Moons, Spell Monitor) are the first of a larger set of "graphics for text players" — richer combat instruments, wound/status visuals, and more.
 - **More AI helpers.** Catch Me Up is the first BYOK ("bring your own key") AI feature. Others are designed and on the way — always optional, always with a working non-AI baseline, and always privacy-first.
 - **A proper Discord community** for feedback and bug reports (link in **Help → About Lichborne**).
 - **Linux and Mac out of beta.** The v0.18.0 platform betas graduate once they've soaked with testers — if you play on either, your reports are what get them there.
@@ -411,7 +424,7 @@ Client commands **never reach the game** — a typo gets a hint instead of leaki
 - Each Experience **costs nothing until you open it**, respects your **theme** and **epilepsy-safe** setting, and always treats the game text as the source of truth.
 - Hover an Experience for its own controls: **A− / A+** sizes all its text, and **⚙ "Show in this scene"** ticks exactly which layers you want to see. Your choices are remembered **per window**.
 
-There are two Experiences today, both **[Beta]**:
+There are three Experiences today, all **[Beta]**:
 
 #### Living Tableau
 
@@ -433,6 +446,23 @@ Elanthia's night sky and world, alive.
 - Below the horizon, a little **wilderness** — distant forest, foreground trees, a winding stream and a **lake that mirrors the sun and moons** — that **dresses itself by season** (snow and ice in winter, blossoms in spring, lush summer, falling leaves in autumn) and casts **sun-following shadows**.
 - **Header and footer strips** read the sky at a glance: day/night with the sun's countdown, the next moon, and the current **weather** up top; the **Elanthian date** below. **Hover any body for its lore** and its next rise/set time, with live "sets in 88m" countdowns throughout. A single **⟳** silently refreshes the weather and date (it sends `WEATHER`/`TIME` behind the scenes — nothing clutters your game window).
 - **Powered by the community `moonwatch` script** — run `;moonwatch window` on a Lich character to feed it the moons. Even without it, you still get a day/night sky from public sun data.
+
+#### Spell Monitor
+
+Everything currently on you, as live countdowns.
+
+- **One cell per effect**, in a grid that reflows to whatever shape you give the window. By default they appear in the order the game itself lists them, which stays put as timers tick; flip on **Soonest first** in the **⚙** if you'd rather have whatever is about to run out lead the grid.
+- Each cell carries a **duration bar** that drains as the effect does. Lichborne isn't told how long a spell lasts, so the bar learns it: the longest you've ever seen an effect run becomes its full mark, and a recast visibly refills it.
+- Each effect runs **green while it's full, amber past the halfway mark, and red as it nears its end**, with an optional pulse on the red ones. The colors adapt to your theme — deepening on light ones, brightening on dark — and follow your color-blind setting if you have one. (Epilepsy-safe turns off the pulse and keeps the colors, so you lose nothing.)
+- Because the game never tells a client how long a spell *should* last, a freshly-noticed effect can't be judged as a percentage yet — so an effect with only a minute or two left always shows as ending regardless, rather than pretending to be full.
+- **Times read in whole minutes** — `28m`, then `<1m` at the end. The game reports your effects to the minute, so showing you a ticking `28:04` would be inventing precision that was never there.
+- Effects the game lists **without** a countdown — a Trabe Chalice reading *"intact, fading"*, say — are shown too, quietly, after everything that has a timer. Nothing that's on you is ever hidden just because Lichborne didn't recognize the wording. Anything the game marks as *Fading* goes to the very top instead — that's it telling you an effect is about to lapse.
+- **Skill badges** put a letter chip on each effect for its magic skill or ability type — **[A]**ugmentation, **[U]**tility, **[T]**argeted Magic, **[D]**ebilitation, **[W]**arding, **[C]**antrip, **[X]** metamagic, and for Barbarians and Bards **[F]**orm, **[B]**erserk, **[M]**editation, **[R]**oar and **[S]**cream. Each has its own colour, so one kind is easy to pick out; hover for the full name and guild.
+- **Abbreviations** switch the display to the game's short names — **ECRY** rather than *Eillie's Cry* — so what you see about to expire is what you type to renew it. Anything without a known abbreviation keeps its full name. (Thief Khri have no badge or abbreviation: they aren't in the reference data Lich publishes.)
+- **Group by skill** gathers effects under a heading for their skill or ability type — all your Wards together, all your Augmentations together. For a Barbarian that means Forms, Berserks, Roars and Meditations each in their own block. It combines with Soonest first, which then orders within each group. (Thieves get one "Other" block: Khri aren't in the reference data.)
+- **Abbreviations**, **Soonest first** and **Group by skill** all start **off** — the window opens with full names in the order the game itself lists them, which stays put as timers tick. Turn on whichever you want from the **⚙**. Your choices are remembered per character and travel with a [Profile Transfer](#profile-transfer).
+- Every colour here — the twelve badges and the three countdown states — is editable in the **Theme Editor** under **HUD**, if you want your own scheme.
+- **No Lich required** — this reads DragonRealms' own spell readout, so it works exactly the same on a direct connection. The same information in text form is the **Active Spells** panel.
 
 *(Every layer above — bubbles, thoughts, combat rings, weather effects, seasons, and more — is an individual **⚙** toggle, so you can dial each Experience to taste.)*
 
@@ -574,6 +604,7 @@ Lich is the **recommended** way to play — it unlocks the map, timers, variable
 | AI — Catch Me Up | ✅ | ✅ (reads your log) |
 | Import wizard · Transfer | ✅ | ✅ |
 | Moons Experience | ✅ (with `;moonwatch`) | ⚠️ day/night only |
+| Spell Monitor Experience | ✅ | ✅ |
 | Lich Map · Genie Maps | ✅ | ❌ (needs Lich map data) |
 | Variables · Scripts · Profiles (Lich Dashboard) | ✅ | ❌ (Lich only) |
 | Spell/buff timers, `go2` walking, repository | ✅ | ❌ (Lich only) |

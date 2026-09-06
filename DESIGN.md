@@ -444,7 +444,7 @@ The server declares all streams it intends to use via `<streamWindow id="..." ti
 | `ooc` | `ooc` | Out-of-character channel | discoverable; **deliberately NO `main` fallback** (v0.19.3 sweep): Frostbite's parser comments that the speech in the ooc stream is *"duplicated from whisper stream"* — a native outside-the-block copy, the B136/pitfall-#49 case, so a fallback would double-print |
 | `chatter` | `chatter` | Seen by Frostbite (routed into its Thoughts window); source and duplication unknown — **UNDECIDED, needs a Debug raw-XML capture** before it gets a fallback or an alias (v0.19.3 sweep) | discoverable |
 | `familiar` | `familiar` | Familiar link output | `familiar` |
-| `percWindow` | `spells` | Active spells / buffs | Center-Right |
+| `percWindow` | `spells` | Active spells / buffs. Clear-and-rewrite STATE (no `STREAM_FALLBACK` entry — see §34.9 item 4), so `streamLines.spells` is always an exact mirror of the current block; parsed by the Spell Monitor Experience | Center-Right |
 | `inv` | `inv` | Inventory updates | `inv` |
 | `room` | `room` | Room description components | `room` |
 | `combat` | `combat` | Combat messages | `main` |
@@ -967,6 +967,8 @@ Opened via **"Customize..."** on any theme card. Shows the full set of editable 
 | Store | Text color + optional highlight |
 
 Each preset row shows two symmetric pairs: **[color swatch] [hex input]** for the text color and **[color swatch] [hex input]** for the highlight. The highlight swatch is dimmed and the hex box shows `none` when no highlight is set. Click the swatch to pick a color via the native picker, or type a hex code directly. Clearing the hex field removes the highlight.
+
+**A row's stored value is not always a literal, and the swatch has to cope (B314, v0.19.5).** `darkBase` deliberately holds cascading EXPRESSIONS for many vars — `var(--text-dim)` so a var follows its parent (pitfall #34), and `color-mix(<fixed hue> N%, var(--text-primary))` so a fixed-meaning hue self-corrects its contrast per theme (pitfall #63). `createCustomThemeFrom` copies the **whole** of `darkBase` into a new custom theme, so those expressions arrive in the editor verbatim — and **`<input type="color">` silently falls back to `#000000` on any value that is not `#rrggbb`**. Every such row therefore rendered a BLACK swatch for a colour the app was painting teal, grey or rose. `resolveDisplayHex` resolves a non-hex value by asking the browser what it currently evaluates to (a hidden probe element + `getComputedStyle().color` → hex) — the only correct answer, since the result depends on the live theme. A literal hex skips the probe entirely and takes exactly the old path, and the **commit path is untouched**: an edit still writes a plain hex, so a theme never comes to depend on the expression form. **When exposing a new var here, check what `darkBase` actually stores for it** — an expression is normal and correct in the theme layer, but it is not a value a colour input can hold.
 | Font family | Per-theme font override (optional) |
 | Font size | Per-theme size override (optional) |
 
@@ -7310,6 +7312,267 @@ feed it are now redundant and can be retired once the model has been watched
 across a full day.
 
 
+
+4. **Experience #3 — Spell Monitor (SHIPPED v0.19.5, Beta; Sekmeht 2026-09-05).** Everything
+   currently on you as a grid of live countdowns, one cell per effect, sorted soonest-expiring
+   first. Registry id **`spellmonitor`** — deliberately NOT `spells`: tab ids are namespaced
+   `exp:<id>` so there is no technical collision with the `spells` PANEL, but Moons already taught
+   us the human cost of a shared name (the `[e]` badge exists precisely because the Moons
+   *experience* and moonwatch's Moons *stream* read identically in a tab strip), and a distinct id
+   avoids repeating that. Dual-hosted for free — a registry entry is all the `+` menu, the shelf
+   and the ⚙ popover need (§34.8 item 5: **no panel-system file was touched**).
+
+   - **Why an Experience and not a panel view-toggle.** A "right-click the Active Spells panel →
+     Classic / Advanced" toggle was proposed and examined against §34.2's rejected "Interactive
+     Mode" model. Both prongs of that rejection *invert* here, which is why the Experience route
+     was taken instead: (a) the rejection turned on the combat panel being **optional equipment**
+     (Simu splits combat text between the `combat` stream and main, so many players skip the
+     window) — but `spells` has no main duplicate and **no `STREAM_FALLBACK` entry**, so its panel
+     is the only place that content ever appears; and (b) the rejection's deeper point was that the
+     HUD reads parsed **state**, not stream text — for spells the opposite holds, since the active
+     list exists *only* as text on `percWindow` (the `spell` event is the spell you are
+     *preparing*, a different thing). The Experience route also keeps the mature panel system
+     byte-identical, which the toggle would not have.
+
+   - **The feed.** DR pushes `<clearStream id='percWindow'/>` then one line per effect;
+     `percWindow` aliases to `spells` at the parser (streamAliases.ts). Because that stream has no
+     fallback, its lines always route to their own buffer, and the clear is applied in GameWindow's
+     batch commit — so **`streamLines.spells` is already an exact mirror of the current block**.
+     No accumulator, and no assess-style batch-boundary guard, is needed.
+
+   - **Parsing is TOLERANT (`parseSpellLine`, experiences.ts).** `<Name> (<N> roisaen)` — and DR
+     writes the **singular `roisan` at 1**, so a plural-only pattern would silently drop every
+     effect in its final minute. A non-numeric parenthetical (`Trabe Chalice (intact, fading)`,
+     `(indefinite)`) becomes an **untimed effect carrying that note**, and a bare name is kept as
+     one: never a dropped line, because the display must not hide something the game says is on
+     you. 1 roisan = 1 real minute via `ROISAN_SECONDS` ([elanthianTime.ts](src/shared/elanthianTime.ts))
+     — never a hardcoded 60_000.
+
+   - **Expiries anchor on each LINE's own `timestamp` — its receipt time — not one `Date.now()`
+     for the block.** This is *not* the pitfall-#87 / B192 clock-skew case: DR gives a **duration**,
+     not a server absolute time, so a local anchor is correct and skew-free.
+     **KNOWN LIMITATION, verified 2026-09-05:** this is NOT replay-correct, and an earlier draft of
+     this section wrongly claimed it was. `mkLine` ([GameWindow.tsx](src/renderer/components/GameWindow.tsx))
+     stamps `timestamp: Date.now()` and **ignores the `timestamp` the `StreamTextEvent` carries**, so
+     a pitfall-#60 replay (decouple, re-home, import remount) re-dates the block to the replay moment
+     and inflates every remaining time by however stale that block was. The error is bounded and
+     self-correcting: the delta gate compares reported against predicted, an inflated anchor makes
+     predicted exceed reported, so the state re-anchors as soon as the gap passes a roisan — i.e. on
+     DR's next repaint. Making it genuinely replay-correct means teaching `mkLine` to prefer
+     `evt.timestamp`, which would also change every stream's per-line timestamp DISPLAY and the
+     session-log parity story — a shared-path change deliberately not taken for this feature.
+
+   - **The DELTA GATE is what keeps it cheap (`deriveSpellState`).** DR repaints the whole block on
+     its own cadence, and a repaint that merely confirms 29 → 28 tells us nothing our own clock
+     does not already know. Committing a new object for it would mint a fresh prop identity on the
+     shared Experience props bag — re-rendering **every** mounted Experience (pitfall #82c) — and
+     re-anchor every countdown, which reads as jitter. So state is committed only on a real change:
+     the effect set changed, a note changed, a max grew, or a timer diverged from prediction by
+     more than a roisan (a recast, or genuine drift). The resolver is **PURE** and the refs are
+     owned by ONE effect (pitfall #70 — the impure memo that mutated refs mid-render double-counted
+     under StrictMode).
+
+   - **The bar's denominator is learned, because DR never states a full duration.** `spellMaxRef`
+     remembers the highest roisaen ever seen per effect, so a recast makes the bar visibly refill
+     rather than rescale under the user. It lives in a **GameWindow ref, not the component** — the
+     component unmounts on every tab switch and would otherwise forget instantly; the ref survives
+     the Experience being closed, reopened, or moved between a window and a tab.
+
+   - **An empty block clears the display, but on a 400ms DEFERRAL.** An empty buffer means the game
+     cleared the block with nothing to replace it (everything dropped), and that must clear the
+     grid — each effect's own timer could otherwise leave it on screen for another 29 minutes. It
+     is deferred because a clear and its following lines can straddle a flush boundary, and
+     committing the gap would blink the whole grid empty for a frame. This is the assess
+     "guard the snapshot on non-empty" problem, solved with a bounded wait rather than a guard,
+     because here the empty reading is genuinely meaningful. Max ceilings are KEPT across it.
+
+   - **Two HONESTY rules in the display.** DR reports **whole roisaen**, so the cell shows whole
+     minutes and never a seconds countdown — `29:00` would claim a precision the game never gave
+     us; the final minute reads `<1m`, and the *bar* may still move smoothly because a proportion
+     is not a claim about precision. And an effect we could not parse is still **shown**, carrying
+     whatever the game put in its parentheses.
+
+   - **The TRAFFIC LIGHT — green full → yellow midway → red near the end (Sekmeht, 2026-09-05)** —
+     is `spellBand()` in experiences.ts, and it takes the **MORE URGENT of a PROPORTIONAL and an
+     ABSOLUTE reading**. That is not belt-and-braces; it is the only correct answer here, because
+     the proportion's denominator is **learned**. On the first block after connecting, every effect
+     has `max === its current reading`, i.e. a proportion of exactly 1.0 — so a purely proportional
+     band paints the **whole grid green, including a buff with two minutes left**, at precisely the
+     moment the display most needs to be right (that is the normal startup state, not an edge case).
+     The absolute reading (≤1 roisan crit, ≤5 mid) is a floor that a guessed denominator cannot
+     fool; the proportion (≤0.2 crit, ≤0.5 mid) supplies the gradient across a long spell's life,
+     so 10% of a four-hour buff reads red even with 24 minutes on the clock. An effect is shown as
+     calmer than it is only when BOTH readings agree it is calm. Harness-locked, trap cases included.
+   - **The colours are three dedicated `--spell-band-{ok,mid,crit}` vars — NOT the vitals health
+     ramp.** Reusing `--vital-health-*` was the first implementation and it was **wrong**, in a way
+     worth recording because it is the pitfall #34/#75 family at its sharpest: **the cascade must
+     follow MEANING, not hue.** That ramp means "this theme's health bar", and two shipped themes
+     prove the difference — **`classic`** pulls its vitals verbatim from Genie's `presets.cfg`,
+     where health is **RED AT FULL** (`--vital-health-ok-end: #dd0000`), so a full spell would have
+     screamed "expiring" and the whole light run red → orange-red → dark red; and **`terminal`** is
+     monochrome, so its mid stop is green and the amber band vanished entirely. A var can be the
+     right *colour* and the wrong *concept*.
+     The replacements are defined ONCE in `darkBase` in the pitfall-#63 `--syntax-*` shape — a
+     fixed hue mixed 75% toward `var(--text-primary)`, which resolves in each theme's own context
+     at use time, so every theme keeps the MEANING while its CONTRAST self-corrects (darkened on
+     light backgrounds, brightened on dark) with no per-theme work and no way for a theme to
+     silently invert the signal. The hues are **mid-tone by necessity** (UX #9's SimuCoin lesson):
+     a true yellow measures ~1.5:1 on a white theme and simply disappears, so the middle band is an
+     **amber**. There is no yellow that survives both ends.
+   - **Colour-blind is explicit, and the vitals' own answer does not transfer.** `COLORBLIND_VARS`
+     carries `--spell-band-*` entries: deuteranopia moves the problem stop (green) to teal, as the
+     health bar does. Protanopia cannot copy the health bar, which turns crit **amber** — exactly
+     our MID band, so the two most urgent states would collide; it instead moves green→teal and
+     LIGHTENS red, so lightness carries the separation alongside hue for a viewer who reads red as
+     very dark. **This is design judgement, not verified with a colour-blind tester** (Principle
+     #10) — but it is safe because colour is the secondary cue: the bar's LENGTH and the printed
+     time carry the same information (§34.7).
+   - **The colour lives in the BAR and BORDER, not the numerals:** those are large areas needing
+     3:1, whereas band-coloured text must clear 4.5:1 on every theme — and the amber stop cannot do
+     that on white without being darkened until it stops reading as amber. `crit` is the one
+     exception (red clears ~6:1 on Classic Light, and the last minute has earned the emphasis).
+   - **The percWindow SHAPE CATALOGUE is mirrored from LICH'S OWN PARSER**
+     (`lib/common/xmlparser.rb`, the `@dr_active_spell_tracking` branch), whose comments enumerate
+     the real lines verbatim. A first version written from ONE captured block mishandled four of
+     them, which is the argument for mirroring a verified parser rather than inventing one:
+     **`anlaen`** is a real unit (1 anlas = 30 roisaen — `Stellar Collector (0%, 4 anlaen)` lost its
+     countdown entirely); **`Fading`** is the OPPOSITE of untimed (Lich reads duration 0 — it means
+     lapsing right now, and rendering it as a quiet note showed the most urgent thing on screen as
+     background information); **`Indefinite` / `OM`** are effectively permanent; and a stated
+     **percentage** (`Osrel Meraud (94%)`) is a proportion, not a time. `SpellKind` therefore has
+     five members — timed / fading / permanent / percent / unknown — and they must NOT be collapsed
+     back into one "untimed" bucket: fading is the most urgent state and permanent the calmest. A
+     duration OUTRANKS a percentage in a compound reading (the percentage is a charge level; the
+     duration is when the thing ends). A stated percentage beats the LEARNED ceiling for both bar
+     and band, being a true proportion where `max` is only "the most we have happened to see".
+     Consequences threaded through: `spellSortRank` (lapsing → counting down → no countdown →
+     permanent), the `untimed` layer which hides the quiet kinds but NEVER fading, and the delta
+     gate, which treats a KIND change as always meaningful. A missing/NaN percentage resolves to NO
+     band rather than the calmest one — a reading we don't have must never render as "this is fine".
+   - **SKILL BADGES + ABBREVIATIONS (Sekmeht, 2026-09-05)** come from Lich's
+     `scripts/data/base-spells.yaml`, snapshotted at build time by
+     [tools/gen-spell-data.mjs](tools/gen-spell-data.mjs) into a COMMITTED
+     [spellData.ts](src/renderer/spellData.ts) (430 entries, ~29KB). Committed rather than read from
+     a Lich install because the Spell Monitor works without Lich (Principle #2) — reading it live
+     would mean no badges at all on a direct connection. Re-run the generator and commit the diff
+     when Lich publishes new spells; a name with no entry simply gets no badge, so staleness
+     degrades silently and can never produce a WRONG badge.
+     **The data facts that make this work:** percWindow names match the YAML keys VERBATIM (verified
+     8/8 against a real capture, apostrophes and roman numerals included); the three badge-able
+     sections (`spell_data` 378, `barb_abilities` 37, `battle_cries` 14) have ZERO name collisions,
+     so one flat map is safe; and every one of the twelve skill/type values has a distinct first
+     letter — A U T D W C X (magic) and F B M R S (abilities) — so single-letter badges need no
+     disambiguation. Metamagic is **X, not M**, because M is already Meditation: no character has
+     both, but a letter that is unambiguous only by luck is the pitfall #55 trap.
+     Two gotchas in the source data: 33 entries are `metamagic: true` with NO `skill` (a real
+     category, not malformed), and **`See the Wind` has `Skill:` with a capital S — a typo in Lich's
+     own file** that a case-exact read drops silently. The generator tolerates both and REPORTS what
+     it skipped rather than discarding quietly; that report is what surfaced the typo.
+     **Known gap: Thief Khri are absent from base-spells.yaml entirely** yet DO appear in percWindow,
+     so a Thief gets no badges.
+     Badge colours are twelve `--spell-badge-*` vars on the same self-correcting mix as the bands,
+     **all exposed in the Theme Editor's HUD tab** so they are genuinely user-editable rather than
+     only themeable. The chip is deliberately a quiet low-alpha tint: it IDENTIFIES while the
+     traffic light ALARMS, and two loud colour systems in one small cell would fight.
+   - **PROFILED (2026-09-06) — don't re-investigate; one real find, everything else free.** The
+     numbers, measured by bundling the real modules (never a reimplementation), at a real capture's
+     8 effects and a heavily-buffed 25: **the 1 Hz clock's whole derivation chain costs 0.24–0.94 µs
+     per tick** (liveSpellEffects + filter + sort + groupSpells + per-cell band/label/note/bar/title)
+     — 0.0001% of a core, i.e. free; and **the always-on cost, paid whether or not the window is
+     open, is 4.4 µs per repaint at 8 effects and 20.5 µs at 25** — even assuming DR repaints on
+     every prompt at ~3 commands/sec, that is **0.006% of a core**. Two structural properties
+     matter more than the numbers: **there is ZERO per-line cost** (the derive is an effect on
+     `streamLines.spells`, not a branch in the stream-text loop), and **a background TAB is
+     unmounted** (`PanelFrame` renders only the active tab), so its clock does not run. A background
+     CHARACTER's floating window does stay mounted (pitfall #24) and does tick — deliberately left
+     alone, since gating it on `isActive` would buy an unmeasurable amount and cost a stale label
+     for up to a second on return, the same trade DESIGN §45.7 declined for the other Experiences.
+     Worth knowing: the delta gate does **not** save parse work (a gated repaint measures slightly
+     SLOWER than a cold one — it parses and then compares); its entire value is avoiding the
+     setState and the re-render cascade, which is what the design claims.
+   - **THE ONE REAL FIND: the duration bar animates a TRANSFORM, never `width`.** It shipped as
+     `transition: width 1s linear`, and because the bar drains on every tick it is in a CONTINUOUS
+     transition the whole time the window is open — so a `width` transition invalidated layout on
+     every animation frame, for every visible bar, forever (25 buffs × 60fps × each open window ×
+     each character). `transform: scaleX()` with `transform-origin: left` is compositor-only: no
+     layout, no paint. Same family as pitfall #126 — continuous main-thread work nobody asked for.
+     The fill therefore carries **no border-radius of its own** (scaling would squash it); the
+     track's `overflow: hidden` rounds the left end, and a square leading edge is correct for a
+     progress bar anyway. The other two animations were audited and are fine: the cell's
+     background/border transition is paint-only and fires only when a band actually changes, and
+     the expiry pulse animates `border-color` on the 0–2 cells in their final minute.
+   - **THE NOTE ROW ADDS WHAT THE LABEL DOES NOT SAY** — `spellNoteText`. A first cut rendered the
+     parenthetical unconditionally, so a `fading` reading printed the word TWICE (label "fading",
+     note "Fading") and paid a whole extra row for it, which is what made those cells look
+     oversized beside their neighbours (Sekmeht's `Tenebrous Sense (Fading)` screenshot). The test
+     is a **case-insensitive comparison against the label, NOT a switch on `kind`**, and that
+     distinction is load-bearing: a bare `(Fading)` or `(94%)` collapses to one row, while a
+     COMPOUND reading survives because it genuinely differs — `0%, fading` under a `0%` label adds
+     the word *fading*, and a `timed` effect's `0%, 4 anlaen` adds a charge level its `120m` label
+     never carried. Permanents are excluded outright; their ∞ says it and the word is in the
+     tooltip. **`spellRemainingLabel` and `spellNoteText` live in experiences.ts rather than the
+     component precisely so this is harnessable** — neither reads correctly in isolation and it was
+     their PAIRING that failed, so the cases assert them together.
+   - **GROUP BY SKILL (Sekmeht, 2026-09-06)** — `groupSpells()` partitions the grid under a
+     labelled hairline heading per magic skill / ability type. The motivating case is a Barbarian,
+     who sees exactly four blocks (Form 15 · Berserk 13 · Roar 11 · Meditation 9); casters see 5–7,
+     Warrior Mage the most at 7 (the only guild with Cantrips). Three decisions worth keeping:
+     **(a) it COMPOSES with `sortByTime` rather than competing.** `groupSpells` preserves the
+     caller's within-group order, so sorting happens first and each group is internally sorted —
+     which is why two booleans still suffice and no enum control was needed. The option model only
+     breaks if a THIRD ordering (alphabetical, say) is ever wanted, since that genuinely conflicts
+     with soonest-first; that is the natural trigger for the typed-control registry extension.
+     **(b) The group ORDER is FIXED** (`SPELL_GROUP_ORDER`), not derived from what is currently up:
+     a list that re-orders itself as effects come and go would reshuffle the grid mid-read — the
+     same churn that made `sortByTime` opt-in. A label not in that list sorts LAST alphabetically,
+     so a category Lich adds later appears predictably at the end rather than silently first.
+     **(c) The heading is a labelled hairline divider (UX #5), NOT a padded header** — the window is
+     often a short strip and a Warrior Mage would spend seven rows on chrome, so each heading costs
+     about one text-height row (`grid-column: 1 / -1` to span the grid, `line-height: 1` per
+     pitfall #77). Unknown names bucket into **`Other`**, last — which means grouping is inert for a
+     **Thief**, whose Khri are absent from Lich's data entirely and would all land there.
+     `groupSpells` takes the lookup as a PARAMETER rather than importing `spellData`, keeping it
+     pure, harnessable, and free of a dependency `experiences.ts` does not otherwise need.
+   - **⚙ layers, one per visual layer (nine):** `bars`, `urgency` (the traffic light), `untimed`
+     (the quiet no-countdown kinds — never fading), `pulse`, `badges` (the skill letter chips),
+     `header` (the "Active Spells" strip; off reclaims a row in a narrow tab), and **three that are
+     `defaultHidden` / opt-in (Sekmeht, 2026-09-06)**: `abbrev` (ECRY rather than Eillie's Cry),
+     `sortByTime`, and `groupBySkill`. Leaving `sortByTime` off makes DR's OWN order the default — the game's ordering
+     is stable as timers tick, where ours re-arranges under the reader; the urgency colour still
+     marks a lapsing effect, it just isn't moved. Note the consequence: `spellSortRank`'s
+     fading-first priority applies only when that layer is ON, which the option text states.
+   - **⚙ PREFS PERSIST per character, and no new plumbing was needed.** `ExperienceInstance.hidden`
+     rides `scopedKey('experiences')` → the dynamic `state:` map → YAML, and `experiences` is
+     already a `TRANSFER_CATEGORIES` id, so prefs move with a Profile Transfer too. Two details
+     make it safe and are worth not undoing: `setExperienceOption` FIND-OR-CREATES a `open: false`
+     instance so a tab-only user still gets a prefs record (the shelf and layer filter on `open`,
+     so it stays invisible), and it seeds `defaultHiddenMap(def)` on creation so a default-off layer
+     persists explicitly rather than living only in the reader's head. **`loadExperiences` filters
+     with a type GUARD rather than reconstructing each record** — which is precisely why `hidden`
+     survives the round trip; rewriting it as a rebuild would silently destroy any field it forgot
+     to copy (pitfall #121, which has bitten three times). Harness-locked both ways: the round trip
+     and the default resolution. Under epilepsy-safe the pulse is dropped but the **colour stays** —
+     motion is decoration, colour is signal (UX #9b), so the accessible path keeps the information
+     the effect was carrying.
+
+   - **Bounded by construction** (pitfall #109): the effect count is user data, so the grid scrolls
+     against a `max-height` rather than growing without limit for a heavily-buffed caster. Numbers
+     are `tabular-nums` so a ticking value can never reflow its cell (pitfall #103), and the root
+     anchors the em chain to `--panel-font-size`/`--game-font-size` so both the Settings font and
+     the per-panel A−/A+ reach it (pitfall #58a). The `.sm-` class prefix was checked unique before
+     use (pitfall #55c).
+
+   - **No Lich required** — `percWindow` is a game stream, so this is identical direct-SGE
+     (Principle #2). **No slash command, by design** (§34.6): the `+` menu, the shelf and the ⚙ are
+     the surface, exactly as for Moons and the Tableau — recorded here per Principle #11 rather
+     than skipped silently.
+
+   - **NOT DONE / open:** the DR repaint **cadence** is unmeasured — the delta gate is correct
+     either way, but whether it is a nicety or load-bearing needs a Debug → Raw XML capture over a
+     minute of ordinary play. No ⟳ refresh button: unlike Moons' TIME/WEATHER there is no *verified*
+     command that forces a `percWindow` repaint, and one was not guessed (Principle #10). The
+     parsed state sits on `ExperienceProps`, so a future Tableau strip, an Overview card field, or
+     `$activespells` trigger variables are cheap follow-ons.
 ---
 
 ## 35. SceneParser — Scene-Event Capturer Registry (designed 2026-06-12; Phase 1 built)

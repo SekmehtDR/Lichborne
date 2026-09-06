@@ -191,6 +191,10 @@ const COLORBLIND_VARS: Record<string, Partial<ThemeVars>> = {
   deuteranopia: {
     '--vital-health-ok-start': '#0a5a6a',
     '--vital-health-ok-end':   '#18a8b8',
+    // Spell Monitor traffic light: GREEN is the problem stop, so it moves to the
+    // same teal the health bar uses here. Amber and red are left alone — teal /
+    // amber / red separate comfortably for a deuteranope.
+    '--spell-band-ok':   'color-mix(in srgb, #18a8b8 80%, var(--text-primary))',
     '--ind-hidden-color':  '#60a8ff',
     '--ind-hidden-bg':     '#061428',
     '--ind-hidden-border': '#103058',
@@ -216,6 +220,14 @@ const COLORBLIND_VARS: Record<string, Partial<ThemeVars>> = {
   protanopia: {
     '--vital-health-crit-start': '#7a5500',
     '--vital-health-crit-end':   '#e8a800',
+    // Spell Monitor traffic light. The vitals' own answer does NOT transfer: it
+    // turns crit AMBER, which is exactly our MID band, so the two most urgent
+    // states would collide. Move green→teal (as deuteranopia does) and keep red
+    // but LIGHTEN it — a protanope reads red as very dark, so lightness carries
+    // the separation from amber alongside hue. Colour is the secondary cue
+    // either way: the bar's LENGTH and the printed time say the same thing (§34.7).
+    '--spell-band-ok':   'color-mix(in srgb, #18a8b8 80%, var(--text-primary))',
+    '--spell-band-crit': 'color-mix(in srgb, #ff7a5a 85%, var(--text-primary))',
     '--vital-health-low-start':  '#7a4800',
     '--vital-health-low-end':    '#e09000',
     '--ind-bleeding-color':  '#ff8030',

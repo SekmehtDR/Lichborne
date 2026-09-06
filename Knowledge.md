@@ -968,6 +968,122 @@ preserved (`normalizeStreamId` only rewrites the alias table's keys), so a fallb
 must match DR's casing exactly (`shopWindow`, `percWindow`); (2) the routing rule for an
 UNWATCHED stream with no table entry is "buffer invisibly", which is correct only for the
 state and native-dup classes — a narrative stream left undecided is a silent-loss bug.
+## DR protocol — the `percWindow` active-spell readout (v0.19.5)
+
+Verified against a live capture (Sekmeht, 2026-09-05). DR pushes the player's
+active spells/effects as a **clear-and-rewrite block**:
+
+```
+<clearStream id="percWindow"/>
+<pushStream id="percWindow"/>Noumena (29 roisaen)
+Finesse (28 roisaen)
+Nonchalance (7 roisaen)
+Turmar Illumination (2 roisaen)
+Membrach's Greed (2 roisaen)
+Last Gift of Vithwok IV (1 roisan)
+Blur (1 roisan)
+Trabe Chalice (intact, fading)
+<popStream/><prompt time="1788634151">&gt;</prompt>
+```
+
+**Facts that matter to a front-end:**
+
+1. **One line per effect, `<Name> (<status>)`.** The name may contain spaces,
+   apostrophes and roman numerals (`Last Gift of Vithwok IV`, `Membrach's
+   Greed`), so a name pattern must not assume a single word.
+2. **The unit is the roisan, and DR writes the SINGULAR at 1** — `(1 roisan)`,
+   `(29 roisaen)`. A plural-only regex silently drops every effect in its final
+   minute, which is exactly the minute that matters.
+3. **1 roisan = 60 seconds = 1 real minute** (Elanthipedia; the constants live
+   in [elanthianTime.ts](src/shared/elanthianTime.ts) as `ROISAN_SECONDS`).
+   The reading is a **duration**, NOT a server absolute time — so anchoring it
+   on the local clock at receipt is correct and immune to clock skew, unlike
+   `roundTime`/`castTime`, which ARE absolute and must be anchored on the
+   `<prompt time>` (§16, pitfall #87 / B192).
+4. **The value is whole minutes.** There is no sub-minute precision anywhere in
+   this readout, so a seconds-resolution countdown built from it is invented.
+5. **The parenthetical is not always a timer, and the variants are NOT
+   interchangeable.** The authoritative catalogue is Lich's own parser
+   ([xmlparser.rb](file:///c:/Ruby4Lich5/Lich5/lib/common/xmlparser.rb), the
+   `@dr_active_spell_tracking` branch), whose comments list the real lines:
+
+   | Line | Meaning | Lich's reading |
+   |---|---|---|
+   | `Landslide (4 roisaen)` | 4 minutes | 4 |
+   | `Khri Sagacity  (1 roisan)` | 1 minute — note the SINGULAR | 1 |
+   | `Stellar Collector  (0%, 4 anlaen)` | **anlaen**: 1 anlas = 30 roisaen | 120 |
+   | `Cure Disease  (Fading)` | lapsing right now | **0** |
+   | `Hydra Hex  (Indefinite)` | no expiry | 1000 |
+   | `Persistence of Mana  (OM)` | Osrel Meraud — no expiry | 1000 |
+   | `Osrel Meraud  (94%)` | a charge PERCENTAGE, not a time | — |
+   | `<barb ability>  (…)` | "inexact duration verbiage" catch-all | 1000 |
+
+   **`Fading` is the OPPOSITE of "no timer"** — reading it as a quiet untimed
+   note shows the most urgent thing on screen as background information.
+   **The anchoring matters:** Lich's duration group sits immediately after the
+   `(`, so `(Fading)` is the fading state while `(intact, fading)` is NOT — it
+   falls to the catch-all and is long-lived. A substring match on "fading"
+   therefore mis-flags every Trabe Chalice as expiring.
+   Note also the **double space** before several parentheticals.
+   Lich captures the NAME as `^[^(]+` (up to the first paren); anchoring on the
+   LAST paren group instead is more robust for a name that contains one.
+6. **It is a STATE stream with no main duplicate.** The block is cleared and
+   rewritten wholesale (so the current block is the complete truth, and an
+   effect that drops simply stops being listed), and DR does NOT emit an
+   outside-the-block copy — so unlike speech (pitfall #49) there is nothing to
+   deduplicate, and unlike a narrative stream it must NOT be given a
+   `STREAM_FALLBACK` entry or every tick re-spams the game window.
+7. **The repaint CADENCE is not yet established.** The capture shows two
+   identical blocks separated by a prompt, which hints at a repaint per prompt
+   rather than only on change — but this has not been measured. Anything whose
+   cost scales with the repaint rate should be written to be correct either way
+   (Lichborne's Spell Monitor gates its state commits on a real delta for
+   exactly this reason — DESIGN §34.9 item 4).
+8. **No verified command forces a repaint.** Unlike `TIME`/`WEATHER` for the
+   Moons readout, no command is known to make DR re-emit `percWindow` on
+   demand; do not assume one exists without checking.
+
+Lichborne aliases `percWindow` → `spells` (`streamAliases.ts`) and parses it in
+`parseSpellLine` / `deriveSpellState` ([experiences.ts](src/renderer/experiences.ts)).
+
+### `base-spells.yaml` — the spell/ability reference (verified 2026-09-05)
+
+`scripts/data/base-spells.yaml` in a Lich install is a usable reference for
+labelling percWindow entries. Facts worth not re-deriving:
+
+- **Effect names in percWindow match the YAML keys VERBATIM** — apostrophes and
+  roman numerals included (`Membrach's Greed`, `Last Gift of Vithwok IV`);
+  verified 8/8 against a real capture. This is what makes any lookup viable.
+- Three **badge-able sections**, with **zero name collisions between them**, so
+  one flat map is safe: `spell_data` (378, keyed on `skill`), `barb_abilities`
+  (37, `type`) and `battle_cries` (14, `type`).
+- **`skill`**: Utility, Augmentation, Targeted Magic, Debilitation, Warding,
+  cantrip. **`type`**: form, berserk, meditation, roar, scream. Every one of
+  those eleven has a **distinct first letter**, so single-letter labels need no
+  disambiguation. Metamagic (below) is the twelfth and needs a non-initial,
+  since M is already Meditation.
+- **33 entries are `metamagic: true` with NO `skill`** — a real category with
+  its own `abbrev` and `guild`, not malformed data.
+- **`See the Wind` has `Skill:` with a CAPITAL S** — a typo in Lich's own file.
+  A case-exact read drops that spell silently; tolerate both spellings.
+- **14 `skill` values carry trailing comments** (`Augmentation # Also Utility`),
+  so the file must be read with a real YAML parser, not a line scrape.
+- **`abbrev` covers 366 of 378 spells**; 12 have none, and 14 contain spaces
+  (the cantrips are `C AE S`), so "abbrev is a short token" is not universal.
+- **Thief Khri are ABSENT from this file entirely**, yet they DO appear in
+  percWindow (`Khri Sagacity (1 roisan)` is one of Lich's own examples). Any
+  feature keyed on this data must degrade silently for Thieves.
+- `khri_preps` and `rituals` are message-string lists, not named abilities.
+- Guild spread: Warrior Mage 70, Moon Mage 57, Cleric 48, Necromancer 40,
+  Ranger 34, Empath 33, Bard 32, Paladin 29, Trader 27.
+
+Lichborne snapshots this at build time via `tools/gen-spell-data.mjs` rather
+than reading a Lich install at runtime, because the Spell Monitor must work on a
+direct connection (Principle #2). Re-run it when Lich publishes new spells.
+
+---
+
+
 
 ---
 

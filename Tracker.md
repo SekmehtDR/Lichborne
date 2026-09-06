@@ -6,6 +6,291 @@
 
 ---
 
+## v0.19.5 — Spell Monitor + tab drag fix
+
+- **Experience #3 — Spell Monitor (Sekmeht).** DR's active-spell readout as a
+  grid of live countdowns: one cell per effect, soonest-expiring first, each
+  with a depleting duration bar, running green while full, yellow past
+  halfway and red as it nears its end. Dual-hosted like every Experience — a floating window from the
+  shelf, or an `[e]`-badged tab via a panel's `+` menu. Registry id
+  `spellmonitor` (deliberately not `spells`, so it can never read as the Active
+  Spells PANEL in a tab strip — the Moons stream/experience lesson).
+  **No panel-system file was touched** (§34.8 item 5): one registry entry buys
+  the `+` menu, the shelf and the ⚙ popover.
+  - **Considered and rejected first:** a "right-click Active Spells → Classic /
+    Advanced" panel view toggle. Checked against §34.2's rejected "Interactive
+    Mode" model and **both prongs invert here** — the `spells` panel is not
+    optional equipment (that stream has no main duplicate and no
+    `STREAM_FALLBACK` entry, so its panel is the only place the content ever
+    appears), and unlike the combat HUD this genuinely IS a rendering of stream
+    text (no typed event carries the active list; the `spell` event is the
+    spell being *prepared*). The Experience route also leaves the mature panel
+    system byte-identical, which the toggle would not have.
+  - **No new plumbing.** `percWindow` aliases to `spells`, that stream is
+    clear-and-rewrite with no fallback, and the clear is applied in the batch
+    commit — so `streamLines.spells` is already an exact mirror of the current
+    block. No accumulator, no assess-style batch-boundary guard.
+  - **`parseSpellLine` is tolerant by design:** handles the singular `roisan`
+    as well as plural `roisaen` (a plural-only pattern would silently drop every
+    effect in its final minute), keeps a non-numeric parenthetical
+    (`Trabe Chalice (intact, fading)`, `(indefinite)`) as an untimed effect
+    carrying that note, and keeps a bare name — never a dropped line. 1 roisan =
+    1 real minute via `ROISAN_SECONDS`, never a hardcoded 60_000.
+  - **Expiries anchor on each LINE's own timestamp** (its receipt time) rather
+    than one `Date.now()` per block — not the B192 skew case, since DR gives a
+    duration, not a server absolute time. **Known limitation:** this is NOT
+    replay-correct (`mkLine` stamps `Date.now()` and ignores the timestamp the
+    event carries), so a decouple/remount inflates remaining times until DR's
+    next repaint, which the delta gate then re-anchors. An earlier draft of the
+    docs claimed the opposite; corrected in the same release.
+  - **A delta gate** keeps DR's redundant repaints free: state is re-committed
+    only when the effect set, a note, a max ceiling or a timer's divergence from
+    prediction actually changes — otherwise the prior object identity holds, so
+    no Experience re-renders (pitfall #82c) and no countdown re-anchors. The
+    resolver is pure; one effect owns the refs (pitfall #70).
+  - **The bar's denominator is learned** (DR never states a full duration): the
+    highest roisaen seen per effect, held in a GameWindow ref so it survives the
+    component unmounting on every tab switch.
+  - **Traffic light (Sekmeht): green full → yellow midway → red near the end.**
+    `spellBand()` takes the MORE URGENT of a proportional and an absolute
+    reading — necessary, not belt-and-braces: the proportion denominator is
+    LEARNED, so on the first block after connecting every effect sits at 1.0 and
+    a pure-proportional band would paint the whole grid green including a buff
+    with two minutes left. Colours are three dedicated `--spell-band-*`
+    vars, NOT the vitals health ramp — reusing that was the first cut and was
+    wrong, because it means "this theme's health bar" rather than "traffic
+    light": `classic` takes its vitals from Genie, where health is RED AT FULL,
+    so the light ran red→orange-red→dark-red; `terminal` is monochrome, so the
+    amber band vanished. The replacements are defined once in darkBase as a
+    fixed hue mixed toward the theme's own text, so meaning is fixed while
+    contrast self-corrects. Colour-blind entries are explicit (the vitals answer
+    turns crit amber, which would collide with our mid band). The colour lives
+    in the bar and border, not the numerals — amber cannot clear text contrast
+    on white without ceasing to look amber.
+  - **An empty block clears the grid on a 400ms deferral** — meaningful (all
+    effects dropped) but deferred, because a clear and its lines can straddle a
+    flush boundary and committing the gap would blink the grid empty.
+  - **Two honesty rules:** whole minutes only, never a seconds countdown (DR
+    reports whole roisaen — `29:00` would claim precision we were never given;
+    the last minute reads `<1m`), and an unparsed effect is still shown.
+  - **The percWindow shape catalogue now mirrors LICH'S OWN parser**
+    (`xmlparser.rb`), after reading it turned up four shapes a version written
+    from one captured block got wrong: **`anlaen` is a real unit** (1 anlas = 30
+    roisaen, so Stellar Collector lost its countdown entirely), **`Fading` is
+    the opposite of untimed** (Lich reads duration 0 — lapsing now — while we
+    showed it as a quiet note), **`Indefinite`/`OM` are permanent**, and a
+    stated **percentage** is a proportion rather than a time. `SpellKind` is now
+    timed/fading/permanent/percent/unknown, and the distinction is load-bearing:
+    fading is the most urgent state, permanent the calmest, so the `untimed`
+    layer hides the quiet kinds but never fading, only permanent/unknown are
+    muted, and each kind shows the game's own word rather than a faked duration.
+    A stated percentage also beats the learned ceiling for the bar — a true
+    proportion versus "the most we happen to have seen".
+  - **Skill badges + abbreviations (Sekmeht).** `[A]`ugmentation, `[W]`arding,
+    `[F]`orm and so on, plus an option to show `ECRY` instead of *Eillie's Cry*
+    so what you read is what you type to renew it. Data is Lich's
+    `base-spells.yaml`, snapshotted by `tools/gen-spell-data.mjs` into a
+    COMMITTED `spellData.ts` (430 entries, ~29KB) — committed rather than read
+    live, because this Experience works without Lich; an unknown name gets no
+    badge, never a wrong one. Verified first: percWindow names match the YAML
+    keys verbatim (8/8 on a real capture), the three sections have zero name
+    collisions, and all twelve values have distinct first letters. Metamagic is
+    **X not M** (M is Meditation — unambiguous only by luck is the #55 trap).
+    Found in the source data: 33 `metamagic: true` entries with no `skill`, and
+    **`See the Wind` carries `Skill:` with a capital S — a typo in Lich's own
+    file** that a case-exact read drops silently. Known gap: Thief Khri aren't
+    in that file at all, so Thieves get no badges.
+  - **Badge colours are twelve `--spell-badge-*` vars, and all fifteen Spell
+    Monitor colours are exposed in the Theme Editor's HUD tab** — genuinely
+    user-editable rather than only themeable, which was the actual ask. The chip
+    is a quiet low-alpha tint on purpose: it IDENTIFIES while the traffic light
+    ALARMS, and two loud colour systems in one cell would fight.
+  - **Group by skill (Sekmeht, 2026-09-06).** `groupSpells()` puts each magic
+    skill / ability type under a labelled hairline heading — a Barbarian gets
+    exactly four blocks (Form 15 · Berserk 13 · Roar 11 · Meditation 9), casters
+    5–7, Warrior Mage 7. Three decisions: it **composes** with Soonest-first
+    (grouping preserves the caller's within-group order, so sort-then-group
+    leaves each group internally sorted) — which is why two booleans still
+    suffice and no enum control was needed; the group ORDER is **fixed**, not
+    derived from what's currently up, since a self-reordering list reshuffles
+    the grid while you're reading it; and the heading is a **hairline divider,
+    not a padded header**, because a Warrior Mage would otherwise spend seven
+    rows on chrome in a strip-shaped window. Unknown names bucket into "Other"
+    last, which makes grouping inert for a **Thief** — Khri aren't in Lich's
+    data at all. 9 harness cases.
+  - **Data fix found while measuring the group shapes:** the generator dropped
+    the guild for all 14 `battle_cries`, because that section separates Bardic
+    Screams from Barbarian Roars with **YAML COMMENTS**, which no parser can
+    read. The `type` is the reliable signal and the split is 1:1 (scream→Bard,
+    roar→Barbarian). Lesson: when a section's grouping lives only in comments,
+    derive it from a real field rather than dropping it. (The nine guild-less
+    entries in `spell_data` — Dispel, Imbue, Lay Ward… — are correct: they're
+    the universal spells every magic guild learns.)
+  - Nine ⚙ layers, the last five added at Sekmeht's ask. **Abbreviations,
+    Soonest-first and Group-by-skill are OPT-IN** (`defaultHidden`, Sekmeht 2026-09-06) — so DR's
+    own ordering is the default, which is stable as timers tick where ours
+    re-arranges under the reader; the urgency colour still marks a lapsing
+    effect, it just isn't moved. Consequence worth knowing: `spellSortRank`'s
+    fading-first priority applies only when that layer is on.
+  - **⚙ prefs were already persistent — verified rather than assumed, and now
+    harness-locked.** `ExperienceInstance.hidden` rides `scopedKey('experiences')`
+    → `state:` → YAML, `experiences` is already a Transfer category,
+    `setExperienceOption` find-or-creates an `open:false` prefs record so a
+    tab-only user still gets one, and it seeds `defaultHiddenMap(def)` so a
+    default-off layer persists explicitly. The reason it's safe is that
+    **`loadExperiences` filters with a type GUARD instead of rebuilding each
+    record** — a rebuild is the pitfall #121 shape that has destroyed a field
+    three times now, so the round trip is locked with a test.
+  - **New `check-options.mjs` guard**: the registry's option ids and the ids the
+    component queries via `shown()` are two hand-written lists of the same names
+    (pitfall #127), and `shown()` falls back to TRUE for an unknown id — so a
+    typo would silently force a default-off layer permanently ON. Asserted equal.
+  - Epilepsy-safe drops the pulse but keeps the colour (UX #9b). Bounded + scrollable
+    (pitfall #109), tabular numerals (#103), em chain anchored (#58a), `.sm-`
+    prefix verified unique (#55c). Works direct-SGE — no Lich needed.
+    No slash command by design (§34.6), recorded rather than skipped.
+  - 77 harness cases (`tmp-rules-harness` §L) over the verbatim capture, the
+    traffic light's first-sighting trap, and every shape in Lich's catalogue.
+  - **Layout pass (Sekmeht: the header "feels cramped into the top left").** Its
+    `line-height: 1` was right (UX #7) but the padding was `0.25em 0.6em` — 3px
+    /7px at the default font, where the house strip standard (`.sl-header`) is
+    `2px 12px`, so barely half the horizontal inset. Now `0.4em 0.9em`, kept em
+    so it scales with the scene font, and deliberately the SAME horizontal value
+    as `.sm-grid` so the title and the first cell share a left edge — a label
+    lining up with nothing below it was much of what read as off. The count chip
+    also moved to the far right (`margin-left: auto`) so the strip spans the
+    window instead of huddling in the corner.
+  - **The ⚙ popover was unbounded — a real clip, and it predates this feature.**
+    `.exp-inst-options` had no `max-height` while `.fl-body` /
+    `.panel-frame-body` are both `overflow: hidden`, so in a short window the
+    top options were simply CUT OFF with no scrollbar and nothing to indicate
+    they existed. Its height is the option COUNT, which varies per Experience —
+    **Moons declares 17** — against a freely-resizable, often deliberately short
+    window. Bounded to `calc(100% - 40px)` with `overflow-y: auto` and
+    `overscroll-behavior: contain` (pitfall #109); fixes Moons and the tab-hosted
+    ⚙ at the same time.
+  - **B314 — Theme Editor rows for a cascading var showed a BLACK swatch.**
+    Found auditing the 15 colour rows this feature added, and it turned out to
+    hit pre-existing rows too. darkBase deliberately stores expressions rather
+    than literals (`var(--text-dim)`, `color-mix(… var(--text-primary))`), and
+    `createCustomThemeFrom` copies the whole of darkBase into a new custom
+    theme — so those expressions reach the editor verbatim, and
+    `<input type="color">` silently falls back to black on anything that isn't
+    `#rrggbb`. So the editor was showing black for colours that actually paint
+    teal, rose and slate. `resolveDisplayHex` now asks the BROWSER what the
+    expression evaluates to (hidden probe + `getComputedStyle().color`), which
+    is the only correct answer since it depends on the live theme; literal hex
+    takes exactly the old path, and the commit path is untouched so an edit
+    still writes plain hex.
+  - **The empty state stopped lying.** With "Untimed effects" off and only
+    untimed effects up, the window insisted there were none. "Nothing is up" and
+    "everything up is filtered out" are different facts; it now says which, and
+    names the toggle that is hiding them.
+  - **Profiled (Sekmeht asked about redraw cost). One real find; the rest free.**
+    Measured by bundling the real modules: the 1 Hz clock's whole derivation
+    chain is **0.24–0.94 µs/tick** (8 → 25 effects, grouped) and the always-on
+    parse — paid whether or not the window is open — is **4.4 µs per repaint at
+    8 effects, 20.5 µs at 25**, i.e. 0.006% of a core even assuming DR repaints
+    on every prompt. Two structural properties matter more than the numbers:
+    **zero per-line cost** (the derive is an effect on `streamLines.spells`, not
+    a branch in the stream-text loop), and a background TAB is unmounted so its
+    clock doesn't run. A background CHARACTER's floating window does tick —
+    left alone deliberately, since gating on `isActive` buys nothing measurable
+    and costs a stale label on return (the §45.7 trade). Also worth recording:
+    the delta gate does NOT save parse work — a gated repaint measures slightly
+    slower, because it parses and then compares. Its value is entirely the
+    avoided re-render, which is what the design claims.
+  - **The bar animated `width` — the one genuine perf bug.** Because it drains
+    on every tick it sits in a CONTINUOUS transition the whole time the window
+    is open, and `width` invalidates layout on every animation frame: 25 bars ×
+    60fps × each open window × each character, forever. Now `transform:
+    scaleX()` with `transform-origin: left`, which is compositor-only. The fill
+    drops its own border-radius (scaling squashes it); the track's
+    `overflow: hidden` rounds the left end and a square leading edge is right
+    for a progress bar. Pitfall #126's family. The other two animations audited
+    clean: the cell's background/border transition is paint-only and fires only
+    on a real band change, and the pulse animates border-color on the 0–2 cells
+    in their last minute.
+  - **"Fading" printed twice, and the extra row inflated the cell** (Sekmeht,
+    screenshot: `Tenebrous Sense (Fading)`). The label already renders the word
+    for a `fading` reading, and the note row rendered the parenthetical — the
+    same word, plus a whole second line, which is what made those cells look
+    oversized next to their neighbours. The rule is now that **the note exists
+    to add what the LABEL does not already say**: it's compared
+    case-insensitively against the label rather than switched on `kind`, so a
+    bare `(Fading)` or a bare `(94%)` collapses to one row while a COMPOUND
+    reading survives — "0%, fading" against a "0%" label genuinely adds a word.
+    `spellRemainingLabel` and `spellNoteText` moved OUT of the component into
+    experiences.ts as pure functions to make this harnessable: neither reads
+    correctly alone, and it's their PAIRING that produced the bug, so the tests
+    assert them together (9 cases).
+  - **Bug-check finds, fixed the same day:** a liberal `\bfading\b` match would
+    have painted every `Trabe Chalice (intact, fading)` permanently red (Lich
+    anchors its duration group right after the `(`, so only a bare `(Fading)`
+    means lapsing); and `spellBand` compared percent with `=== null`, so an
+    absent field became NaN, failed every threshold and landed on the CALMEST
+    band — a reading we don't have must fail toward no colour, never toward
+    "this one is fine".
+  - **Open:** DR's repaint cadence is unmeasured (the gate is correct either
+    way); no ⟳ button, since no *verified* command forces a `percWindow`
+    repaint and one wasn't guessed.
+
+
+- **B311 (Sekmeht): moving a stream tab between windowed panels left the SOURCE
+  frame's tabs jittering indefinitely and collapsed the map's animation FPS.**
+  Cross-frame adoption removes the tab from the source frame, unmounting the
+  element that carries `onDragEnd` — the browser fires `dragend` on a detached
+  node, React never sees it, so `dragTabId` stayed set forever. The F46 FLIP
+  layoutEffect has NO dep array, PanelFrame re-renders on every game batch, and
+  its only guard is `dragTabId === null`: it therefore re-measured (forced
+  reflow) and re-transformed every tab per batch, reading positions
+  MID-TRANSITION so the next render always saw a >1px delta and re-animated —
+  self-sustaining while text flowed. The per-batch forced layout is what starved
+  the main thread and wrecked the map's FPS (pitfall #126's contention
+  signature: an unrelated subsystem degrading is the tell that the cost is
+  per-render layout, not a fault in the thing that looks broken). Fixed with a
+  state-derived reset — clear `dragTabId` when the dragged tab is no longer in
+  `tabs`, which is exact because the frame re-renders with the new list.
+  Requires the source window to keep ≥2 tabs (an emptied one closes outright).
+  **PRE-EXISTING since v0.18.2**, when cross-frame adoption shipped — NOT from
+  PR #2; `PanelFrame.tsx` is untouched by that merge. Pitfall #137 records both
+  halves: `dragend` is unreliable when the source can unmount, and a no-deps
+  effect gated on a flag is only as safe as that flag's worst clearing path.
+- **B312 (Sekmeht): panel content "quivered" and highlighted text appeared to
+  bold then revert — intermittent, across many versions, never reproducible.**
+  Seen alongside B311 but INDEPENDENT of it and long predating it. The unread
+  dot is a conditionally-rendered 6px flex child, so a stream tab going
+  unread/read changes width; `.panel-tab-list` has content-driven height and
+  `.panel-frame-body` is `flex: 1`, so crossing the overflow threshold made the
+  horizontal scrollbar appear, ADD its height to the strip, and take it out of
+  the body — reflowing every line of game text, repeatedly, as unread states
+  churned. It read as a FONT bug because a highlight's filled background makes
+  the subpixel re-raster obvious (the reporter uses no text effects at all), and
+  it was unreproducible because it needs the strip sitting right AT the
+  threshold (panel width × tab count × label length × font size).
+  **Compounded by an inert rule:** `scrollbar-width: thin` was set, which per
+  **B178** disables ALL `::-webkit-scrollbar` styling in modern Chromium — so
+  the `height: 3px` rule never applied and the real bar was Chromium's native
+  ~11px, making each toggle a large jump. Fixed with `overflow-x: scroll` (the
+  gutter is always reserved, so the height is constant) plus removing
+  `scrollbar-width`/`scrollbar-color` so the themed 3px bar returns — which is
+  what makes the permanent gutter visually free, since its track is
+  `var(--bg-sunken)`, the strip's own background. Pitfall #138. **This also
+  retires the earlier text-effect hypothesis**, which was wrong: the
+  `hl-fx-*` effects do change rasterization (six of them use
+  `background-clip: text`, and `fire` animates `filter: brightness`), but none
+  were in use.
+- **Investigation note — the "bolding" was NOT a text-effect or transform
+  artifact.** First hypothesis was compositor-layer promotion from an animated
+  highlight effect; it was wrong, because the reporter uses none. Reading the
+  effect CSS was still worth recording: six effects (`shimmer`/`rainbow`/`gold`/
+  `gradient`/`fire`/`frost`) use `-webkit-background-clip: text` +
+  `text-fill-color: transparent`, which permanently disables subpixel
+  antialiasing, and `fire` animates `filter: brightness(1 → 1.18)` — so those
+  DO alter apparent weight, just not here. The actual cause was B312's reflow.
+  Kept because the next "text looks wrong" report should check effects first,
+  then container reflow.
+
 ## v0.19.4 — Attach to a running Lich (PR #2, Kahlen)
 
 **Lichborne's first external code contribution.** Merged as a `--no-ff` merge
@@ -14,7 +299,7 @@ commit so all 12 of the author's commits and their reasoning survive in history
 AI-assisted — so the human attribution lives in the merge commit, credits.ts and
 release-notes.md).
 
-- **F104 (Kahlen): attach mode — a third connection mode** beside Lich-launch and
+- **F107 (Kahlen): attach mode — a third connection mode** beside Lich-launch and
   Direct. `AttachConnection` (new, electron-free so a plain-node harness can
   exercise it) opens a bare TCP connection to an already-running detachable Lich
   (`--headless PORT` / `--detachable-client=`). No account, no password, no Ruby
@@ -3208,3 +3493,4 @@ Only shows "Migrated" item counts. Users never see what was counted but not impo
 | 2026-05-13 | Detail panel tracks current room — `useEffect` on `currentRoom?.id` updates `selectedId` to `currentRoom.id` while the panel is open, so the panel follows the player as they move; `selectedOrphan` also cleared on move to prevent stale dual-selection state |
 | 2026-05-13 | B48/B49/B50/B51 fixes — see BUGS.md |
 | 2026-05-13 | F13 shelved (world map) — continuous multi-zone SVG stitching deferred; design spec remains in DESIGN.md §25.8 Phase 2; zone-by-zone graph view ships first; added to BUGS.md Open Feature Requests and DESIGN.md §19.12 Future Work |
+

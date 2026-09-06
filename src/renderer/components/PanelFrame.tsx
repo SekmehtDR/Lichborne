@@ -229,6 +229,23 @@ export default function PanelFrame({
   // reorder: crossing the midpoint of a sibling commits the new order via
   // onTabsChange immediately, so the strip previews the result as you drag.
   const [dragTabId, setDragTabId] = useState<string | null>(null)
+  // B311: A CROSS-FRAME DROP LEAVES A STALE DRAG — clear it here.
+  // When another frame adopts this tab, `adoptTabIntoWindow` REMOVES it from
+  // our list, so the element carrying `onDragEnd` (below) unmounts before the
+  // browser fires dragend — and a detached node never reaches React's handler.
+  // `dragTabId` would then stay set forever, which matters because the FLIP
+  // layoutEffect below has NO dep array and PanelFrame re-renders on every
+  // game batch: it kept re-measuring (a forced reflow) and re-transforming the
+  // remaining tabs every batch, reading each tab's position MID-TRANSITION so
+  // the next render always saw a >1px delta and re-animated. Self-sustaining
+  // for as long as game text flowed — tabs visibly jittering, and the per-batch
+  // reflow starving the main thread badly enough to collapse the map's
+  // animation FPS (pitfall #126's contention signature). Reported by Sekmeht
+  // after moving a conversation tab between windowed panels.
+  // A LOCAL reorder never trips this: the tab stays in `tabs` throughout.
+  useEffect(() => {
+    if (dragTabId !== null && !tabs.some(t => t.id === dragTabId)) setDragTabId(null)
+  }, [tabs, dragTabId])
   const tabListRef = useRef<HTMLDivElement>(null)
   // F46 polish: FLIP slide animation while dragging. The live reorder swaps
   // DOM order instantly, which made the landing spot hard to track — so on

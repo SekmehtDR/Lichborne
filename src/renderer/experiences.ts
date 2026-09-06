@@ -14,11 +14,13 @@ import type { ComponentType } from 'react'
 import type { RoomState, ScenePlayer, SceneCreature } from '../shared/types'
 import type { CombatRange, AssessEntity } from '../shared/combatExtract'
 import { sunPositionAt } from '../shared/elanthianSun'
+import { ROISAN_SECONDS, ANLAS_ROISAEN } from '../shared/elanthianTime'
 import type { AppSettings } from './settings'
 import type { Contact, ContactTemplate } from './contacts'
 import type { FloatRect } from './freeLayout'
 import TableauExperience from './components/experiences/TableauExperience'
 import MoonsExperience from './components/experiences/MoonsExperience'
+import SpellMonitorExperience from './components/experiences/SpellMonitorExperience'
 
 // ── Weather & Moons state (Experience #2, v0.15.0) ─────────────────────────
 // Source of truth: the community `moonwatch.lic` script (read 2026-07-07,
@@ -525,6 +527,412 @@ export interface ExperienceCombatState {
   assessAt: number
 }
 
+// ── Spell Monitor state (Experience #3, v0.19.5) ───────────────────────────
+// Source: DR's own `percWindow` stream (aliased to `spells` at the parser —
+// streamAliases.ts). It is a clear-and-rewrite STATE stream: every refresh is
+// `<clearStream id='percWindow'/>` then one line per active effect, so
+// `streamLines.spells` is already an exact mirror of the current block (the
+// clear is applied in GameWindow's batch commit) and no accumulator is needed.
+//
+// A line is `<Name> (<N> roisaen)` — DR writes the singular `roisan` at 1 — or
+// carries a non-numeric state instead, e.g. `Trabe Chalice (intact, fading)`.
+// 1 roisan = 1 real minute (ROISAN_SECONDS, elanthianTime.ts).
+//
+// PARSING IS TOLERANT BY DESIGN: an unrecognised shape becomes an UNTIMED
+// effect carrying whatever was in the parentheses, never a dropped line — we
+// must never silently hide something the game says is on you (Principle #3's
+// spirit applied to display).
+
+/** What DR told us about an effect's remaining life. The four non-timed kinds
+ *  are NOT interchangeable and must not be collapsed back into one "untimed"
+ *  bucket — `fading` is the most urgent state there is, while `permanent` is
+ *  the calmest, and lumping them together (the first implementation) rendered
+ *  a lapsing spell as quiet background information. */
+export type SpellKind = 'timed' | 'fading' | 'permanent' | 'percent' | 'unknown'
+
+export interface SpellEffect {
+  /** Effect name, exactly as DR wrote it (minus the trailing parenthetical). */
+  name: string
+  /** What kind of reading DR gave — see SpellKind. */
+  kind: SpellKind
+  /** Absolute expiry (epoch ms); null unless `kind === 'timed'`. */
+  expiresAt: number | null
+  /** Whole roisaen DR last reported (anlaen already converted), else null. */
+  roisaen: number | null
+  /** A percentage the game stated outright (`Osrel Meraud (94%)`). Unlike `max`
+   *  this is a TRUE proportion, so the bar and the band prefer it. */
+  percent: number | null
+  /** The parenthetical when it carried more than a timer, else null. */
+  note: string | null
+  /** Highest roisaen ever seen for this effect this session — the denominator
+   *  for the duration bar, which DR never tells us (the `rtMaxRef` idea). */
+  max: number | null
+}
+
+export interface SpellState {
+  effects: SpellEffect[]
+  /** When the block this state came from was received (the countdown anchor). */
+  reportedAt: number
+}
+
+/** Parse ONE percWindow line into a raw reading, or null for a blank line.
+ *  Never returns null for non-blank input — an unrecognised shape still yields
+ *  a named effect (see the tolerance note above). */
+export interface SpellReading {
+  name: string
+  kind: SpellKind
+  roisaen: number | null
+  percent: number | null
+  note: string | null
+}
+
+/**
+ * Parse ONE percWindow line, or null for a blank one. Never returns null for
+ * non-blank input — an unrecognised shape still yields a named effect.
+ *
+ * The shape catalogue is taken from LICH'S OWN PARSER
+ * (`lib/common/xmlparser.rb`, the `@dr_active_spell_tracking` branch), whose
+ * comments enumerate the real lines verbatim. Mirroring a verified parser
+ * rather than inventing one is the Knowledge.md convention, and it is how the
+ * four gaps below were found — every one of them was silently mishandled by a
+ * first version written from a single captured block:
+ *
+ *   Landslide (4 roisaen)            timed, plural
+ *   Khri Sagacity  (1 roisan)        timed, SINGULAR — DR uses both
+ *   Stellar Collector  (0%, 4 anlaen)  ANLAEN: 1 anlas = 30 roisaen
+ *   Cure Disease  (Fading)           about to lapse — Lich reads duration 0
+ *   Hydra Hex  (Indefinite)          effectively permanent
+ *   Persistence of Mana  (OM)        ditto ("Osrel Meraud")
+ *   Osrel Meraud  (94%)              a stated percentage, not a time
+ *   <barbarian ability>  (…)         "inexact duration verbiage" catch-all
+ *
+ * Note the DOUBLE SPACE before several parentheticals — `\s*` absorbs it.
+ */
+export function parseSpellLine(text: string): SpellReading | null {
+  const t = text.trim()
+  if (!t) return null
+  // Trailing parenthetical, if any. Anchored at the END so a name containing
+  // parentheses keeps them (only the last group is the status) — Lich takes
+  // everything up to the FIRST '(' instead, which would truncate such a name.
+  const m = t.match(/^(.*?)\s*\(([^()]*)\)$/)
+  if (!m) return { name: t, kind: 'unknown', roisaen: null, percent: null, note: null }
+  const name = (m[1].trim() || t)
+  const inner = m[2].trim()
+
+  // A percentage may stand alone (`94%`) or lead a compound reading
+  // (`0%, 4 anlaen`), so capture it first and let a duration outrank it below:
+  // the percentage is a CHARGE level, the duration is when the thing ends.
+  const pct = inner.match(/(\d+)\s*%/)
+  const percent = pct ? parseInt(pct[1], 10) : null
+
+  // Duration, in either unit DR uses. Singular AND plural roisan/roisaen — a
+  // plural-only pattern silently drops every effect in its final minute — and
+  // ANLAEN, which a roisaen-only pattern drops entirely (Stellar Collector).
+  const dur = inner.match(/(\d+)\s*(roisae?n|anlaen|anlas)\b/i)
+  if (dur) {
+    const n = parseInt(dur[1], 10)
+    const roisaen = /^anla/i.test(dur[2]) ? n * ANLAS_ROISAEN : n
+    return { name, kind: 'timed', roisaen, percent, note: percent !== null ? inner : null }
+  }
+
+  // "Fading" ALONE is the opposite of untimed: Lich reads it as duration 0, i.e.
+  // lapsing right now. Treating it as a quiet note (the first implementation)
+  // showed the most urgent thing on screen as calm background information.
+  //
+  // The anchors are load-bearing and mirror Lich exactly. Its duration group sits
+  // immediately after the '(' — `\((?<duration>\d+|Indefinite|OM|Fading)` — so
+  // `(Fading)` matches but `(intact, fading)` does NOT; that one falls to Lich's
+  // catch-all and reads as long-lived. A liberal `\bfading\b` would have painted
+  // every Trabe Chalice permanently red, which is exactly the noise the traffic
+  // light exists to avoid. Match the word, not the substring.
+  if (/^fading$/i.test(inner)) return { name, kind: 'fading', roisaen: null, percent, note: inner }
+  // Indefinite / OM (Osrel Meraud) — Lich reads both as effectively permanent.
+  if (/^(indefinite|om)$/i.test(inner)) return { name, kind: 'permanent', roisaen: null, percent: null, note: inner }
+  if (percent !== null) return { name, kind: 'percent', roisaen: null, percent, note: inner }
+  // Anything else DR chose to say (a Barbarian's "inexact duration verbiage"):
+  // keep BOTH halves — the effect is real and the note is what the game said.
+  return { name, kind: 'unknown', roisaen: null, percent: null, note: inner || null }
+}
+
+/** One line's worth of what `deriveSpellState` needs — structurally satisfied
+ *  by `TextLine` without importing it (keeps this module free of the renderer
+ *  line model, so the harness can drive it with plain objects). */
+export interface SpellSourceLine {
+  segments: { text: string }[]
+  timestamp: number
+}
+
+/** Whole real minutes one roisan is worth, in ms (1 roisan = 1 real minute —
+ *  elanthianTime.ts is the platform-wide reference; never hardcode 60_000). */
+const ROISAN_MS = ROISAN_SECONDS * 1000
+
+/**
+ * Turn one percWindow block into `SpellState`, or return null when the reading
+ * is MATERIALLY THE SAME as `prev` (see the delta gate below).
+ *
+ * PURE — it neither reads nor writes a ref (pitfall #70: the impure memo that
+ * mutated refs mid-render double-counted under StrictMode). The caller owns the
+ * `maxByName` record and commits whatever comes back, in ONE effect.
+ *
+ * Expiries anchor on each LINE'S OWN `timestamp` — its RECEIPT time — rather than
+ * one `Date.now()` for the whole block. Note what that does NOT buy: `mkLine` in
+ * GameWindow stamps `Date.now()` and ignores the `timestamp` the StreamTextEvent
+ * carries, so a pitfall-#60 REPLAY re-dates the block to the replay moment and
+ * every remaining time is inflated by however stale the replayed block was. That
+ * error is bounded and self-correcting — the gate below compares reported against
+ * predicted, an inflated anchor makes predicted exceed reported, and the state
+ * re-anchors as soon as the gap passes a roisan (i.e. on DR's next repaint). Making
+ * it truly replay-correct means teaching `mkLine` to use `evt.timestamp`, which
+ * changes every stream's timestamp display and is deliberately out of scope here.
+ *
+ * THE DELTA GATE (returning null) is what keeps this cheap. DR repaints the
+ * whole block on its own cadence, and a repaint that merely confirms 29 → 28
+ * tells us nothing our own clock doesn't already know. Committing a new object
+ * for it would mint a fresh prop identity on the shared Experience props bag —
+ * re-rendering every mounted Experience (pitfall #82c) — and re-anchor every
+ * countdown, which reads as jitter. So we commit only on a real change: the
+ * effect set changed, a note changed, a max grew, or a timer diverged from what
+ * we predicted by more than a roisan (a recast, or genuine drift).
+ */
+export function deriveSpellState(
+  lines: readonly SpellSourceLine[],
+  maxByName: Readonly<Record<string, number>>,
+  prev: SpellState | null,
+): { state: SpellState; maxByName: Record<string, number> } | null {
+  const reportedAt = lines.length > 0 ? lines[lines.length - 1].timestamp : Date.now()
+  const nextMax: Record<string, number> = { ...maxByName }
+  let maxGrew = false
+  const effects: SpellEffect[] = []
+  for (const line of lines) {
+    const parsed = parseSpellLine(line.segments.map(s => s.text).join(''))
+    if (!parsed) continue
+    let max: number | null = null
+    if (parsed.roisaen !== null) {
+      const seen = nextMax[parsed.name]
+      // A recast RAISES the ceiling; it never falls while the effect is up, so
+      // the bar reads as genuinely draining and refilling rather than rescaling
+      // under you. (DR never tells us a spell's full duration — this is the
+      // only way to have a denominator at all.)
+      if (seen === undefined || parsed.roisaen > seen) { nextMax[parsed.name] = parsed.roisaen; maxGrew = true }
+      max = nextMax[parsed.name]
+    }
+    effects.push({
+      name: parsed.name,
+      kind: parsed.kind,
+      roisaen: parsed.roisaen,
+      percent: parsed.percent,
+      note: parsed.note,
+      expiresAt: parsed.roisaen === null ? null : line.timestamp + parsed.roisaen * ROISAN_MS,
+      max,
+    })
+  }
+  const state: SpellState = { effects, reportedAt }
+  if (!prev) return { state, maxByName: nextMax }
+  if (maxGrew || prev.effects.length !== effects.length) return { state, maxByName: nextMax }
+  // Compare BY NAME, not by index. An index-paired comparison silently assumes
+  // DR emits the block in a stable order — an assumption we have never verified,
+  // and one that fails the moment the game sorts by remaining time (the entries
+  // would cross as they tick). Under that assumption the gate degrades to
+  // "commit on every repaint", i.e. exactly the churn it exists to prevent, with
+  // nothing to show that it stopped working. Keying by name removes the
+  // assumption outright, and costs nothing: the consumer sorts for display, so
+  // the order DR chose is not information we carry.
+  const prevByName = new Map(prev.effects.map(e => [e.name, e]))
+  for (const a of effects) {
+    const b = prevByName.get(a.name)
+    if (!b || a.note !== b.note) return { state, maxByName: nextMax }
+    // A KIND change is always meaningful — 'timed' → 'fading' is a spell about
+    // to lapse, and the gate must never swallow that.
+    if (a.kind !== b.kind || a.percent !== b.percent) return { state, maxByName: nextMax }
+    if ((a.expiresAt === null) !== (b.expiresAt === null)) return { state, maxByName: nextMax }
+    if (a.expiresAt !== null && b.expiresAt !== null) {
+      // What the PREVIOUS anchor says should be left, at the moment DR reported.
+      const predicted = (b.expiresAt - reportedAt) / ROISAN_MS
+      if (Math.abs(predicted - (a.roisaen ?? 0)) > 1) return { state, maxByName: nextMax }
+    }
+  }
+  return null   // same reading — keep prev, so its identity (and countdowns) hold
+}
+
+/** How far through its life an effect is, as a traffic light. Named for the
+ *  `--vital-health-{ok,mid,crit}-*` ramp it renders in — a draining spell is the
+ *  same idea as a draining health bar, and reusing that ramp means the Spell
+ *  Monitor inherits both the per-theme values and the COLOUR-BLIND rewrite
+ *  (`applySettingsToDOM` turns `ok` teal for deuteranopia) for free. */
+export type SpellBand = 'none' | 'ok' | 'mid' | 'crit'
+
+// Proportional thresholds — "green when full, yellow midway, red near the end".
+const BAND_MID_FRAC  = 0.5
+const BAND_CRIT_FRAC = 0.2
+// Absolute thresholds, in roisaen/minutes remaining. These are the SAFETY NET
+// below; they are not the primary signal.
+const BAND_MID_MIN  = 5
+const BAND_CRIT_MIN = 1
+
+const BAND_RANK: Record<SpellBand, number> = { none: 0, ok: 1, mid: 2, crit: 3 }
+
+/**
+ * The band an effect should render in — the MORE URGENT of a proportional and
+ * an absolute reading.
+ *
+ * WHY BOTH, and why this is not over-engineering: the proportion's denominator
+ * is LEARNED (`max` = the highest reading we have ever seen), because DR never
+ * states a spell's full duration. On the first block after you connect, every
+ * effect has `max === its current reading` — so a purely proportional band
+ * paints the WHOLE GRID GREEN, including a buff with two minutes left. That is
+ * the normal startup state, not an edge case, and it is exactly the moment the
+ * display most needs to be right.
+ *
+ * So the absolute reading acts as a floor that cannot be fooled by a denominator
+ * we had to guess, while the proportion supplies the gradient across a spell's
+ * life. Taking the worse of the two is always defensible: an effect is only ever
+ * shown as calmer than it is if BOTH readings agree it is calm.
+ */
+export function spellBand(effect: SpellEffect, now: number): SpellBand {
+  // DR said this one is lapsing right now — the most urgent thing on screen,
+  // and no arithmetic can improve on the game saying so outright.
+  if (effect.kind === 'fading') return 'crit'
+  // Permanent effects never run down, so a traffic light would be noise.
+  if (effect.kind === 'permanent') return 'none'
+  // A STATED percentage beats the learned ceiling: it is a true proportion,
+  // where `max` is only "the most we have happened to see".
+  if (effect.expiresAt === null) {
+    // `!= null` and a finiteness guard, not `=== null`: an effect arriving
+    // without the field (an older shape, a hand-built object) made `undefined`
+    // slip past a strict check, and NaN then failed every threshold and landed
+    // on 'ok' — the CALMEST band. A missing reading must fail toward "no
+    // colour", never toward "this one is fine".
+    if (effect.percent == null || !Number.isFinite(effect.percent)) return 'none'
+    const f = effect.percent / 100
+    return f <= BAND_CRIT_FRAC ? 'crit' : f <= BAND_MID_FRAC ? 'mid' : 'ok'
+  }
+  const leftMin = (effect.expiresAt - now) / (ROISAN_SECONDS * 1000)
+  const abs: SpellBand = leftMin <= BAND_CRIT_MIN ? 'crit' : leftMin <= BAND_MID_MIN ? 'mid' : 'ok'
+  // No learned ceiling yet ⇒ no meaningful proportion; lean entirely on `abs`.
+  const frac = effect.max ? leftMin / effect.max : 1
+  const prop: SpellBand = frac <= BAND_CRIT_FRAC ? 'crit' : frac <= BAND_MID_FRAC ? 'mid' : 'ok'
+  return BAND_RANK[abs] >= BAND_RANK[prop] ? abs : prop
+}
+
+/** Display order: what is lapsing first, then what is running out soonest, then
+ *  the readings that carry no countdown, with permanents last — they are
+ *  background, not something you are waiting on. */
+export function spellSortRank(e: SpellEffect): number {
+  switch (e.kind) {
+    case 'fading':    return 0
+    case 'timed':     return 1
+    case 'percent':   return 2
+    case 'unknown':   return 3
+    case 'permanent': return 4
+  }
+}
+
+// Group order for the Spell Monitor's "Group by skill" layer. FIXED, not derived
+// from what is currently up: a group list that re-orders itself as effects come
+// and go would reshuffle the grid while you are reading it — the same churn that
+// made "Soonest first" opt-in. Magic skills lead in the order DR itself tends to
+// list them, then the supplementary caster categories, then the Barbarian/Bard
+// ability types. No character sees both halves in bulk (a Bard is the only
+// overlap, with Screams), so one flat order serves every guild.
+const SPELL_GROUP_ORDER = [
+  'Augmentation', 'Utility', 'Warding', 'Debilitation', 'Targeted Magic',
+  'Cantrip', 'Metamagic',
+  'Form', 'Berserk', 'Meditation', 'Roar', 'Scream',
+]
+/** Bucket for anything absent from the badge table — Thief Khri above all, who
+ *  have no entry at all, so grouping is inert for them and everything lands
+ *  here. It sorts last, and it is a real bucket rather than a dropped effect. */
+export const SPELL_GROUP_OTHER = 'Other'
+
+export interface SpellGroup {
+  label: string
+  /** Badge letter for the group, '' when unknown. */
+  badge: string
+  effects: SpellEffect[]
+}
+
+/**
+ * Partition effects into display groups, in the fixed order above.
+ *
+ * Takes the lookup as a PARAMETER rather than importing the generated table, so
+ * this stays pure and harnessable and `experiences.ts` gains no dependency on
+ * `spellData.ts`. WITHIN a group the caller's order is preserved untouched —
+ * which is what lets this compose with "Soonest first" instead of fighting it:
+ * sort first, then group, and each group is internally sorted too.
+ */
+export function groupSpells(
+  effects: readonly SpellEffect[],
+  ref: (name: string) => { b: string; l: string } | undefined,
+): SpellGroup[] {
+  const map = new Map<string, SpellGroup>()
+  for (const e of effects) {
+    const r = ref(e.name)
+    const label = r?.l ?? SPELL_GROUP_OTHER
+    let g = map.get(label)
+    if (!g) { g = { label, badge: r?.b ?? '', effects: [] }; map.set(label, g) }
+    g.effects.push(e)
+  }
+  return [...map.values()].sort((a, b) => {
+    const ia = SPELL_GROUP_ORDER.indexOf(a.label)
+    const ib = SPELL_GROUP_ORDER.indexOf(b.label)
+    // Anything not in the fixed order (Other, or a category Lich adds later that
+    // we have not placed yet) sorts last, alphabetically among its peers — so a
+    // new label appears predictably at the end rather than silently first.
+    if (ia === -1 && ib === -1) return a.label.localeCompare(b.label)
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
+}
+
+/**
+ * What a cell prints for "time remaining". WHOLE MINUTES, never seconds: DR
+ * reports whole roisaen, so `29:00` would claim a precision the game never gave
+ * us. The non-timed kinds each show the game's OWN word rather than a faked
+ * duration.
+ *
+ * Pure and exported (rather than living in the component) so it can be locked
+ * alongside `spellNoteText` — the pair is what produced a real display bug, and
+ * neither reads correctly in isolation.
+ */
+export function spellRemainingLabel(e: SpellEffect, now: number): string {
+  if (e.kind === 'fading')    return 'fading'
+  if (e.kind === 'permanent') return '∞'
+  if (e.kind === 'percent')   return String(e.percent) + '%'
+  if (e.expiresAt === null)   return ''
+  const left = (e.expiresAt - now) / (ROISAN_SECONDS * 1000)
+  if (left <= 1) return '<1m'
+  return Math.floor(left) + 'm'
+}
+
+/**
+ * The note a cell should print UNDER the name, or '' for none.
+ *
+ * The note exists to add what the LABEL does not already say. For a `fading` or
+ * bare-percentage reading the parenthetical IS the label — "Fading" under
+ * "fading", "94%" under "94%" — and rendering both repeated the word AND cost
+ * the cell an entire extra row, which is what made those cells look oversized
+ * (Sekmeht's `Tenebrous Sense (Fading)` screenshot).
+ *
+ * The test is a case-insensitive comparison against the label, NOT a switch on
+ * `kind`, because a COMPOUND reading has to survive: "0%, fading" against a
+ * "0%" label genuinely adds the word fading. Permanents are excluded outright —
+ * their ∞ says it, and the exact word is in the tooltip.
+ */
+export function spellNoteText(e: SpellEffect, label: string): string {
+  const note = e.note?.trim() ?? ''
+  if (!note || e.kind === 'permanent') return ''
+  return note.toLowerCase() === label.trim().toLowerCase() ? '' : note
+}
+
+/** Effects the caller should still SHOW: a timed effect whose anchor has run out
+ *  is dropped, so the display self-corrects between DR's repaints instead of
+ *  showing a spell at 0 until the game gets around to mentioning it. */
+export function liveSpellEffects(state: SpellState | undefined, now: number): SpellEffect[] {
+  if (!state) return []
+  return state.effects.filter(e => e.expiresAt === null || e.expiresAt > now)
+}
+
 export interface ExperienceProps {
   character: string
   roomState: RoomState
@@ -564,6 +972,13 @@ export interface ExperienceProps {
   weather?: WeatherInfo
   // v0.17.0 (Moons Tier 2): last-observed Elanthian calendar (from TIME).
   calendar?: CalendarInfo
+  // v0.19.5 (Spell Monitor, Experience #3): the parsed percWindow readout —
+  // every effect currently on you with an absolute expiry. Derived in
+  // GameWindow from `streamLines.spells` and only re-committed on a real
+  // change (see deriveSpellState's delta gate), so its identity is stable
+  // across DR's redundant repaints. Absent until the first block arrives,
+  // which is what drives the component's empty state.
+  spells?: SpellState
   // Refresh the sky info: SILENTLY send TIME + WEATHER (no echo, replies consumed)
   // and arm the indoor-refusal window. One click updates both readouts.
   onSyncSky?: () => void
@@ -681,6 +1096,36 @@ export const EXPERIENCES: ExperienceDef[] = [
       { id: 'calendar',   label: 'Calendar',           desc: 'The Elanthian date, month, year, season and time of day (from the TIME command). Click ⟳ to refresh — it and the weather are checked silently.' },
     ],
     textEquivalent: 'The Moons stream panel (moonwatch\'s own window) and `perceive moons`; sunrise/sunset announce themselves in the main window; weather is the WEATHER command / any sky-glance.',
+  },
+  {
+    // Experience #3 (v0.19.5). The id is deliberately NOT 'spells': tab ids are
+    // namespaced `exp:<id>` so there'd be no technical collision with the
+    // `spells` PANEL, but Moons already taught us the human cost of a shared
+    // name (the [e] badge exists because the Moons experience and moonwatch's
+    // Moons STREAM read identically in a tab strip). A distinct id avoids
+    // repeating that.
+    id: 'spellmonitor',
+    label: 'Spell Monitor',
+    kind: 'instrument',
+    desc: 'Everything currently on you as a grid of live countdowns — each running green while full, yellow past halfway and red as it nears its end.',
+    component: SpellMonitorExperience,
+    // Wide and short: it's a strip of cells, not a scene.
+    defaultRect: { x: 0.25, y: 0.06, w: 0.5, h: 0.24 },
+    chrome: 'standard',
+    badge: 'Beta',
+    // One option per visual LAYER, each accurate about exactly what it hides.
+    options: [
+      { id: 'bars',    label: 'Duration bars',   desc: 'A depleting bar under each effect, drawn against the longest duration seen for it this session (the game never states a spell’s full length, so the bar learns it from a recast).' },
+      { id: 'urgency', label: 'Traffic-light colours', desc: 'Each effect runs green while it is full, yellow past the halfway mark, and red as it nears its end — in the same colours as your health bar, so they follow your theme and your colour-blind setting. Off = every cell uses one neutral colour.' },
+      { id: 'untimed', label: 'Untimed effects', desc: 'Effects the game reports without a countdown, such as a Trabe Chalice reading “intact, fading”. Shown last, after everything with a timer.' },
+      { id: 'pulse',   label: 'Expiry pulse',    desc: 'A cell that has gone red pulses to catch your eye. (The epilepsy-safe accessibility setting also disables this; the red colour stays either way.)' },
+      { id: 'badges',  label: 'Skill badges',    desc: 'A letter chip on each effect for its magic skill or ability type — [A]ugmentation, [W]arding, [F]orm and so on — each in its own colour, so you can pick out one kind at a glance. Hover a chip for the full name. (Colours are editable in the Theme Editor under HUD.)' },
+      { id: 'abbrev',  label: 'Abbreviations',   desc: 'Show the game\'s short spell name instead of the full one — ECRY rather than Eillie\'s Cry — so what you read is what you type to renew it. Off by default; effects with no known abbreviation keep their full name either way.', defaultHidden: true },
+      { id: 'sortByTime', label: 'Soonest first', desc: 'Re-order the grid by how much time is left, so whatever is about to run out sits first (and anything the game marks as fading leads). Off by default — the grid keeps the order the game itself lists them in, which stays put as timers tick.', defaultHidden: true },
+      { id: 'groupBySkill', label: 'Group by skill', desc: 'Gather effects under a heading for their magic skill or ability type — Wards together, Augmentations together; for a Barbarian, Forms, Berserks, Meditations and Roars each in their own block. Off by default. Combines with "Soonest first", which then orders within each group.', defaultHidden: true },
+      { id: 'header',  label: 'Header bar',      desc: 'The "Active Spells" strip and its count across the top. Off reclaims a row — worth it when hosting this as a narrow panel tab.' },
+    ],
+    textEquivalent: 'The Active Spells panel — the game’s own percWindow readout, listing each effect and the roisaen remaining on it.',
   },
 ]
 
