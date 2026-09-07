@@ -76,7 +76,7 @@ import WindowLayer from './WindowLayer'
 import ExperienceLayer from './ExperienceLayer'
 import ExperienceShelf from './ExperienceShelf'
 import { SORT_MODES, type SortMode } from '../expParse'
-import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, deriveSpellState, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo, type SpellState } from '../experiences'
+import { EXPERIENCES, experienceById, defaultHiddenMap, loadExperiences, saveExperiences, deriveSpellState, parseMoonLine, mergeMoonReport, parseTimeLine, SUN_RISE_RE, SUN_SET_RE, WEATHER_GLANCE_RE, type ExperienceInstance, type SceneCast, type SceneSpeechItem, type SceneMoveItem, type MoonsState, type WeatherInfo, type CalendarInfo, type SpellState, type SpellPulse, emptySpellPulse, recordSpellPulse, SPELL_ENDED_TTL_MS } from '../experiences'
 import { parseCombatPosition, parseCombatBalance, parseCombatRange, parseAssessLine, type CombatRange, type AssessEntity } from '../../shared/combatExtract'
 import { guildToFocusOption } from '../focusTemplates'
 import { showToast } from '../toasts'
@@ -666,6 +666,20 @@ export default function GameWindow({
       // The persistent weather/calendar STATE is intentionally kept (same char).
       silentSyncRef.current = { time: false, weather: false, at: 0 }
       awaitingWeatherRef.current = false
+      // Drop the Spell Monitor's delta baseline for the same reason. The
+      // "ended" signal is a DIFF against the previous block, so carrying the
+      // old session's list across a reconnect makes the first new block read
+      // every lapsed effect as having ended THIS INSTANT — a burst of greyed
+      // "recast me" cells for buffs that ran out while you were disconnected,
+      // which is precisely the false certainty the two-stage model exists to
+      // avoid. Nulling it makes that first block a fresh baseline instead.
+      // `spellMaxRef` is deliberately KEPT: the learned bar ceilings are facts
+      // about the spell, not about the connection.
+      spellPrevRef.current = null
+      // The cadence is a property of the CONNECTION, so a dead session's gaps
+      // must not be averaged into the new one's — and the gap spanning the
+      // outage would be nonsense as a sample.
+      spellPulseRef.current = emptySpellPulse()
       // Claim the new session's held login text. Main holds live delivery on
       // every connect until a window asks for it (see the LOGIN handler), and
       // the usual claim is the MOUNT-time request below — but a reconnect swaps
@@ -1244,8 +1258,34 @@ export default function GameWindow({
   const [spellsState, setSpellsState] = useState<SpellState | undefined>(undefined)
   const spellMaxRef = useRef<Record<string, number>>({})
   const spellPrevRef = useRef<SpellState | null>(null)   // delta-gate baseline
+  // FEED LIVENESS — when DR last repainted the block, and the recent cadence.
+  // A REF, not state, and that is load-bearing: this changes on EVERY repaint,
+  // so as a prop value it would break the memo on every mounted Experience
+  // (they all receive the same props — pitfall #82c) and undo exactly what the
+  // delta gate buys. A ref object's identity never changes, so the Spell
+  // Monitor can read it while Moons and the Tableau pay nothing. The cost of
+  // that choice is that a write triggers no render — the reader supplies its
+  // own clock.
+  const spellPulseRef = useRef<SpellPulse>(emptySpellPulse())
   const spellLines = streamLines.spells
   useEffect(() => {
+    // FEED LIVENESS is recorded for EVERY arrival — before the delta gate, and
+    // before the empty-block branch below returns early. The gate answers "did
+    // the spells change?"; this answers "is the feed alive?", and a repaint
+    // that changes nothing (or that lists nothing) still proves the second.
+    //
+    // Getting this wrong is what the first version did: recording only inside
+    // the non-empty branch froze the strip in precisely the case it exists for
+    // — every spell drops, DR keeps repainting an empty list, and the readout
+    // sat at "45s ago" while the feed was perfectly alive (Sekmeht).
+    //
+    // `undefined` means the stream has never been touched, so nothing has
+    // arrived; `[]` means DR sent a clear, which HAS. The clear-then-lines pair
+    // that one repaint can split into is handled in recordSpellPulse, by
+    // discarding the sub-threshold gap rather than by ignoring the arrival.
+    if (spellLines !== undefined) {
+      spellPulseRef.current = recordSpellPulse(spellPulseRef.current, Date.now())
+    }
     if (spellLines && spellLines.length > 0) {
       const next = deriveSpellState(spellLines, spellMaxRef.current, spellPrevRef.current)
       if (!next) return                       // same reading — keep prev's identity
@@ -1264,9 +1304,20 @@ export default function GameWindow({
     // instead of a guard, since here the empty reading is genuinely meaningful.
     // The max ceilings are KEPT: a recast should still draw against what we
     // learned about that spell.
+    // Nothing was listed before, so nothing has departed and there is no state
+    // to change. (An already-empty block whose `ended` graveyard is non-empty is
+    // also nothing to do: those entries age out on their own.)
     if (spellPrevRef.current === null || spellPrevRef.current.effects.length === 0) return
     const t = setTimeout(() => {
-      const empty: SpellState = { effects: [], reportedAt: Date.now() }
+      // Everything DR was listing has departed, so it ALL counts as ended —
+      // this is the same authoritative signal `deriveSpellState` uses, just
+      // arriving as an empty block rather than a shorter one.
+      const at = Date.now()
+      const gone = (spellPrevRef.current?.effects ?? [])
+        .map(e => ({ ...e, kind: 'ended' as const, expiresAt: null, endedAt: at }))
+      const prior = (spellPrevRef.current?.ended ?? [])
+        .filter(e => at - (e.endedAt ?? 0) < SPELL_ENDED_TTL_MS && !gone.some(g => g.name === e.name))
+      const empty: SpellState = { effects: [], ended: [...gone, ...prior], reportedAt: at }
       spellPrevRef.current = empty
       setSpellsState(empty)
     }, 400)
@@ -5399,6 +5450,7 @@ export default function GameWindow({
         calendar={calendar ?? undefined}
         onSyncSky={syncSky}
         spells={spellsState}
+        spellsPulse={spellPulseRef}
       />
     )
   }

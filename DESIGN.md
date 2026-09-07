@@ -7154,11 +7154,21 @@ gates** (procedural fallbacks always).
          per-season foliage palette (`SEASON_CFG`) + winter snow-caps & **iced lake/stream**, spring
          **blossoms**, summer lushness (+ fireflies), autumn recolour + **falling leaves** (`LEAVES` +
          `.moons-leaf` keyframe, gated on `anim`/epilepsy-safe).
+     - **KATAMBA HAS NO GLOW as of v0.19.6 (Sekmeht) — do not reinstate it without a fresh ask.**
+       It carried the miasmatic haze described below for two versions; removed outright because the
+       moon is black as soot and sheds nothing, so the truest rendering is nothing at all, and its
+       soot disc + violet-grey rim already identify it. **`MoonStyle.glow` is now OPTIONAL, and its
+       ABSENCE is the switch** — both the glow-gradient defs and the disc layer key off the field
+       rather than the name, so they cannot disagree about which moons glow (both used to
+       name-check `'katamba'` separately). Its `glow`/`glowStrength`/`glowR` were deleted rather
+       than left as inert data. The paragraph below is kept for its still-live lesson about black
+       glows, and for Yavash/Xibar.
      - **Moon-body colour + glow corrections (v0.17.0, Sekmeht, from the in-game illustrations).** Katamba =
-       soot-black disc + **grey** rim + an **ominous miasmatic dark-violet glow** (`#2a123f`) that HOLDS
-       through day+dusk and fades only into true night (`clamp01((sunElev+0.35)/0.3)`). **A pure-black glow
+       soot-black disc + **grey** rim + (UNTIL v0.19.6) an **ominous miasmatic dark-violet glow** (`#2a123f`)
+       that HELD
+       through day+dusk and faded only into true night (`clamp01((sunElev+0.35)/0.3)`). **A pure-black glow
        was tried and is INVISIBLE on a dark sky** — black only darkens, so a "shadow" glow that must read at
-       night has to be a coloured haze. Yavash = ruby/crimson (glow `#e01430`); Xibar = vivid ice-blue disc +
+       night has to be a coloured haze. (That is why the haze was violet; it is now simply gone.) Yavash = ruby/crimson (glow `#e01430`); Xibar = vivid ice-blue disc +
        a darker **blue** rim (`#88bce6`) + a **silvery-white** glow (`#dbe9f5` — no atmosphere → ice-field
        shine). `MoonStyle` gained `glowStrength` (>1 = more intense) + `glowR` (halo radius × disc r);
        overlapping bodies paint in **`MOON_DEPTH` z-order** (furthest→closest: Sun, Yavash, Katamba, Xibar).
@@ -7501,6 +7511,179 @@ across a full day.
      progress bar anyway. The other two animations were audited and are fine: the cell's
      background/border transition is paint-only and fires only when a band actually changes, and
      the expiry pulse animates `border-color` on the 0–2 cells in their final minute.
+   - **ENDED EFFECTS ARE KEPT, GREYED (v0.19.6, Sekmeht) — the ⚙ `expired` layer, ON by default.**
+     A spent effect stays on screen labelled "ended" instead of vanishing. The ask was precise: the
+     point is not to mark THAT something ended, it is to show **what** ended so it can be recast.
+     **THE SIGNAL IS ABSENCE FROM THE NEXT percWindow BLOCK — not our own countdown** (Sekmeht's
+     correction, and it inverted the first implementation). Our anchor FLOORS DR's whole roisaen, so
+     the clock reaches zero up to a minute EARLY; treating that as "ended" both lied and flickered,
+     since the next repaint re-anchors a spell that is still up. Worse, the first build DELETED the
+     cell at the exact moment the game finally supplied the truth. `deriveSpellState` now diffs the
+     new block against the previous one: **anything the previous block listed that this one does not
+     has ended, and the game just said so.** That record lives in `SpellState.ended` (a `kind:
+     'ended'` copy carrying `endedAt`), carries forward across later blocks, is cleared by a RECAST
+     (the name reappears, so it must not sit in both lists), and ages out after `SPELL_ENDED_TTL_MS`
+     — **one roisan** (Sekmeht), the game's own unit and the right scale for "you just lost this,
+     recast it"; derived from `ROISAN_SECONDS` rather than written as a bare `60_000`, so it stays
+     tied to the unit it means — bounding the list with no timer anywhere. Note the ageing-out is
+     itself a state change and correctly commits, so the greyed cell clears whether or not a further
+     block arrives (the render pass filters on the same constant). A departure is **always** a
+     meaningful change, so
+     the delta gate can never swallow it.
+     **The converse matters as much:** a timed effect whose anchor has run past is NO LONGER
+     dropped. The game listing it is the evidence it is live; only the game dropping it is evidence
+     it is not, and neither is ours to invent.
+     Three couplings keep the display coherent: `spellBand` returns **`none`** for `ended` (a red
+     cell would fight the grey — the two must never both fire), `spellSortRank` returns **5**, below
+     even the permanents (a reminder is not something counting down), and the CSS is deliberately
+     distinct from `--untimed`, which is quiet-but-LIVE: a spent cell is **desaturated as well as
+     dimmed** so its skill badge greys too, plus a dashed border — UX #9's "one artwork in two
+     treatments", the same cell drained of colour rather than a second design.
+   - **ENDING IS TWO STAGES AND BOTH ARE SHOWN (v0.19.6, Sekmeht):** *"if the timer expires, it's
+     important to see it's expired, then have the game show that it's ended by not showing it
+     anymore in percWindow — that shows it's actually not in effect anymore."* Stage one previously
+     had no appearance of its own: a countdown that had run out rendered "<1m", indistinguishable
+     from one with fifty seconds left, so the one moment you were actually watching for was the one
+     moment the window would not name.
+
+     | | STAGE ONE — "expired" | STAGE TWO — "ended" |
+     |---|---|---|
+     | **What it means** | the time the game gave us has elapsed | the game has stopped listing it |
+     | **Source** | our countdown vs `expiresAt` | absence from the next `percWindow` block |
+     | **Authoritative?** | **no** — reversible | **yes** — settled |
+     | **Predicate** | `spellExpired(e, now)` (timed only) | `e.kind === 'ended'` |
+     | **Look** | fully lit, red, inset ring, heavier label | greyed, desaturated, dashed border |
+     | **⚙ layer** | none — nothing is added or removed | `expired` ("Ended effects"), on by default |
+
+     **Why they cannot be collapsed** (the mistake the first v0.19.6 build made in the other
+     direction): DR FLOORS its roisaen, so our clock reaches zero with up to 59 seconds still to
+     run, and a repaint may legitimately hand an "expired" cell more time and send it straight back
+     to counting down. Stage one is the moment to ACT; stage two is the moment it is SETTLED. The
+     cell's tooltip states which one you are looking at, because the two are one word apart on
+     screen (UX #8 — a label that names a state without saying what it means is half-built).
+
+     Three implementation notes worth keeping. **(a)** `.sm-cell--expired` is applied INDEPENDENTLY
+     of the `urgency` layer: an expiry is a STATE, not a colour band, so turning the traffic light
+     off must not hide it. The ring is therefore neutral (`--experience-scene-text`) by default and
+     takes the band's red only on a cell that is already crit, via the two-class selector
+     `.sm-cell--crit.sm-cell--expired` — decided by SPECIFICITY rather than source order (pitfall
+     #111). **(b)** It is drawn as a `box-shadow`, never `border-color`, because the final-minute
+     pulse ANIMATES the border and an animation always beats a normal declaration — a border rule
+     would have silently applied only when the pulse layer happened to be off. **(c)** `barFraction`
+     returns **0** past the anchor, ahead of the "no ceiling learned yet ⇒ show it full" fallback,
+     so a `(0 roisaen)` reading (which learns a zero ceiling) can no longer paint a full bar beside
+     the word "expired".
+   - **A SPENT CELL COUNTS DOWN TO ITS OWN REMOVAL (v0.19.6, Sekmeht).** The greyed cell prints its
+     remaining grace beside the word (`ended 45s`, `spellEndedCountdownLabel`) and its BAR drains
+     that roisan instead of sitting empty (`barFraction` gained an `ended` branch). **Seconds are
+     correct here even though every other time in this window is whole minutes** — the minutes rule
+     exists because DR reports whole roisaen, so a ticking `28:04` would claim precision the GAME
+     never gave us, whereas this grace is `endedAt` (our stamp) against `SPELL_ENDED_TTL_MS` (our
+     constant). We know it to the millisecond. Do NOT "align" it to the minutes rule.
+     Two design notes: the bar is what disambiguates the number (`45s` beside "ended" reads as
+     easily as *elapsed since*; a shrinking bar is unmistakably *remaining*), and the countdown is
+     its own element rather than folded into the label — the WORD stays the primary fact, and
+     `spellRemainingLabel` keeps returning ONE fact, which is what keeps it harnessable.
+     `.sm-name` gained `flex: 1 1 auto` in the same change: `.sm-cell-top` is `space-between`, so a
+     third child would otherwise have split the free space into two gaps and floated the time chip
+     into the middle of the cell.
+   - **FEED STATUS — "updated 3s ago · every ~6s" (v0.19.6, Sekmeht; the ⚙ `updated` layer, ON by
+     default).** Modelled on the Lich Scripts footer, answering the question a still grid otherwise
+     raises: *is this feed alive, or has it hung?*
+
+     **It lives INSIDE the header bar and follows that layer** (Sekmeht's placement call — it
+     shipped for an afternoon as a bottom strip of its own). Two reasons it belongs there: it is
+     metadata ABOUT the window, so it sits with the window's identity rather than as a second
+     chrome band; and it then costs no row, which matters for a surface whose whole point is that
+     it shrinks to a strip (B318 above). `.sm-head-feed` takes `margin-left: auto` so it groups
+     with the count at the right, and `min-width: 0` + ellipsis so it TRUNCATES in a narrow window
+     rather than shoving the count off the end — the title identifies the window and must never be
+     the thing squeezed. The count keeps its own `margin-left: auto` for when the feed is absent,
+     with `.sm-head-feed ~ .sm-head-count { margin-left: 0 }` handing the job to whichever comes
+     first; setting it on BOTH would split the free space and strand the feed mid-header.
+
+     **It reports the ARRIVAL, not the last change, and that distinction IS the feature.**
+     `SpellState.reportedAt` only advances when the delta gate commits, so it can sit unchanged for
+     many minutes while DR repaints constantly — a strip built on it would say "30m ago" about a
+     perfectly live feed. `SpellPulse` (experiences.ts) records every non-empty block, gate or no
+     gate, from the top of GameWindow's derive effect.
+
+     **It rides a REF (`spellsPulse`), never a prop VALUE.** Every Experience receives the same
+     props, so a timestamp changing on every repaint would re-render Moons and the Tableau too
+     (pitfall #82c) — undoing precisely what the delta gate buys. A ref object's identity never
+     changes, so it breaks no memo and only the one readout pays. This is the pitfall-#105 split
+     (volatile tracking data must not share an identity with render data) applied across a prop
+     boundary. The cost: a ref write triggers no render, so **the reader must own a clock**, and
+     reading `.current` during render is acceptable here only because it is display-only (nothing
+     derives state, no ref is mutated) and the component re-renders every second anyway.
+
+     **The cadence is MEASURED, never claimed.** Lich Scripts can say "polls every 5s" because it
+     owns the poll; DR's repaint cadence is push-driven and unmeasured (the open question below),
+     so the strip reports the MEDIAN of the last `SPELL_PULSE_SAMPLES` (8) gaps and says nothing
+     until it has `SPELL_PULSE_MIN_SAMPLES` (3) — one gap is not a rate, and a wrong "every ~2s" is
+     worse than silence (Principle #10). **Median, not mean:** one quiet stretch drags a mean to
+     "every ~155s" about a feed pulsing every six seconds (harness-pinned). The window is bounded
+     so a cadence CHANGE is followed within a few pulses rather than averaged over a session.
+     The pulse record RESETS on a reconnect-in-place — cadence is a property of the connection, and
+     the gap spanning an outage is not a sample.
+
+     **THE CLOCK RUNS CONTINUOUSLY while the readout is shown**, because "3s ago" has no deadline to
+     bid — it changes every second forever. That is the strip's cost and the reason it is a ⚙ layer
+     you can switch off; it is bounded by MOUNT (a background tab unmounts the component), and in
+     practice changes little, since the clock already ran whenever any timed effect was up.
+
+     **`formatAgo` is SHARED with the Lich Scripts footer** ([utils/formatAgo.ts](src/renderer/utils/formatAgo.ts))
+     rather than reimplemented — the phrasing is user-visible and two copies drift (pitfall #127).
+     It takes `now` as a parameter so a caller with its own clock formats against the instant it
+     rendered rather than a second `Date.now()` that can straddle a boundary.
+   - **AN EXPERIENCE MAY DECLARE ITS OWN RESIZE FLOOR — `ExperienceDef.minSize` (B318, v0.19.6).**
+     A floating Experience is `kind: 'panel'`, so it inherits `MIN_WIN_PX` (180×110), a floor sized
+     for a panel of TEXT. The Spell Monitor's natural one-row height is ~84px at the default font,
+     so the floor bound first and the window read as refusing to shrink. The same failure already
+     had a precedent one file away — the chrome bars got per-kind floors (`minSizeFor`) because the
+     panel floor made them "unshrinkable vertically" — and a grid of short cells is the same shape
+     of surface ("a strip across the top of the window" was the original conception).
+     `ExperienceLayer` passes `def.minSize` to `FloatingWindow`, which prefers it over
+     `minSizeFor(win.kind)`; the Spell Monitor declares `{ w: 180, h: 48 }`.
+     **Declared PER EXPERIENCE rather than lowering the global floor**, because "how short can this
+     usefully be?" is a property of the SCENE — a sky or a tableau needs height to mean anything,
+     and the default floor stays a fair guard against dragging one into a sliver. Only declare one
+     for a scene that genuinely wants to be thin. Width is deliberately left at the shared floor:
+     the grid's `minmax(11em, 1fr)` columns make a narrower window useless. The pre-existing
+     `Math.min(floor, current)` clamp still applies, so a window already below its floor is never
+     snapped back up.
+   - **FEED LIVENESS IS RECORDED FOR EVERY ARRIVAL — ahead of the delta gate AND of the empty-block
+     branch.** Two traps, both found in the v0.19.6 bug check and both worth keeping:
+     **(a)** Recording inside the non-empty branch froze the strip in exactly the case it exists
+     for. The empty branch early-returns once `effects` is already empty, so when every spell
+     dropped and DR kept repainting an empty list the readout sat still beside a live feed. The
+     discriminator is `undefined` vs `[]`: the first means the stream has never been touched
+     (nothing has arrived), the second means DR sent a clear, which HAS.
+     **(b)** DR sends a clear and then its lines, and main's flush coalescing is LEADING-EDGE on a
+     16ms window (pitfall #82d) — so when the client is idle the clear flushes immediately and the
+     lines follow in the next batch: ONE repaint, TWO arrivals. Counting that ~16ms as a cadence
+     sample would drag the median toward zero precisely when someone is sitting still watching the
+     strip. `recordSpellPulse` advances the timestamp but discards any gap below
+     `SPELL_PULSE_COALESCE_MS` (250ms) — above the coalescing window, far below any plausible DR
+     cadence, since repaints follow game turns rather than milliseconds.
+   - **THE 1 Hz CLOCK BIDS ON "THE NEXT MOMENT THE DISPLAY CHANGES", NOT ON EXPIRIES** (v0.19.6 bug
+     check). Two sources feed `soonest`: a timed effect reaching its anchor (the cell flips to
+     "expired"), and — while the `expired` layer is on — a spent cell reaching the end of its
+     one-roisan grace (it leaves). Bidding only on the first let the clock retire while a greyed
+     cell was still on screen; with nothing ticking `now` froze, and since the grace is measured
+     against `now`, the cell sat there past its TTL until DR happened to repaint, which on a
+     repaint-on-change feed can be many minutes. The FUTURE filter (`> now`) is equally
+     load-bearing and predates it: the interval self-clears at `soonest`, so a moment that stayed
+     in the value would leave the dep unchanged, no new interval armed, and every other countdown
+     frozen behind it.
+   - **THE DELTA BASELINE RESETS ON A RECONNECT-IN-PLACE** (v0.19.6 bug check, a regression this
+     version introduced). "Ended" is a DIFF against the previous block, and a reconnect swaps the
+     sessionId **without remounting** (pitfall #69) — so the first block of the new connection read
+     every effect that had lapsed while you were disconnected as having ended *this instant*: a
+     wall of greyed "recast me" cells stamped with the wrong time, which is precisely the false
+     certainty the two-stage model exists to avoid. `spellPrevRef` is nulled in the same
+     sessionId-change effect that already resets the sky-sync flags. `spellMaxRef` is deliberately
+     KEPT — the learned bar ceilings are facts about the SPELL, not about the connection.
    - **THE NOTE ROW ADDS WHAT THE LABEL DOES NOT SAY** — `spellNoteText`. A first cut rendered the
      parenthetical unconditionally, so a `fading` reading printed the word TWICE (label "fading",
      note "Fading") and paid a whole extra row for it, which is what made those cells look
@@ -7533,10 +7716,12 @@ across a full day.
      **Thief**, whose Khri are absent from Lich's data entirely and would all land there.
      `groupSpells` takes the lookup as a PARAMETER rather than importing `spellData`, keeping it
      pure, harnessable, and free of a dependency `experiences.ts` does not otherwise need.
-   - **⚙ layers, one per visual layer (nine):** `bars`, `urgency` (the traffic light), `untimed`
+   - **⚙ layers, one per visual layer (eleven):** `bars`, `urgency` (the traffic light), `untimed`
      (the quiet no-countdown kinds — never fading), `pulse`, `badges` (the skill letter chips),
-     `header` (the "Active Spells" strip; off reclaims a row in a narrow tab), and **three that are
-     `defaultHidden` / opt-in (Sekmeht, 2026-09-06)**: `abbrev` (ECRY rather than Eillie's Cry),
+     `header` (the "Active Spells" strip; off reclaims a row in a narrow tab), plus the two v0.19.6
+     additions — `expired` (keep a spent effect on screen, greyed, counting down to its own
+     removal) and `updated` (the feed-status strip) — and **three that are `defaultHidden` /
+     opt-in (Sekmeht, 2026-09-06)**: `abbrev` (ECRY rather than Eillie's Cry),
      `sortByTime`, and `groupBySkill`. Leaving `sortByTime` off makes DR's OWN order the default — the game's ordering
      is stable as timers tick, where ours re-arranges under the reader; the urgency colour still
      marks a lapsing effect, it just isn't moved. Note the consequence: `spellSortRank`'s
@@ -8656,6 +8841,63 @@ Both run in MAIN ([profiles.ts](src/main/profiles.ts)), and main owns every sess
 **What this settles:** `saveCommandHistory` deliberately has **no** `scheduleProfileSave`, even though it shares the B266/B267 "localStorage is half a change" shape. It writes on every command, so wiring it up would mean a ~95 ms main-thread stall every 2.5 s during active play — a visible stutter on the same thread as the text pipeline. History reaching YAML therefore rides on other saves; that is a conscious trade, not an oversight.
 
 **Options if this is ever picked up, cheapest first:** (1) skip writes whose serialized payload is unchanged — needs to compare the exact payload, since a wrong comparison is silent data loss; (2) move the read-merge into main, dropping both IPC clones (doesn't reduce parse/dump — confirm the clone cost is material first); (3) split large collections into their own files so a settings change stops rewriting a 935 KB ruleset — the real fix, and a profile-shape migration under Principle #8, so its own release.
+
+### 45.10 The Spell Monitor's 1 Hz counter — profiled (v0.19.6)
+
+v0.19.6 made the clock run CONTINUOUSLY whenever the feed readout is shown,
+where before it retired once nothing was counting down. That is a real change in
+kind, so it was measured rather than argued about. Harness: `tmp-sm-render/`
+(machine-local, gitignored; rebuild recipe in its README).
+
+**Both axes, because §45.8's lesson is that timing React alone is blind to the
+ones that matter.** Render+commit was timed with `flushSync` against the
+PRODUCTION bundle; separately a `MutationObserver` recorded what a real tick
+actually mutates, by attribute name and target element — which is what decides
+whether a tick reflows or merely composites.
+
+| Scenario | Render+commit | DOM mutations per tick |
+|---|---|---|
+| 8 effects, all layers on | **0.087 ms** | 1 × `.sm-bar-fill[style]` per cell |
+| 25 effects, all layers on | **0.143 ms** | 1 per cell, + 1 text node for the readout |
+| 25 effects, readout OFF | 0.122 ms | 1 per cell |
+| Empty grid, readout only | **0.007 ms** | 1 text node |
+
+**The findings.**
+
+**(a) Every attribute write is the bar's `transform`, and there are ZERO
+childList mutations.** No node is created or destroyed by a tick, and `transform`
+is a compositor property — so a tick invalidates no layout. This is the v0.18.0
+`scaleX`-not-`width` decision paying off exactly as intended; had the bar still
+animated `width`, these same 25 writes per second would each have invalidated
+layout.
+
+**(b) The always-on clock's genuinely NEW cost is the bottom row: 0.007 ms and
+one text node per second.** Everything above it was already being paid — a grid
+with timed effects kept the clock running before v0.19.6 too. So the change in
+kind is real but the change in cost is ~0.0007% of a core.
+
+**(c) At 25 buffs the whole tick is 0.014% of a core**, and cheaper than a Moons
+render (0.38 ms) — the same class as a crowded Tableau (0.15 ms).
+
+**(d) A tick cannot reach the other Experiences.** `setNow` is state local to
+`SpellMonitorExperience`, so React re-renders that subtree and nothing else. The
+REF that carries feed liveness (pitfall #140) protects the other axis — a prop
+change from GameWindow, which *would* have re-rendered Moons and the Tableau.
+
+**NOT measured, and therefore not claimed:** Blink's style-recalculation cost,
+paint, and the compositing of N continuously-transitioning bars. Each bar carries
+`transition: transform 1s linear` and receives a new value every second, so while
+the window is open every visible bar is permanently mid-transition and is a
+compositor-layer candidate. That is GPU-side work this harness cannot see. It is
+also unchanged by v0.19.6 (bars animate only when something is counting down,
+which is when the clock ran anyway) — but if a Spell Monitor with a large buff
+stack is ever reported as heavy, **that** is the axis to measure, not this one.
+
+**Known and deliberately unfixed:** a MINIMIZED window keeps ticking, because
+`backgroundThrottling: false` (§45.8b) leaves timers running. At 0.14 ms/second
+per open Spell Monitor it is far below the threshold that justified §45.8's
+animation pause, and pausing it would need a `data-window-hidden` subscription
+plus a stale-readout-on-restore story for no measurable gain.
 
 ## 46. Prioritised Backlog — features & UX polish (snapshot 2026-07-30)
 

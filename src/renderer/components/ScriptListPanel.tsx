@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import type { ScriptRecord } from '../../shared/types'
+import { formatAgo } from '../utils/formatAgo'
 import '../styles/lich-panels.css'
 
 interface Props {
@@ -32,14 +33,6 @@ function formatUptime(firstSeen: number): string {
   const s = secs % 60
   if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function formatAgo(ts: number): string {
-  if (!ts) return 'never'
-  const secs = Math.floor((Date.now() - ts) / 1000)
-  if (secs < 5) return 'just now'
-  if (secs < 60) return `${secs}s ago`
-  return `${Math.floor(secs / 60)}m ago`
 }
 
 export default function ScriptListPanel({ scripts, lastUpdated, pending, onPause, onResume, onKill, onRefresh }: Props) {
@@ -132,7 +125,7 @@ export default function ScriptListPanel({ scripts, lastUpdated, pending, onPause
 
       <div className="sl-footer">
         {scripts.length} script{scripts.length !== 1 ? 's' : ''}
-        {lastUpdated > 0 && <> · updated {formatAgo(lastUpdated)}</>}
+        {lastUpdated > 0 && <> · updated {formatAgo(lastUpdated) || 'never'}</>}
         {' · polls every 5s'}
       </div>
     </div>

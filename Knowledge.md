@@ -1002,6 +1002,17 @@ Trabe Chalice (intact, fading)
    `<prompt time>` (§16, pitfall #87 / B192).
 4. **The value is whole minutes.** There is no sub-minute precision anywhere in
    this readout, so a seconds-resolution countdown built from it is invented.
+   **The consequence is load-bearing and easy to miss: a countdown a client
+   DERIVES from this reading runs out before the effect does.** An effect
+   reporting `(1 roisan)` has somewhere under two minutes left — Lichborne
+   assumes DR floors, so 60–119 seconds, and that assumption is NOT verified
+   (rounding would give 30–89 instead). Either way the conclusion is the same:
+   your own timer reaching zero is **not evidence that the effect ended**, only
+   that the time you were told has elapsed. The one signal that settles it is
+   fact 6's — the effect no longer appearing in the block. Any front-end
+   feature that acts on "this spell is gone" must key on absence, not on its own
+   clock. (Lichborne shows the two as separate states, "expired" then "ended" —
+   DESIGN §34.9 item 4.)
 5. **The parenthetical is not always a timer, and the variants are NOT
    interchangeable.** The authoritative catalogue is Lich's own parser
    ([xmlparser.rb](file:///c:/Ruby4Lich5/Lich5/lib/common/xmlparser.rb), the
@@ -1039,6 +1050,12 @@ Trabe Chalice (intact, fading)
    cost scales with the repaint rate should be written to be correct either way
    (Lichborne's Spell Monitor gates its state commits on a real delta for
    exactly this reason — DESIGN §34.9 item 4).
+   **As of v0.19.6 there is an instrument for this and no capture is needed:**
+   the Spell Monitor's feed strip prints the observed median gap between
+   repaints (`updated 3s ago · every ~6s`). A screenshot of that strip, noting
+   whether the character was idle or actively prompting, is enough to settle
+   the question — record the answer HERE when someone supplies one, since it is
+   a DR protocol fact rather than a Lichborne one.
 8. **No verified command forces a repaint.** Unlike `TIME`/`WEATHER` for the
    Moons readout, no command is known to make DR re-emit `percWindow` on
    demand; do not assume one exists without checking.

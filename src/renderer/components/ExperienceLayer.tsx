@@ -147,6 +147,7 @@ export default function ExperienceLayer({ instances, onInstancesChange, renderCo
             getSnapTargets={getSnapTargets}
             guideRefs={{ v: guideVRef, h: guideHRef }}
             locked={locked}
+            minSize={def.minSize}
           >
             {/* Font override: shadow --game-font-size for this window's
                 subtree — every Experience sizes its text off that var

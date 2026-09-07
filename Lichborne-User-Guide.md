@@ -70,6 +70,23 @@ A few ideas shape everything:
 
 ## What's New in the Latest Version
 
+**v0.19.6**
+
+- **The Spell Monitor now shows an effect ending in two steps.** When your
+  countdown runs out the cell says **"expired"** and stays lit — the moment to
+  act. When the game itself stops listing the effect it turns **"ended"**, greyed
+  out, so you can see what lapsed and needs recasting instead of watching it
+  disappear. The greyed cell **counts down to its own removal**, so you know how
+  long you have to notice it. The greying is a ⚙ toggle, on by default.
+- **The Spell Monitor's header shows its feed status** — *updated 3s ago ·
+  every ~6s* — when the game last refreshed the list and roughly how often it
+  does, so a motionless grid reads as "nothing has changed" rather than
+  "something has hung".
+- **The Spell Monitor shrinks to a strip.** It can now be resized down to about
+  one row of cells, so it can sit as a thin band across the top of your layout.
+- **Katamba no longer casts a glow** in the Moons view — the black moon sheds no
+  light, so it now renders as the dark disc it is.
+
 **v0.19.5**
 
 - **New Experience: Spell Monitor.** Everything currently on you as a grid of
@@ -456,12 +473,19 @@ Everything currently on you, as live countdowns.
 - Each effect runs **green while it's full, amber past the halfway mark, and red as it nears its end**, with an optional pulse on the red ones. The colors adapt to your theme — deepening on light ones, brightening on dark — and follow your color-blind setting if you have one. (Epilepsy-safe turns off the pulse and keeps the colors, so you lose nothing.)
 - Because the game never tells a client how long a spell *should* last, a freshly-noticed effect can't be judged as a percentage yet — so an effect with only a minute or two left always shows as ending regardless, rather than pretending to be full.
 - **Times read in whole minutes** — `28m`, then `<1m` at the end. The game reports your effects to the minute, so showing you a ticking `28:04` would be inventing precision that was never there.
+- **An effect ends in two steps, and you see both**, because they tell you different things:
+  1. **"expired"** — the time the game gave you has run out. The cell stays lit and red, ringed to catch your eye. This is the moment to act, but it isn't the last word: the game counts in whole minutes, so an effect at `1m` may have almost another minute left, and a refresh can put an expired cell straight back to counting down.
+  2. **"ended"** — the game has stopped listing the effect, which is the one thing that settles it. The cell greys out and drains of colour, so you can see exactly what lapsed and needs recasting rather than watching it vanish. **It counts down to its own removal** — `ended 45s`, with its bar draining alongside — so you can see how long you've still got to notice it. It clears when you recast it, or when that countdown runs out. (⚙ **Ended effects**, on by default — turn it off and a spell simply disappears when it's done.)
+
+  Hover any cell and the tooltip tells you which of the two you're looking at.
 - Effects the game lists **without** a countdown — a Trabe Chalice reading *"intact, fading"*, say — are shown too, quietly, after everything that has a timer. Nothing that's on you is ever hidden just because Lichborne didn't recognize the wording. Anything the game marks as *Fading* goes to the very top instead — that's it telling you an effect is about to lapse.
 - **Skill badges** put a letter chip on each effect for its magic skill or ability type — **[A]**ugmentation, **[U]**tility, **[T]**argeted Magic, **[D]**ebilitation, **[W]**arding, **[C]**antrip, **[X]** metamagic, and for Barbarians and Bards **[F]**orm, **[B]**erserk, **[M]**editation, **[R]**oar and **[S]**cream. Each has its own colour, so one kind is easy to pick out; hover for the full name and guild.
 - **Abbreviations** switch the display to the game's short names — **ECRY** rather than *Eillie's Cry* — so what you see about to expire is what you type to renew it. Anything without a known abbreviation keeps its full name. (Thief Khri have no badge or abbreviation: they aren't in the reference data Lich publishes.)
 - **Group by skill** gathers effects under a heading for their skill or ability type — all your Wards together, all your Augmentations together. For a Barbarian that means Forms, Berserks, Roars and Meditations each in their own block. It combines with Soonest first, which then orders within each group. (Thieves get one "Other" block: Khri aren't in the reference data.)
 - **Abbreviations**, **Soonest first** and **Group by skill** all start **off** — the window opens with full names in the order the game itself lists them, which stays put as timers tick. Turn on whichever you want from the **⚙**. Your choices are remembered per character and travel with a [Profile Transfer](#profile-transfer).
 - Every colour here — the twelve badges and the three countdown states — is editable in the **Theme Editor** under **HUD**, if you want your own scheme.
+- **The header bar shows the feed's status** — *updated 3s ago · every ~6s* — when DragonRealms last sent the list, and roughly how often it's been sending it. It answers the question a motionless grid otherwise raises: the list only changes when your effects do, so a number ticking up beside a still grid means everything is working and nothing has changed. The cadence appears once Lichborne has seen enough refreshes to say so honestly, and it's measured rather than assumed — DragonRealms decides when to send, and there's no command known to ask it for one. (⚙ **Feed status**, on by default; it lives in the header bar, so hiding that hides this too.)
+- **It shrinks to a strip.** The window can be dragged down to roughly the height of a single row of cells, so it can sit as a thin band across the top of your layout rather than a box — turn off the header bar in the **⚙** for the tightest fit.
 - **No Lich required** — this reads DragonRealms' own spell readout, so it works exactly the same on a direct connection. The same information in text form is the **Active Spells** panel.
 
 *(Every layer above — bubbles, thoughts, combat rings, weather effects, seasons, and more — is an individual **⚙** toggle, so you can dial each Experience to taste.)*

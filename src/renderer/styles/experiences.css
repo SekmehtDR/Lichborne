@@ -1609,6 +1609,15 @@
   border-bottom: 1px solid color-mix(in srgb, var(--experience-scene-text) 18%, transparent);
 }
 .sm-head-title {
+  /* NEVER SHRINKS, and never wraps. It is the window's identity, so it is the
+     one thing in this row that must survive a narrow window — the feed readout
+     beside it is what gives way (it carries the ellipsis). Both matter: without
+     `flex-shrink: 0` the title squeezes alongside the feed, and without
+     `nowrap` it then WRAPS to a second line, doubling the height of a strip
+     whose whole contract is that it is one text-row tall (pitfall #77) and
+     silently changing the geometry the scene's flex column is built on. */
+  flex: 0 0 auto;
+  white-space: nowrap;
   font-size: 0.84em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1621,6 +1630,9 @@
      spans the window instead of huddling in the corner, which is the other half
      of why it read as cramped. */
   margin-left: auto;
+  /* Fixed like the title: a pill that compresses its own padding stops reading
+     as a chip, and the count is short enough that it never needs to give way. */
+  flex: 0 0 auto;
   font-size: 0.8em;
   line-height: 1;
   padding: 0.15em 0.45em;
@@ -1629,6 +1641,40 @@
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+
+/* FEED STATUS — when the game last sent the list, and roughly how often it does.
+   Lives INSIDE the header bar (Sekmeht) rather than in a strip of its own: it is
+   metadata about this window, so it belongs with the window's identity, and it
+   costs no extra row. It follows the header layer for the same reason.
+
+   Quiet by construction (UX #1/#5) — reassurance, not content, and it must never
+   compete with the grid. `line-height: 1` because the header is a chrome strip
+   (pitfall #77), and tabular numbers because this ticks EVERY SECOND, making it
+   the surface in this window most exposed to a value re-flowing its own row
+   (pitfall #103).
+
+   `margin-left: auto` pushes it and the count together to the right, leaving the
+   title alone at the left; `min-width: 0` + ellipsis let it TRUNCATE in a narrow
+   window rather than shoving the count off the end — the title identifies the
+   window, so it is the one thing that must never be squeezed. */
+.sm-head-feed {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 0.78em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--experience-scene-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The count keeps its own `margin-left: auto` for when the feed is absent — with
+   BOTH set the free space would split and strand the feed mid-header, so the
+   sibling combinator hands the job to whichever element comes first. */
+.sm-head-feed ~ .sm-head-count { margin-left: 0; }
+/* The cadence is the SECOND fact and the less certain one (a median of recent
+   gaps), so it recedes behind the timestamp rather than sitting level with it. */
+.sm-head-feed-dim { opacity: 0.72; }
 
 /* The grid. BOUNDED BY CONSTRUCTION (pitfall #109): the effect count is user
    data — a heavily-buffed caster must not grow this without limit — so it
@@ -1689,8 +1735,12 @@
   border: 1px solid color-mix(in srgb, var(--experience-scene-text) 16%, transparent);
   background: color-mix(in srgb, var(--experience-scene-text) 5%, transparent);
   /* Colour changes are a state transition, not decoration — ease them so a
-     spell entering its last minutes reads as a change rather than a repaint. */
-  transition: background 300ms ease, border-color 300ms ease;
+     spell entering its last minutes reads as a change rather than a repaint.
+     `box-shadow` rides along for the expiry ring below, so it arrives with the
+     colour rather than snapping a frame apart from it. All three fire ONCE per
+     state change, never per frame — unlike the bar, which is why that one is a
+     transform (see .sm-bar-fill). */
+  transition: background 300ms ease, border-color 300ms ease, box-shadow 300ms ease;
 }
 .sm-cell-top {
   display: flex;
@@ -1700,6 +1750,15 @@
   line-height: 1.15;
 }
 .sm-name {
+  /* GROWS, so it absorbs the row's free space. Load-bearing with the parent's
+     `space-between`: once a spent cell adds a THIRD child (the clear-out
+     countdown) that free space would otherwise be split into two gaps and float
+     the time chip into the middle of the cell. With the name growing there is
+     nothing left to distribute, so the time and the countdown stay paired at
+     the right edge — and the two-child case renders identically to before.
+     `min-width` needs no declaration: `overflow: hidden` already makes a flex
+     item's automatic minimum size 0, which is what lets the ellipsis fire. */
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1718,6 +1777,18 @@
      hierarchy comes from muting the SECONDARY, never the subject). */
   color: var(--experience-scene-text);
 }
+/* A spent cell's clear-out countdown, beside the word "ended". Secondary to it
+   by SIZE rather than by opacity: the cell already carries `opacity: .6` from
+   `--ended`, and stacking another reduction on top drops it under the readable
+   floor on light themes. Tabular so the last ten seconds don't jitter. */
+.sm-ttl {
+  flex: 0 0 auto;
+  font-size: 0.78em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--experience-scene-muted);
+}
+
 .sm-note {
   font-size: 0.82em;
   line-height: 1.2;
@@ -1795,9 +1866,54 @@
 .sm-cell--crit .sm-bar-fill { background: var(--spell-band-crit); }
 .sm-cell--crit .sm-time { color: color-mix(in srgb, var(--spell-band-crit) 60%, var(--experience-scene-text)); }
 
+/* STAGE ONE of the two-stage end — the countdown we were given has run out,
+   but the game is still listing the effect. It is NOT the same fact as
+   `--ended` below and must not look like it: this one is still on you as far as
+   anything can tell, so it stays fully lit — and red, when the urgency layer is
+   on — rather than greying. What it adds is an inner ring and a heavier label,
+   so "the timer is done" reads at a glance even before you get to the word.
+
+   Drawn with `box-shadow`, deliberately, NOT `border-color`: the final-minute
+   pulse ANIMATES the border, and an animation always beats a normal
+   declaration — a border rule here would silently apply only when the pulse
+   layer happens to be off (the same class of bug as pitfall #111, decided by
+   the cascade rather than by the rule you wrote).
+
+   The word "expired" in the cell is the primary carrier; this is emphasis on
+   top of it, never the only signal (§34.7 — meaning is never colour-alone). */
+.sm-cell--expired {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--experience-scene-text) 40%, transparent);
+}
+/* When the traffic light is ON the ring takes the band's red, so a red cell
+   isn't ringed in grey. Written as a two-class selector (0,2,0) rather than a
+   later rule of equal weight, so which one wins is decided by SPECIFICITY and
+   never by bundle order (pitfall #111). With the urgency layer off the neutral
+   ring above still marks it — an expiry is a STATE, and turning the colours off
+   must not hide it. */
+.sm-cell--crit.sm-cell--expired {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--spell-band-crit) 55%, transparent);
+}
+.sm-cell--expired .sm-time { font-weight: 600; }
+/* An expired cell's bar is an EMPTY track (barFraction clamps at 0), which is
+   the honest picture — nothing left of what we were told. */
+
 /* Untimed effects read as quieter — they're the least likely thing you're
    watching for, and they sort last (UX #5: hierarchy from muting). */
 .sm-cell--untimed { opacity: 0.72; }
+
+/* SPENT — the effect ran out and wants recasting. Deliberately a different
+   treatment from `--untimed` above, which is quiet-but-LIVE: this one is
+   desaturated as well as dimmed, so its skill badge greys out too and the whole
+   cell reads as inert rather than merely unimportant (UX #9's "one artwork in
+   two treatments" — the same cell, drained of colour, rather than a second
+   design). The dashed border says "no longer holding" at a glance without
+   needing the word. It cannot also be traffic-lit: `spellBand` returns 'none'
+   for a spent effect precisely so the two never fight. */
+.sm-cell--ended {
+  opacity: 0.6;
+  filter: grayscale(1);
+  border-style: dashed;
+}
 
 /* The final-minute pulse. Gated in the component on BOTH the ⚙ layer and the
    epilepsy-safe setting; the urgency COLOUR above stays either way, so the
